@@ -4,10 +4,10 @@ import { GeistMono } from "geist/font/mono";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: { default: "Mouche", template: "%s · Mouche" },
+  title: { default: "Standchef", template: "%s · Standchef" },
   description: "Die App für Schiessvereine und Schiessanlagen in der Schweiz: Punkteerfassung, Zielscheiben und mehr.",
-  applicationName: "Mouche",
-  appleWebApp: { capable: true, title: "Mouche", statusBarStyle: "default" },
+  applicationName: "Standchef",
+  appleWebApp: { capable: true, title: "Standchef", statusBarStyle: "default" },
 };
 
 export const viewport: Viewport = {

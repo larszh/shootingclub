@@ -11,8 +11,8 @@ export default async function AuthLayout({ children }: { children: React.ReactNo
         <div className="w-full max-w-sm">
           <div className="animate-rise flex flex-col items-center mb-8">
             <div className="animate-float"><Logo size={56} /></div>
-            <h1 className="mt-3 text-3xl font-semibold tracking-tight">Mouche</h1>
-            <p className="text-ink-3 text-sm mt-1">Schiesssport. Punkt für Punkt.</p>
+            <h1 className="mt-3 text-3xl font-semibold tracking-tight">Standchef</h1>
+            <p className="text-ink-3 text-sm mt-1">Dein Stand. Dein Verein. Alles im Griff.</p>
           </div>
           {children}
         </div>

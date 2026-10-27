@@ -1,6 +1,6 @@
 # Deployment auf CloudPanel
 
-Mouche läuft als **Node.js-Site** in CloudPanel. CloudPanel stellt nginx als Reverse Proxy, SSL (Let's Encrypt), MySQL/MariaDB und PM2 bereit. Es braucht kein Docker.
+Standchef läuft als **Node.js-Site** in CloudPanel. CloudPanel stellt nginx als Reverse Proxy, SSL (Let's Encrypt), MySQL/MariaDB und PM2 bereit. Es braucht kein Docker.
 
 ## Voraussetzungen
 
@@ -11,13 +11,13 @@ Mouche läuft als **Node.js-Site** in CloudPanel. CloudPanel stellt nginx als Re
 ## 1. Site anlegen
 
 1. CloudPanel → **Sites** → **Add Site** → **Create a Node.js Site**
-2. Domain eintragen (z.B. `app.mouche.ch`), Node-Version **22**, **App Port** `3000` (frei wählbar, muss zu `PORT` in `.env` passen).
+2. Domain eintragen (z.B. `standchef.ch`), Node-Version **22**, **App Port** `3000` (frei wählbar, muss zu `PORT` in `.env` passen).
 3. Site-Benutzer und Passwort notieren.
 4. Unter **SSL/TLS** ein Let's-Encrypt-Zertifikat holen.
 
 ## 2. Datenbank anlegen
 
-1. **Databases** → **Add Database**: Name `mouche`, Benutzer `mouche`, Passwort generieren.
+1. **Databases** → **Add Database**: Name `standchef`, Benutzer `standchef`, Passwort generieren.
 2. Zugangsdaten notieren. Host ist `127.0.0.1`, Port `3306`.
 
 ## 3. Code holen und konfigurieren
@@ -35,14 +35,16 @@ nano .env
 In `.env` setzen:
 
 ```
-DATABASE_URL="mysql://mouche:<db-passwort>@127.0.0.1:3306/mouche"
+DATABASE_URL="mysql://standchef:<db-passwort>@127.0.0.1:3306/standchef"
 AUTH_SECRET="<openssl rand -base64 48>"
-APP_URL="https://app.mouche.ch"
+APP_URL="https://standchef.ch"
 PORT=3000
 UPLOAD_DIR="./storage/uploads"
 SEED_ADMIN_EMAIL="du@verein.ch"
 SEED_ADMIN_PASSWORD="<sicheres passwort>"
 ```
+
+`APP_URL` muss stimmen: Zahlungsanbieter leiten nach der Zahlung dorthin zurück, und der Stripe-Webhook-Endpoint wird daraus gebildet. Die Serverzeit spielt keine Rolle, alle Buchungszeiten werden in Europe/Zurich berechnet.
 
 ## 4. Erstinstallation
 
@@ -74,14 +76,24 @@ Das Script zieht den Code, installiert Abhängigkeiten, spielt neue Migrationen 
 
 Uploads (eigene Scheiben) liegen in `storage/uploads`. Dieser Ordner liegt ausserhalb von Git und bleibt bei Updates erhalten. Ins Backup aufnehmen, zusammen mit der Datenbank (CloudPanel → Databases → Backup, oder `mysqldump`).
 
+## Zahlungsanbieter (pro Verein)
+
+Jeder Verein richtet seinen Anbieter selbst unter **Mehr → Reservationen verwalten → Zahlungsanbieter** ein. Das Geld fliesst direkt auf das Konto des Vereins.
+
+- **Stripe**: Secret Key aus dem Dashboard. Empfohlen: Webhook auf `https://<domain>/api/payments/stripe/<tenant-id>` mit Ereignis `checkout.session.completed`, Signing Secret eintragen. Ohne Webhook wird die Zahlung beim Rücksprung des Mitglieds geprüft.
+- **Worldline Saferpay**: Customer ID, Terminal ID, JSON-API-Benutzer und -Passwort aus dem Backoffice; Umgebung `test` oder `live`.
+- **SumUp**: API Key (Secret) und Händlercode aus dem SumUp-Dashboard.
+
+Die Zugangsdaten werden mit einem aus `AUTH_SECRET` abgeleiteten Schlüssel verschlüsselt. **`AUTH_SECRET` nach der Einrichtung nicht mehr ändern**, sonst müssen alle Vereine ihre Anbieter neu eintragen.
+
 ## Betrieb
 
 | Aufgabe | Befehl |
 |---|---|
-| Logs | `pm2 logs mouche` |
+| Logs | `pm2 logs standchef` |
 | Status | `pm2 status` |
-| Neustart | `pm2 reload mouche` |
-| DB-Konsole | `mysql -u mouche -p mouche` |
+| Neustart | `pm2 reload standchef` |
+| DB-Konsole | `mysql -u standchef -p standchef` |
 | Prisma Studio (nur lokal/SSH-Tunnel) | `npx prisma studio` |
 
 ## Lokale Entwicklung

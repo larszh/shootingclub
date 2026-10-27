@@ -17,7 +17,7 @@ export default async function PrintTargetPage({ params, searchParams }: { params
   if (!t) notFound();
   const paper: PaperSize = (PAPER_SIZES as readonly string[]).includes(size ?? "") ? (size as PaperSize) : t.paperSizes[0] ?? "A4";
   const { w, h } = PAPER_MM[paper];
-  const footer = `${formatDate(new Date())} · ${ctx.user.name} · ${ctx.tenant.name} · Mouche`;
+  const footer = `${formatDate(new Date())} · ${ctx.user.name} · ${ctx.tenant.name} · Standchef`;
 
   return (
     <div className="min-h-dvh bg-neutral-200 print:bg-white">
@@ -26,7 +26,7 @@ export default async function PrintTargetPage({ params, searchParams }: { params
         <div className="min-w-0"><div className="font-semibold truncate">{t.name}</div><div className="text-xs text-neutral-500">{paper} · Hochformat · Drucken ohne Skalierung (100 %)</div></div>
         <PrintButton />
       </div>
-      <div className="flex justify-center p-4 print:p-0">
+      <div className="flex justify-center p-4 print:p-0 overflow-x-auto">
         <div className="relative bg-white shadow-lg print:shadow-none" style={{ width: `${w}mm`, height: `${h}mm` }}>
           {t.subject === "UPLOAD" ? (
             <div className="absolute" style={{ left: "10mm", top: "10mm", right: "10mm", bottom: "18mm" }}>

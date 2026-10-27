@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { ChevronRight, LogOut, Settings, Shield, Users, BarChart3 } from "lucide-react";
+import { CalendarDays, ChevronRight, LogOut, Settings, Shield, Users, BarChart3 } from "lucide-react";
 import { getAppContext } from "@/lib/tenant";
 import { logoutAction } from "@/modules/core/auth-actions";
 import { Card, PageHeader, SectionTitle } from "@/components/ui";
@@ -27,6 +27,7 @@ export default async function MePage() {
             <Row href="/scores/stats" icon={<BarChart3 className="h-4 w-4" />} label="Meine Statistik" />
             {canManage ? <Row href="/admin" icon={<Settings className="h-4 w-4" />} label="Einstellungen & Module" /> : null}
             {canManage ? <Row href="/admin/members" icon={<Users className="h-4 w-4" />} label="Mitglieder & Rollen" /> : null}
+            {canManage && ctx.hasModule("bookings") ? <Row href="/admin/bookings" icon={<CalendarDays className="h-4 w-4" />} label="Reservationen verwalten" /> : null}
           </Card>
         </>
       ) : null}
@@ -48,7 +49,7 @@ export default async function MePage() {
           <LogOut className="h-4 w-4" /> Abmelden
         </button>
       </form>
-      <p className="text-center text-xs text-ink-3 mt-6">Mouche · Version 0.1</p>
+      <p className="text-center text-xs text-ink-3 mt-6">Standchef · Version 0.1</p>
     </div>
   );
 }

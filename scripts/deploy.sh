@@ -23,7 +23,7 @@ echo "→ Build"
 npm run build
 
 echo "→ Neustart"
-if pm2 describe mouche > /dev/null 2>&1; then
+if pm2 describe standchef > /dev/null 2>&1; then
   pm2 reload ecosystem.config.cjs --update-env
 else
   pm2 start ecosystem.config.cjs

@@ -1,5 +1,5 @@
 {
-  "name": "mouche",
+  "name": "standchef",
   "version": "0.1.0",
   "private": true,
   "scripts": {
@@ -25,6 +25,8 @@
     "next": "^16.4.3",
     "react": "^19.3.1",
     "react-dom": "^19.3.1",
+    "stripe": "^23.0.1",
+    "swissqrbill": "^4.4.3",
     "zod": "^4.6.7"
   },
   "devDependencies": {

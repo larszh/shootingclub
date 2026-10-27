@@ -1,4 +1,4 @@
-// Mouche – Datenmodell
+// Standchef – Datenmodell
 // Datenbank: MySQL / MariaDB (CloudPanel-Standard).
 // Hinweis: Bewusst ohne Prisma-Enums und Json-Felder, damit das Schema leicht
 // auf PostgreSQL portierbar bleibt. Aufzählungen sind als String gespeichert
@@ -35,6 +35,7 @@ model User {
   participations   MatchParticipant[]
   targetTemplates  TargetTemplate[]    @relation("TargetOwner")
   targetFavorites  TargetFavorite[]
+  bookings         Booking[]
 }
 
 model Session {
@@ -66,6 +67,12 @@ model Tenant {
   matches         Match[]
   targetTemplates TargetTemplate[]
   targetSettings  TargetTenantSetting[]
+  bookingSettings BookingSettings?
+  resources       Resource[]
+  resourceBlocks  ResourceBlock[]
+  bookings        Booking[]
+  paymentConfigs  PaymentProviderConfig[]
+  invoices        Invoice[]
 }
 
 model Membership {
@@ -237,4 +244,155 @@ model TargetFavorite {
   target   TargetTemplate @relation(fields: [targetId], references: [id], onDelete: Cascade)
 
   @@unique([userId, targetId])
+}
+
+// ---------------------------------------------------------------------------
+// Modul: Reservationen & Zahlungen
+// ---------------------------------------------------------------------------
+
+model BookingSettings {
+  id                        String  @id @default(cuid())
+  tenantId                  String  @unique
+  currency                  String  @default("CHF")
+  slotStepMinutes           Int     @default(30)
+  durationOptionsJson       String  @db.Text // [{minutes, priceCents}]
+  openingHoursJson          String  @db.Text // {"0":[["08:00","12:00"]],...} Schlüssel = Wochentag (0 = So)
+  approvalRequired          Boolean @default(false)
+  allowInvoice              Boolean @default(true)
+  allowOnline               Boolean @default(false)
+  onlineProvider            String  @default("NONE") // NONE | STRIPE | WORLDLINE | SUMUP
+  lastMinuteDiscountPercent Int     @default(0)
+  lastMinuteWindowHours     Int     @default(24)
+  minLeadMinutes            Int     @default(60)
+  maxAdvanceDays            Int     @default(60)
+  cancellationHours         Int     @default(24)
+  invoiceDueDays            Int     @default(30)
+  invoicePrefix             String  @default("R-")
+  payeeName                 String?
+  payeeStreet               String?
+  payeeZip                  String?
+  payeeCity                 String?
+  iban                      String?
+  invoiceNote               String? @db.Text
+  updatedAt                 DateTime @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+}
+
+model Resource {
+  id                  String  @id @default(cuid())
+  tenantId            String
+  name                String
+  description         String? @db.Text
+  kind                String  @default("LANE") // RANGE | LANE | ROOM | OTHER
+  capacity            Int     @default(1) // gleichzeitige Buchungen
+  durationOptionsJson String? @db.Text // optionale Abweichung von den Tenant-Optionen
+  isActive            Boolean @default(true)
+  sortOrder           Int     @default(0)
+  createdAt           DateTime @default(now())
+
+  tenant   Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  bookings Booking[]
+  blocks   ResourceBlock[]
+
+  @@index([tenantId])
+}
+
+model ResourceBlock {
+  id         String   @id @default(cuid())
+  tenantId   String
+  resourceId String?  // null = alle Ressourcen des Tenants
+  startsAt   DateTime
+  endsAt     DateTime
+  reason     String?
+  createdAt  DateTime @default(now())
+
+  tenant   Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  resource Resource? @relation(fields: [resourceId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, startsAt])
+}
+
+model Booking {
+  id              String    @id @default(cuid())
+  tenantId        String
+  resourceId      String
+  userId          String?
+  startsAt        DateTime
+  endsAt          DateTime
+  durationMinutes Int
+  status          String    @default("CONFIRMED") // PENDING | CONFIRMED | REJECTED | CANCELLED
+  paymentMethod   String    @default("NONE") // NONE | INVOICE | ONLINE
+  paymentStatus   String    @default("NOT_REQUIRED") // NOT_REQUIRED | UNPAID | PENDING | PAID | FAILED | REFUNDED
+  basePriceCents  Int       @default(0)
+  discountCents   Int       @default(0)
+  discountReason  String?
+  totalCents      Int       @default(0)
+  currency        String    @default("CHF")
+  note            String?
+  adminNote       String?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  confirmedAt     DateTime?
+  cancelledAt     DateTime?
+  paidAt          DateTime?
+
+  tenant   Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  resource Resource  @relation(fields: [resourceId], references: [id], onDelete: Cascade)
+  user     User?     @relation(fields: [userId], references: [id], onDelete: SetNull)
+  payments Payment[]
+  invoice  Invoice?
+
+  @@index([tenantId, startsAt])
+  @@index([resourceId, startsAt])
+  @@index([userId])
+}
+
+model Payment {
+  id          String   @id @default(cuid())
+  bookingId   String
+  provider    String   // STRIPE | WORLDLINE | SUMUP
+  providerRef String   // Checkout-Session / Token / Checkout-ID
+  status      String   @default("PENDING") // PENDING | PAID | FAILED | REFUNDED
+  amountCents Int
+  currency    String
+  detailsJson String?  @db.Text
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  booking Booking @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+
+  @@index([bookingId])
+  @@index([providerRef])
+}
+
+model PaymentProviderConfig {
+  id             String   @id @default(cuid())
+  tenantId       String
+  provider       String   // STRIPE | WORLDLINE | SUMUP
+  enabled        Boolean  @default(false)
+  credentialsEnc String   @db.Text // AES-256-GCM, siehe src/lib/crypto.ts
+  updatedAt      DateTime @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, provider])
+}
+
+model Invoice {
+  id          String    @id @default(cuid())
+  tenantId    String
+  bookingId   String    @unique
+  number      String
+  issuedAt    DateTime  @default(now())
+  dueAt       DateTime
+  status      String    @default("OPEN") // OPEN | PAID | CANCELLED
+  amountCents Int
+  currency    String
+  paidAt      DateTime?
+
+  tenant  Tenant  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  booking Booking @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, number])
 }

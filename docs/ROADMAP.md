@@ -2,16 +2,16 @@
 
 ## Name
 
-Gewählt: **Mouche**. Begründung und Alternativen:
+Gewählt: **Standchef** (standchef.ch gekauft, standchef.app als Ergänzung empfohlen).
 
 | Kandidat | Pro | Contra |
 |---|---|---|
-| **Mouche** | Schützen-Jargon in DE-CH und FR-CH für den innersten Zehner. Kurz, positiv («eine Mouche schiessen»), passt zum Logo (Punkt im Ring). Als App-Name im Schiesssport nicht gefunden. | Allgemeines französisches Wort, Domain `mouche.ch` und Marke (Swissreg, Klasse 9/42) müssen geprüft werden. In Ticino weniger geläufig. |
-| Zehni | Sehr schweizerisch, sympathisch. | Nur Deutschschweiz, in der Romandie nicht verständlich. |
-| Zielwerk / Schusswerk | Neutral, keine Treffer gefunden. | Generisch, deutsch-only, weniger emotional. |
-| Standblatt | Direkt aus dem Vereinsalltag. | Beschreibender Begriff, kaum schützbar. |
+| **Standchef** | Echte Vereinsrolle, jeder Schütze kennt sie. Trägt alle Module (Punkte, Reservationen, Beiträge). Als zusammengesetztes Wort markenfähig. | Deutsch; in FR «chef de stand», in IT «capo stand». Männliche Funktionsbezeichnung. |
+| Mouche | Zehner-Jargon in DE-CH und FR-CH, passt zum Logo. | mouche.ch und .com vergeben. Trägt nur das Punkte-Modul. |
+| Salve | Dreisprachig, kurz. | Allgemeines Wort, Domains vermutlich vergeben. |
+| Standbuch | Bodenständig, DE/FR verständlich. | Weniger Persönlichkeit als Standchef. |
 
-Vor dem Launch: Domain (`mouche.ch`, `mouche.app`, `getmouche.ch`), Swissreg-Markenrecherche, Social-Handles.
+Offen: Swissreg-Markenrecherche (Klassen 9 und 42), Social-Handles, standchef.app sichern.
 
 ## Optimierungen (noch nicht umgesetzt)
 
@@ -24,8 +24,8 @@ Vor dem Launch: Domain (`mouche.ch`, `mouche.app`, `getmouche.ch`), Swissreg-Mar
 - **Einladungen per E-Mail** statt nur Beitrittscode, plus Gäste nachträglich einem Konto zuordnen.
 - **Programm-Import/-Export** als JSON, damit Vereine Programme tauschen können.
 - **Scheiben-Druck**: Mehrere Scheiben pro Blatt (z.B. 4× A6 auf A4), Schnittmarken, Vektor-PDF serverseitig (z.B. mit `pdf-lib`) statt Browser-Druck.
-- **Reservationen**: Ressourcen pro Tenant, Slots, Wiederholungen, Freigabe nach Rolle. Platzhalter-Modul ist angelegt.
-- **Zahlungen**: Schweizer QR-Rechnung (z.B. `swissqrbill`), TWINT/Karte über Stripe oder Payrexx, Munitionsabrechnung. Platzhalter-Modul ist angelegt.
+- **Reservationen, nächste Schritte**: Wiederkehrende Buchungen (jeden Dienstag), Serienbuchung für Trainer, Kalenderansicht pro Woche, iCal-Export, E-Mail-Bestätigung und Erinnerung, automatische Rückerstattung bei Storno (Stripe-Refund-API), Gästebuchungen ohne Konto mit Bezahlung, Preisregeln nach Rolle (Mitglieder gratis, Gäste zahlen) und Tageszeit (Nebenzeiten günstiger).
+- **Mitgliederbeiträge**: Beitragskategorien, Jahresrechnung mit QR-Rechnung, Zahlungsabgleich per camt.054, Mahnwesen. Platzhalter-Modul ist angelegt; Rechnungs- und QR-Logik aus dem Reservationsmodul ist wiederverwendbar.
 
 ### Technik
 - **Datenbank**: MySQL/MariaDB bleibt (CloudPanel). Bei Bedarf später PostgreSQL mit Row-Level-Security pro Tenant als zweite Verteidigungslinie; das Schema ist dafür vorbereitet.

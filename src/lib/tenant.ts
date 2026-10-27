@@ -7,7 +7,7 @@ import { getCurrentUser, type CurrentUser } from "@/lib/auth";
 import { MODULES, type ModuleKey } from "@/lib/modules";
 import { can, type Permission } from "@/lib/permissions";
 
-const TENANT_COOKIE = "mouche_tenant";
+const TENANT_COOKIE = "standchef_tenant";
 
 export async function setActiveTenantCookie(tenantId: string) {
   const jar = await cookies();

@@ -5,7 +5,7 @@ import { PrismaMariaDb } from "@prisma/adapter-mariadb";
 import { PROGRAM_PRESETS } from "../src/modules/scores/presets";
 import { TARGET_PRESETS } from "../src/modules/targets/presets";
 
-const u = new URL(process.env.DATABASE_URL ?? "mysql://mouche:mouche@127.0.0.1:3306/mouche");
+const u = new URL(process.env.DATABASE_URL ?? "mysql://standchef:standchef@127.0.0.1:3306/standchef");
 const db = new PrismaClient({
   adapter: new PrismaMariaDb({ host: u.hostname, port: Number(u.port || 3306), user: decodeURIComponent(u.username), password: decodeURIComponent(u.password), database: u.pathname.slice(1), connectionLimit: 2 }),
 });
@@ -50,6 +50,33 @@ async function main() {
     const beat = await db.user.upsert({ where: { email: "beat@example.ch" }, update: {}, create: { email: "beat@example.ch", name: "Beat Beispiel", passwordHash: pw } });
     for (const [u, role] of [[anna, "ADMIN"], [beat, "MEMBER"], [admin, "OWNER"]] as const) {
       await db.membership.upsert({ where: { userId_tenantId: { userId: u.id, tenantId: demo.id } }, update: {}, create: { userId: u.id, tenantId: demo.id, role } });
+    }
+    await db.tenantModule.upsert({ where: { tenantId_moduleKey: { tenantId: demo.id, moduleKey: "bookings" } }, update: { enabled: true }, create: { tenantId: demo.id, moduleKey: "bookings", enabled: true } });
+    await db.bookingSettings.upsert({
+      where: { tenantId: demo.id },
+      update: {},
+      create: {
+        tenantId: demo.id,
+        durationOptionsJson: JSON.stringify([{ minutes: 30, priceCents: 1000 }, { minutes: 60, priceCents: 1800 }, { minutes: 90, priceCents: 2500 }]),
+        openingHoursJson: JSON.stringify({ "0": [], "1": [["08:00", "22:00"]], "2": [["08:00", "22:00"]], "3": [["08:00", "22:00"]], "4": [["08:00", "22:00"]], "5": [["08:00", "22:00"]], "6": [["08:00", "18:00"]] }),
+        lastMinuteDiscountPercent: 20,
+        lastMinuteWindowHours: 24,
+        minLeadMinutes: 0,
+        payeeName: "Demo Schützengesellschaft",
+        payeeStreet: "Schützenstrasse 1",
+        payeeZip: "8000",
+        payeeCity: "Musterhausen",
+        iban: "CH9300762011623852957",
+      },
+    });
+    if ((await db.resource.count({ where: { tenantId: demo.id } })) === 0) {
+      await db.resource.createMany({
+        data: [
+          { tenantId: demo.id, name: "25 m Stand", kind: "RANGE", capacity: 4, description: "4 Scheiben, Pistole", sortOrder: 0 },
+          { tenantId: demo.id, name: "Indoor Bahn 1", kind: "LANE", capacity: 1, description: "1–20 m, Hindernisse möglich", sortOrder: 1 },
+          { tenantId: demo.id, name: "Indoor Bahn 2", kind: "LANE", capacity: 1, sortOrder: 2 },
+        ],
+      });
     }
     console.log("Demo-Verein: Beitrittscode DEMO42 · anna@example.ch / beat@example.ch (Passwort demo1234)");
   }

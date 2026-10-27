@@ -14,7 +14,7 @@ const NAV: NavItem[] = [
   { href: "/scores", label: "Schiessen", icon: Crosshair, module: "scores" },
   { href: "/targets", label: "Scheiben", icon: Target, module: "targets" },
   { href: "/bookings", label: "Buchen", icon: CalendarDays, module: "bookings" },
-  { href: "/billing", label: "Zahlen", icon: CreditCard, module: "billing" },
+  { href: "/billing", label: "Beiträge", icon: CreditCard, module: "billing" },
   { href: "/me", label: "Mehr", icon: Menu },
 ];
 
@@ -28,7 +28,7 @@ export function AppShell({ children, enabledModules, tenantName, userInitials }:
       {/* Desktop-Seitenleiste */}
       <aside className="hidden md:flex md:w-60 md:flex-col md:border-r md:border-line md:bg-surface md:sticky md:top-0 md:h-dvh">
         <Link href="/" className="flex items-center gap-2 px-5 h-16 font-semibold tracking-tight">
-          <Logo /> Mouche
+          <Logo /> Standchef
         </Link>
         {tenantName ? <div className="px-5 pb-3 text-xs text-ink-3 truncate">{tenantName}</div> : null}
         <nav className="px-3 space-y-0.5">
@@ -45,7 +45,7 @@ export function AppShell({ children, enabledModules, tenantName, userInitials }:
         {/* Mobile-Kopfzeile */}
         <header className="md:hidden sticky top-0 z-20 bg-bg/80 backdrop-blur border-b border-line">
           <div className="flex items-center justify-between h-14 px-4">
-            <Link href="/" className="flex items-center gap-2 font-semibold tracking-tight"><Logo size={24} /> Mouche</Link>
+            <Link href="/" className="flex items-center gap-2 font-semibold tracking-tight"><Logo size={24} /> Standchef</Link>
             <Link href="/me" className="flex h-9 w-9 items-center justify-center rounded-full bg-surface-2 text-xs font-semibold">{userInitials}</Link>
           </div>
         </header>

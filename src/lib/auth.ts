@@ -5,7 +5,7 @@ import { createHash, randomBytes } from "node:crypto";
 import bcrypt from "bcryptjs";
 import { db } from "@/lib/db";
 
-const SESSION_COOKIE = "mouche_session";
+const SESSION_COOKIE = "standchef_session";
 const SESSION_DAYS = 30;
 
 function hashToken(token: string) {

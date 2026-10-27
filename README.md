@@ -1,8 +1,8 @@
-# Mouche
+# Standchef
 
 **Die App für Schiessvereine und Schiessanlagen in der Schweiz.** Punkteerfassung, Zielscheiben zum Drucken, Vereinsverwaltung mit Mandanten (Tenants) und Rollen. Modular aufgebaut, mobile-first, ohne Verbandsbindung.
 
-> *Mouche* ist das Wort, das Schweizer Schützen in Deutsch und Französisch für den innersten Zehner benutzen. Kurz, zweisprachig, merkbar. Siehe `docs/ROADMAP.md` für die Namensabwägung.
+> Der *Standchef* führt den Betrieb am Schiessstand: einteilen, organisieren, Resultate führen, abrechnen. Genau das macht die App für den Verein. Domain: standchef.ch
 
 ## Deployment
 
@@ -10,7 +10,7 @@ Die App läuft auf **CloudPanel** als Node.js-Site mit **MySQL/MariaDB**, ohne D
 
 ## Schnellstart (lokal)
 
-Voraussetzung: MySQL oder MariaDB läuft lokal, Datenbank `mouche` und Benutzer `mouche` existieren (siehe `.env.example`).
+Voraussetzung: MySQL oder MariaDB läuft lokal, Datenbank `standchef` und Benutzer `standchef` existieren (siehe `.env.example`).
 
 ```bash
 cp .env.example .env         # DATABASE_URL und AUTH_SECRET anpassen
@@ -49,6 +49,7 @@ src/
     core/         Auth- und Tenant-Actions (Registrierung, Beitritt, Rollen, Module)
     scores/       Punkteerfassung: types, presets, queries, actions, ui/
     targets/      Zielscheiben: types, presets, svg-generator, queries, actions, ui/
+    bookings/     Reservationen: types, availability, pricing, invoice (QR), payments/{stripe,worldline,sumup}, actions, ui/
   app/
     (auth)/       login, register
     (app)/        eingeloggter Bereich mit App-Shell (Tab-Bar mobil, Sidebar Desktop)
@@ -56,10 +57,13 @@ src/
       targets/    Galerie, Anlegen/Bearbeiten
       admin/      Tenant-Einstellungen, Module, Mitglieder
       super/      Super-Admin: Tenants, Benutzer, globale Programme/Scheiben
-      bookings/   Platzhalter Reservationen
-      billing/    Platzhalter Zahlungen
+      bookings/   Reservieren, Detail, Bezahlen, Rücksprung vom Zahlungsanbieter
+      admin/bookings/  Übersicht, Ressourcen, Einstellungen, Zahlungsanbieter
+      billing/    Platzhalter Mitgliederbeiträge
     targets/[id]/print   Druckansicht ohne App-Shell
+    bookings/[id]/invoice  Druckbare Rechnung mit QR-Zahlteil
     api/files/[id]       Auslieferung hochgeladener Dateien (mit Rechteprüfung)
+    api/payments/stripe/[tenantId]  Stripe-Webhook pro Tenant
 ```
 
 ### Tenants und Rollen
@@ -91,6 +95,14 @@ Registry in `src/lib/modules.ts`. Jedes Modul ist pro Tenant ein-/ausschaltbar (
 - Generierte Sujets in Schwarz-Weiss: 10-Ring, 5-Ring, Punkte-Raster, Einschiessraster, Oval-Silhouette, Rauten, jeweils mit Parametern und Live-Vorschau.
 - Eigene Uploads (PNG/JPG/SVG/PDF), privat oder mit dem Verein geteilt. Global (Super-Admin) und pro Tenant (Admin), Tenants können verstecken.
 - Druckansicht für A4/A5/A6 mit exakten Millimetermassen; unten rechts klein Datum, Benutzer, Verein.
+
+**Reservationen & Zahlungen** (`bookings`, pro Tenant aktivierbar)
+- Ressourcen (Anlage, Bahn, Raum) mit Kapazität, optional eigenen Preisen; Sperrzeiten für Anlässe und Unterhalt.
+- Pro Tenant: buchbare Dauern mit Preis (z.B. 30/60/90 Min.), Startraster, Öffnungszeiten je Wochentag, Vorlauf, Vorausbuchung, Stornofrist, Rabatt für spontane Buchungen.
+- Freigabe durch Admin oder Sofortbuchung; Zahlung per Rechnung (automatische Nummer, Schweizer QR-Rechnung bei hinterlegter IBAN) und/oder Online-Zahlung.
+- Zahlungsanbieter pro Tenant mit eigenem Konto: Stripe (Checkout + Webhook), Worldline Saferpay (Payment Page) und SumUp (Hosted Checkout). Zugangsdaten werden mit AES-256-GCM verschlüsselt gespeichert (`src/lib/crypto.ts`).
+- Mitglieder sehen Verfügbarkeit live, buchen in vier Schritten, stornieren innerhalb der Frist. Admins geben frei, markieren Rechnungen als bezahlt, verwalten Erstattungen.
+- Nicht abgeschlossene Online-Zahlungen geben den Slot nach 30 Minuten automatisch wieder frei.
 
 ## Produktion
 

@@ -1,10 +1,10 @@
 // PM2-Konfiguration für CloudPanel (Node.js-Site).
 // Start:  pm2 start ecosystem.config.cjs
-// Update: pm2 reload mouche
+// Update: pm2 reload standchef
 module.exports = {
   apps: [
     {
-      name: "mouche",
+      name: "standchef",
       script: "node_modules/next/dist/bin/next",
       args: "start",
       cwd: __dirname,

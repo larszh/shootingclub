@@ -4,6 +4,9 @@ import { getAppContext } from "@/lib/tenant";
 import { MODULES } from "@/lib/modules";
 import { Badge, Card, EmptyState, LinkButton, SectionTitle } from "@/components/ui";
 import { listMatches, listPrograms, userStats } from "@/modules/scores/queries";
+import { listMyBookings, partitionBookings } from "@/modules/bookings/queries";
+import { formatDateZurich, formatTimeRange } from "@/lib/time";
+import { CalendarDays } from "lucide-react";
 import { formatDate, formatScore } from "@/lib/utils";
 import { redirect } from "next/navigation";
 
@@ -27,6 +30,9 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
     : [[], [], null];
 
   const enabled = MODULES.filter((m) => ctx.hasModule(m.key));
+  const nextBookings = ctx.hasModule("bookings")
+    ? partitionBookings(await listMyBookings(tenantCtx)).upcoming.slice(0, 2)
+    : [];
 
   return (
     <div>
@@ -99,13 +105,34 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
         </>
       ) : null}
 
+      {ctx.hasModule("bookings") ? (
+        <>
+          <SectionTitle action={<Link href="/bookings" className="text-xs text-ink-3 hover:text-ink">Reservieren</Link>}>Nächste Reservation</SectionTitle>
+          {nextBookings.length ? (
+            <div className="stagger space-y-2.5">
+              {nextBookings.map((b) => (
+                <Link key={b.id} href={`/bookings/${b.id}`} className="block press">
+                  <Card className="p-4 flex items-center gap-3 hover:border-ink/30 transition-colors">
+                    <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-surface-2 text-ink-2"><CalendarDays className="h-5 w-5" /></span>
+                    <div className="min-w-0 flex-1"><div className="font-medium truncate">{b.resource.name}</div><div className="text-xs text-ink-3">{formatDateZurich(b.startsAt)} · {formatTimeRange(b.startsAt, b.endsAt)}{b.status === "PENDING" ? " · wartet auf Freigabe" : ""}</div></div>
+                    <ArrowRight className="h-4 w-4 text-ink-3" />
+                  </Card>
+                </Link>
+              ))}
+            </div>
+          ) : (
+            <EmptyState icon={<CalendarDays className="h-5 w-5" />} title="Keine Reservation geplant" action={<LinkButton href="/bookings" variant="secondary" size="sm">Jetzt reservieren</LinkButton>} />
+          )}
+        </>
+      ) : null}
+
       <SectionTitle>Module</SectionTitle>
       <div className="stagger grid gap-2.5 sm:grid-cols-2">
         {enabled.map((m) => (
           <Link key={m.key} href={m.href} className="press">
             <Card className="p-4 h-full hover:border-ink/30 transition-colors">
               <div className="flex items-center gap-2">
-                {m.key === "scores" ? <Crosshair className="h-4 w-4" /> : m.key === "targets" ? <Target className="h-4 w-4" /> : null}
+                {m.key === "scores" ? <Crosshair className="h-4 w-4" /> : m.key === "targets" ? <Target className="h-4 w-4" /> : m.key === "bookings" ? <CalendarDays className="h-4 w-4" /> : null}
                 <span className="font-medium">{m.name}</span>
                 {m.status === "planned" ? <Badge tone="outline">bald</Badge> : null}
               </div>
