@@ -52,10 +52,12 @@ export type CurrentUser = {
   street: string | null;
   zip: string | null;
   city: string | null;
+  avatarUrl: string | null;
+  themePref: string;
   memberships: Array<{
     tenantId: string;
     role: string;
-    tenant: { id: string; slug: string; name: string; kind: string };
+    tenant: { id: string; slug: string; name: string; kind: string; logoPath: string | null; brandColor: string | null; brandColor2: string | null; updatedAt: Date };
   }>;
 };
 
@@ -70,7 +72,7 @@ export const getCurrentUser = cache(async (): Promise<CurrentUser | null> => {
       user: {
         include: {
           memberships: {
-            include: { tenant: { select: { id: true, slug: true, name: true, kind: true } } },
+            include: { tenant: { select: { id: true, slug: true, name: true, kind: true, logoPath: true, brandColor: true, brandColor2: true, updatedAt: true } } },
             orderBy: { createdAt: "asc" },
           },
         },
@@ -88,6 +90,8 @@ export const getCurrentUser = cache(async (): Promise<CurrentUser | null> => {
     street: u.street,
     zip: u.zip,
     city: u.city,
+    avatarUrl: u.avatarPath ? `/api/avatars/user/${u.id}?v=${u.updatedAt.getTime()}` : null,
+    themePref: u.themePref,
     memberships: u.memberships.map((m) => ({ tenantId: m.tenantId, role: m.role, tenant: m.tenant })),
   };
 });

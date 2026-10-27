@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Home, Target, Crosshair, Menu, CalendarDays, CreditCard } from "lucide-react";
+import { Home, Target, Crosshair, Menu, CalendarDays, CreditCard, Megaphone } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Logo } from "@/components/logo";
 import type { ModuleKey } from "@/lib/modules";
@@ -13,6 +13,7 @@ const NAV: NavItem[] = [
   { href: "/", label: "Start", icon: Home },
   { href: "/scores", label: "Schiessen", icon: Crosshair, module: "scores" },
   { href: "/targets", label: "Scheiben", icon: Target, module: "targets" },
+  { href: "/events", label: "Anlässe", icon: Megaphone, module: "events" },
   { href: "/bookings", label: "Buchen", icon: CalendarDays, module: "bookings" },
   { href: "/billing", label: "Beiträge", icon: CreditCard, module: "billing" },
   { href: "/me", label: "Mehr", icon: Menu },

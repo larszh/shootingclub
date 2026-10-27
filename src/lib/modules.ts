@@ -2,7 +2,7 @@
 // Neue Module: hier eintragen, Routen unter src/app/(app)/<key> anlegen und
 // Server-Logik unter src/modules/<key>.
 
-export type ModuleKey = "scores" | "targets" | "bookings" | "billing";
+export type ModuleKey = "scores" | "targets" | "events" | "bookings" | "billing";
 
 export type ModuleDefinition = {
   key: ModuleKey;
@@ -28,6 +28,14 @@ export const MODULES: ModuleDefinition[] = [
     name: "Zielscheiben",
     description: "Druckvorlagen für A4/A5/A6 in Schwarz-Weiss, eigene Sujets hochladen.",
     href: "/targets",
+    status: "ready",
+    defaultEnabled: true,
+  },
+  {
+    key: "events",
+    name: "Anlässe & News",
+    description: "Vereinskalender mit Trainings, Wettkämpfen und Obligatorisch-Terminen, An- und Abmeldung, Mitteilungen an alle.",
+    href: "/events",
     status: "ready",
     defaultEnabled: true,
   },

@@ -27,6 +27,9 @@ model User {
   street       String?
   zip          String?
   city         String?
+  avatarPath   String?  // relativ zu UPLOAD_DIR, z.B. avatars/<id>.webp
+  themePref    String   @default("system") // system | light | dark
+  calendarToken String? @unique // geheimer Token für iCal-Feed der eigenen Termine
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
@@ -40,6 +43,9 @@ model User {
   targetFavorites  TargetFavorite[]
   bookings         Booking[]
   feeInvoices      FeeInvoice[]
+  createdEvents    Event[]             @relation("EventCreator")
+  eventRsvps       EventRsvp[]
+  announcements    Announcement[]      @relation("AnnouncementAuthor")
 }
 
 model Session {
@@ -61,6 +67,12 @@ model Tenant {
   city      String?
   canton    String?
   joinCode  String   @unique
+  logoPath    String?  // relativ zu UPLOAD_DIR
+  brandColor  String?  // Hex, z.B. #d6232d – Akzentfarbe (CI)
+  brandColor2 String?  // optionale Zweitfarbe für Verläufe/Highlights
+  description String?  @db.Text
+  website     String?
+  calendarToken String? @unique // geheimer Token für öffentlichen iCal-Feed (Anlässe)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -81,6 +93,8 @@ model Tenant {
   feeCategories   FeeCategory[]
   feeRuns         FeeRun[]
   feeInvoices     FeeInvoice[]
+  events          Event[]
+  announcements   Announcement[]
 }
 
 model Membership {
@@ -169,6 +183,7 @@ model Match {
   date         DateTime @default(now())
   locationNote String?
   status       String   @default("OPEN") // OPEN | FINISHED
+  clientId     String?  @unique // vom Client erzeugte ID für Offline-Erstellung (idempotente Synchronisierung)
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
@@ -202,6 +217,7 @@ model MatchResult {
   stageIndex    Int
   shotsJson     String   @db.Text // number[]
   total         Float    @default(0)
+  clientUpdatedAt DateTime? // Zeitstempel vom Gerät (Offline-Sync, last-write-wins)
   updatedAt     DateTime @updatedAt
 
   participant MatchParticipant @relation(fields: [participantId], references: [id], onDelete: Cascade)
@@ -397,6 +413,7 @@ model Invoice {
   status      String    @default("OPEN") // OPEN | PAID | CANCELLED
   amountCents Int
   currency    String
+  reference   String?   // QR-Referenz (27 Stellen) bei QR-IBAN, sonst null
   paidAt      DateTime?
 
   tenant  Tenant  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
@@ -479,6 +496,7 @@ model FeeInvoice {
   issuedAt      DateTime  @default(now())
   dueAt         DateTime
   status        String    @default("OPEN") // OPEN | PAID | CANCELLED
+  reference     String?   // QR-Referenz (27 Stellen) bei QR-IBAN, sonst null
   paidAt        DateTime?
   paymentNote   String?
   remindedAt    DateTime?
@@ -494,4 +512,66 @@ model FeeInvoice {
   @@unique([tenantId, number])
   @@index([tenantId, year, status])
   @@index([userId])
+}
+
+// ---------------------------------------------------------------------------
+// Modul: Anlässe & Mitteilungen
+// ---------------------------------------------------------------------------
+
+model Event {
+  id          String    @id @default(cuid())
+  tenantId    String
+  createdById String?
+  title       String
+  description String?   @db.Text
+  kind        String    @default("TRAINING") // TRAINING | COMPETITION | OBLIGATORY | MEETING | SOCIAL | WORK | OTHER
+  startsAt    DateTime
+  endsAt      DateTime?
+  allDay      Boolean   @default(false)
+  location    String?
+  rsvpEnabled Boolean   @default(true)
+  capacity    Int?
+  rsvpDeadline DateTime?
+  isCancelled Boolean   @default(false)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  tenant    Tenant      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  createdBy User?       @relation("EventCreator", fields: [createdById], references: [id], onDelete: SetNull)
+  rsvps     EventRsvp[]
+
+  @@index([tenantId, startsAt])
+}
+
+model EventRsvp {
+  id        String   @id @default(cuid())
+  eventId   String
+  userId    String
+  status    String   // YES | NO | MAYBE
+  guests    Int      @default(0)
+  note      String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  event Event @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([eventId, userId])
+}
+
+model Announcement {
+  id        String    @id @default(cuid())
+  tenantId  String
+  authorId  String?
+  title     String
+  body      String    @db.Text
+  pinned    Boolean   @default(false)
+  expiresAt DateTime?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  author User?  @relation("AnnouncementAuthor", fields: [authorId], references: [id], onDelete: SetNull)
+
+  @@index([tenantId, createdAt])
 }
