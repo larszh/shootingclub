@@ -1,13 +1,28 @@
 import { PrismaClient } from "@/generated/prisma/client";
-import { PrismaBetterSqlite3 } from "@prisma/adapter-better-sqlite3";
+import { PrismaMariaDb } from "@prisma/adapter-mariadb";
 
-// Entwicklung: SQLite über better-sqlite3.
-// Produktion (PostgreSQL): Adapter gegen `@prisma/adapter-pg` tauschen und in
-// prisma/schema.prisma `provider = "postgresql"` setzen. Der Rest des Codes
-// bleibt unverändert, da das Schema ohne Enums/Json auskommt.
+/**
+ * Datenbankverbindung zu MySQL / MariaDB.
+ * DATABASE_URL im Format mysql://benutzer:passwort@host:3306/datenbank
+ * (CloudPanel: Host 127.0.0.1, Port 3306, Zugangsdaten aus «Databases»).
+ */
+export function parseDatabaseUrl(url: string) {
+  const u = new URL(url);
+  return {
+    host: u.hostname || "127.0.0.1",
+    port: Number(u.port || 3306),
+    user: decodeURIComponent(u.username),
+    password: decodeURIComponent(u.password),
+    database: u.pathname.replace(/^\//, ""),
+    connectionLimit: Number(u.searchParams.get("connection_limit") ?? 5),
+    timezone: "Z",
+  };
+}
+
 function createClient() {
-  const url = process.env.DATABASE_URL ?? "file:./prisma/dev.db";
-  const adapter = new PrismaBetterSqlite3({ url });
+  const url = process.env.DATABASE_URL;
+  if (!url) throw new Error("DATABASE_URL fehlt (siehe .env.example)");
+  const adapter = new PrismaMariaDb(parseDatabaseUrl(url));
   return new PrismaClient({ adapter });
 }
 

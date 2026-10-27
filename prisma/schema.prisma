@@ -1,7 +1,8 @@
 // Mouche – Datenmodell
-// Hinweis: Bewusst ohne Prisma-Enums und Json-Felder, damit das Schema 1:1
-// zwischen SQLite (Entwicklung) und PostgreSQL (Produktion) portierbar bleibt.
-// Aufzählungen sind als String gespeichert und werden in src/lib/*.ts validiert.
+// Datenbank: MySQL / MariaDB (CloudPanel-Standard).
+// Hinweis: Bewusst ohne Prisma-Enums und Json-Felder, damit das Schema leicht
+// auf PostgreSQL portierbar bleibt. Aufzählungen sind als String gespeichert
+// und werden in src/lib/*.ts bzw. src/modules/*/types.ts validiert.
 
 generator client {
   provider = "prisma-client"
@@ -9,7 +10,7 @@ generator client {
 }
 
 datasource db {
-  provider = "sqlite"
+  provider = "mysql"
 }
 
 // ---------------------------------------------------------------------------
@@ -99,11 +100,11 @@ model Program {
   tenantId    String?  // null = globales Programm (Super-Admin)
   createdById String?
   name        String
-  description String?
+  description String?  @db.Text
   discipline  String   @default("PISTOL") // PISTOL | RIFLE | AIR_PISTOL | AIR_RIFLE | SHOTGUN | OTHER
   weaponNote  String?
   scoringMode String   @default("RINGS_INT") // RINGS_INT | RINGS_DECIMAL | HITS
-  stagesJson  String   // Array<Stage>, siehe src/modules/scores/types.ts
+  stagesJson  String   @db.Text // Array<Stage>, siehe src/modules/scores/types.ts
   isArchived  Boolean  @default(false)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
@@ -179,7 +180,7 @@ model MatchResult {
   id            String   @id @default(cuid())
   participantId String
   stageIndex    Int
-  shotsJson     String   // number[]
+  shotsJson     String   @db.Text // number[]
   total         Float    @default(0)
   updatedAt     DateTime @updatedAt
 
@@ -197,9 +198,9 @@ model TargetTemplate {
   tenantId      String?  // null = global (Super-Admin) oder privater Upload ohne Tenant
   ownerUserId   String?  // gesetzt bei Upload durch Benutzer
   name          String
-  description   String?
+  description   String?  @db.Text
   subject       String   // RINGS_10 | RINGS_5 | GRID | DOTS | SILHOUETTE | DIAMOND | UPLOAD
-  paramsJson    String   @default("{}")
+  paramsJson    String   @db.Text // Objekt TargetParams, wird im Code immer gesetzt
   paperSizes    String   @default("A4,A5,A6")
   filePath      String?  // relativ zu UPLOAD_DIR
   mimeType      String?

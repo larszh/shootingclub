@@ -6,8 +6,6 @@ out
 .env.local
 .DS_Store
 /src/generated
-/prisma/*.db
-/prisma/*.db-journal
 /storage/uploads/*
 !/storage/uploads/.gitkeep
 tsconfig.tsbuildinfo

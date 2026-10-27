@@ -4,17 +4,23 @@
 
 > *Mouche* ist das Wort, das Schweizer Schützen in Deutsch und Französisch für den innersten Zehner benutzen. Kurz, zweisprachig, merkbar. Siehe `docs/ROADMAP.md` für die Namensabwägung.
 
-## Schnellstart
+## Deployment
+
+Die App läuft auf **CloudPanel** als Node.js-Site mit **MySQL/MariaDB**, ohne Docker. Anleitung: [`docs/DEPLOY-CLOUDPANEL.md`](docs/DEPLOY-CLOUDPANEL.md). Updates mit `bash scripts/deploy.sh`.
+
+## Schnellstart (lokal)
+
+Voraussetzung: MySQL oder MariaDB läuft lokal, Datenbank `mouche` und Benutzer `mouche` existieren (siehe `.env.example`).
 
 ```bash
-cp .env.example .env         # AUTH_SECRET anpassen
+cp .env.example .env         # DATABASE_URL und AUTH_SECRET anpassen
 npm install
-npm run db:push              # SQLite-Schema anlegen
-npm run db:seed              # Super-Admin, globale Programme & Scheiben, Demo-Verein
+npx prisma migrate dev       # Tabellen anlegen
+npm run db:seed:demo         # Super-Admin, globale Programme & Scheiben, Demo-Verein
 npm run dev                  # http://localhost:3000
 ```
 
-Nach dem Seed (nur Entwicklung):
+Nach dem Demo-Seed:
 
 | Konto | Passwort | Rolle |
 |---|---|---|
@@ -24,13 +30,13 @@ Nach dem Seed (nur Entwicklung):
 
 Beitrittscode Demo-Verein: `DEMO42`. Ohne Seed wird das allererste registrierte Konto automatisch Super-Admin.
 
-Weitere Befehle: `npm run typecheck`, `npm run lint`, `npm run build`, `npm run db:studio`.
+Weitere Befehle: `npm run typecheck`, `npm run lint`, `npm run build`, `npm run db:deploy` (Migrationen in Produktion), `npm run db:studio`.
 
 ## Stack
 
 - Next.js 16 (App Router, Server Actions, Turbopack), React 19, TypeScript
 - Tailwind CSS 4 mit eigenen Design-Tokens (hell/dunkel automatisch)
-- Prisma 7 mit SQLite (Entwicklung). Umstieg auf PostgreSQL: `provider` in `prisma/schema.prisma` ändern und in `src/lib/db.ts` den Adapter `@prisma/adapter-pg` einsetzen. Das Schema verzichtet bewusst auf Enums und Json-Spalten, damit es ohne Anpassung portierbar bleibt.
+- Prisma 7 mit MySQL/MariaDB (`@prisma/adapter-mariadb`), versionierte Migrationen in `prisma/migrations`. Das Schema verzichtet bewusst auf Enums und Json-Spalten, damit es bei Bedarf auf PostgreSQL portierbar bleibt.
 - Eigene Session-Auth (bcrypt, DB-Sessions, httpOnly-Cookie), kein externer Auth-Dienst
 - Datei-Uploads im lokalen `storage/uploads` (Schnittstelle in `src/lib/storage.ts`, für S3/R2 austauschbar)
 
@@ -88,6 +94,4 @@ Registry in `src/lib/modules.ts`. Jedes Modul ist pro Tenant ein-/ausschaltbar (
 
 ## Produktion
 
-- `DATABASE_URL` auf PostgreSQL, Adapter wechseln (siehe oben), `prisma migrate deploy`.
-- `AUTH_SECRET` setzen, `UPLOAD_DIR` auf persistentes Volume oder Storage-Adapter.
-- `APP_URL` für absolute Einladungslinks.
+Siehe `docs/DEPLOY-CLOUDPANEL.md`. Kurzfassung: `.env` ausfüllen, `npm ci`, `npx prisma migrate deploy`, `npm run db:seed`, `npm run build`, `pm2 start ecosystem.config.cjs`.

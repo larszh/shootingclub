@@ -28,7 +28,7 @@ Vor dem Launch: Domain (`mouche.ch`, `mouche.app`, `getmouche.ch`), Swissreg-Mar
 - **Zahlungen**: Schweizer QR-Rechnung (z.B. `swissqrbill`), TWINT/Karte über Stripe oder Payrexx, Munitionsabrechnung. Platzhalter-Modul ist angelegt.
 
 ### Technik
-- **PostgreSQL** für Produktion, mit Row-Level-Security pro Tenant als zweite Verteidigungslinie zur Anwendungslogik.
+- **Datenbank**: MySQL/MariaDB bleibt (CloudPanel). Bei Bedarf später PostgreSQL mit Row-Level-Security pro Tenant als zweite Verteidigungslinie; das Schema ist dafür vorbereitet.
 - **Rate-Limiting** auf Login/Registrierung, Passwort-Reset per E-Mail (Resend/Postmark), optional Passkeys.
 - **Storage-Adapter** für S3/Cloudflare R2 statt lokalem Dateisystem.
 - **Tests**: Playwright-E2E für die Kernflüsse (Login, Durchgang, Druck) und Unit-Tests für `sanitizeShots`, `stageTotal`, SVG-Generator.

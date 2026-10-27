@@ -1,11 +1,14 @@
 import "dotenv/config";
 import bcrypt from "bcryptjs";
 import { PrismaClient } from "../src/generated/prisma/client";
-import { PrismaBetterSqlite3 } from "@prisma/adapter-better-sqlite3";
+import { PrismaMariaDb } from "@prisma/adapter-mariadb";
 import { PROGRAM_PRESETS } from "../src/modules/scores/presets";
 import { TARGET_PRESETS } from "../src/modules/targets/presets";
 
-const db = new PrismaClient({ adapter: new PrismaBetterSqlite3({ url: process.env.DATABASE_URL ?? "file:./prisma/dev.db" }) });
+const u = new URL(process.env.DATABASE_URL ?? "mysql://mouche:mouche@127.0.0.1:3306/mouche");
+const db = new PrismaClient({
+  adapter: new PrismaMariaDb({ host: u.hostname, port: Number(u.port || 3306), user: decodeURIComponent(u.username), password: decodeURIComponent(u.password), database: u.pathname.slice(1), connectionLimit: 2 }),
+});
 
 async function main() {
   const email = (process.env.SEED_ADMIN_EMAIL ?? "admin@example.ch").toLowerCase();
@@ -35,8 +38,8 @@ async function main() {
     });
   }
 
-  // Demo-Verein mit zwei Mitgliedern (nur in Entwicklung)
-  if (process.env.NODE_ENV !== "production") {
+  // Demo-Verein mit zwei Mitgliedern (nur wenn SEED_DEMO=1, nie in Produktion)
+  if (process.env.SEED_DEMO === "1" && process.env.NODE_ENV !== "production") {
     const demo = await db.tenant.upsert({
       where: { slug: "demo-schuetzen" },
       update: {},

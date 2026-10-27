@@ -1,7 +1,8 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  serverExternalPackages: ["better-sqlite3", "@prisma/adapter-better-sqlite3"],
+  serverExternalPackages: ["mariadb", "@prisma/adapter-mariadb"],
+  output: "standalone",
   experimental: {
     serverActions: { bodySizeLimit: "10mb" },
   },
