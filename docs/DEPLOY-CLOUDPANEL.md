@@ -118,3 +118,65 @@ Falls der DB-Benutzer keine Datenbanken anlegen darf: `npx prisma migrate deploy
 ## Warum nicht PHP?
 
 CloudPanel behandelt Node.js-Sites gleichwertig zu PHP-Sites (eigener Site-Benutzer, nginx, SSL, Backups). Die App bleibt damit eine einzige Codebasis mit Server-Rendering, ohne separate API. Ein Umbau auf PHP/Laravel wäre ein kompletter Neuschrieb ohne funktionalen Gewinn.
+
+## Automatisches Deployment mit GitHub Actions
+
+Der Workflow `.github/workflows/deploy.yml` prüft jeden Push und jeden Pull Request (Typecheck, Lint, Build). Bei einem Push auf `main` oder manuell über **Actions → CI & Deploy → Run workflow** verbindet er sich per SSH mit dem Server und führt `scripts/deploy.sh` aus (Code holen, `npm ci`, Migrationen, Build, PM2-Reload, Healthcheck). Schlägt der Healthcheck fehl, wird der Lauf rot.
+
+### 1. SSH-Schlüssel für GitHub erzeugen (lokal, einmalig)
+
+```bash
+ssh-keygen -t ed25519 -C "github-actions-standchef" -f standchef_deploy -N ""
+```
+
+- Inhalt von `standchef_deploy.pub` in CloudPanel unter **Sites → standchef.ch → Settings → SSH Keys** (oder auf dem Server in `~/.ssh/authorized_keys` des Site-Benutzers) eintragen.
+- Inhalt von `standchef_deploy` (privater Schlüssel) kommt als Secret zu GitHub. Danach die lokale Datei löschen.
+
+Host-Schlüssel des Servers ermitteln (für `SSH_KNOWN_HOSTS`, schützt vor Man-in-the-Middle):
+
+```bash
+ssh-keyscan -p 22 <server-ip-oder-hostname>
+```
+
+Wichtig: die echte Server-IP oder den Hostnamen nehmen, **nicht** `standchef.ch`, solange die Domain über den Cloudflare-Proxy läuft (Cloudflare leitet kein SSH weiter).
+
+### 2. Environment in GitHub anlegen
+
+GitHub → Repository → **Settings → Environments → New environment** → Name `production`. Optional «Required reviewers» setzen, dann muss jedes Deployment bestätigt werden, und unter «Deployment branches» nur `main` erlauben.
+
+### 3. Secrets (im Environment `production`)
+
+| Secret | Inhalt |
+|---|---|
+| `SSH_HOST` | Server-IP oder Hostname (nicht hinter Cloudflare) |
+| `SSH_USER` | Site-Benutzer, z.B. `standchef` |
+| `SSH_PRIVATE_KEY` | privater Schlüssel aus Schritt 1, komplett inkl. `-----BEGIN…` |
+| `SSH_KNOWN_HOSTS` | Ausgabe von `ssh-keyscan` |
+| `DATABASE_URL` | nur bei `MANAGE_ENV=true`: `mysql://user:pass@127.0.0.1:3306/standchef` |
+| `AUTH_SECRET` | nur bei `MANAGE_ENV=true`: **identisch** mit dem bisherigen Wert, sonst werden alle Sitzungen ungültig und gespeicherte Zahlungsanbieter-Daten unlesbar |
+| `EXTRA_ENV` | optional, weitere Zeilen für `.env` (z.B. `SEED_ADMIN_EMAIL=…`) |
+
+### 4. Variablen (im Environment `production`)
+
+| Variable | Beispiel | Zweck |
+|---|---|---|
+| `APP_DIR` | `/home/standchef/htdocs/standchef.ch/shootingclub` | Projektordner auf dem Server |
+| `APP_URL` | `https://standchef.ch` | Öffentliche URL (Link im Deployment, Rücksprung der Zahlungsanbieter) |
+| `PORT` | `3000` | muss dem App Port der CloudPanel-Site entsprechen |
+| `SSH_PORT` | `22` | falls abweichend |
+| `DEPLOY_BRANCH` | `main` | welcher Branch auf den Server kommt |
+| `MANAGE_ENV` | `true` oder leer | `true`: GitHub schreibt bei jedem Deploy die `.env` aus den Secrets. Leer: die `.env` auf dem Server bleibt unangetastet |
+| `UPLOAD_DIR` | `./storage/uploads` | optional |
+
+Empfehlung: `MANAGE_ENV=true` setzen, sobald alle Werte in GitHub stehen. Dann ist GitHub die einzige Quelle für Konfiguration, und die `.env` auf dem Server wird nicht mehr von Hand bearbeitet.
+
+### 5. Erster Lauf
+
+- Manuell: **Actions → CI & Deploy → Run workflow**, optional einen Branch angeben.
+- Danach automatisch bei jedem Merge auf `main`.
+
+### Hinweise
+
+- `scripts/deploy.sh` setzt den Server hart auf den Stand von `origin/<branch>` zurück. Nicht versionierte Dateien (`.env`, `storage/uploads`, `node_modules`) bleiben erhalten, Änderungen an versionierten Dateien auf dem Server gehen verloren. Auf dem Server also nichts im Code ändern.
+- Node wird aus nvm geladen, falls die SSH-Sitzung `~/.bashrc` nicht einliest.
+- Fehler stehen im Actions-Log, Laufzeitfehler mit `npx pm2 logs standchef`.

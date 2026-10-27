@@ -1,0 +1,114 @@
+name: CI & Deploy
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      branch:
+        description: "Branch, der auf den Server soll"
+        required: false
+        default: ""
+
+concurrency:
+  group: deploy-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    name: Typecheck, Lint, Build
+    runs-on: ubuntu-latest
+    env:
+      # Nur für den Build in CI, es wird keine Datenbank verbunden.
+      DATABASE_URL: mysql://ci:ci@127.0.0.1:3306/ci
+      AUTH_SECRET: ci-only-secret-not-used-in-production
+      NEXT_TELEMETRY_DISABLED: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci --no-audit --no-fund
+      - run: npx prisma generate
+      - run: npx tsc --noEmit
+      - run: npx eslint .
+      - run: npm run build
+
+  deploy:
+    name: Deploy auf CloudPanel
+    needs: check
+    if: github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/main')
+    runs-on: ubuntu-latest
+    environment:
+      name: production
+      url: ${{ vars.APP_URL }}
+    env:
+      DEPLOY_BRANCH: ${{ inputs.branch || vars.DEPLOY_BRANCH || github.ref_name }}
+    steps:
+      - name: SSH einrichten
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+          SSH_KNOWN_HOSTS: ${{ secrets.SSH_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          test -n "$SSH_PRIVATE_KEY" || { echo "Secret SSH_PRIVATE_KEY fehlt"; exit 1; }
+          test -n "$SSH_KNOWN_HOSTS" || { echo "Secret SSH_KNOWN_HOSTS fehlt"; exit 1; }
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$SSH_PRIVATE_KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          printf '%s\n' "$SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 644 ~/.ssh/known_hosts
+          cat > ~/.ssh/config <<CFG
+          Host deploy
+            HostName ${{ secrets.SSH_HOST }}
+            User ${{ secrets.SSH_USER }}
+            Port ${{ vars.SSH_PORT || '22' }}
+            IdentityFile ~/.ssh/deploy_key
+            IdentitiesOnly yes
+            StrictHostKeyChecking yes
+            ServerAliveInterval 30
+          CFG
+
+      - name: .env auf dem Server schreiben (optional)
+        if: vars.MANAGE_ENV == 'true'
+        env:
+          APP_DIR: ${{ vars.APP_DIR }}
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          AUTH_SECRET: ${{ secrets.AUTH_SECRET }}
+          APP_URL: ${{ vars.APP_URL }}
+          PORT: ${{ vars.PORT || '3000' }}
+          UPLOAD_DIR: ${{ vars.UPLOAD_DIR || './storage/uploads' }}
+          EXTRA_ENV: ${{ secrets.EXTRA_ENV }}
+        run: |
+          set -euo pipefail
+          for v in APP_DIR DATABASE_URL AUTH_SECRET APP_URL; do
+            test -n "${!v}" || { echo "$v fehlt (Secret/Variable)"; exit 1; }
+          done
+          {
+            echo "# Von GitHub Actions verwaltet – Änderungen hier werden beim nächsten Deploy überschrieben."
+            echo "DATABASE_URL=\"$DATABASE_URL\""
+            echo "AUTH_SECRET=\"$AUTH_SECRET\""
+            echo "APP_URL=\"$APP_URL\""
+            echo "PORT=$PORT"
+            echo "UPLOAD_DIR=\"$UPLOAD_DIR\""
+            if [ -n "${EXTRA_ENV:-}" ]; then printf '%s\n' "$EXTRA_ENV"; fi
+          } > env.out
+          ssh deploy "umask 077 && cat > '$APP_DIR/.env.new' && mv '$APP_DIR/.env.new' '$APP_DIR/.env'" < env.out
+          rm -f env.out
+
+      - name: Deploy ausführen
+        env:
+          APP_DIR: ${{ vars.APP_DIR }}
+        run: |
+          set -euo pipefail
+          test -n "$APP_DIR" || { echo "Variable APP_DIR fehlt"; exit 1; }
+          ssh deploy "cd '$APP_DIR' && DEPLOY_BRANCH='$DEPLOY_BRANCH' bash scripts/deploy.sh"
+
+      - name: Aufräumen
+        if: always()
+        run: rm -rf ~/.ssh/deploy_key
