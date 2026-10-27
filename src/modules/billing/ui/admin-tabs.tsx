@@ -8,6 +8,7 @@ const TABS = [
   { href: "/admin/billing", label: "Übersicht" },
   { href: "/admin/billing/members", label: "Mitglieder" },
   { href: "/admin/billing/categories", label: "Kategorien" },
+  { href: "/admin/billing/import", label: "Bankimport" },
   { href: "/admin/billing/settings", label: "Rechnungsprofil" },
 ];
 

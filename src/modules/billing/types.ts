@@ -42,3 +42,43 @@ export function isValidIban(iban: string) {
   for (const ch of numeric) rem = (rem * 10 + Number(ch)) % 97;
   return rem === 1;
 }
+
+// --- Mahnungen ------------------------------------------------------------------
+// Die Anzahl Mahnungen wird ohne eigene Spalte als Zeile «Gemahnt: N×» in paymentNote geführt.
+// remindedAt bleibt das Datum der letzten Mahnung.
+
+const REMINDER_LINE = /^[ \t]*Gemahnt:[ \t]*(\d+)×[ \t]*$/m;
+
+/** Anzahl Mahnungen. Ältere Rechnungen ohne Zähler, aber mit remindedAt, zählen als 1. */
+export function reminderCount(paymentNote: string | null | undefined, remindedAt: Date | null | undefined) {
+  const m = paymentNote?.match(REMINDER_LINE);
+  if (m) return Number(m[1]);
+  return remindedAt ? 1 : 0;
+}
+
+/** Zahlungsnotiz ohne die interne Mahnzeile (für die Anzeige). */
+export function visiblePaymentNote(paymentNote: string | null | undefined) {
+  const rest = (paymentNote ?? "").replace(REMINDER_LINE, "").replace(/^\s*\n/, "").trim();
+  return rest || null;
+}
+
+/** Spaltenlänge von paymentNote/adminNote (VARCHAR 191). */
+export const NOTE_MAX = 191;
+
+/** Fügt Zeilen zusammen und lässt bei Platzmangel die ältesten (ersten) Zeilen weg. */
+export function joinNoteLines(head: string | null, lines: string[], max = NOTE_MAX) {
+  const rest = lines.filter(Boolean);
+  const build = () => [head, ...rest].filter(Boolean).join("\n");
+  while (build().length > max && rest.length > 1) rest.shift();
+  return build().slice(0, max) || null;
+}
+
+export function withReminderCount(paymentNote: string | null | undefined, count: number) {
+  return joinNoteLines(`Gemahnt: ${count}×`, (visiblePaymentNote(paymentNote) ?? "").split("\n"));
+}
+
+/** Hängt eine Zeile an die Zahlungsnotiz an und behält die Mahnzeile. */
+export function appendPaymentNote(paymentNote: string | null | undefined, line: string) {
+  const count = REMINDER_LINE.test(paymentNote ?? "") ? reminderCount(paymentNote, null) : 0;
+  return joinNoteLines(count ? `Gemahnt: ${count}×` : null, [...(visiblePaymentNote(paymentNote) ?? "").split("\n"), line]);
+}

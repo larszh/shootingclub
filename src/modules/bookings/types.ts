@@ -55,7 +55,7 @@ export const PAYMENT_STATUS: Record<string, { label: string; tone: "neutral" | "
   FAILED: { label: "Fehlgeschlagen", tone: "accent" },
   REFUNDED: { label: "Erstattet", tone: "outline" },
 };
-export const PAYMENT_METHOD_LABEL: Record<string, string> = { NONE: "Keine Zahlung", INVOICE: "Rechnung", ONLINE: "Online-Zahlung" };
+export const PAYMENT_METHOD_LABEL: Record<string, string> = { NONE: "Keine Zahlung", INVOICE: "Rechnung", ONLINE: "Online-Zahlung", CASH: "Bar / vor Ort" };
 
 export const durationOptionSchema = z.object({
   minutes: z.coerce.number().int().min(5).max(24 * 60),

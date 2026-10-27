@@ -1,5 +1,6 @@
 "use client";
 
+import { confirmDialog } from "@/components/ui/dialog";
 import { useActionState, useState, useTransition } from "react";
 import { Pencil, Trash2, X } from "lucide-react";
 import { deleteCategoryAction, saveCategoryAction } from "@/modules/billing/actions";
@@ -39,7 +40,7 @@ export function CategoryManager({ categories, currency }: { categories: Cat[]; c
                 <div className="text-xs text-ink-3">{c.amountCents ? formatMoney(c.amountCents, currency) : "beitragsfrei"} · {c._count.memberships} {c._count.memberships === 1 ? "Mitglied" : "Mitglieder"}{c.description ? ` · ${c.description}` : ""}</div>
               </div>
               <button type="button" onClick={() => setEditing(c)} className="h-9 w-9 rounded-full flex items-center justify-center text-ink-3 hover:bg-surface-2" aria-label="Bearbeiten"><Pencil className="h-4 w-4" /></button>
-              <button type="button" disabled={pending} onClick={() => { if (confirm(`Kategorie «${c.name}» löschen?`)) start(async () => { const r = await deleteCategoryAction(c.id); if (!r.ok) alert(r.error); }); }} className="h-9 w-9 rounded-full flex items-center justify-center text-ink-3 hover:text-accent" aria-label="Löschen"><Trash2 className="h-4 w-4" /></button>
+              <button type="button" disabled={pending} onClick={async () => { if ((await confirmDialog({ title: `Kategorie «${c.name}» löschen?`, tone: "danger" }))) start(async () => { const r = await deleteCategoryAction(c.id); if (!r.ok) alert(r.error); }); }} className="h-9 w-9 rounded-full flex items-center justify-center text-ink-3 hover:text-accent" aria-label="Löschen"><Trash2 className="h-4 w-4" /></button>
             </div>
           ))}
         </Card>

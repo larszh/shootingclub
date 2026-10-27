@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useEffect, useMemo, useState, useTransition } from "react";
+import { useActionState, useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { ChevronLeft, ChevronRight, Clock, CreditCard, FileText, MapPin, Tag } from "lucide-react";
 import { createBookingAction } from "@/modules/bookings/actions";
 import { fetchSlotsAction, type SlotDto } from "@/modules/bookings/slot-actions";
@@ -25,21 +25,34 @@ function weekdayLabel(dateStr: string) {
   return new Intl.DateTimeFormat("de-CH", { weekday: "long", day: "numeric", month: "long", timeZone: "UTC" }).format(new Date(`${dateStr}T12:00:00Z`));
 }
 
-export function BookingWizard({ resources, settings, today }: { resources: ResourceDto[]; settings: SettingsDto; today: string }) {
+export type WizardPrefill = { resourceId: string; duration: number; date: string; time: string };
+
+export function BookingWizard({ resources, settings, today, prefill }: { resources: ResourceDto[]; settings: SettingsDto; today: string; prefill?: WizardPrefill | null }) {
   const [state, action] = useActionState(createBookingAction, null);
   const optionsFor = (rid: string) => resources.find((r) => r.id === rid)?.durationOptions ?? settings.durationOptions;
-  const [sel, setSel] = useState(() => ({ resourceId: resources[0]?.id ?? "", duration: optionsFor(resources[0]?.id ?? "")[0]?.minutes ?? 60, date: today }));
+  const [sel, setSel] = useState(() => {
+    const pre = prefill && resources.some((r) => r.id === prefill.resourceId) ? prefill : null;
+    const resourceId = pre?.resourceId ?? resources[0]?.id ?? "";
+    const opts = optionsFor(resourceId);
+    const duration = pre && opts.some((o) => o.minutes === pre.duration) ? pre.duration : opts[0]?.minutes ?? 60;
+    return { resourceId, duration, date: pre?.date && pre.date >= today ? pre.date : today };
+  });
+  const [prefillNote, setPrefillNote] = useState<string | null>(null);
   const { resourceId, duration, date } = sel;
   const resource = resources.find((r) => r.id === resourceId);
   const options = optionsFor(resourceId);
-  const [slots, setSlots] = useState<SlotDto[]>([]);
+  const [slots, setSlots] = useState<SlotDto[] | null>(null);
   const [time, setTime] = useState<string | null>(null);
   const [loading, start] = useTransition();
   const [paymentMethod, setPaymentMethod] = useState<"INVOICE" | "ONLINE">(settings.allowOnline ? "ONLINE" : "INVOICE");
 
+  // Nur die Antwort der jeweils letzten Anfrage übernehmen (schnelles Blättern).
+  const requestId = useRef(0);
   const load = (next: { resourceId: string; duration: number; date: string }) => {
     start(async () => {
+      const id = ++requestId.current;
       const r = await fetchSlotsAction(next.resourceId, next.date, next.duration);
+      if (id !== requestId.current) return;
       setSlots(r.slots);
     });
   };
@@ -51,6 +64,7 @@ export function BookingWizard({ resources, settings, today }: { resources: Resou
     }
     setSel(next);
     setTime(null);
+    setPrefillNote(null);
     load(next);
   };
   const setResourceId = (id: string) => update({ resourceId: id });
@@ -61,12 +75,25 @@ export function BookingWizard({ resources, settings, today }: { resources: Resou
   useEffect(() => {
     if (!sel.resourceId) return;
     let cancelled = false;
-    fetchSlotsAction(sel.resourceId, sel.date, sel.duration).then((r) => { if (!cancelled) setSlots(r.slots); });
+    const id = ++requestId.current;
+    fetchSlotsAction(sel.resourceId, sel.date, sel.duration).then((r) => {
+      if (cancelled || id !== requestId.current) return;
+      setSlots(r.slots);
+      if (prefill && prefill.resourceId === sel.resourceId && prefill.date === sel.date) {
+        const slot = r.slots.find((x) => x.time === prefill.time);
+        if (slot?.available) {
+          setTime(prefill.time);
+          setPrefillNote(`Gleiche Zeit wie letztes Mal (${prefill.time} Uhr) ist frei und vorausgewählt.`);
+        } else {
+          setPrefillNote(`${prefill.time} Uhr ist an diesem Tag nicht frei${slot?.reason ? ` (${slot.reason})` : ""}. Bitte eine andere Zeit wählen.`);
+        }
+      }
+    });
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const selected = slots.find((s) => s.time === time) ?? null;
+  const selected = slots?.find((s) => s.time === time && s.available) ?? null;
   const maxDate = shiftDate(today, settings.maxAdvanceDays);
   const payChoices = useMemo(() => {
     const c: Array<"INVOICE" | "ONLINE"> = [];
@@ -129,10 +156,11 @@ export function BookingWizard({ resources, settings, today }: { resources: Resou
           <div className="flex gap-1.5 justify-center mt-2">
             {[0, 1, 2].map((d) => { const ds = shiftDate(today, d); return <button key={d} type="button" onClick={() => setDate(ds)} className={cn("h-7 rounded-full px-3 text-xs font-medium", date === ds ? "bg-ink text-bg" : "bg-surface-2 text-ink-2")}>{d === 0 ? "Heute" : d === 1 ? "Morgen" : "Übermorgen"}</button>; })}
           </div>
+          {prefillNote ? <p className="mt-2 rounded-control bg-surface-2 px-3 py-2 text-xs text-ink-2">{prefillNote}</p> : null}
           <div className="mt-3 min-h-16">
-            {loading ? (
+            {loading || (slots === null && resourceId) ? (
               <div className="flex items-center justify-center gap-2 py-6 text-sm text-ink-3"><Spinner /> Verfügbarkeit wird geladen…</div>
-            ) : slots.length === 0 ? (
+            ) : !slots || slots.length === 0 ? (
               <p className="py-6 text-center text-sm text-ink-3">An diesem Tag geschlossen oder keine passende Zeit.</p>
             ) : (
               <div className="grid grid-cols-4 gap-1.5 sm:grid-cols-6">

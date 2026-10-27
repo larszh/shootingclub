@@ -117,7 +117,35 @@ Registry in `src/lib/modules.ts`. Jedes Modul ist pro Tenant ein-/ausschaltbar (
 - Zahlungsstatus pro Rechnung (offen, bezahlt, storniert), Übersicht pro Jahr mit offenen und bezahlten Beträgen.
 - Mitglieder sehen ihre Rechnungen unter «Beiträge» und drucken oder scannen sie direkt.
 
+**Anlässe & News** (`events`, standardmässig aktiv)
+- Vereinskalender mit Trainings, Wettkämpfen, Obligatorisch-Terminen, Sitzungen, Arbeitseinsätzen. An- und Abmeldung (Zusage, Vielleicht, Absage) mit Gästen, Kapazität und Anmeldeschluss.
+- Wiederkehrende Anlässe (wöchentlich, 14-täglich), Absage mit Hinweis, Teilnehmerliste als CSV.
+- Mitteilungen an alle Mitglieder, anpinnbar, mit Ablaufdatum. Dashboard-Karten für nächste Anlässe und Mitteilungen.
+- iCal-Abos: Vereinskalender (`/api/ical/tenant/<token>.ics`) und persönlicher Kalender mit Zusagen und Reservationen (`/api/ical/me/<token>.ics`), Download pro Anlass oder Buchung.
+
+**Erscheinungsbild pro Verein**: Logo-Upload mit Zuschnitt, Akzentfarbe und optionale Zweitfarbe (CI) mit Kontrastprüfung, Hell/Dunkel automatisch angepasst. Profilbilder pro Benutzer, Mitgliederverzeichnis, Darstellung System/Hell/Dunkel pro Benutzer.
+
 **Rechnungsprofil** (gemeinsam): Zahlungsempfänger, Adresse, IBAN und Währung des Vereins, genutzt von Reservationen und Mitgliederbeiträgen. IBAN wird mit Prüfziffer validiert.
+
+### Offline-Betrieb & App-Installation (PWA)
+
+Standchef lässt sich auf dem Startbildschirm installieren (Teilen → «Zum Home-Bildschirm» bzw. «App installieren») und funktioniert im Schiessstand auch ohne Empfang.
+
+- **Service Worker** (`public/sw.js`): Besuchte Seiten bleiben offline verfügbar (Netz zuerst, sonst Cache). Statische Dateien kommen aus dem Cache, Profilbilder und Scheiben werden im Hintergrund aufgefrischt. Ohne gespeicherte Seite erscheint `/offline`. Nie gecacht: Server Actions, `/api/sync`, Zahlungen, Login. Beim Abmelden werden benutzerbezogene Caches und Offline-Daten gelöscht. Bei Änderungen an `sw.js` die Konstante `VERSION` erhöhen; die App zeigt dann «Neue Version verfügbar – Aktualisieren».
+- **Offline-Daten** (`src/lib/offline/`, IndexedDB `standchef-offline`): Snapshot des aktiven Vereins (Programme, Mitglieder, offene Durchgänge, `GET /api/offline/snapshot`) und eine Outbox mit ausstehenden Operationen.
+- **Punkteerfassung offline**: Jeder Schuss wird sofort auf dem Gerät gespeichert und über `POST /api/sync` übertragen, sobald Empfang da ist (beim Wiederverbinden, beim Zurückkehren in die App, alle 60 s und per Background Sync). Gleichzeitige Änderungen: die jüngste gewinnt (`MatchResult.clientUpdatedAt`).
+- **Durchgang offline starten**: entsteht lokal mit einer Client-ID (`Match.clientId`), wird später idempotent erstellt; die Offline-Ansicht wechselt danach automatisch zur normalen Seite.
+- **Statusanzeige**: Eine Pille über der Tab-Leiste zeigt «Offline» und ausstehende oder fehlgeschlagene Übertragungen, mit «Jetzt synchronisieren», erneut versuchen oder verwerfen.
+- **Zeitnehmung**: Bei Serien mit Zeitlimit grosser Countdown mit 3-2-1-Vorlauf, Ton, Vibration und wachem Bildschirm; sonst eine Stoppuhr.
+- Entwicklung: Der Service Worker ist nur im Produktionsbuild aktiv, lokal mit `NEXT_PUBLIC_SW_DEV=1` einschaltbar.
+
+Weitere Ergänzungen dieser Version:
+- **Punkteerfassung**: Ranglisten pro Programm (Jahr/Monat/alle, Podest), Verlaufsdiagramm, persönliche Rekorde und Serien, CSV-Export (eigene Resultate, für Trainer/Admins alle), «Nochmals schiessen» mit denselben Gegnern, Vereinskopie globaler Programme, zwölf zusätzliche Programme.
+- **Zielscheiben**: 25 neue Sujets (Präzision 25/50 m, Luftpistole/-gewehr mit Mehrfachblatt, Schweizer A- und P10-Scheibe nachempfunden, Einschiessen, Drills, Spiele, Uhr, Distanzleiter, Silhouetten, Platten), Massstab für Distanz (z.B. 300 m auf 25 m simulieren), mehrere Scheiben pro Blatt (2× A5, 4× A6 auf A4) mit Schnittlinien, Kategorien und Suche.
+- **Reservationen**: Wochenkalender für Admins, Buchung im Auftrag eines Mitglieds (Rechnung, bar oder gratis), «Wiederholen», `.ics` pro Buchung, CSV-Export.
+- **Beiträge**: QR-IBAN mit automatischer QR-Referenz, Bankimport camt.053/054 mit Vorschau und automatischem Abgleich (`/admin/billing/import`), Sammelmarkierung, Mahnzähler, CSV-Export, Kopierknöpfe für IBAN und Referenz.
+- **Bedienung**: Toasts, barrierefreie Bestätigungsdialoge, Hilfe-Seite (`/help`), Erste-Schritte-Checkliste für Admins, Fehler- und 404-Seiten, Passwort anzeigen, Passwort ändern.
+- **CI/CD**: GitHub Actions mit Prüfung und SSH-Deploy, siehe `docs/DEPLOY-CLOUDPANEL.md`.
 
 ## Produktion
 

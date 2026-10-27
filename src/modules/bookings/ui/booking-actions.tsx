@@ -1,5 +1,6 @@
 "use client";
 
+import { confirmDialog } from "@/components/ui/dialog";
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Check, CreditCard, RotateCcw, X, XCircle } from "lucide-react";
@@ -13,7 +14,7 @@ export function CancelBookingButton({ bookingId }: { bookingId: string }) {
   return (
     <div>
       <Button type="button" variant="ghost" size="sm" disabled={pending} className="text-ink-3"
-        onClick={() => { if (confirm("Buchung wirklich stornieren?")) start(async () => { const r = await cancelBookingAction(bookingId); if (!r.ok) setErr(r.error); else router.refresh(); }); }}>
+        onClick={async () => { if ((await confirmDialog({ title: "Buchung wirklich stornieren?", tone: "danger" }))) start(async () => { const r = await cancelBookingAction(bookingId); if (!r.ok) setErr(r.error); else router.refresh(); }); }}>
         <XCircle className="h-4 w-4" /> Stornieren
       </Button>
       {err ? <div className="mt-2"><Alert>{err}</Alert></div> : null}

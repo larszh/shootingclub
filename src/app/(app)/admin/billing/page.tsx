@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { ChevronRight, Printer } from "lucide-react";
+import { ChevronRight, Download, Landmark, Printer } from "lucide-react";
 import { requirePermission } from "@/lib/tenant";
 import { Badge, Card, PageHeader, SectionTitle } from "@/components/ui";
 import { AdminBillingTabs } from "@/modules/billing/ui/admin-tabs";
@@ -16,7 +16,8 @@ export const metadata: Metadata = { title: "Mitgliederbeiträge verwalten" };
 export default async function AdminBillingPage({ searchParams }: { searchParams: Promise<{ year?: string }> }) {
   const ctx = await requirePermission("tenant.manage");
   const sp = await searchParams;
-  const year = Number(sp.year) || currentYear();
+  const rawYear = Number(sp.year);
+  const year = Number.isInteger(rawYear) && rawYear >= 2000 && rawYear <= 2100 ? rawYear : currentYear();
   const [stats, runs, members, profile] = await Promise.all([feeStats(ctx.tenant.id, year), listRuns(ctx.tenant.id), listMembersForBilling(ctx.tenant.id, year), getBillingProfile(ctx.tenant.id, ctx.tenant.name)]);
   const run = runs.find((r) => r.year === year);
   const eligible = members.filter((m) => !m.invoice && (m.effectiveCents ?? 0) > 0).length;
@@ -42,7 +43,11 @@ export default async function AdminBillingPage({ searchParams }: { searchParams:
       {run ? (
         <Link href={`/admin/billing/runs/${run.id}`} className="block press">
           <Card className="p-4 flex items-center gap-3 hover:border-ink/30">
-            <div className="min-w-0 flex-1"><div className="font-medium">{run.title}</div><div className="text-xs text-ink-3">{run.count} Rechnungen · {run.paid} bezahlt · {run.open} offen · fällig {formatDateZurich(run.dueAt, { weekday: undefined })}</div></div>
+            <div className="min-w-0 flex-1">
+              <div className="font-medium">{run.title}</div>
+              <div className="text-xs text-ink-3">{run.count} Rechnungen · {run.paid} bezahlt · {run.open} offen · fällig {formatDateZurich(run.dueAt, { weekday: undefined })}</div>
+              <div className="mt-2 h-2 w-full overflow-hidden rounded-full bg-surface-2" aria-hidden><div className="h-full rounded-full bg-ok" style={{ width: `${run.totalCents ? Math.round((run.paidCents / run.totalCents) * 100) : 0}%` }} /></div>
+            </div>
             <Badge tone={run.open === 0 ? "ok" : "warn"}>{run.open === 0 ? "alle bezahlt" : `${run.open} offen`}</Badge>
             <ChevronRight className="h-4 w-4 text-ink-3" />
           </Card>
@@ -53,6 +58,12 @@ export default async function AdminBillingPage({ searchParams }: { searchParams:
       ) : (
         <p className="mt-2 text-xs text-ink-3">Alle Mitglieder mit Beitrag haben eine Rechnung für {year}. Neue Mitglieder erhalten ihre Rechnung unter «Mitglieder».</p>
       )}
+
+      <SectionTitle>Zahlungen und Export</SectionTitle>
+      <div className="animate-rise grid grid-cols-1 sm:grid-cols-2 gap-2">
+        <Link href="/admin/billing/import" className="press"><Card className="p-3.5 flex items-center gap-3 hover:border-ink/30 min-h-14"><Landmark className="h-5 w-5 text-ink-2" /><span className="min-w-0"><span className="block text-sm font-medium">Bankimport (camt)</span><span className="block text-xs text-ink-3">Zahlungseingänge automatisch abgleichen</span></span></Card></Link>
+        <a href={`/api/export/billing?year=${year}`} className="press"><Card className="p-3.5 flex items-center gap-3 hover:border-ink/30 min-h-14"><Download className="h-5 w-5 text-ink-2" /><span className="min-w-0"><span className="block text-sm font-medium">Rechnungen {year} als CSV</span><span className="block text-xs text-ink-3">Status, Betrag, Referenz, Zahldatum</span></span></Card></a>
+      </div>
 
       {runs.length > 1 || (runs.length === 1 && !run) ? (
         <>

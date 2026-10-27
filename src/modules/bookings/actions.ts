@@ -108,7 +108,7 @@ export async function cancelBookingAction(bookingId: string): Promise<ActionResu
   }
   const refundNote = b.paymentStatus === "PAID" ? "Rückerstattung prüfen." : null;
   await db.$transaction([
-    db.booking.update({ where: { id: bookingId }, data: { status: "CANCELLED", cancelledAt: new Date(), adminNote: refundNote ? [b.adminNote, refundNote].filter(Boolean).join(" ") : b.adminNote } }),
+    db.booking.update({ where: { id: bookingId }, data: { status: "CANCELLED", cancelledAt: new Date(), adminNote: refundNote ? [b.adminNote, refundNote].filter(Boolean).join(" ").slice(-191) : b.adminNote } }),
     db.invoice.updateMany({ where: { bookingId, status: "OPEN" }, data: { status: "CANCELLED" } }),
   ]);
   revalidatePath("/bookings");
@@ -313,6 +313,8 @@ export async function decideBookingAction(bookingId: string, decision: "APPROVE"
   const b = await db.booking.findUnique({ where: { id: bookingId } });
   if (!b || b.tenantId !== ctx.tenant.id) return fail("Nicht gefunden");
   if (b.status !== "PENDING") return fail("Buchung wartet nicht auf Freigabe.");
+  if (decision !== "APPROVE" && decision !== "REJECT") return fail("Ungültige Entscheidung");
+  adminNote = adminNote?.trim().slice(0, 191) || undefined;
   if (decision === "APPROVE") {
     await db.booking.update({ where: { id: bookingId }, data: { status: "CONFIRMED", confirmedAt: new Date(), adminNote: adminNote ?? b.adminNote } });
     if (b.paymentMethod === "INVOICE") await ensureInvoiceForBooking(bookingId);
@@ -345,6 +347,100 @@ export async function markBookingRefundedAction(bookingId: string): Promise<Acti
   await db.booking.update({ where: { id: bookingId }, data: { paymentStatus: "REFUNDED" } });
   revalidatePath("/admin/bookings");
   return ok();
+}
+
+// ---------------------------------------------------------------------------
+// Admin: Buchung für ein Mitglied erfassen
+// ---------------------------------------------------------------------------
+
+const adminBookingSchema = z.object({
+  userId: z.string().min(1).max(40),
+  resourceId: z.string().min(1).max(40),
+  date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  time: z.string().regex(/^\d{2}:\d{2}$/),
+  durationMinutes: z.coerce.number().int().min(5).max(24 * 60),
+  payment: z.enum(["INVOICE", "CASH", "FREE"]),
+  note: z.string().trim().max(300).optional(),
+});
+
+/**
+ * Verwaltung bucht im Namen eines Mitglieds. Öffnungszeiten, Sperrzeiten und Kapazität gelten,
+ * Vorlauf und Vorausbuchungsgrenze nicht. Die Buchung ist sofort bestätigt.
+ */
+export async function adminCreateBookingAction(_prev: ActionResult | null, formData: FormData): Promise<ActionResult> {
+  const ctx = await requirePermission("tenant.manage");
+  if (!ctx.hasModule("bookings")) return fail("Das Modul Reservationen ist nicht aktiv.");
+  const parsed = adminBookingSchema.safeParse({
+    userId: formData.get("userId"),
+    resourceId: formData.get("resourceId"),
+    date: formData.get("date"),
+    time: formData.get("time"),
+    durationMinutes: formData.get("durationMinutes"),
+    payment: formData.get("payment") || "INVOICE",
+    note: formData.get("note") || undefined,
+  });
+  if (!parsed.success) return fail("Bitte Mitglied, Ressource, Datum, Zeit und Dauer wählen.");
+  const { userId, resourceId, date, time, durationMinutes, payment, note } = parsed.data;
+
+  const membership = await db.membership.findUnique({ where: { userId_tenantId: { userId, tenantId: ctx.tenant.id } }, select: { id: true } });
+  if (!membership) return fail("Diese Person ist nicht Mitglied des Vereins.");
+  const [settings, resource] = await Promise.all([getBookingSettings(ctx.tenant.id), getResource(ctx.tenant.id, resourceId)]);
+  if (!resource) return fail("Ressource nicht gefunden.");
+  const option = (resource.durationOptions ?? settings.durationOptions).find((o) => o.minutes === durationMinutes);
+  if (!option) return fail("Diese Dauer ist für die Ressource nicht eingerichtet.");
+
+  await expireUnpaidOnlineBookings(ctx.tenant.id);
+  const slots = await getSlotsForDay(ctx.tenant.id, resource, settings, date, durationMinutes, { bypassLimits: true });
+  const slot = slots.find((s) => s.time === time);
+  if (!slot) return fail("Diese Zeit liegt ausserhalb der Öffnungszeiten.");
+  if (!slot.available) return fail(`Dieser Termin ist nicht verfügbar (${slot.reason}).`);
+
+  const quote = quotePrice(option, slot.startsAt, settings);
+  const now = new Date();
+  let pricing = quote;
+  let paymentMethod = "NONE";
+  let paymentStatus = "NOT_REQUIRED";
+  let paidAt: Date | null = null;
+  if (payment === "FREE" || quote.totalCents === 0) {
+    pricing = quote.basePriceCents > 0
+      ? { basePriceCents: quote.basePriceCents, discountCents: quote.basePriceCents, discountReason: "Gratis (Verwaltung)", totalCents: 0 }
+      : quote;
+  } else if (payment === "CASH") {
+    paymentMethod = "CASH";
+    paymentStatus = "PAID";
+    paidAt = now;
+  } else {
+    paymentMethod = "INVOICE";
+    paymentStatus = "UNPAID";
+  }
+
+  const booking = await db.booking.create({
+    data: {
+      tenantId: ctx.tenant.id,
+      resourceId,
+      userId,
+      startsAt: slot.startsAt,
+      endsAt: slot.endsAt,
+      durationMinutes,
+      status: "CONFIRMED",
+      paymentMethod,
+      paymentStatus,
+      basePriceCents: pricing.basePriceCents,
+      discountCents: pricing.discountCents,
+      discountReason: pricing.discountReason,
+      totalCents: pricing.totalCents,
+      currency: settings.currency,
+      note: note ?? null,
+      adminNote: `Erfasst durch ${ctx.user.name}`.slice(0, 191),
+      confirmedAt: now,
+      paidAt,
+    },
+  });
+  if (paymentMethod === "INVOICE") await ensureInvoiceForBooking(booking.id);
+
+  revalidatePath("/bookings");
+  revalidatePath("/admin/bookings");
+  redirect(`/bookings/${booking.id}?created=1`);
 }
 
 // ---------------------------------------------------------------------------

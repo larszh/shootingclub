@@ -43,6 +43,16 @@ export async function destroySession() {
   jar.delete(SESSION_COOKIE);
 }
 
+/** Meldet alle anderen Geräte ab (z.B. nach Passwortwechsel). Die aktuelle Sitzung bleibt bestehen. */
+export async function destroyOtherSessions(userId: string) {
+  const jar = await cookies();
+  const token = jar.get(SESSION_COOKIE)?.value;
+  const result = await db.session.deleteMany({
+    where: { userId, ...(token ? { NOT: { tokenHash: hashToken(token) } } : {}) },
+  });
+  return result.count;
+}
+
 export type CurrentUser = {
   id: string;
   email: string;

@@ -8,7 +8,7 @@ const variantClass: Record<ButtonVariant, string> = {
   primary: "bg-ink text-bg hover:opacity-90 dark:bg-ink dark:text-bg",
   secondary: "bg-surface border border-line text-ink hover:bg-surface-2",
   ghost: "text-ink-2 hover:bg-surface-2",
-  danger: "bg-accent text-accent-ink hover:opacity-90",
+  danger: "bg-danger text-white hover:opacity-90",
 };
 const sizeClass: Record<ButtonSize, string> = {
   sm: "h-9 px-3 text-sm gap-1.5",
@@ -82,7 +82,7 @@ export function Field({ label, hint, error, children, className }: { label: stri
     <div className={className}>
       <Label>{label}</Label>
       {children}
-      {error ? <p className="mt-1 text-sm text-accent">{error}</p> : hint ? <p className="mt-1 text-xs text-ink-3">{hint}</p> : null}
+      {error ? <p className="mt-1 text-sm text-danger">{error}</p> : hint ? <p className="mt-1 text-xs text-ink-3">{hint}</p> : null}
     </div>
   );
 }
@@ -117,20 +117,28 @@ export function PageHeader({ title, subtitle, action, back }: { title: string; s
   );
 }
 
-export function EmptyState({ icon, title, text, action }: { icon?: React.ReactNode; title: string; text?: string; action?: React.ReactNode }) {
+export function EmptyState({ icon, illustration, title, text, action, className }: { icon?: React.ReactNode; /** Grössere Strichzeichnung statt Icon, z.B. <TargetIllustration /> */ illustration?: React.ReactNode; title: string; text?: string; action?: React.ReactNode; className?: string }) {
   return (
-    <Card className="animate-rise p-8 text-center">
-      {icon ? <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-surface-2 text-ink-2">{icon}</div> : null}
+    <Card className={cn("animate-rise p-8 text-center", className)}>
+      {illustration ? <div className="mx-auto mb-4 flex justify-center">{illustration}</div> : icon ? <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-surface-2 text-ink-2">{icon}</div> : null}
       <h3 className="font-semibold">{title}</h3>
       {text ? <p className="mt-1 text-sm text-ink-3 max-w-sm mx-auto">{text}</p> : null}
-      {action ? <div className="mt-4 flex justify-center">{action}</div> : null}
+      {action ? <div className="mt-4 flex flex-wrap justify-center gap-2">{action}</div> : null}
     </Card>
   );
 }
 
-export function Alert({ tone = "error", children }: { tone?: "error" | "ok" | "info"; children: React.ReactNode }) {
-  const t = { error: "bg-accent-soft text-accent", ok: "bg-ok/10 text-ok", info: "bg-surface-2 text-ink-2" }[tone];
-  return <div className={cn("animate-pop rounded-control px-3.5 py-2.5 text-sm", t)}>{children}</div>;
+export function Alert({ tone = "error", children, title, icon, className }: { tone?: "error" | "ok" | "info" | "warn"; children: React.ReactNode; title?: string; icon?: React.ReactNode; className?: string }) {
+  const t = { error: "bg-danger/10 text-danger", ok: "bg-ok/10 text-ok", info: "bg-surface-2 text-ink-2", warn: "bg-warn/10 text-warn" }[tone];
+  return (
+    <div role={tone === "error" ? "alert" : "status"} className={cn("animate-pop rounded-control px-3.5 py-2.5 text-sm", icon ? "flex items-start gap-2.5" : null, t, className)}>
+      {icon ? <span className="mt-0.5 shrink-0" aria-hidden>{icon}</span> : null}
+      <div className="min-w-0">
+        {title ? <p className="font-semibold">{title}</p> : null}
+        {children}
+      </div>
+    </div>
+  );
 }
 
 export function SectionTitle({ children, action }: { children: React.ReactNode; action?: React.ReactNode }) {
@@ -144,4 +152,94 @@ export function SectionTitle({ children, action }: { children: React.ReactNode; 
 
 export function Skeleton({ className }: { className?: string }) {
   return <div className={cn("skeleton", className)} />;
+}
+
+/* ---------------------------------------------------------------- Neu (UX) */
+
+export * from "./illustrations";
+
+/** Kennzahl-Karte, optional als Link und mit Trend/Hinweis. */
+export function StatCard({ label, value, hint, icon, href, tone = "neutral", className }: { label: string; value: React.ReactNode; hint?: React.ReactNode; icon?: React.ReactNode; href?: string; tone?: "neutral" | "accent" | "ok" | "warn"; className?: string }) {
+  const toneCls = { neutral: "text-ink", accent: "text-accent", ok: "text-ok", warn: "text-warn" }[tone];
+  const body = (
+    <Card className={cn("h-full p-4", href && "transition-colors hover:border-ink/30", className)}>
+      <div className="flex items-center justify-between gap-2 text-xs text-ink-3">
+        <span className="truncate">{label}</span>
+        {icon ? <span className="shrink-0 text-ink-3" aria-hidden>{icon}</span> : null}
+      </div>
+      <div className={cn("mt-1 text-2xl font-semibold tabular-nums tracking-tight", toneCls)}>{value}</div>
+      {hint ? <div className="mt-0.5 text-xs text-ink-3">{hint}</div> : null}
+    </Card>
+  );
+  return href ? <Link href={href} className="press block rounded-card focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent">{body}</Link> : body;
+}
+
+/** Fortschrittsbalken (0–max). Mit label für Screenreader. */
+export function ProgressBar({ value, max = 100, label, showValue, tone = "accent", size = "md", className }: { value: number; max?: number; label: string; showValue?: boolean; tone?: "accent" | "ok" | "warn" | "ink"; size?: "sm" | "md"; className?: string }) {
+  const pct = max > 0 ? Math.max(0, Math.min(100, (value / max) * 100)) : 0;
+  const bar = { accent: "bg-accent", ok: "bg-ok", warn: "bg-warn", ink: "bg-ink" }[tone];
+  return (
+    <div className={className}>
+      {showValue ? (
+        <div className="mb-1 flex justify-between text-xs text-ink-3">
+          <span>{label}</span>
+          <span className="tabular-nums">{Math.round(pct)}%</span>
+        </div>
+      ) : null}
+      <div role="progressbar" aria-label={label} aria-valuemin={0} aria-valuemax={max} aria-valuenow={Math.round(value * 10) / 10} className={cn("w-full overflow-hidden rounded-full bg-surface-2", size === "sm" ? "h-1.5" : "h-2.5")}>
+        <div className={cn("h-full rounded-full transition-[width] duration-500", bar)} style={{ width: `${pct}%` }} />
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Tabs als Links (z.B. Filter über Suchparameter). Serverseitig nutzbar,
+ * aktiver Eintrag über `active` (value).
+ *   <LinkTabs active={sp.status ?? "all"} items={[{ value: "all", href: "?", label: "Alle" }, …]} />
+ */
+export function LinkTabs({ items, active, label = "Ansicht wählen", className }: { items: Array<{ value: string; href: string; label: React.ReactNode; count?: number }>; active: string; label?: string; className?: string }) {
+  return (
+    <nav aria-label={label} className={cn("-mx-1 flex gap-1 overflow-x-auto border-b border-line px-1", className)}>
+      {items.map((t) => {
+        const on = t.value === active;
+        return (
+          <Link
+            key={t.value}
+            href={t.href}
+            aria-current={on ? "page" : undefined}
+            className={cn(
+              "relative -mb-px inline-flex h-11 shrink-0 items-center gap-1.5 border-b-2 px-3 text-sm font-medium transition-colors focus-visible:outline-2 focus-visible:outline-accent",
+              on ? "border-accent text-ink" : "border-transparent text-ink-3 hover:text-ink",
+            )}
+          >
+            {t.label}
+            {typeof t.count === "number" ? <span className={cn("rounded-full px-1.5 text-[11px] tabular-nums", on ? "bg-accent-soft text-accent" : "bg-surface-2 text-ink-3")}>{t.count}</span> : null}
+          </Link>
+        );
+      })}
+    </nav>
+  );
+}
+
+/** Kleine Checkliste mit Fortschritt (z.B. «Erste Schritte»). */
+export function ChecklistItem({ done, href, title, text }: { done: boolean; href: string; title: string; text?: string }) {
+  return (
+    <li>
+      <Link href={href} className="press group flex items-center gap-3 rounded-control px-2 py-2.5 hover:bg-surface-2 focus-visible:outline-2 focus-visible:outline-accent">
+        <span
+          className={cn("flex h-7 w-7 shrink-0 items-center justify-center rounded-full border-2 text-xs font-bold", done ? "border-ok bg-ok text-white" : "border-line text-transparent")}
+          aria-hidden
+        >
+          ✓
+        </span>
+        <span className="min-w-0 flex-1">
+          <span className={cn("block text-[15px] font-medium", done && "text-ink-3 line-through decoration-ink-3/50")}>{title}</span>
+          {text && !done ? <span className="block text-xs text-ink-3">{text}</span> : null}
+        </span>
+        <span className="sr-only">{done ? "erledigt" : "offen"}</span>
+        <span aria-hidden className="text-ink-3 transition-transform group-hover:translate-x-0.5">→</span>
+      </Link>
+    </li>
+  );
 }

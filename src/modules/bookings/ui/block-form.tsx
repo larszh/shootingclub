@@ -1,5 +1,6 @@
 "use client";
 
+import { confirmDialog } from "@/components/ui/dialog";
 import { useActionState, useTransition } from "react";
 import { Trash2 } from "lucide-react";
 import { addBlockAction, deleteBlockAction, deleteResourceAction, setResourceActiveAction } from "@/modules/bookings/actions";
@@ -36,7 +37,7 @@ export function ResourceRowActions({ id, isActive }: { id: string; isActive: boo
   return (
     <div className="flex items-center gap-1">
       <Button type="button" size="sm" variant="secondary" disabled={pending} onClick={() => start(() => setResourceActiveAction(id, !isActive).then(() => undefined))}>{isActive ? "Deaktivieren" : "Aktivieren"}</Button>
-      <button type="button" disabled={pending} onClick={() => { if (confirm("Ressource löschen? Nur möglich ohne Buchungen.")) start(async () => { const r = await deleteResourceAction(id); if (!r.ok) alert(r.error); }); }} className="h-9 w-9 rounded-full flex items-center justify-center text-ink-3 hover:text-accent" aria-label="Löschen"><Trash2 className="h-4 w-4" /></button>
+      <button type="button" disabled={pending} onClick={async () => { if ((await confirmDialog({ title: "Ressource löschen? Nur möglich ohne Buchungen.", tone: "danger" }))) start(async () => { const r = await deleteResourceAction(id); if (!r.ok) alert(r.error); }); }} className="h-9 w-9 rounded-full flex items-center justify-center text-ink-3 hover:text-accent" aria-label="Löschen"><Trash2 className="h-4 w-4" /></button>
     </div>
   );
 }

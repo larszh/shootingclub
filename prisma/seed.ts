@@ -4,6 +4,7 @@ import { PrismaClient } from "../src/generated/prisma/client";
 import { PrismaMariaDb } from "@prisma/adapter-mariadb";
 import { PROGRAM_PRESETS } from "../src/modules/scores/presets";
 import { TARGET_PRESETS } from "../src/modules/targets/presets";
+import { seedDemoEvents } from "../src/modules/events/seed";
 
 const u = new URL(process.env.DATABASE_URL ?? "mysql://standchef:standchef@127.0.0.1:3306/standchef");
 const db = new PrismaClient({
@@ -89,6 +90,7 @@ async function main() {
       await db.membership.updateMany({ where: { tenantId: demo.id, userId: beat.id }, data: { feeCategoryId: passiv.id, memberNumber: "1002" } });
       await db.user.update({ where: { id: beat.id }, data: { street: "Bahnhofstrasse 12", zip: "8001", city: "Zürich" } });
     }
+    await seedDemoEvents(db, demo.id, anna.id, [anna.id, beat.id, admin.id]);
     console.log("Demo-Verein: Beitrittscode DEMO42 · anna@example.ch / beat@example.ch (Passwort demo1234)");
   }
 

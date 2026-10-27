@@ -1,5 +1,6 @@
 import { formatMoney } from "@/lib/money";
 import { formatDateZurich } from "@/lib/time";
+import { formatIban, formatQrReference } from "@/lib/qr-reference";
 
 export type InvoiceLine = { label: string; sublabel?: string | null; amountCents: number };
 
@@ -18,6 +19,8 @@ export type InvoiceDocumentProps = {
   note?: string | null;
   intro?: string | null;
   qrSvg?: string | null;
+  /** QR-Referenz (bei QR-IBAN), wird im Kopf und in den Zahlungsangaben gezeigt. */
+  reference?: string | null;
 };
 
 /** Druckbare A4-Rechnung. Wird als Seite im Druck-Layout verwendet (210 × 297 mm). */
@@ -37,6 +40,7 @@ export function InvoiceDocument(p: InvoiceDocumentProps) {
             <div className="mt-1">Nr. {p.number}</div>
             <div>Datum {formatDateZurich(p.issuedAt, { weekday: undefined })}</div>
             <div>Fällig {formatDateZurich(p.dueAt, { weekday: undefined })}</div>
+            {p.reference ? <div className="font-mono tabular-nums">Ref. {formatQrReference(p.reference)}</div> : null}
           </div>
         </div>
         <div className="mt-12 text-sm leading-snug" style={{ minHeight: "22mm" }}>
@@ -66,8 +70,8 @@ export function InvoiceDocument(p: InvoiceDocumentProps) {
         {!p.qrSvg && p.status === "OPEN" ? (
           <div className="mt-8 text-sm">
             <div className="font-medium">Zahlbar bis {formatDateZurich(p.dueAt, { weekday: undefined })}</div>
-            {p.payee.iban ? <div>IBAN {p.payee.iban.replace(/(.{4})/g, "$1 ").trim()} · {p.payee.name}</div> : <div className="text-neutral-500">Zahlungsangaben beim Verein erfragen.</div>}
-            <div>Zahlungszweck: {title} {p.number}</div>
+            {p.payee.iban ? <div>IBAN {formatIban(p.payee.iban)} · {p.payee.name}</div> : <div className="text-neutral-500">Zahlungsangaben beim Verein erfragen.</div>}
+            {p.reference ? <div>Referenz: <span className="font-mono">{formatQrReference(p.reference)}</span></div> : <div>Zahlungszweck: {title} {p.number}</div>}
           </div>
         ) : null}
       </div>

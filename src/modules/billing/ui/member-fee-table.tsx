@@ -8,10 +8,11 @@ import { Badge, Card } from "@/components/ui";
 import { Spinner } from "@/components/ui/form";
 import { formatMoney } from "@/lib/money";
 import { FEE_INVOICE_STATUS } from "@/modules/billing/types";
-import { cn, initials } from "@/lib/utils";
+import { cn } from "@/lib/utils";
+import { Avatar } from "@/components/avatar";
 
 type Member = {
-  membershipId: string; name: string; email: string; address: string | null; memberNumber: string | null;
+  membershipId: string; name: string; email: string; avatarUrl?: string | null; address: string | null; memberNumber: string | null;
   category: { id: string; name: string; amountCents: number } | null; overrideCents: number | null; effectiveCents: number | null;
   invoice: { id: string; number: string; status: string; amountCents: number } | null;
 };
@@ -44,7 +45,7 @@ function Row({ m, categories, currency, year }: { m: Member; categories: Cat[]; 
   return (
     <div className="px-4 py-3">
       <div className="flex items-center gap-3">
-        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-surface-2 text-xs font-semibold">{initials(m.name)}</span>
+        <Avatar name={m.name} src={m.avatarUrl ?? null} size={36} tone="soft" />
         <div className="min-w-0 flex-1">
           <div className="font-medium truncate">{m.name}</div>
           <div className="text-xs text-ink-3 truncate">{m.address ?? <span className="text-warn">Keine Adresse hinterlegt</span>}</div>

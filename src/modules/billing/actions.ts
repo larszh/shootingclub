@@ -6,7 +6,11 @@ import { db } from "@/lib/db";
 import { requirePermission } from "@/lib/tenant";
 import { fail, ok, type ActionResult } from "@/lib/action-result";
 import { parseMoneyToCents } from "@/lib/money";
-import { categorySchema, isValidIban, profileSchema, runSchema } from "./types";
+import { z } from "zod";
+import { categorySchema, isValidIban, joinNoteLines, profileSchema, reminderCount, runSchema, withReminderCount } from "./types";
+import { ensureReference, tenantQrIban } from "./reference";
+import { isQrIban } from "@/lib/qr-reference";
+import { todayZurich, zurichParts } from "@/lib/time";
 
 const revalidate = () => { revalidatePath("/admin/billing"); revalidatePath("/billing"); revalidatePath("/admin/bookings"); };
 
@@ -28,7 +32,9 @@ export async function saveBillingProfileAction(_prev: ActionResult | null, formD
   const data = { payeeName: p.payeeName ?? null, payeeStreet: p.payeeStreet ?? null, payeeZip: p.payeeZip ?? null, payeeCity: p.payeeCity ?? null, iban: p.iban ?? null, currency: p.currency };
   await db.billingProfile.upsert({ where: { tenantId: ctx.tenant.id }, create: { tenantId: ctx.tenant.id, ...data }, update: data });
   revalidate();
-  return ok(undefined, "Rechnungsprofil gespeichert.");
+  return ok(undefined, p.iban && isQrIban(p.iban)
+    ? "Gespeichert. QR-IBAN erkannt: Rechnungen erhalten ab jetzt eine QR-Referenz."
+    : "Rechnungsprofil gespeichert.");
 }
 
 // --- Kategorien -------------------------------------------------------------
@@ -78,6 +84,8 @@ export async function setMemberFeeAction(membershipId: string, input: { category
     if (!c || c.tenantId !== ctx.tenant.id) return fail("Kategorie nicht gefunden");
   }
   const override = input.overrideAmount === undefined ? undefined : input.overrideAmount === null || input.overrideAmount.trim() === "" ? null : parseMoneyToCents(input.overrideAmount);
+  if (override != null && (override < 0 || override > 100_000_00)) return fail("Ungültiger Betrag");
+  if (input.memberNumber && input.memberNumber.trim().length > 40) return fail("Mitgliedernummer ist zu lang (max. 40 Zeichen).");
   await db.membership.update({
     where: { id: membershipId },
     data: {
@@ -99,22 +107,32 @@ async function nextNumber(tenantId: string, prefix: string, year: number, offset
 
 type MemberSnapshot = { id: string; userId: string; name: string; email: string; address: string | null; categoryId: string | null; categoryName: string; amountCents: number };
 
-async function createInvoiceFor(tenantId: string, run: { id: string; year: number; invoicePrefix: string; dueAt: Date }, m: MemberSnapshot) {
+async function createInvoiceFor(tenantId: string, run: { id: string; year: number; invoicePrefix: string; dueAt: Date }, m: MemberSnapshot, billing: { currency: string; qrIban: string | null }) {
   for (let attempt = 0; attempt < 5; attempt++) {
     const number = await nextNumber(tenantId, run.invoicePrefix, run.year, attempt);
+    let created;
     try {
-      return await db.feeInvoice.create({
+      created = await db.feeInvoice.create({
         data: {
           tenantId, runId: run.id, membershipId: m.id, userId: m.userId, categoryId: m.categoryId, year: run.year, number,
           memberName: m.name, memberEmail: m.email, memberAddress: m.address, categoryName: m.categoryName, amountCents: m.amountCents,
-          currency: (await db.billingProfile.findUnique({ where: { tenantId } }))?.currency ?? "CHF", dueAt: run.dueAt,
+          currency: billing.currency, dueAt: run.dueAt,
         },
       });
     } catch (e) {
       if (attempt === 4) throw e;
+      continue;
     }
+    // Bei QR-IBAN direkt eine eindeutige QR-Referenz vergeben.
+    if (billing.qrIban) await ensureReference("FEE", created, billing.qrIban);
+    return created;
   }
   return null;
+}
+
+async function billingDefaults(tenantId: string) {
+  const [profile, qrIban] = await Promise.all([db.billingProfile.findUnique({ where: { tenantId }, select: { currency: true } }), tenantQrIban(tenantId)]);
+  return { currency: profile?.currency ?? "CHF", qrIban };
 }
 
 async function membersToInvoice(tenantId: string, year: number): Promise<MemberSnapshot[]> {
@@ -158,9 +176,10 @@ export async function createRunAction(_prev: ActionResult | null, formData: Form
     update: { title: r.title, invoicePrefix: r.invoicePrefix, dueDays: r.dueDays, note: r.note ?? null },
   });
   const members = await membersToInvoice(ctx.tenant.id, r.year);
+  const billing = await billingDefaults(ctx.tenant.id);
   let created = 0;
   for (const m of members) {
-    if (await createInvoiceFor(ctx.tenant.id, { ...run, dueAt }, m)) created++;
+    if (await createInvoiceFor(ctx.tenant.id, { ...run, dueAt }, m, billing)) created++;
   }
   revalidate();
   redirect(`/admin/billing/runs/${run.id}?created=${created}`);
@@ -185,23 +204,60 @@ export async function createSingleInvoiceAction(membershipId: string, year: numb
     id: m.id, userId: m.userId, name: m.user.name, email: m.user.email,
     address: [m.user.street, [m.user.zip, m.user.city].filter(Boolean).join(" ")].filter(Boolean).join("\n") || null,
     categoryId: m.feeCategoryId, categoryName: m.feeCategory?.name ?? "Mitgliederbeitrag", amountCents: amount,
-  });
+  }, await billingDefaults(ctx.tenant.id));
   revalidate();
   return ok(undefined, "Rechnung erstellt.");
 }
 
 export async function setFeeInvoiceStatusAction(id: string, status: "OPEN" | "PAID" | "CANCELLED", note?: string): Promise<ActionResult> {
   const ctx = await requirePermission("tenant.manage");
+  if (!["OPEN", "PAID", "CANCELLED"].includes(status)) return fail("Ungültiger Status");
+  if (note !== undefined && (typeof note !== "string" || note.length > 500)) return fail("Notiz ist ungültig oder zu lang.");
   const inv = await db.feeInvoice.findUnique({ where: { id } });
   if (!inv || inv.tenantId !== ctx.tenant.id) return fail("Nicht gefunden");
-  await db.feeInvoice.update({ where: { id }, data: { status, paidAt: status === "PAID" ? new Date() : null, ...(note !== undefined ? { paymentNote: note || null } : {}) } });
+  if (inv.status === status && note === undefined) return ok();
+  const paidAt = status === "PAID" ? (inv.status === "PAID" && inv.paidAt ? inv.paidAt : new Date()) : null;
+  // Eine neue Notiz ersetzt die sichtbare Notiz, der interne Mahnzähler bleibt erhalten.
+  const reminders = reminderCount(inv.paymentNote, null);
+  const paymentNote = note !== undefined ? joinNoteLines(reminders && /Gemahnt:/.test(inv.paymentNote ?? "") ? `Gemahnt: ${reminders}×` : null, [note.trim()]) : undefined;
+  await db.feeInvoice.update({ where: { id }, data: { status, paidAt, ...(paymentNote !== undefined ? { paymentNote } : {}) } });
   revalidate();
   return ok();
 }
 
+const idsSchema = z.array(z.string().min(1).max(40)).min(1).max(2000);
+
+/**
+ * Markiert offene Rechnungen als gemahnt: remindedAt = heute, Mahnzähler +1.
+ * Wurde eine Rechnung heute schon gemahnt, zählt ein erneuter Klick nicht doppelt.
+ */
 export async function markRemindedAction(ids: string[]): Promise<ActionResult> {
   const ctx = await requirePermission("tenant.manage");
-  await db.feeInvoice.updateMany({ where: { id: { in: ids }, tenantId: ctx.tenant.id, status: "OPEN" }, data: { remindedAt: new Date() } });
+  const parsed = idsSchema.safeParse(ids);
+  if (!parsed.success) return fail("Ungültige Auswahl");
+  const list = await db.feeInvoice.findMany({ where: { id: { in: parsed.data }, tenantId: ctx.tenant.id, status: "OPEN" }, select: { id: true, paymentNote: true, remindedAt: true } });
+  const today = todayZurich();
+  const now = new Date();
+  let changed = 0;
+  for (const inv of list) {
+    if (inv.remindedAt && zurichParts(inv.remindedAt).dateStr === today) continue;
+    const count = reminderCount(inv.paymentNote, inv.remindedAt) + 1;
+    await db.feeInvoice.update({ where: { id: inv.id }, data: { remindedAt: now, paymentNote: withReminderCount(inv.paymentNote, count) } });
+    changed++;
+  }
   revalidate();
-  return ok();
+  return ok(undefined, changed ? `${changed} ${changed === 1 ? "Rechnung" : "Rechnungen"} als gemahnt markiert.` : "Heute bereits gemahnt.");
+}
+
+/** Mehrere offene Rechnungen auf einmal als bezahlt markieren (z.B. Barzahlung an der GV). */
+export async function bulkMarkFeeInvoicesPaidAction(ids: string[]): Promise<ActionResult<{ count: number }>> {
+  const ctx = await requirePermission("tenant.manage");
+  const parsed = idsSchema.safeParse(ids);
+  if (!parsed.success) return fail("Bitte mindestens eine Rechnung wählen.");
+  const res = await db.feeInvoice.updateMany({
+    where: { id: { in: parsed.data }, tenantId: ctx.tenant.id, status: "OPEN" },
+    data: { status: "PAID", paidAt: new Date() },
+  });
+  revalidate();
+  return ok({ count: res.count }, `${res.count} ${res.count === 1 ? "Rechnung" : "Rechnungen"} als bezahlt markiert.`);
 }

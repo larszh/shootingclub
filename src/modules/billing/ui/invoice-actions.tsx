@@ -1,5 +1,6 @@
 "use client";
 
+import { confirmDialog } from "@/components/ui/dialog";
 import { useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Check, RotateCcw, XCircle } from "lucide-react";
@@ -13,7 +14,7 @@ export function FeeInvoiceActions({ id, status }: { id: string; status: string }
     <div className="flex items-center gap-1">
       {status === "OPEN" ? <button type="button" disabled={pending} onClick={() => set("PAID")} className="press h-8 px-2.5 rounded-control bg-ink text-bg text-xs font-medium inline-flex items-center gap-1"><Check className="h-3.5 w-3.5" /> Bezahlt</button> : null}
       {status === "PAID" ? <button type="button" disabled={pending} onClick={() => set("OPEN")} className="press h-8 px-2.5 rounded-control border border-line text-xs font-medium inline-flex items-center gap-1"><RotateCcw className="h-3.5 w-3.5" /> Offen</button> : null}
-      {status !== "CANCELLED" ? <button type="button" disabled={pending} onClick={() => { if (confirm("Rechnung stornieren?")) set("CANCELLED"); }} className="h-8 w-8 rounded-full flex items-center justify-center text-ink-3 hover:text-accent" aria-label="Stornieren"><XCircle className="h-4 w-4" /></button> : null}
+      {status !== "CANCELLED" ? <button type="button" disabled={pending} onClick={async () => { if ((await confirmDialog({ title: "Rechnung stornieren?", tone: "danger" }))) set("CANCELLED"); }} className="h-8 w-8 rounded-full flex items-center justify-center text-ink-3 hover:text-accent" aria-label="Stornieren"><XCircle className="h-4 w-4" /></button> : null}
       {status === "CANCELLED" ? <button type="button" disabled={pending} onClick={() => set("OPEN")} className="press h-8 px-2.5 rounded-control border border-line text-xs font-medium">Reaktivieren</button> : null}
     </div>
   );

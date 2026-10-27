@@ -25,7 +25,9 @@ export type Permission =
   | "tenant.targets.manage" // Scheiben des Tenants anlegen/verstecken
   | "match.viewAll" // alle Resultate im Tenant sehen
   | "match.create"
-  | "match.delete";
+  | "match.delete"
+  | "events.manage" // Anlässe erfassen, bearbeiten, absagen, Anmeldelisten
+  | "announcements.manage"; // Mitteilungen an alle erfassen
 
 const PERMISSION_MIN_ROLE: Record<Permission, TenantRole> = {
   "tenant.manage": "ADMIN",
@@ -34,6 +36,8 @@ const PERMISSION_MIN_ROLE: Record<Permission, TenantRole> = {
   "match.viewAll": "TRAINER",
   "match.create": "MEMBER",
   "match.delete": "ADMIN",
+  "events.manage": "TRAINER",
+  "announcements.manage": "ADMIN",
 };
 
 export type Actor = { isSuperAdmin: boolean; role: string | null };

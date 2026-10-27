@@ -1,96 +1,390 @@
 import Link from "next/link";
-import { ArrowRight, Crosshair, Star, Target, Trophy } from "lucide-react";
-import { getAppContext } from "@/lib/tenant";
-import { MODULES } from "@/lib/modules";
-import { Badge, Card, EmptyState, LinkButton, SectionTitle } from "@/components/ui";
+import { redirect } from "next/navigation";
+import {
+  ArrowRight,
+  CalendarDays,
+  CalendarPlus,
+  ChevronRight,
+  Crosshair,
+  HelpCircle,
+  Play,
+  Printer,
+  Receipt,
+  Star,
+  Trophy,
+  Users,
+} from "lucide-react";
+import { db } from "@/lib/db";
+import { getAppContext, type AppContext, type ActiveTenant } from "@/lib/tenant";
+import type { ModuleKey } from "@/lib/modules";
+import { ROLE_LABELS, isTenantRole } from "@/lib/permissions";
+import { formatMoney } from "@/lib/money";
+import { formatDateZurich, formatTimeRange } from "@/lib/time";
+import { cn, dayGreeting, formatDate, formatScore, plural } from "@/lib/utils";
+import { Avatar } from "@/components/avatar";
+import {
+  Alert,
+  Card,
+  ChecklistItem,
+  EmptyState,
+  LinkButton,
+  ProgressBar,
+  SectionTitle,
+  StatCard,
+  TargetIllustration,
+} from "@/components/ui";
 import { listMatches, listPrograms, userStats } from "@/modules/scores/queries";
 import { listMyBookings, partitionBookings } from "@/modules/bookings/queries";
-import { formatDateZurich, formatTimeRange } from "@/lib/time";
-import { CalendarDays } from "lucide-react";
-import { formatDate, formatScore } from "@/lib/utils";
-import { redirect } from "next/navigation";
+import { AnnouncementsCard, UpcomingEventsCard } from "@/modules/events/ui/dashboard-cards";
+
+type TenantCtx = AppContext & { tenant: ActiveTenant };
+
+/* ---------------------------------------------------------------- Daten */
+
+/**
+ * «Weiter wo du warst»: nur eigene offene Durchgänge, nicht alle des Vereins (Trainer).
+ * Zuerst die ids der eigenen offenen Durchgänge (im Verein) holen, dann ab dem ältesten
+ * davon laden – so fehlen sie auch in sehr aktiven Vereinen nicht.
+ */
+async function loadOpenMine(ctx: TenantCtx) {
+  const mine = await db.match.findMany({
+    where: { tenantId: ctx.tenant.id, status: "OPEN", participants: { some: { userId: ctx.user.id } } },
+    orderBy: { date: "desc" },
+    take: 3,
+    select: { id: true, date: true },
+  });
+  if (!mine.length) return [];
+  const ids = new Set(mine.map((m) => m.id));
+  const from = mine[mine.length - 1]!.date;
+  const open = await listMatches(ctx, { status: "OPEN", from, limit: 100 });
+  return open.filter((m) => ids.has(m.id));
+}
+
+async function loadScores(ctx: TenantCtx) {
+  const [programs, openMine, recent, stats] = await Promise.all([
+    listPrograms(ctx),
+    loadOpenMine(ctx),
+    listMatches(ctx, { status: "FINISHED", limit: 3 }),
+    userStats(ctx),
+  ]);
+  return {
+    favorites: programs.filter((p) => p.favorite).slice(0, 4),
+    favoriteCount: programs.filter((p) => p.favorite).length,
+    openMine,
+    recent,
+    stats,
+  };
+}
+
+async function loadOpenInvoices(ctx: TenantCtx) {
+  const rows = await db.feeInvoice.findMany({
+    where: { tenantId: ctx.tenant.id, userId: ctx.user.id, status: "OPEN" },
+    select: { id: true, amountCents: true, currency: true, dueAt: true },
+    orderBy: { dueAt: "asc" },
+    take: 20,
+  });
+  const now = Date.now();
+  const totalCents = rows.reduce((a, r) => a + r.amountCents, 0);
+  return {
+    count: rows.length,
+    totalCents,
+    currency: rows[0]?.currency ?? "CHF",
+    overdue: rows.filter((r) => r.dueAt.getTime() < now).length,
+    nextDue: rows[0]?.dueAt ?? null,
+  };
+}
+
+type SetupItem = { key: string; title: string; text: string; href: string; done: boolean };
+
+/** Erste Schritte für Admins eines neuen Vereins. Leer, wenn alles erledigt ist. */
+async function loadSetupChecklist(ctx: TenantCtx, favoriteCount: number): Promise<SetupItem[]> {
+  const tenantId = ctx.tenant.id;
+  const bookingsOn = ctx.hasModule("bookings");
+  const billingOn = ctx.hasModule("billing");
+  const [members, resources, profile] = await Promise.all([
+    db.membership.count({ where: { tenantId } }),
+    bookingsOn ? db.resource.count({ where: { tenantId } }) : Promise.resolve(0),
+    bookingsOn || billingOn ? db.billingProfile.findUnique({ where: { tenantId }, select: { payeeName: true, iban: true } }) : Promise.resolve(null),
+  ]);
+  const items: SetupItem[] = [
+    { key: "brand", title: "Logo & Farben setzen", text: "Damit die App nach eurem Verein aussieht.", href: "/admin", done: !!(ctx.tenant.logoUrl || ctx.tenant.brandColor) },
+    { key: "members", title: "Mitglieder einladen", text: "Teile den Beitrittscode oder füge Mitglieder per E-Mail hinzu.", href: "/admin/members", done: members >= 2 },
+  ];
+  if (ctx.hasModule("scores")) {
+    items.push({ key: "programs", title: "Programme favorisieren", text: "Mit dem Stern erscheinen sie hier zum Schnellstart.", href: "/scores/programs", done: favoriteCount > 0 });
+  }
+  if (bookingsOn) {
+    items.push({ key: "resources", title: "Ressourcen erfassen", text: "Anlagen, Bahnen oder Räume, die man reservieren kann.", href: "/admin/bookings/resources", done: resources > 0 });
+  }
+  if (bookingsOn || billingOn) {
+    items.push({ key: "billing", title: "Rechnungsprofil ausfüllen", text: "Empfänger und IBAN für QR-Rechnungen.", href: "/admin/billing/settings", done: !!(profile?.payeeName && profile?.iban) });
+  }
+  return items.every((i) => i.done) ? [] : items;
+}
+
+/* --------------------------------------------------------------- Ansicht */
+
+type QuickAction = { module: ModuleKey; href: string; label: string; icon: React.ComponentType<{ className?: string }>; primary?: boolean };
+
+const QUICK_ACTIONS: QuickAction[] = [
+  { module: "scores", href: "/scores/matches/new", label: "Durchgang starten", icon: Crosshair, primary: true },
+  { module: "bookings", href: "/bookings", label: "Reservieren", icon: CalendarPlus },
+  { module: "targets", href: "/targets", label: "Scheibe drucken", icon: Printer },
+  { module: "events", href: "/events", label: "Anlässe", icon: CalendarDays },
+  { module: "billing", href: "/billing", label: "Beiträge", icon: Receipt },
+];
 
 export default async function HomePage({ searchParams }: { searchParams: Promise<{ module?: string; denied?: string }> }) {
-  const ctx = await getAppContext();
-  if (!ctx.tenant) redirect("/onboarding");
-  const tenantCtx = ctx as typeof ctx & { tenant: NonNullable<typeof ctx.tenant> };
+  const base = await getAppContext();
+  if (!base.tenant) redirect("/onboarding");
+  const ctx = base as TenantCtx;
   const sp = await searchParams;
 
-  const hour = new Date().getHours();
-  const greeting = hour < 11 ? "Guten Morgen" : hour < 18 ? "Hallo" : "Guten Abend";
-  const firstName = ctx.user.name.split(" ")[0];
-
   const scoresOn = ctx.hasModule("scores");
-  const [favorites, recent, stats] = scoresOn
-    ? await Promise.all([
-        listPrograms(tenantCtx).then((p) => p.filter((x) => x.favorite).slice(0, 4)),
-        listMatches(tenantCtx, { limit: 3 }),
-        userStats(tenantCtx),
-      ])
-    : [[], [], null];
+  const bookingsOn = ctx.hasModule("bookings");
+  const billingOn = ctx.hasModule("billing");
+  const isAdmin = ctx.can("tenant.manage");
 
-  const enabled = MODULES.filter((m) => ctx.hasModule(m.key));
-  const nextBookings = ctx.hasModule("bookings")
-    ? partitionBookings(await listMyBookings(tenantCtx)).upcoming.slice(0, 2)
-    : [];
+  const [scores, nextBookings, invoices] = await Promise.all([
+    scoresOn ? loadScores(ctx) : Promise.resolve(null),
+    bookingsOn ? listMyBookings(ctx).then((b) => partitionBookings(b).upcoming.slice(0, 2)) : Promise.resolve([]),
+    billingOn ? loadOpenInvoices(ctx) : Promise.resolve(null),
+  ]);
+  const checklist = isAdmin ? await loadSetupChecklist(ctx, scores?.favoriteCount ?? 0) : [];
+
+  const greeting = dayGreeting();
+  const firstName = ctx.user.name.split(" ")[0];
+  const actions = QUICK_ACTIONS.filter((a) => ctx.hasModule(a.module));
+  const role = ctx.tenant.role && isTenantRole(ctx.tenant.role) ? ROLE_LABELS[ctx.tenant.role] : ctx.user.isSuperAdmin ? "Super-Admin" : null;
+  const doneCount = checklist.filter((i) => i.done).length;
 
   return (
     <div>
-      <div className="animate-rise mb-6">
-        <p className="text-ink-3 text-sm">{ctx.tenant.name}</p>
-        <h1 className="text-3xl font-semibold tracking-tight">{greeting}, {firstName}.</h1>
+      {/* Begrüssung */}
+      <div className="animate-rise mb-5 flex items-center gap-4">
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-2 text-sm text-ink-3">
+            <Avatar name={ctx.tenant.name} src={ctx.tenant.logoUrl} size={22} tone="soft" className="rounded-md" />
+            <span className="truncate">{ctx.tenant.name}</span>
+            {role ? <span className="shrink-0 rounded-full bg-surface-2 px-2 py-0.5 text-[11px] font-medium text-ink-2">{role}</span> : null}
+          </div>
+          <h1 className="mt-1 text-3xl font-semibold tracking-tight">
+            {greeting}, {firstName}.
+          </h1>
+        </div>
+        <Link href="/me" aria-label="Mein Profil" className="press shrink-0 rounded-full focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent">
+          <Avatar name={ctx.user.name} src={ctx.user.avatarUrl} size={52} className="ring-2 ring-surface shadow-sm" />
+        </Link>
       </div>
 
-      {sp.module ? <div className="mb-4"><Badge tone="warn">Dieses Modul ist in {ctx.tenant.name} nicht aktiviert.</Badge></div> : null}
-      {sp.denied ? <div className="mb-4"><Badge tone="warn">Dafür fehlt dir die Berechtigung.</Badge></div> : null}
+      {sp.module ? (
+        <div className="mb-4">
+          <Alert tone="warn">Dieses Modul ist in {ctx.tenant.name} nicht aktiviert.{isAdmin ? <> Du kannst es unter <Link href="/admin" className="font-semibold underline underline-offset-2">Verein</Link> einschalten.</> : null}</Alert>
+        </div>
+      ) : null}
+      {sp.denied ? (
+        <div className="mb-4">
+          <Alert tone="warn">Dafür fehlt dir die Berechtigung. Frag bei Bedarf deinen Vereinsadmin.</Alert>
+        </div>
+      ) : null}
 
-      {scoresOn ? (
+      {/* Schnellaktionen */}
+      {actions.length ? (
+        <nav aria-label="Schnellaktionen" className="stagger grid grid-cols-2 gap-2.5 sm:grid-cols-3">
+          {actions.map((a, i) => (
+            <Link
+              key={a.href}
+              href={a.href}
+              className={cn(
+                "press group flex min-h-20 flex-col justify-between gap-3 rounded-card border p-4 transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent",
+                a.primary ? "brand-gradient border-transparent text-accent-ink shadow-sm" : "border-line bg-surface hover:border-ink/30",
+                a.primary && actions.length % 2 === 1 && i === 0 && "col-span-2 sm:col-span-1",
+              )}
+            >
+              <a.icon className={cn("h-6 w-6", a.primary ? "" : "text-accent")} />
+              <span className="flex items-center justify-between gap-2 text-[15px] font-semibold leading-tight">
+                {a.label}
+                <ChevronRight className={cn("h-4 w-4 shrink-0 transition-transform group-hover:translate-x-0.5", a.primary ? "opacity-80" : "text-ink-3")} aria-hidden />
+              </span>
+            </Link>
+          ))}
+        </nav>
+      ) : null}
+
+      {/* Erste Schritte für Admins */}
+      {checklist.length ? (
         <>
+          <SectionTitle>Erste Schritte</SectionTitle>
+          <Card className="animate-rise p-4">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <h2 className="font-semibold">Richte {ctx.tenant.name} ein</h2>
+                <p className="text-sm text-ink-3">Ein paar Minuten, dann ist alles bereit. Die Liste verschwindet, sobald alles erledigt ist.</p>
+              </div>
+              <span className="shrink-0 text-sm font-semibold tabular-nums text-ink-2">{doneCount}/{checklist.length}</span>
+            </div>
+            <ProgressBar className="mt-3" value={doneCount} max={checklist.length} label="Fortschritt Einrichtung" tone="ok" size="sm" />
+            <ul className="-mx-2 mt-2">
+              {checklist.map((i) => (
+                <ChecklistItem key={i.key} done={i.done} href={i.href} title={i.title} text={i.text} />
+              ))}
+            </ul>
+          </Card>
+        </>
+      ) : null}
+
+      {/* Offene Beiträge */}
+      {invoices && invoices.count > 0 ? (
+        <Link
+          href="/billing"
+          className="press mt-4 block rounded-card focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+        >
+          <Card className={cn("animate-rise flex items-center gap-3 p-4 transition-colors hover:border-ink/30", invoices.overdue > 0 && "border-warn/50")}>
+            <span className={cn("flex h-11 w-11 shrink-0 items-center justify-center rounded-full", invoices.overdue > 0 ? "bg-warn/15 text-warn" : "bg-accent-soft text-accent")}>
+              <Receipt className="h-5 w-5" />
+            </span>
+            <div className="min-w-0 flex-1">
+              <div className="font-semibold">
+                {plural(invoices.count, "offene Rechnung", "offene Rechnungen")} · {formatMoney(invoices.totalCents, invoices.currency)}
+              </div>
+              <div className="text-xs text-ink-3">
+                {invoices.overdue > 0
+                  ? `${plural(invoices.overdue, "Rechnung ist", "Rechnungen sind")} überfällig. Mit der QR-Rechnung bezahlst du in deiner Banking-App.`
+                  : invoices.nextDue
+                    ? `Zahlbar bis ${formatDateZurich(invoices.nextDue, { weekday: undefined })} – einfach QR-Code scannen.`
+                    : "Einfach QR-Code in der Banking-App scannen."}
+              </div>
+            </div>
+            <ArrowRight className="h-4 w-4 shrink-0 text-ink-3" aria-hidden />
+          </Card>
+        </Link>
+      ) : null}
+
+      {ctx.hasModule("events") ? <AnnouncementsCard ctx={ctx} /> : null}
+
+      {scores ? (
+        <>
+          {/* Weiter wo du warst */}
+          {scores.openMine.length ? (
+            <>
+              <SectionTitle action={<Link href="/scores/matches?status=OPEN" className="text-xs text-ink-3 hover:text-ink">Alle offenen</Link>}>Weiter wo du warst</SectionTitle>
+              <div className="stagger space-y-2.5">
+                {scores.openMine.map((m) => {
+                  const done = m.participants.find((p) => p.userId === ctx.user.id)?.total ?? 0;
+                  const decimal = m.program.scoringMode === "RINGS_DECIMAL";
+                  return (
+                    <Link key={m.id} href={`/scores/matches/${m.id}`} className="press block rounded-card focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent">
+                      <Card className="flex items-center gap-3 p-4 transition-colors hover:border-ink/30">
+                        <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-accent text-accent-ink">
+                          <Play className="h-5 w-5 fill-current" />
+                        </span>
+                        <div className="min-w-0 flex-1">
+                          <div className="truncate font-medium">{m.title ?? m.program.name}</div>
+                          <div className="truncate text-xs text-ink-3">
+                            {formatDate(m.date)} · {m.participants.length > 1 ? m.participants.map((p) => p.name).join(", ") : "Training allein"}
+                          </div>
+                          <ProgressBar className="mt-2" size="sm" value={done} max={m.maxScore || 1} label={`Stand ${formatScore(done, decimal)} von ${m.maxScore}`} />
+                        </div>
+                        <div className="shrink-0 text-right">
+                          <div className="text-lg font-semibold tabular-nums">{formatScore(done, decimal)}</div>
+                          <div className="text-[11px] text-ink-3">von {m.maxScore}</div>
+                        </div>
+                      </Card>
+                    </Link>
+                  );
+                })}
+              </div>
+            </>
+          ) : null}
+
+          {/* Favoriten */}
           <SectionTitle action={<Link href="/scores/programs" className="text-xs text-ink-3 hover:text-ink">Alle Programme</Link>}>Schnellstart</SectionTitle>
-          {favorites.length ? (
+          {scores.favorites.length ? (
             <div className="stagger grid gap-2.5 sm:grid-cols-2">
-              {favorites.map((p) => (
-                <Link key={p.id} href={`/scores/matches/new?programId=${p.id}`} className="press">
-                  <Card className="p-4 h-full flex items-center gap-3 hover:border-ink/30 transition-colors">
-                    <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-accent-soft text-accent"><Star className="h-5 w-5 fill-current" /></span>
+              {scores.favorites.map((p) => (
+                <Link key={p.id} href={`/scores/matches/new?programId=${p.id}`} className="press rounded-card focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent">
+                  <Card className="flex h-full items-center gap-3 p-4 transition-colors hover:border-ink/30">
+                    <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-accent-soft text-accent">
+                      <Star className="h-5 w-5 fill-current" />
+                    </span>
                     <div className="min-w-0 flex-1">
-                      <div className="font-medium truncate">{p.name}</div>
-                      <div className="text-xs text-ink-3">{p.totals.shots} Schuss · {p.stages.length} Serien</div>
+                      <div className="truncate font-medium">{p.name}</div>
+                      <div className="text-xs text-ink-3">
+                        {p.totals.shots} Schuss · {plural(p.stages.length, "Serie", "Serien")}
+                      </div>
                     </div>
-                    <ArrowRight className="h-4 w-4 text-ink-3" />
+                    <span className="sr-only">Durchgang starten</span>
+                    <ArrowRight className="h-4 w-4 text-ink-3" aria-hidden />
                   </Card>
                 </Link>
               ))}
             </div>
           ) : (
-            <EmptyState icon={<Star className="h-5 w-5" />} title="Noch keine Favoriten" text="Markiere Programme mit dem Stern, dann erscheinen sie hier zum Schnellstart."
-              action={<LinkButton href="/scores/programs" variant="secondary" size="sm">Programme ansehen</LinkButton>} />
+            <EmptyState
+              illustration={<TargetIllustration size={80} />}
+              title="Noch keine Favoriten"
+              text="Markiere Programme mit dem Stern, dann startest du sie hier mit einem Tipp."
+              action={<LinkButton href="/scores/programs" variant="secondary" size="sm">Programme ansehen</LinkButton>}
+            />
           )}
 
-          {stats && stats.matches > 0 ? (
+          {/* Statistik */}
+          {scores.stats.matches > 0 ? (
             <>
               <SectionTitle action={<Link href="/scores/stats" className="text-xs text-ink-3 hover:text-ink">Statistik</Link>}>Deine Zahlen</SectionTitle>
               <div className="stagger grid grid-cols-3 gap-2.5">
-                <Card className="p-4"><div className="text-2xl font-semibold tabular-nums">{stats.matches}</div><div className="text-xs text-ink-3">Durchgänge</div></Card>
-                <Card className="p-4"><div className="text-2xl font-semibold tabular-nums">{stats.totalShots}</div><div className="text-xs text-ink-3">Schüsse</div></Card>
-                <Card className="p-4"><div className="text-2xl font-semibold tabular-nums">{stats.byProgram.length}</div><div className="text-xs text-ink-3">Programme</div></Card>
+                <StatCard label="Durchgänge" value={scores.stats.matches} href="/scores/matches" />
+                <StatCard label="Schüsse" value={scores.stats.totalShots.toLocaleString("de-CH")} />
+                <StatCard label="Programme" value={scores.stats.byProgram.length} href="/scores/stats" />
               </div>
+              {scores.stats.byProgram.length ? (
+                <Card className="animate-rise mt-2.5 divide-y divide-line">
+                  {[...scores.stats.byProgram]
+                    .sort((a, b) => b.count - a.count)
+                    .slice(0, 3)
+                    .map((p) => (
+                      <div key={p.name} className="flex items-center gap-3 px-4 py-3">
+                        <Trophy className="h-4 w-4 shrink-0 text-warn" aria-hidden />
+                        <div className="min-w-0 flex-1">
+                          <div className="truncate text-sm font-medium">{p.name}</div>
+                          <ProgressBar className="mt-1.5" size="sm" tone="ok" value={p.best} max={p.max || 1} label={`Bestleistung ${p.name}`} />
+                        </div>
+                        <div className="shrink-0 text-right">
+                          <div className="font-semibold tabular-nums">{formatScore(p.best, p.decimal)}</div>
+                          <div className="text-[11px] text-ink-3">Bestwert von {p.max}</div>
+                        </div>
+                      </div>
+                    ))}
+                </Card>
+              ) : null}
             </>
           ) : null}
 
+          {/* Letzte Durchgänge */}
           <SectionTitle action={<Link href="/scores/matches" className="text-xs text-ink-3 hover:text-ink">Alle</Link>}>Letzte Durchgänge</SectionTitle>
-          {recent.length ? (
+          {scores.recent.length ? (
             <div className="stagger space-y-2.5">
-              {recent.map((m) => (
-                <Link key={m.id} href={`/scores/matches/${m.id}`} className="block press">
-                  <Card className="p-4 hover:border-ink/30 transition-colors">
+              {scores.recent.map((m) => (
+                <Link key={m.id} href={`/scores/matches/${m.id}`} className="press block rounded-card focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent">
+                  <Card className="p-4 transition-colors hover:border-ink/30">
                     <div className="flex items-center justify-between gap-3">
-                      <div className="min-w-0">
-                        <div className="font-medium truncate">{m.title ?? m.program.name}</div>
-                        <div className="text-xs text-ink-3">{formatDate(m.date)} · {m.participants.map((p) => p.name).join(", ")}</div>
+                      <div className="flex min-w-0 items-center gap-3">
+                        <div className="flex shrink-0 -space-x-2">
+                          {m.participants.slice(0, 3).map((p) => (
+                            <Avatar key={p.id} name={p.name} src={p.avatarUrl} size={30} tone={p.isGuest ? "guest" : "soft"} className="ring-2 ring-surface" />
+                          ))}
+                        </div>
+                        <div className="min-w-0">
+                          <div className="truncate font-medium">{m.title ?? m.program.name}</div>
+                          <div className="truncate text-xs text-ink-3">
+                            {formatDate(m.date)} · {m.participants.map((p) => p.name).join(", ")}
+                          </div>
+                        </div>
                       </div>
-                      <div className="text-right shrink-0">
-                        <div className="text-lg font-semibold tabular-nums">{formatScore(Math.max(...m.participants.map((p) => p.total)), m.program.scoringMode === "RINGS_DECIMAL")}</div>
+                      <div className="shrink-0 text-right">
+                        <div className="text-lg font-semibold tabular-nums">
+                          {m.participants.length ? formatScore(Math.max(...m.participants.map((p) => p.total)), m.program.scoringMode === "RINGS_DECIMAL") : "–"}
+                        </div>
                         <div className="text-[11px] text-ink-3">von {m.maxScore}</div>
                       </div>
                     </div>
@@ -98,48 +392,68 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
                 </Link>
               ))}
             </div>
-          ) : (
-            <EmptyState icon={<Trophy className="h-5 w-5" />} title="Noch nichts geschossen" text="Starte deinen ersten Durchgang."
-              action={<LinkButton href="/scores/matches/new" size="sm"><Crosshair className="h-4 w-4" /> Durchgang starten</LinkButton>} />
+          ) : scores.openMine.length ? null : (
+            <EmptyState
+              icon={<Trophy className="h-5 w-5" />}
+              title="Noch nichts geschossen"
+              text="Starte deinen ersten Durchgang – allein, mit Kollegen oder Gästen."
+              action={<LinkButton href="/scores/matches/new" size="sm"><Crosshair className="h-4 w-4" /> Durchgang starten</LinkButton>}
+            />
           )}
         </>
       ) : null}
 
-      {ctx.hasModule("bookings") ? (
+      {ctx.hasModule("events") ? <UpcomingEventsCard ctx={ctx} /> : null}
+
+      {/* Nächste Reservation */}
+      {bookingsOn ? (
         <>
           <SectionTitle action={<Link href="/bookings" className="text-xs text-ink-3 hover:text-ink">Reservieren</Link>}>Nächste Reservation</SectionTitle>
           {nextBookings.length ? (
             <div className="stagger space-y-2.5">
               {nextBookings.map((b) => (
-                <Link key={b.id} href={`/bookings/${b.id}`} className="block press">
-                  <Card className="p-4 flex items-center gap-3 hover:border-ink/30 transition-colors">
-                    <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-surface-2 text-ink-2"><CalendarDays className="h-5 w-5" /></span>
-                    <div className="min-w-0 flex-1"><div className="font-medium truncate">{b.resource.name}</div><div className="text-xs text-ink-3">{formatDateZurich(b.startsAt)} · {formatTimeRange(b.startsAt, b.endsAt)}{b.status === "PENDING" ? " · wartet auf Freigabe" : ""}</div></div>
-                    <ArrowRight className="h-4 w-4 text-ink-3" />
+                <Link key={b.id} href={`/bookings/${b.id}`} className="press block rounded-card focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent">
+                  <Card className="flex items-center gap-3 p-4 transition-colors hover:border-ink/30">
+                    <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-surface-2 text-ink-2">
+                      <CalendarDays className="h-5 w-5" />
+                    </span>
+                    <div className="min-w-0 flex-1">
+                      <div className="truncate font-medium">{b.resource.name}</div>
+                      <div className="text-xs text-ink-3">
+                        {formatDateZurich(b.startsAt)} · {formatTimeRange(b.startsAt, b.endsAt)}
+                        {b.status === "PENDING" ? " · wartet auf Freigabe" : ""}
+                      </div>
+                    </div>
+                    <ArrowRight className="h-4 w-4 text-ink-3" aria-hidden />
                   </Card>
                 </Link>
               ))}
             </div>
           ) : (
-            <EmptyState icon={<CalendarDays className="h-5 w-5" />} title="Keine Reservation geplant" action={<LinkButton href="/bookings" variant="secondary" size="sm">Jetzt reservieren</LinkButton>} />
+            <EmptyState
+              icon={<CalendarDays className="h-5 w-5" />}
+              title="Keine Reservation geplant"
+              text="Sieh nach, wann die Anlage frei ist, und reserviere in wenigen Schritten."
+              action={<LinkButton href="/bookings" variant="secondary" size="sm">Jetzt reservieren</LinkButton>}
+            />
           )}
         </>
       ) : null}
 
-      <SectionTitle>Module</SectionTitle>
-      <div className="stagger grid gap-2.5 sm:grid-cols-2">
-        {enabled.map((m) => (
-          <Link key={m.key} href={m.href} className="press">
-            <Card className="p-4 h-full hover:border-ink/30 transition-colors">
-              <div className="flex items-center gap-2">
-                {m.key === "scores" ? <Crosshair className="h-4 w-4" /> : m.key === "targets" ? <Target className="h-4 w-4" /> : m.key === "bookings" ? <CalendarDays className="h-4 w-4" /> : null}
-                <span className="font-medium">{m.name}</span>
-                {m.status === "planned" ? <Badge tone="outline">bald</Badge> : null}
-              </div>
-              <p className="text-sm text-ink-3 mt-1">{m.description}</p>
-            </Card>
+      {/* Fusszeile */}
+      <div className="mt-8 grid gap-2.5 sm:grid-cols-2">
+        {isAdmin ? (
+          <Link href="/admin/members" className="press flex items-center gap-3 rounded-card border border-line bg-surface p-4 transition-colors hover:border-ink/30 focus-visible:outline-2 focus-visible:outline-accent">
+            <Users className="h-5 w-5 text-ink-3" aria-hidden />
+            <span className="flex-1 text-sm font-medium">Mitglieder einladen</span>
+            <ChevronRight className="h-4 w-4 text-ink-3" aria-hidden />
           </Link>
-        ))}
+        ) : null}
+        <Link href="/help" className="press flex items-center gap-3 rounded-card border border-line bg-surface p-4 transition-colors hover:border-ink/30 focus-visible:outline-2 focus-visible:outline-accent">
+          <HelpCircle className="h-5 w-5 text-ink-3" aria-hidden />
+          <span className="flex-1 text-sm font-medium">Hilfe & häufige Fragen</span>
+          <ChevronRight className="h-4 w-4 text-ink-3" aria-hidden />
+        </Link>
       </div>
     </div>
   );

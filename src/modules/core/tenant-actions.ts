@@ -132,7 +132,24 @@ export async function setModuleEnabledAction(moduleKey: string, enabled: boolean
   return ok();
 }
 
-const updateTenantSchema = createTenantSchema;
+/** Webseite normalisieren: «verein.ch» → «https://verein.ch». Nur http(s). */
+function normalizeWebsite(raw: string): string | null | false {
+  const v = raw.trim();
+  if (!v) return null;
+  const withProto = /^https?:\/\//i.test(v) ? v : `https://${v}`;
+  try {
+    const u = new URL(withProto);
+    if (u.protocol !== "http:" && u.protocol !== "https:") return false;
+    if (!u.hostname.includes(".")) return false;
+    return u.toString().slice(0, 190);
+  } catch {
+    return false;
+  }
+}
+
+const updateTenantSchema = createTenantSchema.extend({
+  description: z.string().trim().max(2000, "Beschreibung zu lang (max. 2000 Zeichen)").optional(),
+});
 export async function updateTenantAction(_prev: ActionResult | null, formData: FormData): Promise<ActionResult> {
   const ctx = await requirePermission("tenant.manage");
   const parsed = updateTenantSchema.safeParse({
@@ -140,9 +157,16 @@ export async function updateTenantAction(_prev: ActionResult | null, formData: F
     kind: formData.get("kind") ?? "CLUB",
     city: formData.get("city") || undefined,
     canton: formData.get("canton") || undefined,
+    description: formData.get("description") || undefined,
   });
   if (!parsed.success) return fail(parsed.error.issues[0]?.message ?? "Ungültige Eingabe");
-  await db.tenant.update({ where: { id: ctx.tenant.id }, data: parsed.data });
+  const website = normalizeWebsite(String(formData.get("website") ?? ""));
+  if (website === false) return fail("Ungültige Webseite, z.B. «www.sv-beispiel.ch».", { website: "Ungültige Adresse" });
+  const { description, ...rest } = parsed.data;
+  await db.tenant.update({
+    where: { id: ctx.tenant.id },
+    data: { ...rest, city: rest.city ?? null, canton: rest.canton ?? null, description: description || null, website },
+  });
   revalidatePath("/", "layout");
   return ok(undefined, "Gespeichert.");
 }

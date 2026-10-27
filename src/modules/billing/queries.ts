@@ -2,6 +2,7 @@ import "server-only";
 import { db } from "@/lib/db";
 import type { AppContext } from "@/lib/tenant";
 import { zurichParts } from "@/lib/time";
+import { userAvatarUrl } from "@/components/avatar";
 
 type TenantCtx = AppContext & { tenant: NonNullable<AppContext["tenant"]> };
 
@@ -22,7 +23,7 @@ export async function listMembersForBilling(tenantId: string, year: number) {
   const members = await db.membership.findMany({
     where: { tenantId },
     include: {
-      user: { select: { id: true, name: true, email: true, street: true, zip: true, city: true } },
+      user: { select: { id: true, name: true, email: true, street: true, zip: true, city: true, avatarPath: true, updatedAt: true } },
       feeCategory: true,
       feeInvoices: { where: { year, status: { not: "CANCELLED" } }, select: { id: true, number: true, status: true, amountCents: true } },
     },
@@ -33,6 +34,7 @@ export async function listMembersForBilling(tenantId: string, year: number) {
     userId: m.user.id,
     name: m.user.name,
     email: m.user.email,
+    avatarUrl: userAvatarUrl(m.user),
     address: [m.user.street, [m.user.zip, m.user.city].filter(Boolean).join(" ")].filter(Boolean).join(", ") || null,
     role: m.role,
     memberNumber: m.memberNumber,

@@ -1,6 +1,12 @@
 @import "tailwindcss";
 
-@custom-variant dark (&:where(.dark, .dark *));
+/* dark: folgt dem System, ausser der Benutzer erzwingt hell/dunkel (data-theme auf <html>). */
+@custom-variant dark {
+  &:where([data-theme="dark"], [data-theme="dark"] *) { @slot; }
+  @media (prefers-color-scheme: dark) {
+    &:where(:root:not([data-theme="light"]), :root:not([data-theme="light"]) *) { @slot; }
+  }
+}
 
 @theme {
   --font-sans: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
@@ -16,8 +22,11 @@
   --color-accent: var(--accent);
   --color-accent-ink: var(--accent-ink);
   --color-accent-soft: var(--accent-soft);
+  --color-accent-2: var(--accent-2);
+  --color-accent-2-ink: var(--accent-2-ink);
   --color-ok: var(--ok);
   --color-warn: var(--warn);
+  --color-danger: var(--danger);
 
   --radius-card: 1.25rem;
   --radius-control: 0.875rem;
@@ -61,8 +70,11 @@
   --accent: #d6232d;
   --accent-ink: #ffffff;
   --accent-soft: #fbe4e5;
+  --accent-2: var(--accent);
+  --accent-2-ink: var(--accent-ink);
   --ok: #1f8a4c;
   --warn: #c7811b;
+  --danger: #c62828; /* fest, unabhängig von der Vereinsfarbe */
   color-scheme: light;
 }
 
@@ -78,10 +90,33 @@
     --accent: #ef3b45;
     --accent-ink: #ffffff;
     --accent-soft: #3a1b1d;
+    --accent-2: var(--accent);
+    --accent-2-ink: var(--accent-ink);
     --ok: #3cc072;
     --warn: #e5a04a;
+    --danger: #ef5350;
     color-scheme: dark;
   }
+}
+
+/* Vom Benutzer erzwungenes Dunkel (Profil → Darstellung). */
+:root[data-theme="dark"] {
+  --bg: #111110;
+  --surface: #1b1b1a;
+  --surface-2: #262625;
+  --ink: #f3f1ec;
+  --ink-2: #c4c1ba;
+  --ink-3: #85827b;
+  --line: #2e2d2b;
+  --accent: #ef3b45;
+  --accent-ink: #ffffff;
+  --accent-soft: #3a1b1d;
+  --accent-2: var(--accent);
+  --accent-2-ink: var(--accent-ink);
+  --ok: #3cc072;
+  --warn: #e5a04a;
+  --danger: #ef5350;
+  color-scheme: dark;
 }
 
 html, body {
@@ -119,6 +154,22 @@ body {
 
 .press { transition: transform 120ms ease, opacity 120ms ease; }
 .press:active { transform: scale(0.96); }
+
+.safe-top { padding-top: env(safe-area-inset-top); }
+
+/* Schachbrett für transparente Bilder (Logo-Vorschau). */
+.checker {
+  background-color: var(--surface);
+  background-image:
+    linear-gradient(45deg, var(--surface-2) 25%, transparent 25%),
+    linear-gradient(-45deg, var(--surface-2) 25%, transparent 25%),
+    linear-gradient(45deg, transparent 75%, var(--surface-2) 75%),
+    linear-gradient(-45deg, transparent 75%, var(--surface-2) 75%);
+  background-size: 16px 16px;
+  background-position: 0 0, 0 8px, 8px -8px, -8px 0;
+}
+
+.brand-gradient { background-image: linear-gradient(135deg, var(--accent), var(--accent-2)); }
 
 .safe-bottom { padding-bottom: calc(env(safe-area-inset-bottom) + 0.5rem); }
 

@@ -57,3 +57,22 @@ export function initials(name: string) {
     .map((p) => p[0]!.toUpperCase())
     .join("");
 }
+
+/** Stunde (0–23) in Schweizer Zeit. Ohne Argument: jetzt. */
+export function zurichHour(at: Date = new Date()) {
+  const h = new Intl.DateTimeFormat("en-US", { timeZone: "Europe/Zurich", hourCycle: "h23", hour: "2-digit" }).format(at);
+  return Number(h) % 24;
+}
+
+/** Tageszeitabhängiger Gruss in Schweizer Zeit («Guten Morgen», «Hallo», «Guten Abend»). */
+export function dayGreeting(at: Date = new Date()) {
+  const hour = zurichHour(at);
+  if (hour >= 5 && hour < 11) return "Guten Morgen";
+  if (hour < 18) return "Hallo";
+  return "Guten Abend";
+}
+
+/** Einzahl/Mehrzahl: plural(1, "Rechnung", "Rechnungen") → "1 Rechnung" */
+export function plural(n: number, one: string, many: string) {
+  return `${n} ${n === 1 ? one : many}`;
+}

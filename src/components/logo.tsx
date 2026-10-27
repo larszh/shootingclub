@@ -16,3 +16,16 @@ export function Wordmark({ className = "" }: { className?: string }) {
     </span>
   );
 }
+
+/**
+ * Vereinslogo mit Fallback auf das Standchef-Zeichen. `src` ist z.B. ctx.tenant.logoUrl.
+ */
+export function TenantLogo({ src, size = 28, className = "" }: { src?: string | null; size?: number; className?: string }) {
+  if (!src) return <Logo size={size} className={className} />;
+  return (
+    <span className={`inline-flex shrink-0 items-center justify-center overflow-hidden rounded-lg ${className}`} style={{ width: size, height: size }} aria-hidden>
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img src={src} alt="" className="h-full w-full object-contain" decoding="async" />
+    </span>
+  );
+}

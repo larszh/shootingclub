@@ -6,7 +6,8 @@ import { z } from "zod";
 import { db } from "@/lib/db";
 import { requireModule, requirePermission, requireSuperAdmin } from "@/lib/tenant";
 import { fail, ok, type ActionResult } from "@/lib/action-result";
-import { parseStages, programInputSchema, sanitizeShots, stageTotal, type ProgramInput, type ScoringMode } from "./types";
+import { programInputSchema, type ProgramInput } from "./types";
+import { createMatchCore, saveStageResultCore } from "./sync";
 
 function parseProgramForm(formData: FormData) {
   const raw = {
@@ -97,6 +98,9 @@ export async function archiveProgramAction(programId: string, archived: boolean)
 
 export async function toggleFavoriteAction(programId: string): Promise<ActionResult<{ favorite: boolean }>> {
   const ctx = await requireModule("scores");
+  // Nur Programme, die im aktiven Verein sichtbar sind (global oder eigene).
+  const program = await db.program.findUnique({ where: { id: String(programId) }, select: { tenantId: true } });
+  if (!program || (program.tenantId && program.tenantId !== ctx.tenant.id)) return fail("Nicht gefunden");
   const existing = await db.programFavorite.findUnique({ where: { userId_programId: { userId: ctx.user.id, programId } } });
   if (existing) {
     await db.programFavorite.delete({ where: { id: existing.id } });
@@ -124,47 +128,28 @@ const createMatchSchema = z.object({
 export async function createMatchAction(_prev: ActionResult | null, formData: FormData): Promise<ActionResult> {
   const ctx = await requireModule("scores");
   if (!ctx.can("match.create")) return fail("Keine Berechtigung");
+  let participantsRaw: unknown = [];
+  try {
+    participantsRaw = JSON.parse(String(formData.get("participantsJson") ?? "[]"));
+  } catch {
+    return fail("Ungültige Teilnehmerliste");
+  }
   const parsed = createMatchSchema.safeParse({
     programId: formData.get("programId"),
     title: formData.get("title") || undefined,
     date: formData.get("date") || undefined,
     locationNote: formData.get("locationNote") || undefined,
-    participants: JSON.parse(String(formData.get("participantsJson") ?? "[]")),
+    participants: participantsRaw,
   });
   if (!parsed.success) return fail(parsed.error.issues[0]?.message ?? "Ungültige Eingabe");
-  const { programId, title, date, locationNote, participants } = parsed.data;
+  // Optionale clientId (vom Gerät erzeugt) macht das Erstellen idempotent, z.B. bei Wiederholung nach Verbindungsabbruch.
+  const clientIdRaw = formData.get("clientId");
+  const clientId = typeof clientIdRaw === "string" && /^[A-Za-z0-9_-]{8,64}$/.test(clientIdRaw) ? clientIdRaw : undefined;
 
-  const program = await db.program.findUnique({ where: { id: programId } });
-  if (!program || (program.tenantId && program.tenantId !== ctx.tenant.id) || program.isArchived) return fail("Programm nicht verfügbar");
-
-  // Nur Mitglieder desselben Tenants als Gegner
-  const memberIds = new Set((await db.membership.findMany({ where: { tenantId: ctx.tenant.id }, select: { userId: true } })).map((m) => m.userId));
-  const seen = new Set<string>();
-  const rows: Array<{ userId: string | null; guestName: string | null; note: string | null; sortOrder: number }> = [];
-  for (const p of participants) {
-    if (p.userId) {
-      if (!memberIds.has(p.userId) || seen.has(p.userId)) continue;
-      seen.add(p.userId);
-      rows.push({ userId: p.userId, guestName: null, note: p.note ?? null, sortOrder: rows.length });
-    } else {
-      rows.push({ userId: null, guestName: p.guestName || "Gast", note: p.note ?? null, sortOrder: rows.length });
-    }
-  }
-  if (rows.length === 0) return fail("Mindestens ein Teilnehmer");
-
-  const match = await db.match.create({
-    data: {
-      tenantId: ctx.tenant.id,
-      programId,
-      createdById: ctx.user.id,
-      title: title ?? null,
-      date: date ? new Date(date) : new Date(),
-      locationNote: locationNote ?? null,
-      participants: { create: rows },
-    },
-  });
+  const res = await createMatchCore({ userId: ctx.user.id, tenantId: ctx.tenant.id, can: ctx.can }, { ...parsed.data, clientId });
+  if (!res.ok) return fail(res.error);
   revalidatePath("/scores");
-  redirect(`/scores/matches/${match.id}`);
+  redirect(`/scores/matches/${res.matchId}`);
 }
 
 async function loadEditableMatch(matchId: string) {
@@ -177,25 +162,18 @@ async function loadEditableMatch(matchId: string) {
   return { ok: true as const, ctx, match: m, isCreator };
 }
 
-export async function saveStageResultAction(input: { matchId: string; participantId: string; stageIndex: number; shots: number[] }): Promise<ActionResult<{ total: number }>> {
-  const loaded = await loadEditableMatch(input.matchId);
-  if (!loaded.ok) return fail(loaded.error);
-  const { match } = loaded;
-  if (match.status === "FINISHED") return fail("Wettkampf ist abgeschlossen.");
-  const participant = match.participants.find((p) => p.id === input.participantId);
-  if (!participant) return fail("Teilnehmer nicht gefunden");
-  const stages = parseStages(match.program.stagesJson);
-  const stage = stages[input.stageIndex];
-  if (!stage) return fail("Serie nicht gefunden");
-  const shots = sanitizeShots(input.shots, stage, match.program.scoringMode as ScoringMode);
-  const total = stageTotal(shots);
-  await db.matchResult.upsert({
-    where: { participantId_stageIndex: { participantId: participant.id, stageIndex: input.stageIndex } },
-    create: { participantId: participant.id, stageIndex: input.stageIndex, shotsJson: JSON.stringify(shots), total },
-    update: { shotsJson: JSON.stringify(shots), total },
-  });
-  revalidatePath(`/scores/matches/${match.id}`);
-  return ok({ total });
+/**
+ * Serie speichern. `clientUpdatedAt` (ms, Gerätezeit) aktiviert last-write-wins: ältere
+ * Änderungen als die gespeicherte werden ignoriert. Gemeinsame Logik mit der Offline-Synchronisierung.
+ */
+export async function saveStageResultAction(input: { matchId: string; participantId: string; stageIndex: number; shots: number[]; clientUpdatedAt?: number }): Promise<ActionResult<{ total: number }>> {
+  const ctx = await requireModule("scores");
+  const res = await saveStageResultCore(
+    { userId: ctx.user.id, tenantId: ctx.tenant.id, can: ctx.can },
+    { matchId: input.matchId, participantKey: input.participantId, stageIndex: input.stageIndex, shots: input.shots, clientUpdatedAt: input.clientUpdatedAt },
+  );
+  if (!res.ok) return fail(res.error);
+  return ok({ total: res.total });
 }
 
 export async function setMatchStatusAction(matchId: string, status: "OPEN" | "FINISHED"): Promise<ActionResult> {
@@ -214,4 +192,65 @@ export async function deleteMatchAction(matchId: string): Promise<ActionResult> 
   await db.match.delete({ where: { id: matchId } });
   revalidatePath("/scores");
   redirect("/scores");
+}
+
+/**
+ * Globales Programm als Vereinsprogramm kopieren (Admin). Die Kopie gehört dem aktiven Tenant
+ * und kann frei angepasst werden; optional wird das globale Original im Verein versteckt.
+ */
+export async function copyProgramToTenantAction(programId: string, opts?: { hideOriginal?: boolean }): Promise<ActionResult<{ id: string }>> {
+  const ctx = await requirePermission("tenant.programs.manage");
+  if (!ctx.hasModule("scores")) return fail("Modul nicht aktiv");
+  const idOk = z.string().min(1).max(64).safeParse(programId);
+  if (!idOk.success) return fail("Ungültige Eingabe");
+  const src = await db.program.findUnique({ where: { id: idOk.data } });
+  if (!src || src.tenantId !== null) return fail("Nur globale Programme können kopiert werden");
+  const copy = await db.program.create({
+    data: {
+      tenantId: ctx.tenant.id,
+      createdById: ctx.user.id,
+      name: src.name.slice(0, 80),
+      description: src.description,
+      discipline: src.discipline,
+      weaponNote: src.weaponNote,
+      scoringMode: src.scoringMode,
+      stagesJson: src.stagesJson,
+    },
+  });
+  if (opts?.hideOriginal) {
+    await db.programTenantSetting.upsert({
+      where: { programId_tenantId: { programId: src.id, tenantId: ctx.tenant.id } },
+      create: { programId: src.id, tenantId: ctx.tenant.id, hidden: true },
+      update: { hidden: true },
+    });
+  }
+  revalidatePath("/scores");
+  revalidatePath("/scores/programs");
+  return ok({ id: copy.id }, "Als Vereinsprogramm kopiert");
+}
+
+/** Vereinsprogramm duplizieren (Admin), z.B. als Ausgangspunkt für eine Variante. */
+export async function duplicateProgramAction(programId: string): Promise<ActionResult<{ id: string }>> {
+  const ctx = await requirePermission("tenant.programs.manage");
+  if (!ctx.hasModule("scores")) return fail("Modul nicht aktiv");
+  const idOk = z.string().min(1).max(64).safeParse(programId);
+  if (!idOk.success) return fail("Ungültige Eingabe");
+  const src = await db.program.findUnique({ where: { id: idOk.data } });
+  if (!src || src.tenantId !== ctx.tenant.id) return fail("Nicht gefunden");
+  const suffix = " (Kopie)";
+  const copy = await db.program.create({
+    data: {
+      tenantId: ctx.tenant.id,
+      createdById: ctx.user.id,
+      name: src.name.slice(0, 80 - suffix.length) + suffix,
+      description: src.description,
+      discipline: src.discipline,
+      weaponNote: src.weaponNote,
+      scoringMode: src.scoringMode,
+      stagesJson: src.stagesJson,
+    },
+  });
+  revalidatePath("/scores");
+  revalidatePath("/scores/programs");
+  return ok({ id: copy.id }, "Programm dupliziert");
 }

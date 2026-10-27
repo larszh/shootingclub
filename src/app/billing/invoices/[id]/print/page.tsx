@@ -3,7 +3,7 @@ import { requireModule } from "@/lib/tenant";
 import { getFeeInvoice } from "@/modules/billing/queries";
 import { buildFeeInvoiceDocument } from "@/modules/billing/render";
 import { InvoiceDocument, PrintShell } from "@/components/invoice-document";
-import { PrintButton } from "@/app/targets/[id]/print/print-button";
+import { PrintButton } from "@/components/print-button";
 import { db } from "@/lib/db";
 
 export const metadata = { title: "Beitragsrechnung" };
