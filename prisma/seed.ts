@@ -62,11 +62,6 @@ async function main() {
         lastMinuteDiscountPercent: 20,
         lastMinuteWindowHours: 24,
         minLeadMinutes: 0,
-        payeeName: "Demo Schützengesellschaft",
-        payeeStreet: "Schützenstrasse 1",
-        payeeZip: "8000",
-        payeeCity: "Musterhausen",
-        iban: "CH9300762011623852957",
       },
     });
     if ((await db.resource.count({ where: { tenantId: demo.id } })) === 0) {
@@ -77,6 +72,22 @@ async function main() {
           { tenantId: demo.id, name: "Indoor Bahn 2", kind: "LANE", capacity: 1, sortOrder: 2 },
         ],
       });
+    }
+    await db.tenantModule.upsert({ where: { tenantId_moduleKey: { tenantId: demo.id, moduleKey: "billing" } }, update: { enabled: true }, create: { tenantId: demo.id, moduleKey: "billing", enabled: true } });
+    await db.billingProfile.upsert({
+      where: { tenantId: demo.id },
+      update: {},
+      create: { tenantId: demo.id, payeeName: "Demo Schützengesellschaft", payeeStreet: "Schützenstrasse 1", payeeZip: "8000", payeeCity: "Musterhausen", iban: "CH9300762011623852957" },
+    });
+    if ((await db.feeCategory.count({ where: { tenantId: demo.id } })) === 0) {
+      const [aktiv, passiv] = await Promise.all([
+        db.feeCategory.create({ data: { tenantId: demo.id, name: "Aktivmitglied", amountCents: 15000, sortOrder: 0 } }),
+        db.feeCategory.create({ data: { tenantId: demo.id, name: "Passivmitglied", amountCents: 5000, sortOrder: 1 } }),
+      ]);
+      await db.feeCategory.create({ data: { tenantId: demo.id, name: "Jungschütze", amountCents: 0, description: "beitragsfrei", sortOrder: 2 } });
+      await db.membership.updateMany({ where: { tenantId: demo.id, userId: anna.id }, data: { feeCategoryId: aktiv.id, memberNumber: "1001" } });
+      await db.membership.updateMany({ where: { tenantId: demo.id, userId: beat.id }, data: { feeCategoryId: passiv.id, memberNumber: "1002" } });
+      await db.user.update({ where: { id: beat.id }, data: { street: "Bahnhofstrasse 12", zip: "8001", city: "Zürich" } });
     }
     console.log("Demo-Verein: Beitrittscode DEMO42 · anna@example.ch / beat@example.ch (Passwort demo1234)");
   }

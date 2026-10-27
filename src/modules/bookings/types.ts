@@ -83,11 +83,6 @@ export const settingsSchema = z.object({
   cancellationHours: z.coerce.number().int().min(0).max(24 * 60),
   invoiceDueDays: z.coerce.number().int().min(1).max(365),
   invoicePrefix: z.string().trim().max(10),
-  payeeName: z.string().trim().max(70).optional(),
-  payeeStreet: z.string().trim().max(70).optional(),
-  payeeZip: z.string().trim().max(16).optional(),
-  payeeCity: z.string().trim().max(35).optional(),
-  iban: z.string().trim().max(40).transform((v) => v.toUpperCase().replace(/\s+/g, "")).optional(),
   invoiceNote: z.string().trim().max(500).optional(),
 });
 export type SettingsInput = z.infer<typeof settingsSchema>;

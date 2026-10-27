@@ -49,7 +49,8 @@ src/
     core/         Auth- und Tenant-Actions (Registrierung, Beitritt, Rollen, Module)
     scores/       Punkteerfassung: types, presets, queries, actions, ui/
     targets/      Zielscheiben: types, presets, svg-generator, queries, actions, ui/
-    bookings/     Reservationen: types, availability, pricing, invoice (QR), payments/{stripe,worldline,sumup}, actions, ui/
+    bookings/     Reservationen: types, availability, pricing, invoice, payments/{stripe,worldline,sumup}, actions, ui/
+    billing/      Mitgliederbeiträge: types, queries, actions, render (Rechnungsdaten), profile (Rechnungsprofil), ui/
   app/
     (auth)/       login, register
     (app)/        eingeloggter Bereich mit App-Shell (Tab-Bar mobil, Sidebar Desktop)
@@ -59,9 +60,14 @@ src/
       super/      Super-Admin: Tenants, Benutzer, globale Programme/Scheiben
       bookings/   Reservieren, Detail, Bezahlen, Rücksprung vom Zahlungsanbieter
       admin/bookings/  Übersicht, Ressourcen, Einstellungen, Zahlungsanbieter
-      billing/    Platzhalter Mitgliederbeiträge
+      billing/    Meine Beiträge
+      admin/billing/   Übersicht und Jahreslauf, Mitglieder, Kategorien, Rechnungsprofil
     targets/[id]/print   Druckansicht ohne App-Shell
-    bookings/[id]/invoice  Druckbare Rechnung mit QR-Zahlteil
+    bookings/[id]/invoice  Druckbare Reservations-Rechnung mit QR-Zahlteil
+    billing/invoices/[id]/print   Druckbare Beitragsrechnung (optional als Zahlungserinnerung)
+    admin/billing/runs/[id]/print Sammeldruck eines Jahreslaufs
+  lib/qr-bill.ts            Schweizer QR-Rechnung als SVG (swissqrbill)
+  components/invoice-document.tsx  Gemeinsames A4-Rechnungslayout
     api/files/[id]       Auslieferung hochgeladener Dateien (mit Rechteprüfung)
     api/payments/stripe/[tenantId]  Stripe-Webhook pro Tenant
 ```
@@ -103,6 +109,15 @@ Registry in `src/lib/modules.ts`. Jedes Modul ist pro Tenant ein-/ausschaltbar (
 - Zahlungsanbieter pro Tenant mit eigenem Konto: Stripe (Checkout + Webhook), Worldline Saferpay (Payment Page) und SumUp (Hosted Checkout). Zugangsdaten werden mit AES-256-GCM verschlüsselt gespeichert (`src/lib/crypto.ts`).
 - Mitglieder sehen Verfügbarkeit live, buchen in vier Schritten, stornieren innerhalb der Frist. Admins geben frei, markieren Rechnungen als bezahlt, verwalten Erstattungen.
 - Nicht abgeschlossene Online-Zahlungen geben den Slot nach 30 Minuten automatisch wieder frei.
+
+**Mitgliederbeiträge** (`billing`, pro Tenant aktivierbar)
+- Beitragskategorien pro Verein (Aktiv, Passiv, Jungschützen, …) mit Betrag; Zuordnung pro Mitglied, optional individueller Betrag und Mitgliedernummer.
+- Jahreslauf: ein Klick erstellt für alle Mitglieder mit Beitrag die Rechnung mit fortlaufender Nummer (z.B. `MB-2026-0001`). Neue Mitglieder erhalten ihre Rechnung einzeln.
+- Jede Rechnung mit Schweizer QR-Zahlteil (Zahler vorausgefüllt, wenn das Mitglied seine Adresse im Profil hinterlegt hat). Sammeldruck aller offenen Rechnungen, Zahlungserinnerungen für überfällige mit neuer Frist.
+- Zahlungsstatus pro Rechnung (offen, bezahlt, storniert), Übersicht pro Jahr mit offenen und bezahlten Beträgen.
+- Mitglieder sehen ihre Rechnungen unter «Beiträge» und drucken oder scannen sie direkt.
+
+**Rechnungsprofil** (gemeinsam): Zahlungsempfänger, Adresse, IBAN und Währung des Vereins, genutzt von Reservationen und Mitgliederbeiträgen. IBAN wird mit Prüfziffer validiert.
 
 ## Produktion
 

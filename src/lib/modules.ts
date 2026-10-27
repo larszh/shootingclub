@@ -42,9 +42,9 @@ export const MODULES: ModuleDefinition[] = [
   {
     key: "billing",
     name: "Mitgliederbeiträge",
-    description: "Jahresbeiträge, Sammelrechnungen und Mahnwesen. Kommt später.",
+    description: "Beitragskategorien, Jahresrechnung mit QR-Rechnung, Zahlungsübersicht und Erinnerungen.",
     href: "/billing",
-    status: "planned",
+    status: "ready",
     defaultEnabled: false,
   },
 ];

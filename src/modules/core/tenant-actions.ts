@@ -182,7 +182,8 @@ export async function updateProfileAction(_prev: ActionResult | null, formData: 
   const ctx = await getAppContext();
   const name = String(formData.get("name") ?? "").trim();
   if (name.length < 2) return fail("Name zu kurz");
-  await db.user.update({ where: { id: ctx.user.id }, data: { name } });
+  const opt = (k: string) => { const v = String(formData.get(k) ?? "").trim(); return v ? v.slice(0, 80) : null; };
+  await db.user.update({ where: { id: ctx.user.id }, data: { name, street: opt("street"), zip: opt("zip"), city: opt("city") } });
   revalidatePath("/", "layout");
   return ok(undefined, "Gespeichert.");
 }

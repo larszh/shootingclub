@@ -76,6 +76,10 @@ Das Script zieht den Code, installiert Abhängigkeiten, spielt neue Migrationen 
 
 Uploads (eigene Scheiben) liegen in `storage/uploads`. Dieser Ordner liegt ausserhalb von Git und bleibt bei Updates erhalten. Ins Backup aufnehmen, zusammen mit der Datenbank (CloudPanel → Databases → Backup, oder `mysqldump`).
 
+## Rechnungsprofil (pro Verein)
+
+Unter **Mehr → Mitgliederbeiträge verwalten → Rechnungsprofil** trägt jeder Verein Zahlungsempfänger, Adresse und IBAN ein. Ohne diese Angaben werden Rechnungen ohne QR-Zahlteil erstellt. Mitglieder hinterlegen ihre Adresse unter **Mehr → Profil**, damit sie im QR-Code als Zahler erscheinen.
+
 ## Zahlungsanbieter (pro Verein)
 
 Jeder Verein richtet seinen Anbieter selbst unter **Mehr → Reservationen verwalten → Zahlungsanbieter** ein. Das Geld fliesst direkt auf das Konto des Vereins.

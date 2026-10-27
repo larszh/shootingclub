@@ -24,11 +24,6 @@ export type BookingSettingsView = {
   cancellationHours: number;
   invoiceDueDays: number;
   invoicePrefix: string;
-  payeeName: string | null;
-  payeeStreet: string | null;
-  payeeZip: string | null;
-  payeeCity: string | null;
-  iban: string | null;
   invoiceNote: string | null;
   exists: boolean;
 };
@@ -40,7 +35,7 @@ export async function getBookingSettings(tenantId: string): Promise<BookingSetti
       currency: "CHF", slotStepMinutes: 30, durationOptions: DEFAULT_DURATIONS, openingHours: DEFAULT_OPENING_HOURS,
       approvalRequired: false, allowInvoice: true, allowOnline: false, onlineProvider: "NONE",
       lastMinuteDiscountPercent: 0, lastMinuteWindowHours: 24, minLeadMinutes: 60, maxAdvanceDays: 60, cancellationHours: 24,
-      invoiceDueDays: 30, invoicePrefix: "R-", payeeName: null, payeeStreet: null, payeeZip: null, payeeCity: null, iban: null, invoiceNote: null, exists: false,
+      invoiceDueDays: 30, invoicePrefix: "R-", invoiceNote: null, exists: false,
     };
   }
   const d = z.array(durationOptionSchema).safeParse(safeJson(s.durationOptionsJson, []));

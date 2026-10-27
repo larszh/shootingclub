@@ -24,6 +24,9 @@ model User {
   passwordHash String
   isSuperAdmin Boolean  @default(false)
   locale       String   @default("de")
+  street       String?
+  zip          String?
+  city         String?
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
@@ -36,6 +39,7 @@ model User {
   targetTemplates  TargetTemplate[]    @relation("TargetOwner")
   targetFavorites  TargetFavorite[]
   bookings         Booking[]
+  feeInvoices      FeeInvoice[]
 }
 
 model Session {
@@ -73,16 +77,25 @@ model Tenant {
   bookings        Booking[]
   paymentConfigs  PaymentProviderConfig[]
   invoices        Invoice[]
+  billingProfile  BillingProfile?
+  feeCategories   FeeCategory[]
+  feeRuns         FeeRun[]
+  feeInvoices     FeeInvoice[]
 }
 
 model Membership {
-  id        String   @id @default(cuid())
-  userId    String
-  tenantId  String
-  role      String   @default("MEMBER") // OWNER | ADMIN | TRAINER | MEMBER
-  createdAt DateTime @default(now())
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  id                    String   @id @default(cuid())
+  userId                String
+  tenantId              String
+  role                  String   @default("MEMBER") // OWNER | ADMIN | TRAINER | MEMBER
+  feeCategoryId         String?
+  feeAmountOverrideCents Int?    // individueller Beitrag, überschreibt die Kategorie
+  memberNumber          String?
+  createdAt             DateTime @default(now())
+  user                  User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tenant                Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  feeCategory           FeeCategory? @relation(fields: [feeCategoryId], references: [id], onDelete: SetNull)
+  feeInvoices           FeeInvoice[]
 
   @@unique([userId, tenantId])
   @@index([tenantId])
@@ -268,11 +281,6 @@ model BookingSettings {
   cancellationHours         Int     @default(24)
   invoiceDueDays            Int     @default(30)
   invoicePrefix             String  @default("R-")
-  payeeName                 String?
-  payeeStreet               String?
-  payeeZip                  String?
-  payeeCity                 String?
-  iban                      String?
   invoiceNote               String? @db.Text
   updatedAt                 DateTime @updatedAt
 
@@ -395,4 +403,95 @@ model Invoice {
   booking Booking @relation(fields: [bookingId], references: [id], onDelete: Cascade)
 
   @@unique([tenantId, number])
+}
+
+// ---------------------------------------------------------------------------
+// Rechnungsprofil (gemeinsam für Reservationen und Mitgliederbeiträge)
+// ---------------------------------------------------------------------------
+
+model BillingProfile {
+  id          String   @id @default(cuid())
+  tenantId    String   @unique
+  payeeName   String?
+  payeeStreet String?
+  payeeZip    String?
+  payeeCity   String?
+  iban        String?
+  currency    String   @default("CHF")
+  updatedAt   DateTime @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+}
+
+// ---------------------------------------------------------------------------
+// Modul: Mitgliederbeiträge
+// ---------------------------------------------------------------------------
+
+model FeeCategory {
+  id          String   @id @default(cuid())
+  tenantId    String
+  name        String
+  amountCents Int      @default(0)
+  description String?
+  isActive    Boolean  @default(true)
+  sortOrder   Int      @default(0)
+  createdAt   DateTime @default(now())
+
+  tenant      Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  memberships Membership[]
+  invoices    FeeInvoice[]
+
+  @@index([tenantId])
+}
+
+model FeeRun {
+  id            String   @id @default(cuid())
+  tenantId      String
+  year          Int
+  title         String
+  dueAt         DateTime
+  invoicePrefix String   @default("MB-")
+  dueDays       Int      @default(30)
+  note          String?  @db.Text
+  createdAt     DateTime @default(now())
+
+  tenant   Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  invoices FeeInvoice[]
+
+  @@unique([tenantId, year])
+}
+
+model FeeInvoice {
+  id            String    @id @default(cuid())
+  tenantId      String
+  runId         String?
+  membershipId  String?
+  userId        String?
+  categoryId    String?
+  year          Int
+  number        String
+  memberName    String
+  memberEmail   String?
+  memberAddress String?   // mehrzeilig, Snapshot
+  categoryName  String
+  amountCents   Int
+  currency      String    @default("CHF")
+  issuedAt      DateTime  @default(now())
+  dueAt         DateTime
+  status        String    @default("OPEN") // OPEN | PAID | CANCELLED
+  paidAt        DateTime?
+  paymentNote   String?
+  remindedAt    DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  tenant     Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  run        FeeRun?      @relation(fields: [runId], references: [id], onDelete: SetNull)
+  membership Membership?  @relation(fields: [membershipId], references: [id], onDelete: SetNull)
+  user       User?        @relation(fields: [userId], references: [id], onDelete: SetNull)
+  category   FeeCategory? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+
+  @@unique([tenantId, number])
+  @@index([tenantId, year, status])
+  @@index([userId])
 }

@@ -96,7 +96,7 @@ export function BookingSettingsForm({ settings, providers }: { settings: Booking
         <h3 className="font-semibold">Zahlung</h3>
         <label className="flex items-start gap-3">
           <input type="checkbox" name="allowInvoice" defaultChecked={settings.allowInvoice} className="mt-1 h-5 w-5 accent-[var(--ink)]" />
-          <span><span className="block text-sm font-medium">Rechnung</span><span className="block text-xs text-ink-3">Es wird automatisch eine Rechnung mit QR-Code erstellt (Zahlungsempfänger unten ausfüllen).</span></span>
+          <span><span className="block text-sm font-medium">Rechnung</span><span className="block text-xs text-ink-3">Es wird automatisch eine Rechnung mit QR-Code erstellt (IBAN im Rechnungsprofil hinterlegen).</span></span>
         </label>
         <label className="flex items-start gap-3">
           <input type="checkbox" name="allowOnline" checked={allowOnline} onChange={(e) => setAllowOnline(e.target.checked)} className="mt-1 h-5 w-5 accent-[var(--ink)]" />
@@ -117,13 +117,7 @@ export function BookingSettingsForm({ settings, providers }: { settings: Booking
           <Field label="Nummernpräfix"><Input name="invoicePrefix" defaultValue={settings.invoicePrefix} placeholder="R-" /></Field>
           <Field label="Zahlungsfrist (Tage)"><Input name="invoiceDueDays" type="number" inputMode="numeric" min={1} defaultValue={settings.invoiceDueDays} /></Field>
         </div>
-        <Field label="Zahlungsempfänger (Name)"><Input name="payeeName" defaultValue={settings.payeeName ?? ""} placeholder="Schützengesellschaft Musterhausen" /></Field>
-        <Field label="Strasse und Nr."><Input name="payeeStreet" defaultValue={settings.payeeStreet ?? ""} placeholder="Schützenstrasse 1" /></Field>
-        <div className="grid grid-cols-[120px_1fr] gap-3">
-          <Field label="PLZ"><Input name="payeeZip" defaultValue={settings.payeeZip ?? ""} /></Field>
-          <Field label="Ort"><Input name="payeeCity" defaultValue={settings.payeeCity ?? ""} /></Field>
-        </div>
-        <Field label="IBAN" hint="Mit IBAN wird auf der Rechnung automatisch eine Schweizer QR-Rechnung gedruckt."><Input name="iban" defaultValue={settings.iban ?? ""} placeholder="CH93 0076 2011 6238 5295 7" className="font-mono" /></Field>
+        <p className="text-xs text-ink-3">Zahlungsempfänger und IBAN für die QR-Rechnung werden im <a href="/admin/billing/settings" className="underline">Rechnungsprofil</a> gepflegt und gelten für Reservationen und Mitgliederbeiträge.</p>
         <Field label="Hinweistext auf der Rechnung (optional)"><Textarea name="invoiceNote" defaultValue={settings.invoiceNote ?? ""} className="min-h-16" placeholder="z.B. Vielen Dank für die Unterstützung unseres Vereins." /></Field>
       </Card>
 

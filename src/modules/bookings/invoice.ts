@@ -23,38 +23,3 @@ export async function ensureInvoiceForBooking(bookingId: string) {
   }
   return null;
 }
-
-type QrInput = {
-  amountCents: number;
-  currency: string;
-  creditor: { name: string; street: string; zip: string; city: string; iban: string };
-  debtorName?: string;
-  message: string;
-};
-
-/** Schweizer QR-Rechnung (Zahlteil) als SVG. Gibt null zurück, wenn Angaben fehlen. */
-export async function renderQrBillSvg(input: QrInput): Promise<string | null> {
-  const { creditor } = input;
-  if (!creditor.iban || !creditor.name || !creditor.street || !creditor.zip || !creditor.city) return null;
-  if (input.currency !== "CHF" && input.currency !== "EUR") return null;
-  try {
-    const { SwissQRBill } = await import("swissqrbill/svg");
-    const m = creditor.street.match(/^(.*?)[\s,]+(\d+[a-zA-Z]?)$/);
-    const address = m ? m[1]! : creditor.street;
-    const buildingNumber = m ? m[2] : undefined;
-    const svg = new SwissQRBill(
-      {
-        currency: input.currency,
-        amount: input.amountCents / 100,
-        creditor: { name: creditor.name, address, buildingNumber, zip: creditor.zip, city: creditor.city, country: "CH", account: creditor.iban },
-        ...(input.debtorName ? {} : {}),
-        message: input.message.slice(0, 140),
-      },
-      { language: "DE", scissors: true, outlines: true },
-    );
-    return svg.toString();
-  } catch (e) {
-    console.error("QR-Rechnung konnte nicht erzeugt werden:", e);
-    return null;
-  }
-}

@@ -25,7 +25,7 @@ Offen: Swissreg-Markenrecherche (Klassen 9 und 42), Social-Handles, standchef.ap
 - **Programm-Import/-Export** als JSON, damit Vereine Programme tauschen können.
 - **Scheiben-Druck**: Mehrere Scheiben pro Blatt (z.B. 4× A6 auf A4), Schnittmarken, Vektor-PDF serverseitig (z.B. mit `pdf-lib`) statt Browser-Druck.
 - **Reservationen, nächste Schritte**: Wiederkehrende Buchungen (jeden Dienstag), Serienbuchung für Trainer, Kalenderansicht pro Woche, iCal-Export, E-Mail-Bestätigung und Erinnerung, automatische Rückerstattung bei Storno (Stripe-Refund-API), Gästebuchungen ohne Konto mit Bezahlung, Preisregeln nach Rolle (Mitglieder gratis, Gäste zahlen) und Tageszeit (Nebenzeiten günstiger).
-- **Mitgliederbeiträge**: Beitragskategorien, Jahresrechnung mit QR-Rechnung, Zahlungsabgleich per camt.054, Mahnwesen. Platzhalter-Modul ist angelegt; Rechnungs- und QR-Logik aus dem Reservationsmodul ist wiederverwendbar.
+- **Mitgliederbeiträge, nächste Schritte**: Zahlungsabgleich per camt.054-Import (Bankdatei einlesen, Rechnungen automatisch auf bezahlt setzen; mit QR-IBAN und QR-Referenz wird das eindeutig), Versand per E-Mail als PDF statt Druck, Online-Zahlung der Beitragsrechnung über den Zahlungsanbieter des Vereins, Teilzahlungen, Familienrabatte, Austrittsdatum mit pro-rata-Beitrag, Export der offenen Posten für die Buchhaltung.
 
 ### Technik
 - **Datenbank**: MySQL/MariaDB bleibt (CloudPanel). Bei Bedarf später PostgreSQL mit Row-Level-Security pro Tenant als zweite Verteidigungslinie; das Schema ist dafür vorbereitet.

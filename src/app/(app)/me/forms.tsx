@@ -36,12 +36,17 @@ export function TenantSwitcher({ activeId, tenants }: { activeId: string | null;
   );
 }
 
-export function ProfileForm({ name }: { name: string }) {
+export function ProfileForm({ name, address }: { name: string; address: { street: string | null; zip: string | null; city: string | null } }) {
   const [state, action] = useActionState(updateProfileAction, null);
   return (
     <Card className="animate-rise p-4">
       <form action={action} className="space-y-3">
         <Field label="Anzeigename"><Input name="name" defaultValue={name} required /></Field>
+        <Field label="Strasse und Nr." hint="Für Rechnungen (Mitgliederbeitrag, Reservationen)"><Input name="street" defaultValue={address.street ?? ""} autoComplete="street-address" /></Field>
+        <div className="grid grid-cols-[110px_1fr] gap-3">
+          <Field label="PLZ"><Input name="zip" defaultValue={address.zip ?? ""} autoComplete="postal-code" inputMode="numeric" /></Field>
+          <Field label="Ort"><Input name="city" defaultValue={address.city ?? ""} autoComplete="address-level2" /></Field>
+        </div>
         {state && !state.ok ? <Alert>{state.error}</Alert> : state?.ok && state.message ? <Alert tone="ok">{state.message}</Alert> : null}
         <SubmitButton variant="secondary" size="sm">Speichern</SubmitButton>
       </form>

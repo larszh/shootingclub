@@ -49,6 +49,9 @@ export type CurrentUser = {
   name: string;
   isSuperAdmin: boolean;
   locale: string;
+  street: string | null;
+  zip: string | null;
+  city: string | null;
   memberships: Array<{
     tenantId: string;
     role: string;
@@ -82,6 +85,9 @@ export const getCurrentUser = cache(async (): Promise<CurrentUser | null> => {
     name: u.name,
     isSuperAdmin: u.isSuperAdmin,
     locale: u.locale,
+    street: u.street,
+    zip: u.zip,
+    city: u.city,
     memberships: u.memberships.map((m) => ({ tenantId: m.tenantId, role: m.role, tenant: m.tenant })),
   };
 });

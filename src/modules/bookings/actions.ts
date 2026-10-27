@@ -167,11 +167,6 @@ export async function saveBookingSettingsAction(_prev: ActionResult | null, form
     cancellationHours: formData.get("cancellationHours") || 0,
     invoiceDueDays: formData.get("invoiceDueDays") || 30,
     invoicePrefix: formData.get("invoicePrefix") ?? "R-",
-    payeeName: formData.get("payeeName") || undefined,
-    payeeStreet: formData.get("payeeStreet") || undefined,
-    payeeZip: formData.get("payeeZip") || undefined,
-    payeeCity: formData.get("payeeCity") || undefined,
-    iban: formData.get("iban") || undefined,
     invoiceNote: formData.get("invoiceNote") || undefined,
   });
   if (!parsed.success) {
@@ -200,11 +195,6 @@ export async function saveBookingSettingsAction(_prev: ActionResult | null, form
     cancellationHours: s.cancellationHours,
     invoiceDueDays: s.invoiceDueDays,
     invoicePrefix: s.invoicePrefix,
-    payeeName: s.payeeName ?? null,
-    payeeStreet: s.payeeStreet ?? null,
-    payeeZip: s.payeeZip ?? null,
-    payeeCity: s.payeeCity ?? null,
-    iban: s.iban ?? null,
     invoiceNote: s.invoiceNote ?? null,
   };
   await db.bookingSettings.upsert({ where: { tenantId: ctx.tenant.id }, create: { tenantId: ctx.tenant.id, ...data }, update: data });
