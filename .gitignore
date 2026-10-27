@@ -1,0 +1,11 @@
+node_modules
+.next
+out
+*.log
+.env
+.env.local
+.DS_Store
+/src/generated
+/storage/uploads/*
+!/storage/uploads/.gitkeep
+tsconfig.tsbuildinfo

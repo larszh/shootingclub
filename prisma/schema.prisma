@@ -1,0 +1,398 @@
+// Standchef – Datenmodell
+// Datenbank: MySQL / MariaDB (CloudPanel-Standard).
+// Hinweis: Bewusst ohne Prisma-Enums und Json-Felder, damit das Schema leicht
+// auf PostgreSQL portierbar bleibt. Aufzählungen sind als String gespeichert
+// und werden in src/lib/*.ts bzw. src/modules/*/types.ts validiert.
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "mysql"
+}
+
+// ---------------------------------------------------------------------------
+// Kern: Benutzer, Tenants, Mitgliedschaften, Module
+// ---------------------------------------------------------------------------
+
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  name         String
+  passwordHash String
+  isSuperAdmin Boolean  @default(false)
+  locale       String   @default("de")
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  sessions         Session[]
+  memberships      Membership[]
+  programFavorites ProgramFavorite[]
+  createdPrograms  Program[]           @relation("ProgramCreator")
+  createdMatches   Match[]             @relation("MatchCreator")
+  participations   MatchParticipant[]
+  targetTemplates  TargetTemplate[]    @relation("TargetOwner")
+  targetFavorites  TargetFavorite[]
+  bookings         Booking[]
+}
+
+model Session {
+  id        String   @id @default(cuid())
+  userId    String
+  tokenHash String   @unique
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model Tenant {
+  id        String   @id @default(cuid())
+  slug      String   @unique
+  name      String
+  kind      String   @default("CLUB") // CLUB | RANGE | PRIVATE
+  city      String?
+  canton    String?
+  joinCode  String   @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  memberships     Membership[]
+  modules         TenantModule[]
+  programs        Program[]
+  programSettings ProgramTenantSetting[]
+  matches         Match[]
+  targetTemplates TargetTemplate[]
+  targetSettings  TargetTenantSetting[]
+  bookingSettings BookingSettings?
+  resources       Resource[]
+  resourceBlocks  ResourceBlock[]
+  bookings        Booking[]
+  paymentConfigs  PaymentProviderConfig[]
+  invoices        Invoice[]
+}
+
+model Membership {
+  id        String   @id @default(cuid())
+  userId    String
+  tenantId  String
+  role      String   @default("MEMBER") // OWNER | ADMIN | TRAINER | MEMBER
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, tenantId])
+  @@index([tenantId])
+}
+
+model TenantModule {
+  id        String  @id @default(cuid())
+  tenantId  String
+  moduleKey String  // scores | targets | bookings | billing
+  enabled   Boolean @default(true)
+  tenant    Tenant  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, moduleKey])
+}
+
+// ---------------------------------------------------------------------------
+// Modul: Punkteerfassung
+// ---------------------------------------------------------------------------
+
+model Program {
+  id          String   @id @default(cuid())
+  tenantId    String?  // null = globales Programm (Super-Admin)
+  createdById String?
+  name        String
+  description String?  @db.Text
+  discipline  String   @default("PISTOL") // PISTOL | RIFLE | AIR_PISTOL | AIR_RIFLE | SHOTGUN | OTHER
+  weaponNote  String?
+  scoringMode String   @default("RINGS_INT") // RINGS_INT | RINGS_DECIMAL | HITS
+  stagesJson  String   @db.Text // Array<Stage>, siehe src/modules/scores/types.ts
+  isArchived  Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  tenant    Tenant?                @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  createdBy User?                  @relation("ProgramCreator", fields: [createdById], references: [id], onDelete: SetNull)
+  settings  ProgramTenantSetting[]
+  favorites ProgramFavorite[]
+  matches   Match[]
+
+  @@index([tenantId])
+}
+
+model ProgramTenantSetting {
+  id        String  @id @default(cuid())
+  programId String
+  tenantId  String
+  hidden    Boolean @default(false)
+  program   Program @relation(fields: [programId], references: [id], onDelete: Cascade)
+  tenant    Tenant  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([programId, tenantId])
+}
+
+model ProgramFavorite {
+  id        String   @id @default(cuid())
+  userId    String
+  programId String
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  program   Program  @relation(fields: [programId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, programId])
+}
+
+model Match {
+  id           String   @id @default(cuid())
+  tenantId     String
+  programId    String
+  createdById  String?
+  title        String?
+  date         DateTime @default(now())
+  locationNote String?
+  status       String   @default("OPEN") // OPEN | FINISHED
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  tenant       Tenant             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  program      Program            @relation(fields: [programId], references: [id], onDelete: Restrict)
+  createdBy    User?              @relation("MatchCreator", fields: [createdById], references: [id], onDelete: SetNull)
+  participants MatchParticipant[]
+
+  @@index([tenantId, date])
+}
+
+model MatchParticipant {
+  id        String  @id @default(cuid())
+  matchId   String
+  userId    String? // null = Gast
+  guestName String?
+  note      String?
+  sortOrder Int     @default(0)
+
+  match   Match         @relation(fields: [matchId], references: [id], onDelete: Cascade)
+  user    User?         @relation(fields: [userId], references: [id], onDelete: SetNull)
+  results MatchResult[]
+
+  @@index([matchId])
+  @@index([userId])
+}
+
+model MatchResult {
+  id            String   @id @default(cuid())
+  participantId String
+  stageIndex    Int
+  shotsJson     String   @db.Text // number[]
+  total         Float    @default(0)
+  updatedAt     DateTime @updatedAt
+
+  participant MatchParticipant @relation(fields: [participantId], references: [id], onDelete: Cascade)
+
+  @@unique([participantId, stageIndex])
+}
+
+// ---------------------------------------------------------------------------
+// Modul: Zielscheiben
+// ---------------------------------------------------------------------------
+
+model TargetTemplate {
+  id            String   @id @default(cuid())
+  tenantId      String?  // null = global (Super-Admin) oder privater Upload ohne Tenant
+  ownerUserId   String?  // gesetzt bei Upload durch Benutzer
+  name          String
+  description   String?  @db.Text
+  subject       String   // RINGS_10 | RINGS_5 | GRID | DOTS | SILHOUETTE | DIAMOND | UPLOAD
+  paramsJson    String   @db.Text // Objekt TargetParams, wird im Code immer gesetzt
+  paperSizes    String   @default("A4,A5,A6")
+  filePath      String?  // relativ zu UPLOAD_DIR
+  mimeType      String?
+  sharedWithTenant Boolean @default(false) // Benutzer-Upload für Tenant freigeben
+  isArchived    Boolean  @default(false)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  tenant    Tenant?               @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  owner     User?                 @relation("TargetOwner", fields: [ownerUserId], references: [id], onDelete: Cascade)
+  settings  TargetTenantSetting[]
+  favorites TargetFavorite[]
+
+  @@index([tenantId])
+  @@index([ownerUserId])
+}
+
+model TargetTenantSetting {
+  id       String         @id @default(cuid())
+  targetId String
+  tenantId String
+  hidden   Boolean        @default(false)
+  target   TargetTemplate @relation(fields: [targetId], references: [id], onDelete: Cascade)
+  tenant   Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([targetId, tenantId])
+}
+
+model TargetFavorite {
+  id       String         @id @default(cuid())
+  userId   String
+  targetId String
+  user     User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  target   TargetTemplate @relation(fields: [targetId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, targetId])
+}
+
+// ---------------------------------------------------------------------------
+// Modul: Reservationen & Zahlungen
+// ---------------------------------------------------------------------------
+
+model BookingSettings {
+  id                        String  @id @default(cuid())
+  tenantId                  String  @unique
+  currency                  String  @default("CHF")
+  slotStepMinutes           Int     @default(30)
+  durationOptionsJson       String  @db.Text // [{minutes, priceCents}]
+  openingHoursJson          String  @db.Text // {"0":[["08:00","12:00"]],...} Schlüssel = Wochentag (0 = So)
+  approvalRequired          Boolean @default(false)
+  allowInvoice              Boolean @default(true)
+  allowOnline               Boolean @default(false)
+  onlineProvider            String  @default("NONE") // NONE | STRIPE | WORLDLINE | SUMUP
+  lastMinuteDiscountPercent Int     @default(0)
+  lastMinuteWindowHours     Int     @default(24)
+  minLeadMinutes            Int     @default(60)
+  maxAdvanceDays            Int     @default(60)
+  cancellationHours         Int     @default(24)
+  invoiceDueDays            Int     @default(30)
+  invoicePrefix             String  @default("R-")
+  payeeName                 String?
+  payeeStreet               String?
+  payeeZip                  String?
+  payeeCity                 String?
+  iban                      String?
+  invoiceNote               String? @db.Text
+  updatedAt                 DateTime @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+}
+
+model Resource {
+  id                  String  @id @default(cuid())
+  tenantId            String
+  name                String
+  description         String? @db.Text
+  kind                String  @default("LANE") // RANGE | LANE | ROOM | OTHER
+  capacity            Int     @default(1) // gleichzeitige Buchungen
+  durationOptionsJson String? @db.Text // optionale Abweichung von den Tenant-Optionen
+  isActive            Boolean @default(true)
+  sortOrder           Int     @default(0)
+  createdAt           DateTime @default(now())
+
+  tenant   Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  bookings Booking[]
+  blocks   ResourceBlock[]
+
+  @@index([tenantId])
+}
+
+model ResourceBlock {
+  id         String   @id @default(cuid())
+  tenantId   String
+  resourceId String?  // null = alle Ressourcen des Tenants
+  startsAt   DateTime
+  endsAt     DateTime
+  reason     String?
+  createdAt  DateTime @default(now())
+
+  tenant   Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  resource Resource? @relation(fields: [resourceId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, startsAt])
+}
+
+model Booking {
+  id              String    @id @default(cuid())
+  tenantId        String
+  resourceId      String
+  userId          String?
+  startsAt        DateTime
+  endsAt          DateTime
+  durationMinutes Int
+  status          String    @default("CONFIRMED") // PENDING | CONFIRMED | REJECTED | CANCELLED
+  paymentMethod   String    @default("NONE") // NONE | INVOICE | ONLINE
+  paymentStatus   String    @default("NOT_REQUIRED") // NOT_REQUIRED | UNPAID | PENDING | PAID | FAILED | REFUNDED
+  basePriceCents  Int       @default(0)
+  discountCents   Int       @default(0)
+  discountReason  String?
+  totalCents      Int       @default(0)
+  currency        String    @default("CHF")
+  note            String?
+  adminNote       String?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  confirmedAt     DateTime?
+  cancelledAt     DateTime?
+  paidAt          DateTime?
+
+  tenant   Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  resource Resource  @relation(fields: [resourceId], references: [id], onDelete: Cascade)
+  user     User?     @relation(fields: [userId], references: [id], onDelete: SetNull)
+  payments Payment[]
+  invoice  Invoice?
+
+  @@index([tenantId, startsAt])
+  @@index([resourceId, startsAt])
+  @@index([userId])
+}
+
+model Payment {
+  id          String   @id @default(cuid())
+  bookingId   String
+  provider    String   // STRIPE | WORLDLINE | SUMUP
+  providerRef String   // Checkout-Session / Token / Checkout-ID
+  status      String   @default("PENDING") // PENDING | PAID | FAILED | REFUNDED
+  amountCents Int
+  currency    String
+  detailsJson String?  @db.Text
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  booking Booking @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+
+  @@index([bookingId])
+  @@index([providerRef])
+}
+
+model PaymentProviderConfig {
+  id             String   @id @default(cuid())
+  tenantId       String
+  provider       String   // STRIPE | WORLDLINE | SUMUP
+  enabled        Boolean  @default(false)
+  credentialsEnc String   @db.Text // AES-256-GCM, siehe src/lib/crypto.ts
+  updatedAt      DateTime @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, provider])
+}
+
+model Invoice {
+  id          String    @id @default(cuid())
+  tenantId    String
+  bookingId   String    @unique
+  number      String
+  issuedAt    DateTime  @default(now())
+  dueAt       DateTime
+  status      String    @default("OPEN") // OPEN | PAID | CANCELLED
+  amountCents Int
+  currency    String
+  paidAt      DateTime?
+
+  tenant  Tenant  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  booking Booking @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, number])
+}
