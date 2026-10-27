@@ -54,10 +54,12 @@ npx prisma generate
 npx prisma migrate deploy     # legt alle Tabellen an
 npm run db:seed               # Super-Admin, globale Programme und Scheiben
 npm run build
-pm2 start ecosystem.config.cjs
-pm2 save
-pm2 startup                   # Befehl ausführen, den pm2 ausgibt (Autostart nach Reboot)
+npx pm2 start ecosystem.config.cjs
+npx pm2 save
+npx pm2 startup               # gibt einen Befehl aus, der einmalig als root ausgeführt wird (Autostart nach Reboot)
 ```
+
+pm2 ist als Projektabhängigkeit dabei, darum `npx pm2`. Alternativ als root `npm install -g pm2`, dann geht `pm2` direkt. Der Port kommt aus `PORT` in `.env` und muss mit dem **App Port** der Site in CloudPanel übereinstimmen.
 
 Danach ist die App unter der Domain erreichbar. Mit `SEED_ADMIN_EMAIL`/`SEED_ADMIN_PASSWORD` anmelden, unter **Mehr → Globale Verwaltung** den ersten Verein anlegen oder über **Loslegen** beitreten.
 
@@ -94,9 +96,9 @@ Die Zugangsdaten werden mit einem aus `AUTH_SECRET` abgeleiteten Schlüssel vers
 
 | Aufgabe | Befehl |
 |---|---|
-| Logs | `pm2 logs standchef` |
-| Status | `pm2 status` |
-| Neustart | `pm2 reload standchef` |
+| Logs | `npx pm2 logs standchef` |
+| Status | `npx pm2 status` |
+| Neustart | `npx pm2 reload standchef` |
 | DB-Konsole | `mysql -u standchef -p standchef` |
 | Prisma Studio (nur lokal/SSH-Tunnel) | `npx prisma studio` |
 

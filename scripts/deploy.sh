@@ -23,10 +23,11 @@ echo "→ Build"
 npm run build
 
 echo "→ Neustart"
-if pm2 describe standchef > /dev/null 2>&1; then
-  pm2 reload ecosystem.config.cjs --update-env
+PM2="npx pm2"
+if $PM2 describe standchef > /dev/null 2>&1; then
+  $PM2 reload ecosystem.config.cjs --update-env
 else
-  pm2 start ecosystem.config.cjs
-  pm2 save
+  $PM2 start ecosystem.config.cjs
+  $PM2 save
 fi
 echo "Fertig."
