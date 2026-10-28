@@ -11,9 +11,12 @@ export const metadata: Metadata = { title: "Schiessen" };
 
 export default async function ScoresPage() {
   const ctx = await requireModule("scores");
-  const [programs, matches] = await Promise.all([listPrograms(ctx), listMatches(ctx, { limit: 5 })]);
+  const [programs, open, recent] = await Promise.all([
+    listPrograms(ctx),
+    listMatches(ctx, { status: "OPEN", limit: 10 }),
+    listMatches(ctx, { status: "FINISHED", limit: 5 }),
+  ]);
   const favorites = programs.filter((p) => p.favorite);
-  const open = matches.filter((m) => m.status === "OPEN");
 
   return (
     <div>
@@ -37,7 +40,7 @@ export default async function ScoresPage() {
 
       <SectionTitle action={<Link href="/scores/programs" className="text-xs text-ink-3 hover:text-ink">Alle Programme</Link>}>Favoriten</SectionTitle>
       {favorites.length ? (
-        <div className="stagger grid gap-2.5 sm:grid-cols-2">
+        <div className="stagger grid grid-cols-1 gap-2.5 sm:grid-cols-2">
           {favorites.map((p) => <ProgramCard key={p.id} program={p} href={ctx.can("match.create") && !p.isArchived ? `/scores/matches/new?programId=${p.id}` : `/scores/programs/${p.id}`} />)}
         </div>
       ) : (
@@ -45,9 +48,9 @@ export default async function ScoresPage() {
       )}
 
       <SectionTitle action={<Link href="/scores/matches" className="text-xs text-ink-3 hover:text-ink">Alle</Link>}>Zuletzt</SectionTitle>
-      {matches.filter((m) => m.status !== "OPEN").length ? (
+      {recent.length ? (
         <div className="stagger space-y-2.5">
-          {matches.filter((m) => m.status !== "OPEN").map((m) => <MatchRow key={m.id} m={m} againFor={ctx.can("match.create") ? ctx.user.id : undefined} />)}
+          {recent.map((m) => <MatchRow key={m.id} m={m} againFor={ctx.can("match.create") ? ctx.user.id : undefined} />)}
         </div>
       ) : (
         <p className="text-sm text-ink-3">Noch keine abgeschlossenen Durchgänge.</p>

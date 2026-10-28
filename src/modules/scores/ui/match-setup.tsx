@@ -260,7 +260,7 @@ export function MatchSetup({
                     <span className="relative">
                       <Avatar name={m.name} src={m.avatarUrl} size={36} tone={sel ? "ink" : "soft"} />
                       {sel ? (
-                        <span className="animate-pop absolute -bottom-0.5 -right-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-ok text-white ring-2 ring-surface">
+                        <span className="animate-pop absolute -bottom-0.5 -right-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-ok text-ok-ink ring-2 ring-surface">
                           <Check className="h-3 w-3" />
                         </span>
                       ) : null}

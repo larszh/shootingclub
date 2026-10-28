@@ -41,7 +41,7 @@ async function visibleProgram(ctx: Ctx, programId: string) {
   const p = await db.program.findUnique({ where: { id: programId } });
   if (!p || (p.tenantId && p.tenantId !== ctx.tenant.id)) return null;
   const stages = parseStages(p.stagesJson);
-  return { id: p.id, name: p.name, scoringMode: p.scoringMode, stages, totals: programTotals(stages) };
+  return { id: p.id, name: p.name, scoringMode: p.scoringMode, stages, totals: programTotals(stages, p.scoringMode) };
 }
 
 // ---------------------------------------------------------------------------
@@ -67,48 +67,56 @@ export async function getLeaderboard(ctx: Ctx, programId: string, period: Period
   const program = await visibleProgram(ctx, programId);
   if (!program) return null;
   const range = periodRange(period, new Date());
-  const parts = await db.matchParticipant.findMany({
-    where: {
-      match: { tenantId: ctx.tenant.id, programId, status: "FINISHED", ...(range.from ? { date: { gte: range.from } } : {}) },
-      results: { some: {} },
-    },
-    include: {
-      results: { select: { stageIndex: true, shotsJson: true, total: true } },
-      user: { select: { id: true, name: true, avatarPath: true, updatedAt: true } },
-      match: { select: { id: true, date: true } },
-    },
-    take: 5000,
-  });
-
   const best = new Map<string, LeaderboardEntry>();
   const guests: LeaderboardEntry[] = [];
-  for (const p of parts) {
-    const s = summarize(p.results, program.stages, program.scoringMode);
-    const entry: LeaderboardEntry = {
-      rank: 0,
-      key: p.userId ?? `guest:${p.id}`,
-      userId: p.userId,
-      name: p.user?.name ?? p.guestName ?? "Gast",
-      avatarUrl: avatarUrlOf(p.user),
-      matchId: p.match.id,
-      attempts: 1,
-      isMe: p.userId === ctx.user.id,
-      total: s.total,
-      topShots: s.topShots,
-      lastStage: s.lastStage,
-      date: p.match.date,
-    };
-    if (!p.userId) {
-      guests.push(entry);
-      continue;
+  // Seitenweise über alle Teilnahmen (stabil nach id), damit kein Bestwert verloren geht.
+  const PAGE = 2000;
+  let afterId: string | undefined;
+  for (;;) {
+    const parts = await db.matchParticipant.findMany({
+      where: {
+        ...(afterId ? { id: { gt: afterId } } : {}),
+        match: { tenantId: ctx.tenant.id, programId, status: "FINISHED", ...(range.from ? { date: { gte: range.from } } : {}) },
+        results: { some: {} },
+      },
+      include: {
+        results: { select: { stageIndex: true, shotsJson: true, total: true } },
+        user: { select: { id: true, name: true, avatarPath: true, updatedAt: true } },
+        match: { select: { id: true, date: true } },
+      },
+      orderBy: { id: "asc" },
+      take: PAGE,
+    });
+    for (const p of parts) {
+      const s = summarize(p.results, program.stages, program.scoringMode);
+      const entry: LeaderboardEntry = {
+        rank: 0,
+        key: p.userId ?? `guest:${p.id}`,
+        userId: p.userId,
+        name: p.user?.name ?? p.guestName ?? "Gast",
+        avatarUrl: avatarUrlOf(p.user),
+        matchId: p.match.id,
+        attempts: 1,
+        isMe: p.userId === ctx.user.id,
+        total: s.total,
+        topShots: s.topShots,
+        lastStage: s.lastStage,
+        date: p.match.date,
+      };
+      if (!p.userId) {
+        guests.push(entry);
+        continue;
+      }
+      const cur = best.get(p.userId);
+      if (!cur) best.set(p.userId, entry);
+      else {
+        const attempts = cur.attempts + 1;
+        if (compareEntries(entry, cur) < 0) best.set(p.userId, { ...entry, attempts });
+        else cur.attempts = attempts;
+      }
     }
-    const cur = best.get(p.userId);
-    if (!cur) best.set(p.userId, entry);
-    else {
-      const attempts = cur.attempts + 1;
-      if (compareEntries(entry, cur) < 0) best.set(p.userId, { ...entry, attempts });
-      else cur.attempts = attempts;
-    }
+    if (parts.length < PAGE) break;
+    afterId = parts[parts.length - 1]!.id;
   }
   const entries = assignRanks([...best.values()].sort(compareEntries));
   const guestEntries = assignRanks(guests.sort(compareEntries)).slice(0, 10);
@@ -138,7 +146,7 @@ export async function getProgramProgress(ctx: Ctx, programId: string, userId = c
   const parts = await db.matchParticipant.findMany({
     where: { userId, match: { tenantId: ctx.tenant.id, programId }, results: { some: {} } },
     include: { results: { select: { stageIndex: true, shotsJson: true, total: true } }, match: { select: { id: true, date: true, status: true } } },
-    orderBy: { match: { date: "asc" } },
+    orderBy: [{ match: { date: "asc" } }, { match: { createdAt: "asc" } }],
     take: 500,
   });
   const rows = parts
@@ -195,7 +203,7 @@ export async function getUserScoreStats(ctx: Ctx) {
       results: { select: { stageIndex: true, shotsJson: true, total: true } },
       match: { select: { id: true, date: true, status: true, program: { select: { id: true, name: true, stagesJson: true, scoringMode: true } } } },
     },
-    orderBy: { match: { date: "asc" } },
+    orderBy: [{ match: { date: "asc" } }, { match: { createdAt: "asc" } }],
     take: 3000,
   });
 
@@ -238,7 +246,7 @@ export async function getUserScoreStats(ctx: Ctx) {
         name: prog.name,
         scoringMode: prog.scoringMode,
         decimal: prog.scoringMode === "RINGS_DECIMAL",
-        max: programTotals(stages).max,
+        max: programTotals(stages, prog.scoringMode).max,
         count: 1,
         best: s.total,
         bestDate: p.match.date,
@@ -331,7 +339,7 @@ export async function scoreExportRows(filter: ExportFilter) {
       user: { select: { name: true } },
       match: { select: { id: true, date: true, title: true, status: true, program: { select: { id: true, name: true, stagesJson: true, scoringMode: true } } } },
     },
-    orderBy: [{ match: { date: "asc" } }, { sortOrder: "asc" }],
+    orderBy: [{ match: { date: "asc" } }, { match: { createdAt: "asc" } }, { matchId: "asc" }, { sortOrder: "asc" }],
     take: 20000,
   });
   const stagesCache = new Map<string, Stage[]>();
@@ -352,7 +360,7 @@ export async function scoreExportRows(filter: ExportFilter) {
       isGuest: !p.userId,
       stageTotals: s.stageTotals,
       total: s.total,
-      max: programTotals(stages).max,
+      max: programTotals(stages, prog.scoringMode).max,
       decimal: prog.scoringMode === "RINGS_DECIMAL",
     };
   });

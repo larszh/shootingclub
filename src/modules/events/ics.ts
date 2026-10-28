@@ -5,6 +5,7 @@
  * werden nach 75 Oktetten gefaltet (UTF-8-sicher).
  */
 import { addDays, zurichParts } from "@/lib/time";
+import { effectiveEnd } from "./types";
 
 export type IcsEvent = {
   uid: string;
@@ -80,7 +81,8 @@ function eventLines(e: IcsEvent): string[] {
     lines.push(`DTEND;VALUE=DATE:${dateValue(addDays(endDate < startDate ? startDate : endDate, 1))}`);
   } else {
     lines.push(`DTSTART:${utcStamp(e.startsAt)}`);
-    const end = e.endsAt && e.endsAt.getTime() > e.startsAt.getTime() ? e.endsAt : new Date(e.startsAt.getTime() + 3_600_000);
+    // Ohne (gültiges) Ende dieselbe Standarddauer wie in der App (effectiveEnd)
+    const end = e.endsAt && e.endsAt.getTime() > e.startsAt.getTime() ? e.endsAt : effectiveEnd({ startsAt: e.startsAt, endsAt: null, allDay: false });
     lines.push(`DTEND:${utcStamp(end)}`);
   }
   lines.push(`SUMMARY:${icsEscape(e.summary)}`);

@@ -6,19 +6,21 @@ import { saveBookingSettingsAction } from "@/modules/bookings/actions";
 import { PAYMENT_PROVIDERS, WEEKDAYS, type DurationOption, type OpeningHours } from "@/modules/bookings/types";
 import type { BookingSettingsView } from "@/modules/bookings/queries";
 import { Alert, Card, Field, Input, Select, Textarea } from "@/components/ui";
-import { SubmitButton } from "@/components/ui/form";
+import { SubmitButton, submitKeepingValues } from "@/components/ui/form";
 import { cn } from "@/lib/utils";
 
 type DurationRow = { minutes: number; price: string };
+
+const DAY_NAMES = ["Sonntag", "Montag", "Dienstag", "Mittwoch", "Donnerstag", "Freitag", "Samstag"];
 
 export function DurationEditor({ value, onChange, currency }: { value: DurationRow[]; onChange: (v: DurationRow[]) => void; currency: string }) {
   return (
     <div className="space-y-2">
       {value.map((d, i) => (
         <div key={i} className="grid grid-cols-[1fr_1fr_40px] gap-2 items-end">
-          <Field label={i === 0 ? "Dauer (Minuten)" : ""}><Input type="number" inputMode="numeric" min={5} step={5} value={d.minutes} onChange={(e) => onChange(value.map((x, j) => (j === i ? { ...x, minutes: Number(e.target.value) } : x)))} /></Field>
-          <Field label={i === 0 ? `Preis (${currency})` : ""}><Input inputMode="decimal" value={d.price} placeholder="0.00" onChange={(e) => onChange(value.map((x, j) => (j === i ? { ...x, price: e.target.value } : x)))} /></Field>
-          <button type="button" onClick={() => onChange(value.filter((_, j) => j !== i))} disabled={value.length === 1} className="h-11 w-10 rounded-control text-ink-3 hover:text-accent disabled:opacity-30 flex items-center justify-center"><Trash2 className="h-4 w-4" /></button>
+          <Field label={i === 0 ? "Dauer (Minuten)" : ""}><Input aria-label={i === 0 ? undefined : `Dauer ${i + 1} (Minuten)`} type="number" inputMode="numeric" min={5} step={5} value={d.minutes} onChange={(e) => onChange(value.map((x, j) => (j === i ? { ...x, minutes: Number(e.target.value) } : x)))} /></Field>
+          <Field label={i === 0 ? `Preis (${currency})` : ""}><Input aria-label={i === 0 ? undefined : `Preis ${i + 1} (${currency})`} inputMode="decimal" value={d.price} placeholder="0.00" onChange={(e) => onChange(value.map((x, j) => (j === i ? { ...x, price: e.target.value } : x)))} /></Field>
+          <button type="button" onClick={() => onChange(value.filter((_, j) => j !== i))} disabled={value.length === 1} aria-label={`Dauer ${d.minutes} Minuten entfernen`} title="Dauer entfernen" className="h-11 w-10 rounded-control text-ink-3 hover:text-accent disabled:opacity-30 flex items-center justify-center"><Trash2 className="h-4 w-4" /></button>
         </div>
       ))}
       <button type="button" onClick={() => onChange([...value, { minutes: (value[value.length - 1]?.minutes ?? 30) + 30, price: "" }])} className="press inline-flex items-center gap-1.5 text-sm font-medium text-ink-2 h-9 px-2 rounded-control hover:bg-surface-2"><Plus className="h-4 w-4" /> Dauer hinzufügen</button>
@@ -31,7 +33,7 @@ export function toRows(opts: DurationOption[]): DurationRow[] {
 }
 
 export function BookingSettingsForm({ settings, providers }: { settings: BookingSettingsView; providers: Array<{ provider: string; enabled: boolean }> }) {
-  const [state, action] = useActionState(saveBookingSettingsAction, null);
+  const [state, action, pending] = useActionState(saveBookingSettingsAction, null);
   const [durations, setDurations] = useState<DurationRow[]>(toRows(settings.durationOptions));
   const [hours, setHours] = useState<OpeningHours>(settings.openingHours);
   const [allowOnline, setAllowOnline] = useState(settings.allowOnline);
@@ -41,7 +43,7 @@ export function BookingSettingsForm({ settings, providers }: { settings: Booking
   const setDay = (d: number, range: [string, string] | null) => setHours((h) => ({ ...h, [String(d)]: range ? [range] : [] }));
 
   return (
-    <form action={action} className="space-y-5">
+    <form onSubmit={submitKeepingValues(action)} className="space-y-5">
       <input type="hidden" name="durationsJson" value={JSON.stringify(durations)} />
       <input type="hidden" name="openingHoursJson" value={JSON.stringify(hours)} />
 
@@ -67,12 +69,13 @@ export function BookingSettingsForm({ settings, providers }: { settings: Booking
         <div className="space-y-2">
           {[1, 2, 3, 4, 5, 6, 0].map((d) => {
             const r = hours[String(d)]?.[0] ?? null;
+            const day = DAY_NAMES[d];
             return (
-              <div key={d} className="grid grid-cols-[44px_1fr_1fr_auto] gap-2 items-center">
-                <span className="text-sm font-medium">{WEEKDAYS[d]}</span>
-                <Input type="time" value={r?.[0] ?? ""} disabled={!r} onChange={(e) => setDay(d, [e.target.value, r?.[1] ?? "22:00"])} />
-                <Input type="time" value={r?.[1] ?? ""} disabled={!r} onChange={(e) => setDay(d, [r?.[0] ?? "08:00", e.target.value])} />
-                <button type="button" onClick={() => setDay(d, r ? null : ["08:00", "22:00"])} className={cn("h-11 px-3 rounded-control text-xs font-medium border", r ? "border-line text-ink-2" : "bg-surface-2 border-transparent text-ink-3")}>{r ? "offen" : "zu"}</button>
+              <div key={d} className="grid grid-cols-[2rem_minmax(0,1fr)_minmax(0,1fr)_auto] gap-1.5 sm:gap-2 items-center">
+                <span className="text-sm font-medium" aria-hidden>{WEEKDAYS[d]}</span>
+                <Input type="time" aria-label={`${day} von`} className="min-w-0 px-2 sm:px-3.5" value={r?.[0] ?? ""} disabled={!r} onChange={(e) => setDay(d, [e.target.value, r?.[1] ?? "22:00"])} />
+                <Input type="time" aria-label={`${day} bis`} className="min-w-0 px-2 sm:px-3.5" value={r?.[1] ?? ""} disabled={!r} onChange={(e) => setDay(d, [r?.[0] ?? "08:00", e.target.value])} />
+                <button type="button" role="switch" aria-checked={!!r} aria-label={`${day} geöffnet`} onClick={() => setDay(d, r ? null : ["08:00", "22:00"])} className={cn("h-11 min-w-12 px-2.5 rounded-control text-xs font-medium border", r ? "border-line text-ink-2" : "bg-surface-2 border-transparent text-ink-3")}>{r ? "offen" : "zu"}</button>
               </div>
             );
           })}
@@ -122,7 +125,7 @@ export function BookingSettingsForm({ settings, providers }: { settings: Booking
       </Card>
 
       {state && !state.ok ? <Alert>{state.error}</Alert> : state?.ok && state.message ? <Alert tone="ok">{state.message}</Alert> : null}
-      <div className="sticky bottom-24 md:bottom-4"><SubmitButton size="lg" className="w-full shadow-lg">Einstellungen speichern</SubmitButton></div>
+      <div className="sticky bottom-24 md:bottom-4"><SubmitButton pending={pending} size="lg" className="w-full shadow-lg">Einstellungen speichern</SubmitButton></div>
     </form>
   );
 }

@@ -75,10 +75,10 @@ export default async function EventsPage({ searchParams }: { searchParams: Searc
         </>
       ) : null}
 
-      <div className="mb-3 grid grid-cols-2 gap-1 rounded-control bg-surface-2 p-1" role="tablist">
+      <div className="mb-3 grid grid-cols-2 gap-1 rounded-control bg-surface-2 p-1" role="group" aria-label="Zeitraum">
         {(["upcoming", "past"] as const).map((t) => (
-          <Link key={t} href={href(t, kind)} role="tab" aria-selected={tab === t} scroll={false}
-            className={cn("press flex h-10 items-center justify-center rounded-[0.6rem] text-sm font-medium", tab === t ? "bg-surface text-ink shadow-sm" : "text-ink-3")}>
+          <Link key={t} href={href(t, kind)} aria-current={tab === t ? "page" : undefined} scroll={false}
+            className={cn("press flex h-11 items-center justify-center rounded-[0.6rem] text-sm font-medium", tab === t ? "bg-surface text-ink shadow-sm" : "text-ink-3")}>
             {t === "upcoming" ? "Kommende" : "Vergangene"}
           </Link>
         ))}

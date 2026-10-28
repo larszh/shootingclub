@@ -5,6 +5,7 @@ import { userAvatarUrl } from "@/components/avatar";
 import { AdminBookingTabs } from "@/modules/bookings/ui/admin-tabs";
 import { AdminBookingForm } from "@/modules/bookings/ui/admin-booking-form";
 import { getBookingSettings, listMembersForBooking, listResources } from "@/modules/bookings/queries";
+import { isCalendarDate } from "@/modules/bookings/types";
 import { todayZurich } from "@/lib/time";
 
 export const metadata = { title: "Buchung erfassen" };
@@ -13,7 +14,7 @@ export default async function AdminNewBookingPage({ searchParams }: { searchPara
   const ctx = await requirePermission("tenant.manage");
   const sp = await searchParams;
   const [settings, resources, members] = await Promise.all([getBookingSettings(ctx.tenant.id), listResources(ctx.tenant.id), listMembersForBooking(ctx.tenant.id)]);
-  const date = sp.date && /^\d{4}-\d{2}-\d{2}$/.test(sp.date) ? sp.date : undefined;
+  const date = isCalendarDate(sp.date) ? sp.date : undefined;
   const time = sp.time && /^\d{2}:\d{2}$/.test(sp.time) ? sp.time : undefined;
   const duration = sp.duration && /^\d{1,4}$/.test(sp.duration) ? Number(sp.duration) : undefined;
   return (

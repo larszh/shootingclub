@@ -119,6 +119,8 @@ export async function upsertServerView(view: ScoreMatch, tenantId: string, userI
     const existing = (await promisify(store.get(key))) as MatchEntry | undefined;
     const base = shotsFromView(view);
     const own = existing && existing.userId === userId ? existing : null;
+    // Ältere Ansicht (z.B. Seite aus dem Service-Worker-Cache) darf einen neueren lokalen Stand nie ersetzen
+    if (own && Date.parse(own.view.generatedAt) > Date.parse(view.generatedAt)) return own;
     const dirty = own ? own.dirty : {};
     // Bestätigte Stände, die in der Serveransicht bereits enthalten sind, nicht mehr bevorzugen
     const viewTime = Date.parse(view.generatedAt);

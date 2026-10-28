@@ -2,6 +2,7 @@ import "server-only";
 import { db } from "@/lib/db";
 import type { AppContext } from "@/lib/tenant";
 import { zurichParts } from "@/lib/time";
+import { isOverdue } from "./dates";
 import { userAvatarUrl } from "@/components/avatar";
 
 type TenantCtx = AppContext & { tenant: NonNullable<AppContext["tenant"]> };
@@ -95,7 +96,7 @@ export async function feeStats(tenantId: string, year: number) {
     members, withCategory,
     invoiced: invoices.filter((i) => i.status !== "CANCELLED").length,
     open: open.length,
-    overdue: open.filter((i) => i.dueAt < now).length,
+    overdue: open.filter((i) => isOverdue(i.dueAt, now)).length,
     paid: invoices.filter((i) => i.status === "PAID").length,
     openCents: open.reduce((a, i) => a + i.amountCents, 0),
     paidCents: invoices.filter((i) => i.status === "PAID").reduce((a, i) => a + i.amountCents, 0),

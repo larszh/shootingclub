@@ -6,6 +6,7 @@ import { Check, CircleHelp, Minus, Plus, X } from "lucide-react";
 import { Alert, Button, Card, Input } from "@/components/ui";
 import { Spinner } from "@/components/ui/form";
 import { cn } from "@/lib/utils";
+import { isNavigationError, isNetworkError } from "@/lib/ui-feedback";
 import { rsvpAction } from "../actions";
 import { MAX_GUESTS, RSVP_MY_LABELS, type RsvpStatus } from "../types";
 
@@ -20,8 +21,8 @@ type Props = {
 };
 
 const OPTIONS: Array<{ status: RsvpStatus; label: string; icon: React.ComponentType<{ className?: string }>; active: string }> = [
-  { status: "YES", label: "Zusage", icon: Check, active: "bg-ok text-white border-ok" },
-  { status: "MAYBE", label: "Vielleicht", icon: CircleHelp, active: "bg-warn text-white border-warn" },
+  { status: "YES", label: "Zusage", icon: Check, active: "bg-ok text-ok-ink border-ok" },
+  { status: "MAYBE", label: "Vielleicht", icon: CircleHelp, active: "bg-warn text-warn-ink border-warn" },
   { status: "NO", label: "Absage", icon: X, active: "bg-ink text-bg border-ink" },
 ];
 
@@ -44,10 +45,19 @@ export function RsvpPanel({ eventId, open, closedReason, mine, capacity, seatsTa
     setBusy(next);
     setMsg(null);
     start(async () => {
-      const r = await rsvpAction({ eventId, status: next, guests: next === "NO" ? 0 : guests, note });
+      let r: Awaited<ReturnType<typeof rsvpAction>>;
+      try {
+        r = await rsvpAction({ eventId, status: next, guests: next === "NO" ? 0 : guests, note });
+      } catch (err) {
+        if (isNavigationError(err)) throw err;
+        setBusy(null);
+        setMsg({ ok: false, text: isNetworkError(err) ? "Keine Verbindung. Bitte versuche es nochmals, sobald du wieder online bist." : "Das hat nicht geklappt. Bitte nochmals versuchen." });
+        return;
+      }
       setBusy(null);
       if (r.ok) {
         setStatus(next);
+        if (next === "NO") setGuests(0); // Server speichert bei Absage 0 Begleitpersonen
         setMsg({ ok: true, text: r.message ?? "Gespeichert." });
         router.refresh();
       } else {
@@ -108,7 +118,7 @@ export function RsvpPanel({ eventId, open, closedReason, mine, capacity, seatsTa
             </div>
             <div>
               <label htmlFor={`note-${eventId}`} className="text-sm font-medium">Bemerkung (optional)</label>
-              <Input id={`note-${eventId}`} value={note} maxLength={200} onChange={(e) => setNote(e.target.value)} placeholder="z.B. komme etwas später" className="mt-1" />
+              <Input id={`note-${eventId}`} value={note} maxLength={191} onChange={(e) => setNote(e.target.value)} placeholder="z.B. komme etwas später" className="mt-1" />
               <p className="mt-1 text-xs text-ink-3">Sichtbar für die Verantwortlichen.</p>
             </div>
             <Button type="button" className="w-full" disabled={pending} onClick={() => save(status ?? "YES")}>

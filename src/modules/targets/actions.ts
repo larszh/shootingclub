@@ -101,19 +101,27 @@ export async function saveTargetAction(_prev: ActionResult | null, formData: For
       const ex = await db.targetTemplate.findUnique({ where: { id } });
       if (!ex || ex.ownerUserId !== ctx.user.id) return fail("Nicht gefunden");
       existing = ex;
+      // Beim Bearbeiten im Verein bleiben: sonst verschwindet eine geteilte Scheibe aus dem ursprünglichen Verein.
+      target.tenantId = ex.tenantId;
     }
   }
 
-  const upload = await handleUpload(formData);
+  const isUpload = input.subject === "UPLOAD";
+  const upload = isUpload ? await handleUpload(formData) : null;
   if (upload && "error" in upload) return fail(upload.error);
-  if (input.subject === "UPLOAD" && !upload && !existing?.filePath) return fail("Bitte eine Datei hochladen.");
+  if (isUpload && !upload && !existing?.filePath) return fail("Bitte eine Datei hochladen.");
 
-  const fileFields = upload ? { filePath: upload.filePath, mimeType: upload.mimeType } : {};
+  // Generierte Sujets haben keine Datei: alte Datei samt Typ entfernen (sonst gilt die Scheibe z.B. weiter als PDF).
+  const fileFields = !isUpload
+    ? { filePath: null, mimeType: null }
+    : upload
+      ? { filePath: upload.filePath, mimeType: upload.mimeType }
+      : {};
   const data = { ...targetData(input), ...fileFields, ...target };
 
   if (existing) {
-    if (upload && existing.filePath) await deleteStoredFile(existing.filePath);
     await db.targetTemplate.update({ where: { id: existing.id }, data });
+    if ((upload || !isUpload) && existing.filePath) await deleteStoredFile(existing.filePath);
   } else {
     await db.targetTemplate.create({ data });
   }

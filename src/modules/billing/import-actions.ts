@@ -4,7 +4,7 @@ import { randomUUID } from "node:crypto";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { db } from "@/lib/db";
-import { requirePermission } from "@/lib/tenant";
+import { requireBillingAdmin } from "./guard";
 import { fail, ok, type ActionResult } from "@/lib/action-result";
 import { formatMoney } from "@/lib/money";
 import { zurichToUtc } from "@/lib/time";
@@ -14,6 +14,7 @@ import { matchCredits } from "./import";
 import type { ImportPreviewItem } from "./import-types";
 import { appendPaymentNote, NOTE_MAX } from "./types";
 import { addDaysFromNow } from "./dates";
+
 
 const MAX_BYTES = 5 * 1024 * 1024;
 
@@ -29,7 +30,7 @@ export type ImportPreview = {
 
 /** Schritt 1: Datei lesen und Vorschau berechnen (es wird noch nichts gespeichert). */
 export async function previewCamtImportAction(_prev: ActionResult<ImportPreview> | null, formData: FormData): Promise<ActionResult<ImportPreview>> {
-  const ctx = await requirePermission("tenant.manage");
+  const ctx = await requireBillingAdmin({ orBookings: true });
   const file = formData.get("file");
   if (!(file instanceof File) || file.size === 0) return fail("Bitte eine camt-Datei (XML) wählen.");
   if (file.size > MAX_BYTES) return fail("Die Datei ist grösser als 5 MB.");
@@ -75,7 +76,7 @@ function swissDate(d: string) {
  * Vereins werden geändert; bereits bezahlte werden übersprungen.
  */
 export async function confirmCamtImportAction(input: ConfirmImportInput): Promise<ActionResult<{ paid: number; skipped: number }>> {
-  const ctx = await requirePermission("tenant.manage");
+  const ctx = await requireBillingAdmin({ orBookings: true });
   const parsed = confirmSchema.safeParse(input);
   if (!parsed.success) return fail("Ungültige Auswahl.");
   const { fileName, items } = parsed.data;

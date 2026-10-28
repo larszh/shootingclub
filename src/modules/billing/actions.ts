@@ -3,7 +3,8 @@
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { db } from "@/lib/db";
-import { requirePermission } from "@/lib/tenant";
+import type { Prisma } from "@/generated/prisma/client";
+import { requireBillingAdmin } from "./guard";
 import { fail, ok, type ActionResult } from "@/lib/action-result";
 import { parseMoneyToCents } from "@/lib/money";
 import { z } from "zod";
@@ -11,13 +12,15 @@ import { categorySchema, isValidIban, joinNoteLines, profileSchema, reminderCoun
 import { ensureReference, tenantQrIban } from "./reference";
 import { isQrIban } from "@/lib/qr-reference";
 import { todayZurich, zurichParts } from "@/lib/time";
+import { dueDateInDays } from "./dates";
+
 
 const revalidate = () => { revalidatePath("/admin/billing"); revalidatePath("/billing"); revalidatePath("/admin/bookings"); };
 
 // --- Rechnungsprofil --------------------------------------------------------
 
 export async function saveBillingProfileAction(_prev: ActionResult | null, formData: FormData): Promise<ActionResult> {
-  const ctx = await requirePermission("tenant.manage");
+  const ctx = await requireBillingAdmin({ orBookings: true });
   const parsed = profileSchema.safeParse({
     payeeName: formData.get("payeeName") || undefined,
     payeeStreet: formData.get("payeeStreet") || undefined,
@@ -40,7 +43,7 @@ export async function saveBillingProfileAction(_prev: ActionResult | null, formD
 // --- Kategorien -------------------------------------------------------------
 
 export async function saveCategoryAction(_prev: ActionResult | null, formData: FormData): Promise<ActionResult> {
-  const ctx = await requirePermission("tenant.manage");
+  const ctx = await requireBillingAdmin();
   const id = formData.get("id") ? String(formData.get("id")) : null;
   const parsed = categorySchema.safeParse({
     name: formData.get("name"),
@@ -64,7 +67,7 @@ export async function saveCategoryAction(_prev: ActionResult | null, formData: F
 }
 
 export async function deleteCategoryAction(id: string): Promise<ActionResult> {
-  const ctx = await requirePermission("tenant.manage");
+  const ctx = await requireBillingAdmin();
   const ex = await db.feeCategory.findUnique({ where: { id }, include: { _count: { select: { memberships: true } } } });
   if (!ex || ex.tenantId !== ctx.tenant.id) return fail("Nicht gefunden");
   if (ex._count.memberships > 0) return fail("Kategorie ist Mitgliedern zugeordnet. Zuerst umhängen oder deaktivieren.");
@@ -76,7 +79,7 @@ export async function deleteCategoryAction(id: string): Promise<ActionResult> {
 // --- Zuordnung pro Mitglied ---------------------------------------------------
 
 export async function setMemberFeeAction(membershipId: string, input: { categoryId: string | null; overrideAmount?: string | null; memberNumber?: string | null }): Promise<ActionResult> {
-  const ctx = await requirePermission("tenant.manage");
+  const ctx = await requireBillingAdmin();
   const m = await db.membership.findUnique({ where: { id: membershipId } });
   if (!m || m.tenantId !== ctx.tenant.id) return fail("Nicht gefunden");
   if (input.categoryId) {
@@ -100,19 +103,25 @@ export async function setMemberFeeAction(membershipId: string, input: { category
 
 // --- Jahreslauf ---------------------------------------------------------------
 
-async function nextNumber(tenantId: string, prefix: string, year: number, offset: number) {
-  const count = await db.feeInvoice.count({ where: { tenantId, number: { startsWith: `${prefix}${year}-` } } });
+type Tx = Prisma.TransactionClient;
+
+async function nextNumber(tx: Tx, tenantId: string, prefix: string, year: number, offset: number) {
+  const count = await tx.feeInvoice.count({ where: { tenantId, number: { startsWith: `${prefix}${year}-` } } });
   return `${prefix}${year}-${String(count + 1 + offset).padStart(4, "0")}`;
 }
 
 type MemberSnapshot = { id: string; userId: string; name: string; email: string; address: string | null; categoryId: string | null; categoryName: string; amountCents: number };
 
-async function createInvoiceFor(tenantId: string, run: { id: string; year: number; invoicePrefix: string; dueAt: Date }, m: MemberSnapshot, billing: { currency: string; qrIban: string | null }) {
+function isUniqueViolation(e: unknown) {
+  return typeof e === "object" && e !== null && (e as { code?: unknown }).code === "P2002";
+}
+
+/** Legt eine Rechnung an (innerhalb der Transaktion mit gesperrtem Jahreslauf). Wiederholt nur bei Nummernkollision. */
+async function createInvoiceFor(tx: Tx, tenantId: string, run: { id: string; year: number; invoicePrefix: string; dueAt: Date }, m: MemberSnapshot, billing: { currency: string }) {
   for (let attempt = 0; attempt < 5; attempt++) {
-    const number = await nextNumber(tenantId, run.invoicePrefix, run.year, attempt);
-    let created;
+    const number = await nextNumber(tx, tenantId, run.invoicePrefix, run.year, attempt);
     try {
-      created = await db.feeInvoice.create({
+      return await tx.feeInvoice.create({
         data: {
           tenantId, runId: run.id, membershipId: m.id, userId: m.userId, categoryId: m.categoryId, year: run.year, number,
           memberName: m.name, memberEmail: m.email, memberAddress: m.address, categoryName: m.categoryName, amountCents: m.amountCents,
@@ -120,14 +129,31 @@ async function createInvoiceFor(tenantId: string, run: { id: string; year: numbe
         },
       });
     } catch (e) {
-      if (attempt === 4) throw e;
-      continue;
+      if (attempt === 4 || !isUniqueViolation(e)) throw e;
     }
-    // Bei QR-IBAN direkt eine eindeutige QR-Referenz vergeben.
-    if (billing.qrIban) await ensureReference("FEE", created, billing.qrIban);
-    return created;
   }
   return null;
+}
+
+/**
+ * Erstellt Rechnungen für einen Jahreslauf. Die FeeRun-Zeile wird gesperrt, damit parallele Läufe
+ * (zwei Tabs, zwei Admins) nacheinander laufen und dieselben Mitglieder nicht doppelt verrechnen.
+ * `pick` bestimmt innerhalb der Sperre, wer eine Rechnung erhält.
+ */
+async function createInvoicesLocked(tenantId: string, run: { id: string; year: number; invoicePrefix: string; dueAt: Date }, pick: (tx: Tx) => Promise<MemberSnapshot[]>) {
+  const billing = await billingDefaults(tenantId);
+  const created = await db.$transaction(async (tx) => {
+    await tx.$queryRaw`SELECT id FROM \`FeeRun\` WHERE id = ${run.id} FOR UPDATE`;
+    const out = [];
+    for (const m of await pick(tx)) {
+      const inv = await createInvoiceFor(tx, tenantId, run, m, billing);
+      if (inv) out.push(inv);
+    }
+    return out;
+  }, { maxWait: 15_000, timeout: 120_000 });
+  // Bei QR-IBAN direkt eine eindeutige QR-Referenz vergeben (nach dem Commit).
+  if (billing.qrIban) for (const inv of created) await ensureReference("FEE", inv, billing.qrIban);
+  return created;
 }
 
 async function billingDefaults(tenantId: string) {
@@ -135,8 +161,8 @@ async function billingDefaults(tenantId: string) {
   return { currency: profile?.currency ?? "CHF", qrIban };
 }
 
-async function membersToInvoice(tenantId: string, year: number): Promise<MemberSnapshot[]> {
-  const members = await db.membership.findMany({
+async function membersToInvoice(tx: Tx, tenantId: string, year: number): Promise<MemberSnapshot[]> {
+  const members = await tx.membership.findMany({
     where: { tenantId },
     include: { user: true, feeCategory: true, feeInvoices: { where: { year, status: { not: "CANCELLED" } }, select: { id: true } } },
   });
@@ -154,9 +180,19 @@ async function membersToInvoice(tenantId: string, year: number): Promise<MemberS
   return out;
 }
 
+/** Upsert des Jahreslaufs; legen zwei Anfragen ihn gleichzeitig an, gewinnt eine und die andere aktualisiert. */
+async function upsertRun(args: Prisma.FeeRunUpsertArgs) {
+  try {
+    return await db.feeRun.upsert(args);
+  } catch (e) {
+    if (!isUniqueViolation(e)) throw e;
+    return db.feeRun.upsert(args);
+  }
+}
+
 /** Legt den Jahreslauf an (falls nötig) und erstellt Rechnungen für alle Mitglieder mit Beitrag ohne Rechnung in diesem Jahr. */
 export async function createRunAction(_prev: ActionResult | null, formData: FormData): Promise<ActionResult> {
-  const ctx = await requirePermission("tenant.manage");
+  const ctx = await requireBillingAdmin();
   const parsed = runSchema.safeParse({
     year: formData.get("year"),
     title: formData.get("title"),
@@ -169,25 +205,20 @@ export async function createRunAction(_prev: ActionResult | null, formData: Form
   const profile = await db.billingProfile.findUnique({ where: { tenantId: ctx.tenant.id } });
   if (!profile?.payeeName || !profile.iban) return fail("Bitte zuerst das Rechnungsprofil (Zahlungsempfänger und IBAN) ausfüllen.");
 
-  const dueAt = new Date(Date.now() + r.dueDays * 86_400_000);
-  const run = await db.feeRun.upsert({
+  const dueAt = dueDateInDays(r.dueDays);
+  const run = await upsertRun({
     where: { tenantId_year: { tenantId: ctx.tenant.id, year: r.year } },
     create: { tenantId: ctx.tenant.id, year: r.year, title: r.title, dueAt, invoicePrefix: r.invoicePrefix, dueDays: r.dueDays, note: r.note ?? null },
     update: { title: r.title, invoicePrefix: r.invoicePrefix, dueDays: r.dueDays, note: r.note ?? null },
   });
-  const members = await membersToInvoice(ctx.tenant.id, r.year);
-  const billing = await billingDefaults(ctx.tenant.id);
-  let created = 0;
-  for (const m of members) {
-    if (await createInvoiceFor(ctx.tenant.id, { ...run, dueAt }, m, billing)) created++;
-  }
+  const created = (await createInvoicesLocked(ctx.tenant.id, { ...run, dueAt }, (tx) => membersToInvoice(tx, ctx.tenant.id, r.year))).length;
   revalidate();
   redirect(`/admin/billing/runs/${run.id}?created=${created}`);
 }
 
 /** Einzelrechnung für ein Mitglied (z.B. Eintritt unter dem Jahr). */
 export async function createSingleInvoiceAction(membershipId: string, year: number): Promise<ActionResult> {
-  const ctx = await requirePermission("tenant.manage");
+  const ctx = await requireBillingAdmin();
   const m = await db.membership.findUnique({ where: { id: membershipId }, include: { user: true, feeCategory: true, feeInvoices: { where: { year, status: { not: "CANCELLED" } } } } });
   if (!m || m.tenantId !== ctx.tenant.id) return fail("Nicht gefunden");
   if (m.feeInvoices.length) return fail("Für dieses Jahr existiert bereits eine Rechnung.");
@@ -195,22 +226,29 @@ export async function createSingleInvoiceAction(membershipId: string, year: numb
   if (amount === null || amount <= 0) return fail("Kein Beitrag definiert (Kategorie oder individueller Betrag).");
   const profile = await db.billingProfile.findUnique({ where: { tenantId: ctx.tenant.id } });
   if (!profile?.payeeName || !profile.iban) return fail("Bitte zuerst das Rechnungsprofil ausfüllen.");
-  let run = await db.feeRun.findUnique({ where: { tenantId_year: { tenantId: ctx.tenant.id, year } } });
-  if (!run) {
-    run = await db.feeRun.create({ data: { tenantId: ctx.tenant.id, year, title: `Mitgliederbeitrag ${year}`, dueAt: new Date(Date.now() + 30 * 86_400_000) } });
-  }
-  const dueAt = new Date(Date.now() + run.dueDays * 86_400_000);
-  await createInvoiceFor(ctx.tenant.id, { ...run, dueAt }, {
+  const run = await upsertRun({
+    where: { tenantId_year: { tenantId: ctx.tenant.id, year } },
+    create: { tenantId: ctx.tenant.id, year, title: `Mitgliederbeitrag ${year}`, dueAt: dueDateInDays(30) },
+    update: {},
+  });
+  const dueAt = dueDateInDays(run.dueDays);
+  const snapshot: MemberSnapshot = {
     id: m.id, userId: m.userId, name: m.user.name, email: m.user.email,
     address: [m.user.street, [m.user.zip, m.user.city].filter(Boolean).join(" ")].filter(Boolean).join("\n") || null,
     categoryId: m.feeCategoryId, categoryName: m.feeCategory?.name ?? "Mitgliederbeitrag", amountCents: amount,
-  }, await billingDefaults(ctx.tenant.id));
+  };
+  const created = await createInvoicesLocked(ctx.tenant.id, { ...run, dueAt }, async (tx) => {
+    // Innerhalb der Sperre nochmals prüfen, ob inzwischen eine Rechnung entstanden ist.
+    const exists = await tx.feeInvoice.count({ where: { membershipId: m.id, year, status: { not: "CANCELLED" } } });
+    return exists ? [] : [snapshot];
+  });
+  if (!created.length) return fail("Für dieses Jahr existiert bereits eine Rechnung.");
   revalidate();
   return ok(undefined, "Rechnung erstellt.");
 }
 
 export async function setFeeInvoiceStatusAction(id: string, status: "OPEN" | "PAID" | "CANCELLED", note?: string): Promise<ActionResult> {
-  const ctx = await requirePermission("tenant.manage");
+  const ctx = await requireBillingAdmin();
   if (!["OPEN", "PAID", "CANCELLED"].includes(status)) return fail("Ungültiger Status");
   if (note !== undefined && (typeof note !== "string" || note.length > 500)) return fail("Notiz ist ungültig oder zu lang.");
   const inv = await db.feeInvoice.findUnique({ where: { id } });
@@ -232,7 +270,7 @@ const idsSchema = z.array(z.string().min(1).max(40)).min(1).max(2000);
  * Wurde eine Rechnung heute schon gemahnt, zählt ein erneuter Klick nicht doppelt.
  */
 export async function markRemindedAction(ids: string[]): Promise<ActionResult> {
-  const ctx = await requirePermission("tenant.manage");
+  const ctx = await requireBillingAdmin();
   const parsed = idsSchema.safeParse(ids);
   if (!parsed.success) return fail("Ungültige Auswahl");
   const list = await db.feeInvoice.findMany({ where: { id: { in: parsed.data }, tenantId: ctx.tenant.id, status: "OPEN" }, select: { id: true, paymentNote: true, remindedAt: true } });
@@ -251,7 +289,7 @@ export async function markRemindedAction(ids: string[]): Promise<ActionResult> {
 
 /** Mehrere offene Rechnungen auf einmal als bezahlt markieren (z.B. Barzahlung an der GV). */
 export async function bulkMarkFeeInvoicesPaidAction(ids: string[]): Promise<ActionResult<{ count: number }>> {
-  const ctx = await requirePermission("tenant.manage");
+  const ctx = await requireBillingAdmin();
   const parsed = idsSchema.safeParse(ids);
   if (!parsed.success) return fail("Bitte mindestens eine Rechnung wählen.");
   const res = await db.feeInvoice.updateMany({

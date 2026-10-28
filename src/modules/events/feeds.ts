@@ -7,9 +7,9 @@ import { kindMeta } from "./types";
 
 const TOKEN_RE = /^[A-Za-z0-9_-]{32,64}$/;
 
-/** «abc.ics» → «abc»; null bei ungültigem Format. */
+/** «abc.ics» → «abc»; null bei ungültigem Format. Next.js liefert den Parameter bereits dekodiert. */
 export function parseFeedToken(raw: string) {
-  const t = decodeURIComponent(raw).replace(/\.ics$/i, "");
+  const t = raw.replace(/\.ics$/i, "");
   return TOKEN_RE.test(t) ? t : null;
 }
 

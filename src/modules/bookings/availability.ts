@@ -29,6 +29,28 @@ function overlaps(a: Interval, b: Interval) {
   return a.startsAt < b.endsAt && a.endsAt > b.startsAt;
 }
 
+/**
+ * Höchste Anzahl gleichzeitig laufender Buchungen innerhalb des Fensters. Aufeinanderfolgende
+ * Buchungen (10–11 und 11–12 Uhr) belegen denselben Platz nur nacheinander und zählen deshalb einfach.
+ */
+export function peakConcurrency(bookings: Interval[], window: Interval) {
+  const events: Array<[number, number]> = [];
+  for (const b of bookings) {
+    if (!overlaps(b, window)) continue;
+    events.push([Math.max(b.startsAt.getTime(), window.startsAt.getTime()), 1]);
+    events.push([Math.min(b.endsAt.getTime(), window.endsAt.getTime()), -1]);
+  }
+  // Bei gleicher Zeit zuerst Enden (-1), dann Beginne (+1) verarbeiten.
+  events.sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+  let current = 0;
+  let peak = 0;
+  for (const [, delta] of events) {
+    current += delta;
+    if (current > peak) peak = current;
+  }
+  return peak;
+}
+
 export function computeSlots(p: Params): Slot[] {
   const now = p.now ?? new Date();
   const weekday = zurichParts(zurichToUtc(p.dateStr, "12:00")).weekday;
@@ -55,7 +77,7 @@ export function computeSlots(p: Params): Slot[] {
       } else if (p.blocks.some((b) => overlaps(b, slot))) {
         available = false;
         reason = "Gesperrt";
-      } else if (p.bookings.filter((b) => overlaps(b, slot)).length >= p.capacity) {
+      } else if (peakConcurrency(p.bookings, slot) >= p.capacity) {
         available = false;
         reason = "Belegt";
       }

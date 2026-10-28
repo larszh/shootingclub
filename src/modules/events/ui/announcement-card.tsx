@@ -25,7 +25,7 @@ export function AnnouncementCard({ a, compact, children }: { a: AnnouncementView
             <RichText text={compact && long ? a.body.slice(0, 160).trimEnd() + "…" : a.body} className={cn("mt-1 text-sm text-ink-2", compact && "line-clamp-3")} />
           ) : (
             <details className="group mt-1">
-              <summary className="cursor-pointer list-none text-sm text-ink-2 [&::-webkit-details-marker]:hidden">
+              <summary className="cursor-pointer list-none break-words text-sm text-ink-2 [overflow-wrap:anywhere] [&::-webkit-details-marker]:hidden">
                 <span className="group-open:hidden">{a.body.slice(0, LONG).trimEnd()}… <span className="font-medium text-accent">Weiterlesen</span></span>
                 <span className="hidden group-open:inline text-xs font-medium text-ink-3">Weniger anzeigen</span>
               </summary>

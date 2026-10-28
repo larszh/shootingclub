@@ -3,11 +3,12 @@
 import { requireModule, requirePermission } from "@/lib/tenant";
 import { getBookingSettings, getResource, getSlotsForDay, expireUnpaidOnlineBookings } from "./queries";
 import { quotePrice } from "./pricing";
+import { isCalendarDate } from "./types";
 
 export type SlotDto = { time: string; available: boolean; reason?: string; basePriceCents: number; discountCents: number; discountReason: string | null; totalCents: number };
 
 async function slotsFor(tenantId: string, resourceId: string, dateStr: string, durationMinutes: number, bypassLimits: boolean): Promise<{ slots: SlotDto[]; error?: string }> {
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) return { slots: [], error: "Ungültiges Datum" };
+  if (!isCalendarDate(dateStr)) return { slots: [], error: "Ungültiges Datum" };
   if (typeof resourceId !== "string" || !Number.isFinite(durationMinutes)) return { slots: [], error: "Ungültige Eingabe" };
   const [settings, resource] = await Promise.all([getBookingSettings(tenantId), getResource(tenantId, resourceId)]);
   if (!resource) return { slots: [], error: "Ressource nicht gefunden" };

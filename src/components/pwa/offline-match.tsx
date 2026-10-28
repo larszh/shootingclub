@@ -51,6 +51,8 @@ export function OfflineMatch() {
   const key = params.get("key") ?? "";
   const { online } = useSyncStatus();
   const [state, setState] = useState<State>({ status: "loading" });
+  // Aktueller Status aus der Eingabe (abschliessen / wieder öffnen), damit die Kopfzeile mitzieht
+  const [liveStatus, setLiveStatus] = useState<{ key: string; status: string } | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -94,6 +96,7 @@ export function OfflineMatch() {
 
   const { entry, view, redirectTo } = state;
   const notSynced = entry.key.startsWith("c:");
+  const status = liveStatus?.key === entry.key ? liveStatus.status : view.status;
   return (
     <div>
       <div className="animate-fade mb-5">
@@ -105,7 +108,7 @@ export function OfflineMatch() {
               {formatDate(view.date, { day: "2-digit", month: "2-digit", year: "numeric", timeZone: APP_TZ })}{view.locationNote ? ` · ${view.locationNote}` : ""}{view.createdByName ? ` · erstellt von ${view.createdByName}` : ""}
             </p>
           </div>
-          {notSynced ? <Badge tone="warn">Nur auf Gerät</Badge> : view.status === "FINISHED" ? <Badge tone="ok">Abgeschlossen</Badge> : <Badge tone="accent">Offen</Badge>}
+          {notSynced ? <Badge tone="warn">Nur auf Gerät</Badge> : status === "FINISHED" ? <Badge tone="ok">Abgeschlossen</Badge> : <Badge tone="accent">Offen</Badge>}
         </div>
       </div>
       <div className="animate-fade flex flex-wrap gap-1.5 mb-4 -mt-2">
@@ -118,7 +121,7 @@ export function OfflineMatch() {
           <ExternalLink className="h-4 w-4" /> Verbindung ist zurück – zur Online-Ansicht wechseln
         </a>
       ) : null}
-      <ScoreEntry match={view} storageKey={entry.key} tenantId={entry.tenantId} userId={entry.userId} persistView={false} />
+      <ScoreEntry match={view} storageKey={entry.key} tenantId={entry.tenantId} userId={entry.userId} persistView={false} onStatusChange={(s) => setLiveStatus({ key: entry.key, status: s })} />
     </div>
   );
 }

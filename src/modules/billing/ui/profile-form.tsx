@@ -6,11 +6,11 @@ import { saveBillingProfileAction } from "@/modules/billing/actions";
 import type { BillingProfileView } from "@/modules/billing/profile";
 import { compactCode, formatIban, isQrIban } from "@/lib/qr-reference";
 import { Alert, Badge, Card, Field, Input, Select } from "@/components/ui";
-import { SubmitButton } from "@/components/ui/form";
+import { SubmitButton, submitKeepingValues } from "@/components/ui/form";
 import { cn } from "@/lib/utils";
 
 export function BillingProfileForm({ profile }: { profile: BillingProfileView }) {
-  const [state, action] = useActionState(saveBillingProfileAction, null);
+  const [state, action, pending] = useActionState(saveBillingProfileAction, null);
   const [iban, setIban] = useState(profile.iban ? formatIban(profile.iban) : "");
   const compact = compactCode(iban);
   const qr = isQrIban(compact);
@@ -18,7 +18,7 @@ export function BillingProfileForm({ profile }: { profile: BillingProfileView })
   return (
     <div className="space-y-4">
       <Card className="animate-rise p-4">
-        <form action={action} className="space-y-3">
+        <form onSubmit={submitKeepingValues(action)} className="space-y-3">
           <div className="flex items-center justify-between"><h3 className="font-semibold">Zahlungsempfänger</h3>{profile.qrReady ? <Badge tone="ok">QR-Rechnung bereit</Badge> : <Badge tone="warn">unvollständig</Badge>}</div>
           <p className="text-xs text-ink-3">Diese Angaben stehen auf allen Rechnungen (Mitgliederbeiträge und Reservationen) und im QR-Zahlteil.</p>
           <Field label="Name"><Input name="payeeName" defaultValue={profile.payeeName ?? ""} placeholder="Schützengesellschaft Musterhausen" /></Field>
@@ -41,7 +41,7 @@ export function BillingProfileForm({ profile }: { profile: BillingProfileView })
             </div>
           ) : null}
           {state && !state.ok ? <Alert>{state.error}</Alert> : state?.ok && state.message ? <Alert tone="ok">{state.message}</Alert> : null}
-          <SubmitButton>Speichern</SubmitButton>
+          <SubmitButton pending={pending}>Speichern</SubmitButton>
         </form>
       </Card>
 

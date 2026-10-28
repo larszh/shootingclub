@@ -35,6 +35,9 @@ echo "→ Prisma Client generieren und Migrationen einspielen"
 npx prisma generate
 npx prisma migrate deploy
 
+echo "→ Neue globale Programme und Scheiben ergänzen"
+npx tsx prisma/seed.ts --presets-only
+
 echo "→ Build"
 npm run build
 

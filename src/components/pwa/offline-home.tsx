@@ -18,7 +18,9 @@ async function loadLocal(): Promise<Loaded> {
     const active = await getActiveSnapshot();
     if (!active) return { session: null, snapshot: null, matches: [] };
     const matches = await listMatchEntries(active.session.userId);
-    return { session: active.session, snapshot: active.snapshot, matches: matches.filter((m) => !active.session.tenantId || m.tenantId === active.session.tenantId) };
+    // Durchgänge anderer Vereine nur zeigen, solange sie noch nicht übertragen sind (nichts verstecken, was aussteht)
+    const pending = (m: MatchEntry) => Object.keys(m.dirty).length > 0 || !!m.statusDirty || m.key.startsWith("c:");
+    return { session: active.session, snapshot: active.snapshot, matches: matches.filter((m) => !active.session.tenantId || m.tenantId === active.session.tenantId || pending(m)) };
   } catch {
     return { session: null, snapshot: null, matches: [] };
   }

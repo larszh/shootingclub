@@ -336,8 +336,10 @@ function rings(c: Ctx, ringCount: number): Body {
   let d = Math.min(p.diameterMm ?? maxD, maxD);
   let note: string | null = null;
   if (p.originalDistanceM && p.shotDistanceM) {
-    const r = resolveScale(p.diameterMm ?? maxD, maxD, p, undefined, c.size, false);
-    d = (p.diameterMm ?? maxD) * r.s;
+    // Ohne Durchmesser feste Referenz (wie blankRings), damit «Massstab 1:x» auf jedem Format gleich gross ist
+    const base = p.diameterMm ?? 300;
+    const r = resolveScale(base, maxD, p, undefined, c.size, false);
+    d = base * r.s;
     note = r.note;
   }
   const cx = box.x + box.w / 2;
@@ -375,8 +377,11 @@ function grid(box: Box, p: TargetParams) {
   for (let y = cy - g; y >= box.y; y -= g) parts.push(hline(y, box, 0.2));
   // Zentrum: kleiner Kreis + Ringe für Referenz
   parts.push(`<circle cx="${cx}" cy="${cy}" r="${g * 0.5}" fill="#000"/>`);
-  parts.push(`<circle cx="${cx}" cy="${cy}" r="${g * 2.5}" fill="none" stroke="#000" stroke-width="0.5"/>`);
-  parts.push(`<circle cx="${cx}" cy="${cy}" r="${g * 5}" fill="none" stroke="#000" stroke-width="0.5"/>`);
+  // Referenzringe nur, wenn sie ganz ins Raster passen (sonst laufen sie in den Rand oder über das Blatt)
+  const maxR = Math.min(box.w, box.h) / 2;
+  for (const r of [g * 2.5, g * 5]) {
+    if (r <= maxR) parts.push(`<circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="#000" stroke-width="0.5"/>`);
+  }
   parts.push(
     `<text x="${box.x + 2}" y="${box.y + 4}" font-size="3" fill="#000">Raster ${g} mm</text>`,
   );

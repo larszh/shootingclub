@@ -4,7 +4,7 @@ import { slugify } from "@/lib/utils";
 import { formatQrReference } from "@/lib/qr-reference";
 import { adminExportContext, csvAmount, csvResponse, toCsv } from "@/modules/billing/csv";
 import { listBookingsForExport } from "@/modules/bookings/queries";
-import { BOOKING_STATUS, PAYMENT_METHOD_LABEL, PAYMENT_STATUS } from "@/modules/bookings/types";
+import { BOOKING_STATUS, PAYMENT_METHOD_LABEL, paymentStatusView } from "@/modules/bookings/types";
 
 export const dynamic = "force-dynamic";
 
@@ -44,7 +44,7 @@ export async function GET(req: NextRequest) {
     csvAmount(b.totalCents),
     b.currency,
     PAYMENT_METHOD_LABEL[b.paymentMethod] ?? b.paymentMethod,
-    PAYMENT_STATUS[b.paymentStatus]?.label ?? b.paymentStatus,
+    paymentStatusView(b).label,
     b.paidAt ? formatDateZurich(b.paidAt, { weekday: undefined }) : "",
     b.invoice?.number ?? "",
     b.invoice?.reference ? formatQrReference(b.invoice.reference) : "",

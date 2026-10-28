@@ -7,7 +7,7 @@ import { db } from "@/lib/db";
 import { requireModule, requirePermission, requireSuperAdmin } from "@/lib/tenant";
 import { fail, ok, type ActionResult } from "@/lib/action-result";
 import { programInputSchema, type ProgramInput } from "./types";
-import { createMatchCore, saveStageResultCore } from "./sync";
+import { createMatchCore, saveStageResultCore, setMatchStatusCore } from "./sync";
 
 function parseProgramForm(formData: FormData) {
   const raw = {
@@ -176,12 +176,14 @@ export async function saveStageResultAction(input: { matchId: string; participan
   return ok({ total: res.total });
 }
 
-export async function setMatchStatusAction(matchId: string, status: "OPEN" | "FINISHED"): Promise<ActionResult> {
-  const loaded = await loadEditableMatch(matchId);
-  if (!loaded.ok) return fail(loaded.error);
-  await db.match.update({ where: { id: matchId }, data: { status } });
-  revalidatePath(`/scores/matches/${matchId}`);
-  revalidatePath("/scores");
+/** Status setzen, mit derselben last-write-wins-Logik wie die Offline-Synchronisierung (ohne Gerätezeit: jetzt). */
+export async function setMatchStatusAction(matchId: string, status: "OPEN" | "FINISHED", clientUpdatedAt?: number): Promise<ActionResult> {
+  const ctx = await requireModule("scores");
+  const res = await setMatchStatusCore(
+    { userId: ctx.user.id, tenantId: ctx.tenant.id, can: ctx.can },
+    { matchId, status, clientUpdatedAt: clientUpdatedAt ?? Date.now() },
+  );
+  if (!res.ok) return fail(res.error);
   return ok();
 }
 

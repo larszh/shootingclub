@@ -26,6 +26,7 @@ export function refreshSnapshot(opts?: { maxAgeMs?: number }): Promise<boolean> 
       if (!res.ok) return false;
       const data = (await res.json()) as SnapshotResponse;
       lastFetch = Date.now();
+      const previous = await getSession().catch(() => undefined);
       const session: OfflineSession = {
         userId: data.user.id,
         userName: data.user.name,
@@ -34,6 +35,14 @@ export function refreshSnapshot(opts?: { maxAgeMs?: number }): Promise<boolean> 
         updatedAt: Date.now(),
       };
       await setMeta("session", session);
+      // Verein gewechselt: gecachte Seiten zeigen noch den bisherigen Verein → verwerfen
+      if (previous && previous.userId === session.userId && previous.tenantId && previous.tenantId !== session.tenantId) {
+        try {
+          navigator.serviceWorker?.controller?.postMessage({ type: "CLEAR_USER_CACHES" });
+        } catch {
+          // kein aktiver Service Worker
+        }
+      }
       if (data.tenant && data.scores) {
         const snapshot: OfflineSnapshot = {
           tenantId: data.tenant.id,

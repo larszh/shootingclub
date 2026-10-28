@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Ban, ChevronLeft, ChevronRight, Plus } from "lucide-react";
+import { Ban, ChevronLeft, ChevronRight, Clock, Plus } from "lucide-react";
 import { requirePermission } from "@/lib/tenant";
 import { Card, EmptyState, LinkButton, PageHeader } from "@/components/ui";
 import { Avatar, userAvatarUrl } from "@/components/avatar";
@@ -35,7 +35,7 @@ export default async function BookingCalendarPage({ searchParams }: { searchPara
         <Link href={`/admin/bookings/calendar?week=${week.next}`} className="press h-11 w-11 rounded-full border border-line bg-surface flex items-center justify-center" aria-label="Nächste Woche"><ChevronRight className="h-5 w-5" /></Link>
         <div className="ml-auto flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-ink-3">
           <span className="inline-flex items-center gap-1"><span className="h-2.5 w-2.5 rounded-full bg-ok" /> bestätigt</span>
-          <span className="inline-flex items-center gap-1"><span className="h-2.5 w-2.5 rounded-full bg-warn" /> Freigabe offen</span>
+          <span className="inline-flex items-center gap-1"><Clock className="h-3 w-3 text-warn" aria-hidden /> Freigabe offen</span>
           <span className="hidden sm:inline-flex items-center gap-1"><span className="h-2.5 w-2.5 rounded-full bg-ink-3" /> gesperrt</span>
         </div>
       </div>
@@ -112,11 +112,15 @@ function Item({ it }: { it: CalendarCellItem }) {
   return (
     <Link href={`/bookings/${it.id}`} title={it.note ?? undefined}
       className={cn("press block rounded-md border-l-4 px-2 py-1 text-xs hover:brightness-95", it.status === "PENDING" ? "border-warn bg-warn/10" : "border-ok bg-ok/10")}>
-      <div className="font-medium tabular-nums text-ink">{it.time}</div>
+      <div className="flex items-center gap-1 font-medium tabular-nums text-ink">
+        {it.time}
+        {it.status === "PENDING" ? <Clock className="h-3 w-3 shrink-0 text-warn" aria-hidden /> : null}
+        <span className="sr-only">{it.status === "PENDING" ? "Freigabe offen" : "bestätigt"}</span>
+      </div>
       <div className="flex items-center gap-1 min-w-0">
         {it.user ? <Avatar name={it.name} src={userAvatarUrl(it.user)} size={16} tone="soft" /> : null}
         <span className="truncate text-ink-2">{it.name}</span>
-        {it.unpaid ? <span className="ml-auto h-1.5 w-1.5 shrink-0 rounded-full bg-accent" title="nicht bezahlt" /> : null}
+        {it.unpaid ? <span className="ml-auto h-1.5 w-1.5 shrink-0 rounded-full bg-accent" title="nicht bezahlt"><span className="sr-only">nicht bezahlt</span></span> : null}
       </div>
     </Link>
   );
@@ -138,7 +142,10 @@ function AgendaRow({ it, resourceName }: { it: CalendarCellItem; resourceName: s
         <div className="font-medium truncate">{it.name}</div>
         <div className="text-xs text-ink-3 truncate"><span className="tabular-nums">{it.time}</span> · {resourceName}{it.note ? ` · «${it.note}»` : ""}</div>
       </div>
-      <span className={cn("h-2.5 w-2.5 shrink-0 rounded-full", it.status === "PENDING" ? "bg-warn" : "bg-ok")} aria-label={it.status === "PENDING" ? "Freigabe offen" : "bestätigt"} />
+      {it.status === "PENDING"
+        ? <span className="inline-flex shrink-0 items-center gap-1 text-[10px] font-medium text-warn"><Clock className="h-3.5 w-3.5" aria-hidden /> Freigabe</span>
+        : <span className="h-2.5 w-2.5 shrink-0 rounded-full bg-ok" aria-hidden />}
+      <span className="sr-only">{it.status === "PENDING" ? "Freigabe offen" : "bestätigt"}</span>
       {it.unpaid ? <span className="text-[10px] font-medium text-accent">offen</span> : null}
     </Link>
   );

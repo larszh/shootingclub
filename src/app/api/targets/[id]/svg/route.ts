@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getAppContext } from "@/lib/tenant";
 import { getTarget } from "@/modules/targets/queries";
+import { contentDisposition } from "@/modules/targets/file-url";
 import { renderTargetSvg } from "@/modules/targets/svg";
 import { PAPER_SIZES, type PaperSize, type TargetSubject } from "@/modules/targets/types";
 
@@ -20,7 +21,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
   return new NextResponse(svg, {
     headers: {
       "Content-Type": "image/svg+xml; charset=utf-8",
-      "Content-Disposition": `${disposition}; filename="${encodeURIComponent(t.name)}-${paper}.svg"`,
+      "Content-Disposition": contentDisposition(disposition, `${t.name}-${paper}.svg`),
       "Cache-Control": "private, max-age=300",
       "X-Content-Type-Options": "nosniff",
     },

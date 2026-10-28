@@ -111,7 +111,7 @@ export default async function StatsPage({ searchParams }: { searchParams: Promis
           <p className="mt-1.5 text-[11px] text-ink-3">Balken: Bestwert im Verhältnis zum Maximum · farbiger Strich: dein Durchschnitt</p>
 
           <SectionTitle>Persönliche Rekorde</SectionTitle>
-          <div className="stagger grid gap-2.5 sm:grid-cols-2">
+          <div className="stagger grid grid-cols-1 gap-2.5 sm:grid-cols-2">
             {stats.records.map((r) => (
               <Link key={r.programId} href={`/scores/matches/${r.matchId}`} className="press block">
                 <Card className="flex items-center gap-3 p-4 hover:border-ink/30">

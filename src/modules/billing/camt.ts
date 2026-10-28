@@ -34,11 +34,20 @@ function parseAttrs(raw: string) {
   return attrs;
 }
 
+/**
+ * Obergrenzen gegen präparierte Dateien: camt-Meldungen sind kaum mehr als 15 Ebenen tief. Mit
+ * begrenzter Tiefe bleibt die Suche nach dem passenden offenen Element beim End-Tag konstant,
+ * der Parser läuft also linear statt quadratisch.
+ */
+const MAX_DEPTH = 64;
+const MAX_NODES = 500_000;
+
 /** Parst XML zu einem Baum. Wirft bei völlig unlesbarer Eingabe, toleriert aber fehlende End-Tags. */
 export function parseXml(xml: string): XNode {
   const root: XNode = { name: "#root", attrs: {}, children: [], text: "" };
   const stack: XNode[] = [root];
   let i = 0;
+  let nodes = 0;
   const n = xml.length;
   // BOM entfernen
   if (xml.charCodeAt(0) === 0xfeff) i = 1;
@@ -99,8 +108,12 @@ export function parseXml(xml: string): XNode {
       const qname = sp < 0 ? body : body.slice(0, sp);
       if (!qname) throw new Error("Ungültiges XML");
       const node: XNode = { name: localName(qname), attrs: sp < 0 ? {} : parseAttrs(body.slice(sp)), children: [], text: "" };
+      if (++nodes > MAX_NODES) throw new Error("XML enthält zu viele Elemente");
       stack[stack.length - 1]!.children.push(node);
-      if (!selfClosing) stack.push(node);
+      if (!selfClosing) {
+        if (stack.length > MAX_DEPTH) throw new Error("XML ist zu tief verschachtelt");
+        stack.push(node);
+      }
       i = j + 1;
     }
   }

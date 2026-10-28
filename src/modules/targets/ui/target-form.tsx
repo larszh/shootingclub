@@ -17,7 +17,8 @@ import {
   type TargetSubject,
 } from "@/modules/targets/types";
 import { Alert, Badge, Card, Field, Input, Select, Textarea } from "@/components/ui";
-import { SubmitButton } from "@/components/ui/form";
+import { SubmitButton, submitKeepingValues } from "@/components/ui/form";
+import { targetFileUrl } from "@/modules/targets/file-url";
 import { cn } from "@/lib/utils";
 
 type Props = {
@@ -28,7 +29,7 @@ type Props = {
 const DISTANCE_KEYS = new Set(["originalDistanceM", "shotDistanceM"]);
 
 export function TargetForm({ scope, initial }: Props) {
-  const [state, action] = useActionState(saveTargetAction, null);
+  const [state, action, pending] = useActionState(saveTargetAction, null);
   const [subject, setSubject] = useState<TargetSubject>(
     subjectMeta(initial?.subject ?? "") ? (initial!.subject as TargetSubject) : "RINGS_10",
   );
@@ -51,7 +52,7 @@ export function TargetForm({ scope, initial }: Props) {
   const set = (patch: Partial<TargetParams>) => setParams((p) => ({ ...p, ...patch }));
 
   return (
-    <form action={action} className="space-y-5">
+    <form onSubmit={submitKeepingValues(action)} className="space-y-5">
       <input type="hidden" name="scope" value={scope} />
       {initial ? <input type="hidden" name="id" value={initial.id} /> : null}
 
@@ -147,7 +148,7 @@ export function TargetForm({ scope, initial }: Props) {
                 <img src={fileUrl} alt="" className="h-full w-full object-contain" />
               ) : initial?.filePath ? (
                 // eslint-disable-next-line @next/next/no-img-element
-                <img src={`/api/files/${initial.id}`} alt="" className="h-full w-full object-contain" />
+                <img src={targetFileUrl(initial)} alt="" className="h-full w-full object-contain" />
               ) : (
                 <div className="h-full flex items-center justify-center text-neutral-500 text-sm">{fileUrl === "pdf" ? "PDF gewählt" : "Keine Datei"}</div>
               )
@@ -164,7 +165,7 @@ export function TargetForm({ scope, initial }: Props) {
 
       {state && !state.ok ? <Alert>{state.error}</Alert> : null}
       <div className="sticky bottom-24 md:bottom-4">
-        <SubmitButton size="lg" className="w-full shadow-lg" disabled={sizes.length === 0} pendingText="Speichern…">{initial ? "Änderungen speichern" : "Scheibe anlegen"}</SubmitButton>
+        <SubmitButton size="lg" className="w-full shadow-lg" pending={pending} disabled={sizes.length === 0} pendingText="Speichern…">{initial ? "Änderungen speichern" : "Scheibe anlegen"}</SubmitButton>
       </div>
     </form>
   );

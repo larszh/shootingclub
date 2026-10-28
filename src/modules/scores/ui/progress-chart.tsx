@@ -33,7 +33,8 @@ export function ProgressChart({ id, title, points, best, avg, max, decimal }: {
   let hi = Math.max(...values, avg);
   const spread = Math.max(hi - lo, max * 0.05, 1);
   lo = Math.max(0, lo - spread * 0.2);
-  hi = Math.min(max || hi + spread * 0.2, hi + spread * 0.2);
+  // Nach oben Luft lassen, aber höchstens bis zum Programm-Maximum – nie unter den grössten Wert.
+  hi = Math.max(hi, Math.min(max || hi + spread * 0.2, hi + spread * 0.2));
   if (hi <= lo) hi = lo + 1;
   const step = niceStep(hi - lo);
   lo = Math.floor(lo / step) * step;

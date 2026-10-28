@@ -99,6 +99,7 @@ export const toast = Object.assign((message: string, opts?: ToastOptions) => pus
 export type ConfirmOptions = {
   title: string;
   message?: string;
+  /** Text des Bestätigungsknopfs, z.B. «Absagen», «Stornieren», «Entfernen». Bei tone "danger" immer angeben. */
   confirmLabel?: string;
   cancelLabel?: string;
   tone?: "danger" | "default";
@@ -149,6 +150,8 @@ export function resolveConfirm(id: number, ok: boolean) {
 /**
  * Ersatz für window.confirm mit eigenem, zugänglichem Dialog.
  *   if (!(await confirmDialog({ title: "Durchgang löschen?", tone: "danger", confirmLabel: "Löschen" }))) return;
+ * Titel kurz als Frage halten, die Erklärung gehört in `message`:
+ *   confirmDialog({ title: "Anlass absagen?", message: "Er bleibt sichtbar …", tone: "danger", confirmLabel: "Absagen" })
  * Ohne eingebundenen <DialogHost /> wird auf window.confirm ausgewichen.
  */
 export function confirmDialog(opts: ConfirmOptions | string): Promise<boolean> {

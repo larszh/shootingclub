@@ -1,5 +1,5 @@
 import { notFound } from "next/navigation";
-import { requirePermission } from "@/lib/tenant";
+import { requireBillingAdmin } from "@/modules/billing/guard";
 import { db } from "@/lib/db";
 import { getRun, listInvoices } from "@/modules/billing/queries";
 import { buildFeeInvoiceDocument } from "@/modules/billing/render";
@@ -12,7 +12,7 @@ export const metadata = { title: "Sammeldruck" };
 
 /** Alle Rechnungen eines Jahreslaufs hintereinander, je eine A4-Seite. ?filter=open|all|overdue, &reminder=1 für Zahlungserinnerungen. */
 export default async function RunPrintPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ filter?: string; reminder?: string }> }) {
-  const ctx = await requirePermission("tenant.manage");
+  const ctx = await requireBillingAdmin();
   const { id } = await params;
   const sp = await searchParams;
   const run = await getRun(ctx.tenant.id, id);

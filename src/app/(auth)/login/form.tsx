@@ -7,7 +7,7 @@ import { Alert, Card, Field, Input } from "@/components/ui";
 import { SubmitButton } from "@/components/ui/form";
 import { PasswordInput, useOnlineStatus } from "@/components/ui/controls";
 
-export function LoginForm() {
+export function LoginForm({ next }: { next?: string }) {
   const [state, action] = useActionState(loginAction, null);
   // Kontrolliert, damit die E-Mail nach einem Fehlversuch stehen bleibt.
   const [email, setEmail] = useState("");
@@ -17,6 +17,7 @@ export function LoginForm() {
   return (
     <Card className="p-5">
       <form action={action} className="space-y-4" noValidate={false}>
+        {next ? <input type="hidden" name="next" value={next} /> : null}
         <Field label="E-Mail">
           <Input
             name="email"

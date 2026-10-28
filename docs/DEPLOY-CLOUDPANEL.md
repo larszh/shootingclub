@@ -72,7 +72,20 @@ cd ~/htdocs/<domain>
 bash scripts/deploy.sh
 ```
 
-Das Script zieht den Code, installiert Abhängigkeiten, spielt neue Migrationen ein, baut und startet PM2 neu.
+Das Script zieht den Code, installiert Abhängigkeiten, spielt neue Migrationen ein, ergänzt neue globale Programme und Scheiben, baut und startet PM2 neu.
+
+Neue globale Vorlagen (Programme, Scheiben) kommen über den Seed. Für Updates gibt es dafür einen eigenen Modus, der nur fehlende Vorlagen anlegt, kein Konto anfasst und keine `SEED_ADMIN_*`-Variablen braucht:
+
+```bash
+npx tsx prisma/seed.ts --presets-only   # oder: npm run db:seed:presets
+```
+
+`scripts/deploy.sh` führt ihn nach `prisma migrate deploy` aus. Den vollen `npm run db:seed` nach der Erstinstallation nicht mehr verwenden: Fehlen `SEED_ADMIN_EMAIL`/`SEED_ADMIN_PASSWORD` in `.env`, legt er `admin@example.ch` mit dem Standardpasswort als Super-Admin an.
+
+### Absicherung
+
+- Die App setzt `X-Frame-Options: SAMEORIGIN` und `Content-Security-Policy: frame-ancestors 'self'` (Schutz gegen Einbetten auf fremden Seiten, `next.config.ts`).
+- Login, Registrierung und Beitrittscodes werden pro IP und pro Konto gedrosselt (In-Memory, `src/lib/auth.ts`). Das passt zur einen PM2-Instanz aus `ecosystem.config.cjs`. Wer mehrere Instanzen betreibt, begrenzt zusätzlich in nginx (CloudPanel → Vhost, `limit_req`). Die IP wird aus `X-Forwarded-For` gelesen; nginx von CloudPanel setzt diesen Header bereits.
 
 ## Hochgeladene Dateien
 
@@ -180,3 +193,9 @@ Empfehlung: `MANAGE_ENV=true` setzen, sobald alle Werte in GitHub stehen. Dann i
 - `scripts/deploy.sh` setzt den Server hart auf den Stand von `origin/<branch>` zurück. Nicht versionierte Dateien (`.env`, `storage/uploads`, `node_modules`) bleiben erhalten, Änderungen an versionierten Dateien auf dem Server gehen verloren. Auf dem Server also nichts im Code ändern.
 - Node wird aus nvm geladen, falls die SSH-Sitzung `~/.bashrc` nicht einliest.
 - Fehler stehen im Actions-Log, Laufzeitfehler mit `npx pm2 logs standchef`.
+
+## Schutz vor Durchprobieren (Login, Beitrittscodes)
+
+Login, Registrierung und Beitrittscodes werden pro IP und pro Konto gebremst (10 Fehlversuche pro Konto bzw. 30 pro IP in 15 Minuten). Die Besucher-IP wird in dieser Reihenfolge ermittelt: `CF-Connecting-IP` (Cloudflare), `X-Real-IP` (von nginx gesetzt), letzter Eintrag von `X-Forwarded-For`. CloudPanel setzt `X-Real-IP` in der Node.js-Vorlage standardmässig. Läuft die Domain über Cloudflare, wird automatisch dessen Header verwendet, sonst würden sich alle Besucher die IP eines Cloudflare-Knotens teilen.
+
+Der Zähler liegt im Arbeitsspeicher des Node-Prozesses und wird bei einem Neustart zurückgesetzt. Für eine einzelne Instanz unter PM2 ist das ausreichend.

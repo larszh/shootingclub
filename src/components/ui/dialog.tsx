@@ -171,6 +171,15 @@ export function DialogHost() {
   return current ? <ConfirmView key={current.id} req={current} /> : null;
 }
 
+/**
+ * Rückfall, falls kein confirmLabel übergeben wurde. «Löschen» nur, wenn der Titel
+ * tatsächlich vom Löschen spricht – sonst neutral (Absagen, Stornieren usw. bitte
+ * immer explizit als confirmLabel angeben).
+ */
+function defaultConfirmLabel(title: string, danger: boolean) {
+  return danger && /löschen/i.test(title) ? "Löschen" : "Bestätigen";
+}
+
 function ConfirmView({ req }: { req: ReturnType<typeof getConfirmQueue>[number] }) {
   const cancelRef = useRef<HTMLButtonElement>(null);
   const confirmRef = useRef<HTMLButtonElement>(null);
@@ -185,7 +194,7 @@ function ConfirmView({ req }: { req: ReturnType<typeof getConfirmQueue>[number] 
       // Bei gefährlichen Aktionen startet der Fokus auf «Abbrechen».
       initialFocusRef={danger ? cancelRef : confirmRef}
       icon={
-        <span className={cn("flex h-10 w-10 items-center justify-center rounded-full", danger ? "bg-accent-soft text-accent" : "bg-surface-2 text-ink-2")}>
+        <span className={cn("flex h-10 w-10 items-center justify-center rounded-full", danger ? "bg-danger/10 text-danger" : "bg-surface-2 text-ink-2")}>
           {danger ? <AlertTriangle className="h-5 w-5" aria-hidden /> : <HelpCircle className="h-5 w-5" aria-hidden />}
         </span>
       }
@@ -195,7 +204,7 @@ function ConfirmView({ req }: { req: ReturnType<typeof getConfirmQueue>[number] 
             {req.cancelLabel ?? "Abbrechen"}
           </button>
           <button ref={confirmRef} type="button" className={buttonClasses(danger ? "danger" : "primary", "lg", "w-full sm:w-auto sm:h-11")} onClick={() => resolveConfirm(req.id, true)}>
-            {req.confirmLabel ?? (danger ? "Löschen" : "Bestätigen")}
+            {req.confirmLabel ?? defaultConfirmLabel(req.title, danger)}
           </button>
         </>
       }

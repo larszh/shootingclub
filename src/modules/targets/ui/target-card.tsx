@@ -41,7 +41,7 @@ export function TargetCard({ target, href }: { target: TargetView; href: string 
           rel="noopener"
           aria-label={`${t.name} drucken`}
           title="Drucken"
-          className="press flex h-10 w-10 items-center justify-center rounded-full bg-white/90 text-neutral-600 shadow-sm hover:text-neutral-900"
+          className="press flex h-11 w-11 items-center justify-center rounded-full bg-white/90 text-neutral-600 shadow-sm hover:text-neutral-900"
         >
           <Printer className="h-4 w-4" />
         </a>

@@ -5,6 +5,7 @@
  * - relative Luminanz und WCAG-Kontrast
  * - beste Textfarbe (schwarz/weiss) auf der Akzentfarbe
  * - weiche Tönung (accent-soft) für hell und dunkel
+ * - Akzent als Textfarbe mit mindestens 4.5:1 (auch auf der Tönung)
  * - CSS-Variablen-Overrides für hell und dunkel
  */
 
@@ -15,6 +16,11 @@ export const DEFAULT_ACCENT_DARK = "#ef3b45";
 const LIGHT_SURFACE = "#ffffff";
 const DARK_SURFACE = "#1b1b1a";
 const DARK_BG = "#111110";
+/** Weitere Flächen, auf denen Akzent-Text vorkommt (bg, surface-2). */
+const LIGHT_TEXT_BACKGROUNDS = [LIGHT_SURFACE, "#f4f2ee", "#ebe8e2"];
+const DARK_TEXT_BACKGROUNDS = [DARK_SURFACE, DARK_BG, "#262625"];
+/** WCAG AA für normale Schrift. */
+const TEXT_MIN = 4.5;
 
 export type BrandPreset = { name: string; hex: string };
 
@@ -109,7 +115,21 @@ export function ensureContrast(hex: string, surface: string, min = 3): string {
   return out;
 }
 
-export type BrandMode = { accent: string; accentInk: string; accentSoft: string; accent2: string; accent2Ink: string };
+/**
+ * Akzent als Textfarbe (text-accent): erreicht mindestens 4.5:1 auf allen Flächen
+ * inklusive der eigenen Tönung (Badges «bg-accent-soft text-accent»).
+ */
+export function accentTextColor(accent: string, backgrounds: string[], min = TEXT_MIN): string {
+  const dark = backgrounds.every((b) => relativeLuminance(b) < 0.2);
+  const target = dark ? "#ffffff" : "#000000";
+  let out = normalizeHex(accent) ?? DEFAULT_ACCENT;
+  const worst = (c: string) => Math.min(...backgrounds.map((b) => contrastRatio(c, b)));
+  for (let i = 0; i < 40 && worst(out) < min; i++) out = mix(out, target, 0.06);
+  return out;
+}
+
+/** Akzent (Flächen), Text darauf, Tönung und Akzent als Textfarbe für einen Modus. */
+export type BrandMode = { accent: string; accentInk: string; accentSoft: string; accentText: string; accent2: string; accent2Ink: string };
 export type BrandVars = { light: BrandMode; dark: BrandMode };
 
 /** Effektive Farben für hell und dunkel. Ohne gültige Farbe: null (Standard-Design). */
@@ -123,18 +143,23 @@ export function brandColors(brandColor: string | null | undefined, brandColor2?:
   const light2 = ensureContrast(second, LIGHT_SURFACE, 3);
   const dark2 = ensureContrast(second, DARK_SURFACE, 3.2);
 
+  const lightSoft = softTint(lightAccent, "light");
+  const darkSoft = softTint(darkAccent, "dark");
+
   return {
     light: {
       accent: lightAccent,
       accentInk: bestTextColor(lightAccent),
-      accentSoft: softTint(lightAccent, "light"),
+      accentSoft: lightSoft,
+      accentText: accentTextColor(lightAccent, [...LIGHT_TEXT_BACKGROUNDS, lightSoft]),
       accent2: light2,
       accent2Ink: bestTextColor(light2),
     },
     dark: {
       accent: darkAccent,
       accentInk: bestTextColor(darkAccent),
-      accentSoft: softTint(darkAccent, "dark"),
+      accentSoft: darkSoft,
+      accentText: accentTextColor(darkAccent, [...DARK_TEXT_BACKGROUNDS, darkSoft]),
       accent2: dark2,
       accent2Ink: bestTextColor(dark2),
     },
@@ -142,7 +167,7 @@ export function brandColors(brandColor: string | null | undefined, brandColor2?:
 }
 
 function toDecls(m: BrandMode): string {
-  return `--accent:${m.accent};--accent-ink:${m.accentInk};--accent-soft:${m.accentSoft};--accent-2:${m.accent2};--accent-2-ink:${m.accent2Ink};`;
+  return `--accent:${m.accent};--accent-ink:${m.accentInk};--accent-soft:${m.accentSoft};--accent-text:${m.accentText};--accent-2:${m.accent2};--accent-2-ink:${m.accent2Ink};`;
 }
 
 /**
@@ -169,6 +194,10 @@ export type ContrastReport = {
   /** true, wenn die Farbe für hell/dunkel angepasst werden musste. */
   adjustedLight: boolean;
   adjustedDark: boolean;
+  /** true, wenn der Akzent als Schriftfarbe (Badges, Links) für 4.5:1 abgedunkelt/aufgehellt wird. */
+  textAdjusted: boolean;
+  /** Kontrast der Akzentfarbe auf ihrer eigenen Tönung (ohne Anpassung), schlechterer Modus. */
+  accentOnSoft: number;
 };
 
 export function contrastReport(hex: string): ContrastReport | null {
@@ -183,6 +212,8 @@ export function contrastReport(hex: string): ContrastReport | null {
     lowTextContrast: textOnAccent < 4.5,
     adjustedLight: v.light.accent !== h,
     adjustedDark: v.dark.accent !== h,
+    textAdjusted: v.light.accentText !== v.light.accent || v.dark.accentText !== v.dark.accent,
+    accentOnSoft: Math.min(contrastRatio(v.light.accent, v.light.accentSoft), contrastRatio(v.dark.accent, v.dark.accentSoft)),
   };
 }
 

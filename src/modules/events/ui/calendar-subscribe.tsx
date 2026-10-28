@@ -6,6 +6,7 @@ import { CalendarPlus, RefreshCw, Rss } from "lucide-react";
 import { Alert, Button, Card } from "@/components/ui";
 import { Spinner } from "@/components/ui/form";
 import type { ActionResult } from "@/lib/action-result";
+import { isNetworkError } from "@/lib/ui-feedback";
 import { ensureMyFeedAction, ensureTenantFeedAction, regenerateMyFeedAction, regenerateTenantFeedAction, type FeedLink } from "../actions";
 import { webcalUrl } from "../types";
 import { CopyField } from "./copy-field";
@@ -25,7 +26,13 @@ function FeedBlock({ title, text, initialUrl, ensure, regenerate, regenerateLabe
   function run(fn: () => Promise<ActionResult<FeedLink>>) {
     setMsg(null);
     start(async () => {
-      const r = await fn();
+      let r: ActionResult<FeedLink>;
+      try {
+        r = await fn();
+      } catch (err) {
+        setMsg({ ok: false, text: isNetworkError(err) ? "Keine Verbindung. Bitte versuche es nochmals, sobald du wieder online bist." : "Das hat nicht geklappt. Bitte nochmals versuchen." });
+        return;
+      }
       if (r.ok && r.data) {
         setUrl(r.data.url);
         if (r.message) setMsg({ ok: true, text: r.message });
@@ -47,7 +54,7 @@ function FeedBlock({ title, text, initialUrl, ensure, regenerate, regenerateLabe
           <CopyField value={url} label={`${title} – Link`} />
           {regenerate ? (
             <Button type="button" variant="ghost" size="sm" disabled={pending}
-              onClick={async () => { if ((await confirmDialog({ title: "Neuen Link erzeugen? Der bisherige Link funktioniert danach nicht mehr.", tone: "danger" }))) run(regenerate); }}>
+              onClick={async () => { if ((await confirmDialog({ title: "Neuen Link erzeugen?", message: "Der bisherige Link funktioniert danach nicht mehr.", tone: "danger", confirmLabel: "Neu erzeugen" }))) run(regenerate); }}>
               {pending ? <Spinner /> : <RefreshCw className="h-4 w-4" />} {regenerateLabel ?? "Neuen Link erzeugen"}
             </Button>
           ) : null}

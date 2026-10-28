@@ -1,12 +1,12 @@
 "use client";
 
-import { confirmDialog } from "@/components/ui/dialog";
+import { Dialog, confirmDialog } from "@/components/ui/dialog";
 import { useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { Camera, Maximize2, Minus, Plus, Square, Trash2, X } from "lucide-react";
+import { Camera, Maximize2, Minus, Plus, Square, Trash2 } from "lucide-react";
 import type { ActionResult } from "@/lib/action-result";
 import { Avatar } from "@/components/avatar";
-import { Alert, Button, Card } from "@/components/ui";
+import { Alert, Button } from "@/components/ui";
 import { Spinner } from "@/components/ui/form";
 import { cn } from "@/lib/utils";
 
@@ -117,6 +117,8 @@ export function ImageUploader({
   const viewportRef = useRef<HTMLDivElement>(null);
   const pointers = useRef(new Map<number, { x: number; y: number }>());
   const gesture = useRef<{ startView: View; startDist: number; startMid: { x: number; y: number } } | null>(null);
+  /** Zeitpunkt des letzten Gestenendes: ein Ziehen, das ausserhalb endet, soll den Dialog nicht schliessen. */
+  const lastGestureEnd = useRef(-Infinity);
 
   const isLogo = kind === "logo";
 
@@ -125,6 +127,11 @@ export function ImageUploader({
     setLoaded(null);
     pointers.current.clear();
     gesture.current = null;
+  };
+
+  const requestClose = () => {
+    if (busy || performance.now() - lastGestureEnd.current < 350) return;
+    close();
   };
 
   const onPick = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -205,6 +212,7 @@ export function ImageUploader({
 
   const onPointerUp = (e: React.PointerEvent<HTMLDivElement>) => {
     pointers.current.delete(e.pointerId);
+    if (pointers.current.size === 0) lastGestureEnd.current = performance.now();
     startGesture();
   };
 
@@ -303,14 +311,24 @@ export function ImageUploader({
       {error && !loaded ? <div className="mt-3"><Alert>{error}</Alert></div> : null}
       {message && !error ? <div className="mt-3"><Alert tone="ok">{message}</Alert></div> : null}
 
-      {loaded ? (
-        <div className="animate-fade fixed inset-0 z-50 flex items-end justify-center overscroll-contain bg-black/60 p-0 sm:items-center sm:p-4" role="dialog" aria-modal="true" aria-label="Bild zuschneiden" onKeyDown={(e) => { if (e.key === "Escape" && !busy) { e.stopPropagation(); close(); } }}>
-          <Card className="animate-rise w-full max-w-md rounded-b-none p-4 sm:rounded-b-card safe-bottom">
-            <div className="mb-3 flex items-center justify-between">
-              <h2 className="text-lg font-semibold">{isLogo ? "Logo zuschneiden" : "Profilbild zuschneiden"}</h2>
-              <button type="button" onClick={close} className="press flex h-10 w-10 items-center justify-center rounded-full text-ink-3 hover:bg-surface-2" aria-label="Schliessen"><X className="h-5 w-5" /></button>
-            </div>
-
+      {/* Gemeinsamer Dialog (<dialog> im Top-Layer): volle Fläche, Fokusfalle, Scroll-Sperre, Fokus-Rückgabe. */}
+      <Dialog
+        open={!!loaded}
+        onClose={requestClose}
+        title={isLogo ? "Logo zuschneiden" : "Profilbild zuschneiden"}
+        dismissible={!busy}
+        initialFocusRef={viewportRef}
+        footer={
+          <div className="grid w-full grid-cols-2 gap-2 sm:w-auto">
+            <Button type="button" variant="secondary" onClick={close} disabled={busy}>Abbrechen</Button>
+            <Button type="button" onClick={save} disabled={busy}>
+              {busy ? <><Spinner /> Speichern…</> : "Übernehmen"}
+            </Button>
+          </div>
+        }
+      >
+        {loaded ? (
+          <>
             {isLogo ? (
               <div className="mb-3 grid grid-cols-2 gap-1 rounded-control bg-surface-2 p-1" role="radiogroup" aria-label="Zuschnitt">
                 {([["cover", "Quadratisch", Square], ["contain", "Ganz einpassen", Maximize2]] as const).map(([f, label, Icon]) => (
@@ -332,7 +350,6 @@ export function ImageUploader({
               onWheel={onWheel}
               onKeyDown={onKeyDown}
               tabIndex={0}
-              autoFocus
               aria-label="Bildausschnitt. Ziehen zum Verschieben, Pfeiltasten und Plus/Minus zum Anpassen."
             >
               {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -368,16 +385,9 @@ export function ImageUploader({
             <p className="mt-1 text-center text-xs text-ink-3">Mit dem Finger verschieben, mit zwei Fingern zoomen.</p>
 
             {error ? <div className="mt-3"><Alert>{error}</Alert></div> : null}
-
-            <div className="mt-4 grid grid-cols-2 gap-2">
-              <Button type="button" variant="secondary" onClick={close} disabled={busy}>Abbrechen</Button>
-              <Button type="button" onClick={save} disabled={busy}>
-                {busy ? <><Spinner /> Speichern…</> : "Übernehmen"}
-              </Button>
-            </div>
-          </Card>
-        </div>
-      ) : null}
+          </>
+        ) : null}
+      </Dialog>
     </div>
   );
 }

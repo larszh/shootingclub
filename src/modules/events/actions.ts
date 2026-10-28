@@ -6,7 +6,7 @@ import { revalidatePath } from "next/cache";
 import { db } from "@/lib/db";
 import { requireModule } from "@/lib/tenant";
 import { fail, ok, type ActionResult } from "@/lib/action-result";
-import { addDays, zurichToUtc } from "@/lib/time";
+import { addDays, todayZurich, zurichToUtc } from "@/lib/time";
 import { announcementSchema, computeTimes, daysBetween, eventFormSchema, recurrenceDates, rsvpSchema, type EventTimes } from "./types";
 import { getBaseUrl, tenantFeedPath, userFeedPath } from "./queries";
 
@@ -203,6 +203,10 @@ export async function saveAnnouncementAction(_prev: ActionResult | null, formDat
     return fail(Object.values(fe)[0] ?? "Bitte Eingaben prüfen.", fe);
   }
   const { id, title, body, pinned, expiresOn } = parsed.data;
+  // Neue Mitteilungen dürfen nicht schon abgelaufen sein (beim Bearbeiten ist ein Datum in der Vergangenheit erlaubt, um sie auszublenden)
+  if (!id && expiresOn && expiresOn < todayZurich()) {
+    return fail("«Sichtbar bis» darf nicht in der Vergangenheit liegen.", { expiresOn: "«Sichtbar bis» darf nicht in der Vergangenheit liegen." });
+  }
   // Ablauf am Ende des gewählten Tages (Schweizer Zeit)
   const expiresAt = expiresOn ? zurichToUtc(addDays(expiresOn, 1), "00:00") : null;
   if (id) {

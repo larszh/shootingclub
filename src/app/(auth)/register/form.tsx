@@ -57,7 +57,7 @@ export function RegisterForm({ joinCode, joinTenantName }: { joinCode?: string; 
           <div className="mb-1.5 flex items-center gap-1.5">
             <label htmlFor="joinCode" className="text-sm font-medium text-ink-2">Beitrittscode (optional)</label>
             <Hint label="Was ist der Beitrittscode?">
-              Jeder Verein hat einen kurzen Code (z.B. 7KQ2PX). Du bekommst ihn vom Vorstand oder per Einladungslink. Ohne Code kannst du später beitreten oder selbst einen Verein anlegen.
+              Jeder Verein hat einen kurzen Code (z.B. 7KQ2PX9M). Du bekommst ihn vom Vorstand oder per Einladungslink. Ohne Code kannst du später beitreten oder selbst einen Verein anlegen.
             </Hint>
           </div>
           <Input

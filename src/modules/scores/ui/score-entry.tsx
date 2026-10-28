@@ -43,7 +43,7 @@ function tap() {
  *
  * `storageKey`: "s:<matchId>" für Server-Durchgänge, "c:<clientId>" für offline erstellte.
  */
-export function ScoreEntry({ match, storageKey, tenantId, userId, persistView = true }: { match: ScoreMatch; storageKey: string; tenantId: string; userId: string; /** Serveransicht in IndexedDB ablegen (false, wenn die Ansicht selbst aus IndexedDB stammt) */ persistView?: boolean }) {
+export function ScoreEntry({ match, storageKey, tenantId, userId, persistView = true, onStatusChange }: { match: ScoreMatch; storageKey: string; tenantId: string; userId: string; /** Serveransicht in IndexedDB ablegen (false, wenn die Ansicht selbst aus IndexedDB stammt) */ persistView?: boolean; /** Meldet Statuswechsel (z.B. für die Kopfzeile der Offline-Ansicht) */ onStatusChange?: (status: string) => void }) {
   const router = useRouter();
   const { online } = useSyncStatus();
   const decimal = match.program.scoringMode === "RINGS_DECIMAL";
@@ -71,6 +71,12 @@ export function ScoreEntry({ match, storageKey, tenantId, userId, persistView = 
   const [pending, start] = useTransition();
   const touched = useRef(new Set<string>());
   const directTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
+  /** Fallback ohne IndexedDB: noch nicht bestätigte Direkt-Speicherungen pro Zelle */
+  const directPending = useRef<Record<string, { participantId: string; stageIndex: number; list: number[]; ts: number }>>({});
+  const statusListener = useRef(onStatusChange);
+  useEffect(() => {
+    statusListener.current = onStatusChange;
+  }, [onStatusChange]);
 
   const stage = stages[activeS]!;
   const current = shots[activeP]?.[activeS] ?? [];
@@ -93,7 +99,9 @@ export function ScoreEntry({ match, storageKey, tenantId, userId, persistView = 
           return next;
         });
         setDirty((d) => ({ ...entry.dirty, ...d }));
-        if (entry.statusDirty) setStatus(entry.status);
+        // Lokaler Stand ist massgebend (ungesicherter Statuswechsel oder neuere Ansicht als die Seite)
+        setStatus(entry.status);
+        statusListener.current?.(entry.status);
       } catch {
         // IndexedDB nicht verfügbar: Serverstand bleibt
       }
@@ -103,10 +111,55 @@ export function ScoreEntry({ match, storageKey, tenantId, userId, persistView = 
     };
   }, [isServerMatch, persistView, match, stages, storageKey, tenantId, userId]);
 
+  /** Direkt-Speicherung einer Zelle senden (ohne Verzögerung). */
+  const sendDirect = useCallback(
+    async (ck: string) => {
+      const item = directPending.current[ck];
+      if (!item || !match.id) return;
+      clearTimeout(directTimers.current[ck]);
+      delete directTimers.current[ck];
+      try {
+        const res = await saveStageResultAction({ matchId: match.id, participantId: item.participantId, stageIndex: item.stageIndex, shots: item.list, clientUpdatedAt: item.ts });
+        if (res.ok) {
+          if (directPending.current[ck]?.ts === item.ts) delete directPending.current[ck];
+          setDirty((d) => (d[ck] !== undefined && d[ck]! <= item.ts ? omit(d, ck) : d));
+          setFailed((f) => omit(f, ck));
+          setSaved((s) => ({ ...s, [item.participantId]: true }));
+        } else {
+          // Dauerhafter Fehler (z.B. abgeschlossen, keine Berechtigung): nicht automatisch wiederholen
+          if (directPending.current[ck]?.ts === item.ts) delete directPending.current[ck];
+          setFailed((f) => ({ ...f, [ck]: res.error }));
+        }
+      } catch {
+        setFailed((f) => ({ ...f, [ck]: "Keine Verbindung" }));
+      }
+    },
+    [match.id],
+  );
+
+  // Fallback ohne IndexedDB: beim Verlassen sofort senden, bei Wiederverbindung erneut versuchen,
+  // und vor dem Schliessen warnen, solange etwas nicht gespeichert ist.
   useEffect(() => {
     const timers = directTimers.current;
-    return () => Object.values(timers).forEach(clearTimeout);
-  }, []);
+    const pendingCells = directPending.current;
+    const flushAll = () => Object.keys(pendingCells).forEach((ck) => void sendDirect(ck));
+    const onBeforeUnload = (e: BeforeUnloadEvent) => {
+      if (Object.keys(pendingCells).length === 0) return;
+      flushAll();
+      e.preventDefault();
+      e.returnValue = "";
+    };
+    window.addEventListener("online", flushAll);
+    window.addEventListener("pagehide", flushAll);
+    window.addEventListener("beforeunload", onBeforeUnload);
+    return () => {
+      window.removeEventListener("online", flushAll);
+      window.removeEventListener("pagehide", flushAll);
+      window.removeEventListener("beforeunload", onBeforeUnload);
+      Object.values(timers).forEach(clearTimeout);
+      flushAll();
+    };
+  }, [sendDirect]);
 
   // Bestätigungen und Fehler der Synchronisierung
   const onSyncEvent = useCallback(
@@ -140,18 +193,9 @@ export function ScoreEntry({ match, storageKey, tenantId, userId, persistView = 
       return;
     }
     const ck = cellKey(participantId, stageIndex);
+    directPending.current[ck] = { participantId, stageIndex, list, ts };
     clearTimeout(directTimers.current[ck]);
-    directTimers.current[ck] = setTimeout(async () => {
-      try {
-        const res = await saveStageResultAction({ matchId: match.id!, participantId, stageIndex, shots: list, clientUpdatedAt: ts });
-        if (res.ok) {
-          setDirty((d) => (d[ck] !== undefined && d[ck]! <= ts ? omit(d, ck) : d));
-          setSaved((s) => ({ ...s, [participantId]: true }));
-        } else setFailed((f) => ({ ...f, [ck]: res.error }));
-      } catch {
-        setFailed((f) => ({ ...f, [ck]: "Keine Verbindung" }));
-      }
-    }, 500);
+    directTimers.current[ck] = setTimeout(() => void sendDirect(ck), 500);
   };
 
   const setCurrent = (list: number[]) => {
@@ -216,6 +260,7 @@ export function ScoreEntry({ match, storageKey, tenantId, userId, persistView = 
     const ts = clientNow();
     setNotice(null);
     setStatus(next);
+    onStatusChange?.(next);
     // Über die Outbox, damit der Status erst nach allen ausstehenden Schüssen gesetzt wird
     recordStatus(ctx, next, ts)
       .then(() => requestFlush(0))
@@ -228,6 +273,7 @@ export function ScoreEntry({ match, storageKey, tenantId, userId, persistView = 
             router.refresh();
           } catch {
             setStatus(finished ? "FINISHED" : "OPEN");
+            onStatusChange?.(finished ? "FINISHED" : "OPEN");
             setNotice("Keine Verbindung. Bitte später nochmals versuchen.");
           }
         });
@@ -235,7 +281,7 @@ export function ScoreEntry({ match, storageKey, tenantId, userId, persistView = 
   };
 
   const remove = async () => {
-    if (!(await confirmDialog({ title: "Durchgang wirklich löschen?", tone: "danger" }))) return;
+    if (!(await confirmDialog({ title: "Durchgang wirklich löschen?", tone: "danger", confirmLabel: "Löschen" }))) return;
     setNotice(null);
     let serverId = isServerMatch ? match.id : null;
     if (!isServerMatch) {
@@ -253,17 +299,24 @@ export function ScoreEntry({ match, storageKey, tenantId, userId, persistView = 
       return;
     }
     start(async () => {
-      // Lokale Kopie samt ausstehender Eingaben verwerfen: der Durchgang existiert danach nicht mehr
-      await discardMatch(storageKey).catch(() => undefined);
+      // Lokale Kopie samt ausstehender Eingaben erst verwerfen, wenn der Server gelöscht hat:
+      // schlägt das Löschen fehl, bleiben die noch nicht übertragenen Eingaben erhalten.
+      const discardLocal = () => discardMatch(storageKey).catch(() => undefined);
       try {
         // Bei Erfolg leitet die Server Action auf /scores um; zurück kommt nur ein Fehler
         const res = await deleteMatchAction(serverId!);
         if (res && !res.ok) {
           setNotice(res.error);
           router.refresh();
-        }
+        } else await discardLocal();
       } catch (e) {
-        unstable_rethrow(e); // Weiterleitung nach erfolgreichem Löschen
+        try {
+          unstable_rethrow(e);
+        } catch (redirect) {
+          // Weiterleitung nach erfolgreichem Löschen
+          await discardLocal();
+          throw redirect;
+        }
         setNotice("Keine Verbindung. Bitte später nochmals versuchen.");
         router.refresh();
       }

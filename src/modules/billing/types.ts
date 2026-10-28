@@ -9,7 +9,7 @@ export const FEE_INVOICE_STATUS: Record<string, { label: string; tone: "neutral"
 export const categorySchema = z.object({
   name: z.string().trim().min(2, "Name zu kurz").max(60),
   amountCents: z.coerce.number().int().min(0).max(100_000_00),
-  description: z.string().trim().max(200).optional(),
+  description: z.string().trim().max(191).optional(),
   isActive: z.boolean().default(true),
 });
 export type CategoryInput = z.infer<typeof categorySchema>;

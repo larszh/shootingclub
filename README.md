@@ -44,32 +44,47 @@ Weitere Befehle: `npm run typecheck`, `npm run lint`, `npm run build`, `npm run 
 
 ```
 src/
-  lib/            Kern: db, auth, tenant-kontext, permissions, modules-registry, storage
+  lib/            Kern: db, auth (inkl. Drosselung), tenant-kontext, permissions, modules-registry, storage,
+                  crypto, time, money, qr-bill.ts (Schweizer QR-Rechnung als SVG), offline/ (IndexedDB, Outbox, Sync)
+  components/     Gemeinsame UI, u.a. invoice-document.tsx (A4-Rechnungslayout)
   modules/
     core/         Auth- und Tenant-Actions (Registrierung, Beitritt, Rollen, Module)
     scores/       Punkteerfassung: types, presets, queries, actions, ui/
     targets/      Zielscheiben: types, presets, svg-generator, queries, actions, ui/
+    events/       Anlässe & News: types, queries, actions, ics, seed, ui/
     bookings/     Reservationen: types, availability, pricing, invoice, payments/{stripe,worldline,sumup}, actions, ui/
-    billing/      Mitgliederbeiträge: types, queries, actions, render (Rechnungsdaten), profile (Rechnungsprofil), ui/
+    billing/      Mitgliederbeiträge: types, queries, actions, render, profile, camt (Bankimport), ui/
   app/
     (auth)/       login, register
     (app)/        eingeloggter Bereich mit App-Shell (Tab-Bar mobil, Sidebar Desktop)
-      scores/     Programme, Durchgänge, Statistik
+      scores/     Programme, Durchgänge, Statistik, Ranglisten
       targets/    Galerie, Anlegen/Bearbeiten
-      admin/      Tenant-Einstellungen, Module, Mitglieder
-      super/      Super-Admin: Tenants, Benutzer, globale Programme/Scheiben
+      events/     Kalender, Anlass-Detail, An-/Abmeldung, Mitteilungen
       bookings/   Reservieren, Detail, Bezahlen, Rücksprung vom Zahlungsanbieter
-      admin/bookings/  Übersicht, Ressourcen, Einstellungen, Zahlungsanbieter
       billing/    Meine Beiträge
-      admin/billing/   Übersicht und Jahreslauf, Mitglieder, Kategorien, Rechnungsprofil
-    targets/[id]/print   Druckansicht ohne App-Shell
-    bookings/[id]/invoice  Druckbare Reservations-Rechnung mit QR-Zahlteil
-    billing/invoices/[id]/print   Druckbare Beitragsrechnung (optional als Zahlungserinnerung)
-    admin/billing/runs/[id]/print Sammeldruck eines Jahreslaufs
-  lib/qr-bill.ts            Schweizer QR-Rechnung als SVG (swissqrbill)
-  components/invoice-document.tsx  Gemeinsames A4-Rechnungslayout
-    api/files/[id]       Auslieferung hochgeladener Dateien (mit Rechteprüfung)
-    api/payments/stripe/[tenantId]  Stripe-Webhook pro Tenant
+      members/    Mitgliederverzeichnis
+      me/         Profil, Passwort, Darstellung, Kalender-Abo
+      help/       Hilfe
+      onboarding/ Verein beitreten oder anlegen
+      admin/      Tenant-Einstellungen, Module, Mitglieder
+      admin/bookings/  Übersicht, Wochenkalender, Ressourcen, Einstellungen, Zahlungsanbieter
+      admin/billing/   Übersicht und Jahreslauf, Mitglieder, Kategorien, Rechnungsprofil, Bankimport
+      super/      Super-Admin: Tenants, Benutzer, globale Programme/Scheiben
+    offline/      Ersatzseite ohne Empfang (Service Worker)
+    targets/[id]/print                Druckansicht ohne App-Shell
+    bookings/[id]/invoice             Druckbare Reservations-Rechnung mit QR-Zahlteil
+    billing/invoices/[id]/print       Druckbare Beitragsrechnung (optional als Zahlungserinnerung)
+    admin/billing/runs/[id]/print     Sammeldruck eines Jahreslaufs
+    api/files/[id]                    Hochgeladene Dateien (mit Rechteprüfung)
+    api/avatars/{user,tenant}/[id]    Profilbilder und Vereinslogos
+    api/targets/[id]/svg              Scheiben als SVG
+    api/ical/{tenant,me,event}        iCal-Abos und Einzeltermine
+    api/export/{scores,bookings,billing,events}  CSV-Exporte
+    api/offline/snapshot              Offline-Snapshot des aktiven Vereins
+    api/sync                          Übertragung der Offline-Outbox
+    api/payments/stripe/[tenantId]    Stripe-Webhook pro Tenant
+prisma/
+  schema.prisma, migrations/, seed.ts (Super-Admin, globale Vorlagen, Demo-Verein; --presets-only für Updates)
 ```
 
 ### Tenants und Rollen
@@ -149,4 +164,4 @@ Weitere Ergänzungen dieser Version:
 
 ## Produktion
 
-Siehe `docs/DEPLOY-CLOUDPANEL.md`. Kurzfassung: `.env` ausfüllen, `npm ci`, `npx prisma migrate deploy`, `npm run db:seed`, `npm run build`, `pm2 start ecosystem.config.cjs`.
+Siehe `docs/DEPLOY-CLOUDPANEL.md`. Kurzfassung: `.env` ausfüllen, `npm ci`, `npx prisma migrate deploy`, `npm run db:seed`, `npm run build`, `pm2 start ecosystem.config.cjs`. Updates mit `bash scripts/deploy.sh`; neue globale Programme und Scheiben ergänzt dabei `npx tsx prisma/seed.ts --presets-only` (legt nur fehlende Vorlagen an, kein Konto).

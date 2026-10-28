@@ -34,7 +34,7 @@ function toView(
     weaponNote: p.weaponNote,
     scoringMode: p.scoringMode,
     stages,
-    totals: programTotals(stages),
+    totals: programTotals(stages, p.scoringMode),
     scope: p.tenantId ? "tenant" : "global",
     hidden,
     favorite,
@@ -107,7 +107,8 @@ export type MatchListOptions = {
 /** Wettkämpfe, die der Benutzer sehen darf (Teilnehmer, Ersteller oder Trainer+). */
 export async function listMatches(ctx: AppContext & { tenant: NonNullable<AppContext["tenant"]> }, opts?: MatchListOptions) {
   const viewAll = ctx.can("match.viewAll");
-  const q = opts?.q?.trim().slice(0, 60);
+  // % und _ sind LIKE-Platzhalter; wörtlich suchen.
+  const q = opts?.q?.trim().slice(0, 60).replace(/[\\%_]/g, "\\$&");
   const status = opts?.status === "OPEN" || opts?.status === "FINISHED" ? opts.status : undefined;
   const and: Prisma.MatchWhereInput[] = [];
   if (!viewAll) and.push({ OR: [{ createdById: ctx.user.id }, { participants: { some: { userId: ctx.user.id } } }] });
@@ -124,7 +125,8 @@ export async function listMatches(ctx: AppContext & { tenant: NonNullable<AppCon
       program: { select: { id: true, name: true, discipline: true, scoringMode: true, stagesJson: true } },
       participants: { include: { user: { select: { id: true, name: true, avatarPath: true, updatedAt: true } }, results: { select: { total: true } } }, orderBy: { sortOrder: "asc" } },
     },
-    orderBy: { date: "desc" },
+    // Datum ist nur der Tag – bei gleichem Tag zuerst den zuletzt erfassten Durchgang.
+    orderBy: [{ date: "desc" }, { createdAt: "desc" }, { id: "desc" }],
     take: opts?.limit ?? 50,
   });
   return matches.map<MatchListItem>((m) => ({
@@ -133,7 +135,7 @@ export async function listMatches(ctx: AppContext & { tenant: NonNullable<AppCon
     date: m.date,
     status: m.status,
     program: { id: m.program.id, name: m.program.name, discipline: m.program.discipline, scoringMode: m.program.scoringMode },
-    maxScore: programTotals(parseStages(m.program.stagesJson)).max,
+    maxScore: programTotals(parseStages(m.program.stagesJson), m.program.scoringMode).max,
     participants: m.participants.map((p) => ({
       id: p.id,
       userId: p.userId,
@@ -175,7 +177,7 @@ export async function getMatch(ctx: AppContext & { tenant: NonNullable<AppContex
       discipline: m.program.discipline,
       scoringMode: m.program.scoringMode,
       stages,
-      totals: programTotals(stages),
+      totals: programTotals(stages, m.program.scoringMode),
     },
     participants: m.participants.map((p) => ({
       id: p.id,
@@ -214,7 +216,7 @@ export async function userStats(ctx: AppContext & { tenant: NonNullable<AppConte
   const parts = await db.matchParticipant.findMany({
     where: { userId: ctx.user.id, match: { tenantId: ctx.tenant.id } },
     include: { results: true, match: { include: { program: { select: { id: true, name: true, stagesJson: true, scoringMode: true } } } } },
-    orderBy: { match: { date: "desc" } },
+    orderBy: [{ match: { date: "desc" } }, { match: { createdAt: "desc" } }],
     take: 200,
   });
   const totalShots = parts.reduce((a, p) => a + p.results.reduce((b, r) => b + (JSON.parse(r.shotsJson) as number[]).length, 0), 0);
@@ -222,7 +224,7 @@ export async function userStats(ctx: AppContext & { tenant: NonNullable<AppConte
   for (const p of parts) {
     const total = Math.round(p.results.reduce((a, r) => a + r.total, 0) * 10) / 10;
     const key = p.match.program.id;
-    const max = programTotals(parseStages(p.match.program.stagesJson)).max;
+    const max = programTotals(parseStages(p.match.program.stagesJson), p.match.program.scoringMode).max;
     const cur = byProgram.get(key);
     if (cur) {
       cur.best = Math.max(cur.best, total);
@@ -236,14 +238,14 @@ export async function userStats(ctx: AppContext & { tenant: NonNullable<AppConte
 
 /**
  * Prüft, ob der Durchgang für diesen Benutzer eine neue persönliche Bestleistung im
- * Programm ist (im selben Tenant, verglichen mit allen anderen vollständigen Durchgängen).
+ * Programm ist (im selben Tenant, verglichen mit allen früheren vollständigen Durchgängen).
  * Gibt null zurück, wenn der Benutzer nicht teilnimmt oder noch nichts erfasst ist.
  * Zugriffskontrolle macht der Aufrufer (z.B. über getMatch).
  */
 export async function isPersonalBest(matchId: string, userId: string) {
   const m = await db.match.findUnique({
     where: { id: matchId },
-    select: { id: true, tenantId: true, programId: true, participants: { where: { userId }, select: { results: { select: { total: true } } } } },
+    select: { id: true, tenantId: true, programId: true, date: true, createdAt: true, participants: { where: { userId }, select: { results: { select: { total: true } } } } },
   });
   const mine = m?.participants[0];
   if (!m || !mine || mine.results.length === 0) return null;
@@ -251,7 +253,17 @@ export async function isPersonalBest(matchId: string, userId: string) {
   const program = await db.program.findUnique({ where: { id: m.programId }, select: { stagesJson: true } });
   const stageCount = parseStages(program?.stagesJson ?? "[]").length;
   const others = await db.matchParticipant.findMany({
-    where: { userId, matchId: { not: m.id }, match: { tenantId: m.tenantId, programId: m.programId }, results: { some: {} } },
+    where: {
+      userId,
+      matchId: { not: m.id },
+      // Nur frühere Durchgänge (gleicher Tag: früher erfasst), damit «bisher» stimmt.
+      match: {
+        tenantId: m.tenantId,
+        programId: m.programId,
+        OR: [{ date: { lt: m.date } }, { date: m.date, createdAt: { lt: m.createdAt } }],
+      },
+      results: { some: {} },
+    },
     select: { results: { select: { total: true } }, match: { select: { status: true } } },
     take: 2000,
   });

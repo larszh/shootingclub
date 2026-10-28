@@ -4,7 +4,7 @@ import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { db } from "@/lib/db";
-import { getCurrentUser } from "@/lib/auth";
+import { THROTTLE, clientIp, getCurrentUser, throttle } from "@/lib/auth";
 import { getAppContext, requirePermission, requireSuperAdmin, setActiveTenantCookie } from "@/lib/tenant";
 import { isModuleKey } from "@/lib/modules";
 import { isTenantRole } from "@/lib/permissions";
@@ -54,6 +54,10 @@ export async function joinTenantAction(_prev: ActionResult | null, formData: For
   if (!user) redirect("/login");
   const code = String(formData.get("joinCode") ?? "").trim().toUpperCase();
   if (!code) return fail("Code fehlt.");
+  const limited =
+    throttle(`join-user:${user.id}`, THROTTLE.joinCode.limit, THROTTLE.joinCode.windowMs) ??
+    throttle(`join-ip:${await clientIp()}`, THROTTLE.joinCode.limit, THROTTLE.joinCode.windowMs);
+  if (limited) return fail(limited);
   const tenant = await db.tenant.findUnique({ where: { joinCode: code } });
   if (!tenant) return fail("Beitrittscode nicht gefunden.");
   await db.membership.upsert({
@@ -104,11 +108,11 @@ export async function addMemberByEmailAction(_prev: ActionResult | null, formDat
   if (!isTenantRole(role) || role === "OWNER") return fail("Ungültige Rolle");
   const user = await db.user.findUnique({ where: { email } });
   if (!user) return fail("Kein Konto mit dieser E-Mail. Die Person kann sich mit dem Beitrittscode registrieren.");
-  await db.membership.upsert({
-    where: { userId_tenantId: { userId: user.id, tenantId: ctx.tenant.id } },
-    create: { userId: user.id, tenantId: ctx.tenant.id, role },
-    update: { role },
-  });
+  // Bestehende Mitgliedschaften (inkl. Inhaber) nicht über diesen Weg ändern;
+  // Rollenwechsel laufen über updateMemberRoleAction mit den Inhaber-Prüfungen.
+  const existing = await db.membership.findUnique({ where: { userId_tenantId: { userId: user.id, tenantId: ctx.tenant.id } } });
+  if (existing) return fail("Bereits Mitglied – Rolle unter Mitglieder ändern.");
+  await db.membership.create({ data: { userId: user.id, tenantId: ctx.tenant.id, role } });
   revalidatePath("/admin/members");
   return ok(undefined, `${user.name} hinzugefügt.`);
 }

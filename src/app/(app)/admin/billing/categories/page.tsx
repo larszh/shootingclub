@@ -1,4 +1,4 @@
-import { requirePermission } from "@/lib/tenant";
+import { requireBillingAdmin } from "@/modules/billing/guard";
 import { PageHeader } from "@/components/ui";
 import { AdminBillingTabs } from "@/modules/billing/ui/admin-tabs";
 import { listCategories } from "@/modules/billing/queries";
@@ -8,7 +8,7 @@ import { CategoryManager } from "@/modules/billing/ui/category-form";
 export const metadata = { title: "Beitragskategorien" };
 
 export default async function CategoriesPage() {
-  const ctx = await requirePermission("tenant.manage");
+  const ctx = await requireBillingAdmin();
   const [categories, profile] = await Promise.all([listCategories(ctx.tenant.id, { includeInactive: true }), getBillingProfile(ctx.tenant.id)]);
   return (
     <div>

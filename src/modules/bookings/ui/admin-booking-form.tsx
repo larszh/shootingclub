@@ -201,7 +201,7 @@ export function AdminBookingForm({ members, resources, durationOptions, currency
               {selected?.discountReason && payment !== "FREE" ? <span className="ml-2 text-xs font-normal text-ok">{selected.discountReason}</span> : null}
             </span>
           </div>
-          <Field label="Bemerkung (optional)"><Input name="note" placeholder="z.B. Telefonisch reserviert" maxLength={300} /></Field>
+          <Field label="Bemerkung (optional)"><Input name="note" placeholder="z.B. Telefonisch reserviert" maxLength={191} /></Field>
         </Card>
       </section>
 

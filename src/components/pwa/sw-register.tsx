@@ -132,7 +132,11 @@ export function ServiceWorkerRegister() {
       void flushOutbox();
       return;
     }
-    void refreshSnapshot({ maxAgeMs: SNAPSHOT_MAX_AGE }).then(() => flushOutbox());
+    // Vereinswechsel und Beitritt leiten auf "/" um (ohne Neuladen): dort immer frisch laden,
+    // damit Offline-Daten nicht beim bisherigen Verein bleiben
+    void refreshSnapshot({ maxAgeMs: pathname === "/" ? 0 : SNAPSHOT_MAX_AGE }).then(() => flushOutbox());
+    // Per Client-Navigation erreichte Seiten auch als HTML für Offline-Neuladen ablegen
+    if (navigator.onLine) postToServiceWorker({ type: "CACHE_PAGE", url: window.location.href });
   }, [pathname]);
 
   const loadFailed = useCallback(async () => {
@@ -226,15 +230,15 @@ export function ServiceWorkerRegister() {
                       </ul>
                     ) : null}
                     <div className="mt-2 flex gap-2">
-                      <button type="button" onClick={() => void withSession(retryFailed).then(() => flushOutbox({ force: true }))} className="press h-9 rounded-control bg-surface px-3 text-xs font-medium text-ink">
+                      <button type="button" onClick={() => void withSession(retryFailed).then(() => flushOutbox({ force: true }))} className="press h-11 rounded-control bg-surface px-3 text-xs font-medium text-ink">
                         Erneut versuchen
                       </button>
                       <button
                         type="button"
                         onClick={async () => {
-                          if ((await confirmDialog({ title: "Fehlgeschlagene Eingaben endgültig verwerfen?", tone: "danger" }))) void withSession(discardFailed);
+                          if ((await confirmDialog({ title: "Fehlgeschlagene Eingaben endgültig verwerfen?", tone: "danger", confirmLabel: "Verwerfen" }))) void withSession(discardFailed);
                         }}
-                        className="press inline-flex h-9 items-center gap-1 rounded-control px-3 text-xs font-medium"
+                        className="press inline-flex h-11 items-center gap-1 rounded-control px-3 text-xs font-medium"
                       >
                         <Trash2 className="h-3.5 w-3.5" /> Verwerfen
                       </button>

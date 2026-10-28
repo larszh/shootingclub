@@ -1,4 +1,4 @@
-import { requirePermission } from "@/lib/tenant";
+import { requireBillingAdmin } from "@/modules/billing/guard";
 import { PageHeader } from "@/components/ui";
 import { AdminBillingTabs } from "@/modules/billing/ui/admin-tabs";
 import { currentYear, listCategories, listMembersForBilling } from "@/modules/billing/queries";
@@ -8,7 +8,7 @@ import { MemberFeeTable } from "@/modules/billing/ui/member-fee-table";
 export const metadata = { title: "Beiträge pro Mitglied" };
 
 export default async function BillingMembersPage({ searchParams }: { searchParams: Promise<{ year?: string }> }) {
-  const ctx = await requirePermission("tenant.manage");
+  const ctx = await requireBillingAdmin();
   const year = Number((await searchParams).year) || currentYear();
   const [members, categories, profile] = await Promise.all([listMembersForBilling(ctx.tenant.id, year), listCategories(ctx.tenant.id), getBillingProfile(ctx.tenant.id)]);
   return (

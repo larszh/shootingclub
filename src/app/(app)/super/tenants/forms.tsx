@@ -30,8 +30,8 @@ export function TenantRow({ id, name, meta, logoUrl, brandColor }: { id: string;
     <div className="flex items-center gap-3 px-4 py-3">
       <TenantLogo src={logoUrl} size={40} />
       <div className="min-w-0 flex-1"><div className="font-medium truncate flex items-center gap-2">{name}{brandColor ? <span className="inline-block h-3 w-3 shrink-0 rounded-full border border-line" style={{ background: brandColor }} title={`Akzentfarbe ${brandColor}`} /> : null}</div><div className="text-xs text-ink-3 truncate">{meta}</div></div>
-      <button type="button" disabled={pending} onClick={() => start(() => switchTenantAction(id))} className="h-9 px-3 rounded-control border border-line text-sm inline-flex items-center gap-1.5"><LogIn className="h-4 w-4" /> Öffnen</button>
-      <button type="button" disabled={pending} onClick={async () => { if ((await confirmDialog({ title: `Tenant «${name}» mit allen Daten löschen?`, tone: "danger" }))) start(() => superDeleteTenantAction(id).then(() => undefined)); }} className="h-9 w-9 rounded-full flex items-center justify-center text-ink-3 hover:text-danger" aria-label="Löschen"><Trash2 className="h-4 w-4" /></button>
+      <button type="button" disabled={pending} onClick={() => start(() => switchTenantAction(id))} className="h-11 shrink-0 px-3 rounded-control border border-line text-sm inline-flex items-center gap-1.5"><LogIn className="h-4 w-4" /> Öffnen</button>
+      <button type="button" disabled={pending} onClick={async () => { if ((await confirmDialog({ title: `Tenant «${name}» mit allen Daten löschen?`, tone: "danger", confirmLabel: "Löschen" }))) start(() => superDeleteTenantAction(id).then(() => undefined)); }} className="h-11 w-11 shrink-0 rounded-full flex items-center justify-center text-ink-3 hover:text-danger" aria-label={`Tenant «${name}» löschen`}><Trash2 className="h-4 w-4" /></button>
     </div>
   );
 }

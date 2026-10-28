@@ -255,19 +255,40 @@ export async function saveStageResultCore(
 
 // ---------------------------------------------------------------------------
 // Status setzen
+
+const STATUS_UNCHANGED_MS = 1000;
 // ---------------------------------------------------------------------------
 
-export async function setMatchStatusCore(actor: ScoreActor, raw: z.input<typeof setMatchStatusInputSchema>): Promise<{ ok: true; matchId: string } | CoreFail> {
+/**
+ * Status setzen, last-write-wins über clientUpdatedAt. Match.updatedAt ändert sich nur bei
+ * Statuswechseln (Resultate liegen in eigenen Zeilen) und dient deshalb als Zeitpunkt des
+ * letzten Statuswechsels; liegt es (fast) auf createdAt, wurde der Status noch nie geändert.
+ */
+export async function setMatchStatusCore(actor: ScoreActor, raw: z.input<typeof setMatchStatusInputSchema>, attempt = 0): Promise<{ ok: true; matchId: string; ignored: boolean } | CoreFail> {
   const parsed = setMatchStatusInputSchema.safeParse(raw);
   if (!parsed.success) return coreFail(parsed.error.issues[0]?.message ?? "Ungültige Eingabe", "invalid");
   const loaded = await loadMatchForActor(actor, parsed.data);
   if (!loaded.ok) return loaded;
-  if (loaded.match.status !== parsed.data.status) {
-    await db.match.update({ where: { id: loaded.match.id }, data: { status: parsed.data.status } });
+  const { match } = loaded;
+  const clientUpdatedAt = clampClientTime(parsed.data.clientUpdatedAt);
+  const neverChanged = match.updatedAt.getTime() - match.createdAt.getTime() <= STATUS_UNCHANGED_MS;
+  if (!neverChanged && clientUpdatedAt.getTime() < match.updatedAt.getTime()) {
+    // Neuerer Statuswechsel (z.B. von einem anderen Gerät) bereits gespeichert
+    return { ok: true, matchId: match.id, ignored: true };
   }
-  revalidatePath(`/scores/matches/${loaded.match.id}`);
+  if (match.status !== parsed.data.status || clientUpdatedAt.getTime() > match.updatedAt.getTime()) {
+    // Zeitpunkt des Wechsels speichern; nie auf/vor createdAt, sonst gälte er als «nie geändert»
+    const updatedAt = new Date(Math.max(clientUpdatedAt.getTime(), match.createdAt.getTime() + STATUS_UNCHANGED_MS + 1));
+    const res = await db.match.updateMany({
+      where: { id: match.id, updatedAt: match.updatedAt },
+      data: { status: parsed.data.status, updatedAt },
+    });
+    // Gleichzeitig geändert: neu laden und erneut entscheiden
+    if (res.count === 0) return attempt < 3 ? setMatchStatusCore(actor, raw, attempt + 1) : coreFail("Status wurde gleichzeitig geändert", "conflict", true);
+  }
+  revalidatePath(`/scores/matches/${match.id}`);
   revalidatePath("/scores");
-  return { ok: true, matchId: loaded.match.id };
+  return { ok: true, matchId: match.id, ignored: false };
 }
 
 // ---------------------------------------------------------------------------
@@ -319,7 +340,7 @@ export async function processSyncOps(user: CurrentUser, ops: WireOpInput[]): Pro
         results.push(res.ok ? { id: op.id, ok: true, matchId: res.matchId, ignored: res.ignored } : { id: op.id, ok: false, error: res.error, code: res.code, retry: res.retry });
       } else {
         const res = await setMatchStatusCore(actor, op.payload as z.input<typeof setMatchStatusInputSchema>);
-        results.push(res.ok ? { id: op.id, ok: true, matchId: res.matchId } : { id: op.id, ok: false, error: res.error, code: res.code, retry: res.retry });
+        results.push(res.ok ? { id: op.id, ok: true, matchId: res.matchId, ignored: res.ignored } : { id: op.id, ok: false, error: res.error, code: res.code, retry: res.retry });
       }
     } catch (e) {
       console.error("[sync] Operation fehlgeschlagen", op.type, e);

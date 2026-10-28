@@ -205,6 +205,13 @@ function Countdown({ limitMs }: { limitMs: number }) {
   };
 
   const warn = phase === "running" && remaining <= 5000;
+  // Für Screenreader nur Phasenwechsel und die Warnungen bei 10 / 5 s ansagen, nicht jede Zehntelsekunde
+  const announcement =
+    phase === "leadin" ? String(leadLeft)
+    : phase === "done" ? "Zeit! Feuer einstellen"
+    : phase === "paused" ? "Pausiert"
+    : phase === "running" ? (remaining <= 5000 && limitMs > 10_000 ? "Noch 5 Sekunden" : remaining <= 10_000 && limitMs > 20_000 ? "Noch 10 Sekunden" : "Läuft")
+    : "";
   const progress = Math.max(0, Math.min(1, remaining / limitMs));
 
   return (
@@ -227,13 +234,14 @@ function Countdown({ limitMs }: { limitMs: number }) {
           </div>
         </div>
 
-        <div className="my-3 text-center" aria-live="polite">
+        <div className="sr-only" role="status" aria-live="polite" aria-atomic="true">{announcement}</div>
+        <div className="my-3 text-center">
           {phase === "leadin" ? (
             <div key={leadLeft} className="animate-pop text-7xl font-semibold tabular-nums text-accent">{leadLeft}</div>
           ) : phase === "done" ? (
             <div className="animate-pop text-6xl font-semibold text-accent">Zeit!</div>
           ) : (
-            <div className={cn("text-7xl font-semibold tabular-nums leading-none", warn && "text-accent")}>{formatClock(remaining, remaining < 10_000)}</div>
+            <div role="timer" className={cn("text-7xl font-semibold tabular-nums leading-none", warn && "text-accent")}>{formatClock(remaining, remaining < 10_000)}</div>
           )}
           <div className="mt-2 text-xs text-ink-3">
             {phase === "idle" ? (limitMs < 60_000 ? `${Math.round(limitMs / 1000)} Sekunden für diese Serie` : `${formatClock(limitMs, false)} Minuten für diese Serie`) : phase === "paused" ? "Pausiert" : phase === "leadin" ? "Achtung …" : phase === "done" ? "Feuer einstellen" : "Läuft"}

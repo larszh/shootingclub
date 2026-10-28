@@ -2,6 +2,7 @@ import "server-only";
 import { db } from "@/lib/db";
 import { zurichParts } from "@/lib/time";
 import { ensureReference } from "@/modules/billing/reference";
+import { dueDateInDays } from "@/modules/billing/dates";
 
 /**
  * Legt für eine bestätigte Rechnungs-Buchung eine Rechnung mit fortlaufender Nummer an (idempotent).
@@ -21,9 +22,12 @@ export async function ensureInvoiceForBooking(bookingId: string) {
     let created;
     try {
       created = await db.invoice.create({
-        data: { tenantId: b.tenantId, bookingId: b.id, number, dueAt: new Date(now.getTime() + dueDays * 86_400_000), amountCents: b.totalCents, currency: b.currency },
+        data: { tenantId: b.tenantId, bookingId: b.id, number, dueAt: dueDateInDays(dueDays), amountCents: b.totalCents, currency: b.currency },
       });
     } catch (e) {
+      // Parallel angelegt (bookingId ist eindeutig)? Dann die bestehende Rechnung verwenden.
+      const existing = await db.invoice.findUnique({ where: { bookingId: b.id } });
+      if (existing) return existing;
       if (attempt === 4) throw e;
       continue;
     }

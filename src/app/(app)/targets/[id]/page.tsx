@@ -21,7 +21,7 @@ export default async function TargetDetailPage({ params }: { params: Promise<{ i
   const canManageTenant = ctx.can("tenant.targets.manage");
   const canEdit = t.scope === "mine" || (t.scope === "tenant" && !t.ownerUserId && canManageTenant) || (t.scope === "global" && ctx.user.isSuperAdmin);
   const editHref = t.scope === "global" ? `/super/targets/${t.id}/edit` : `/targets/${t.id}/edit`;
-  const layouts = allowedLayouts(t.paperSizes, t.mimeType === "application/pdf");
+  const layouts = allowedLayouts(t.paperSizes, t.subject === "UPLOAD" && t.mimeType === "application/pdf");
   const note = t.subject === "UPLOAD" ? null : renderTarget(t.subject as TargetSubject, t.paperSizes[0] ?? "A4", t.params).note;
 
   return (
@@ -70,7 +70,7 @@ export default async function TargetDetailPage({ params }: { params: Promise<{ i
               <SectionTitle>Verwaltung</SectionTitle>
               <div className="flex flex-wrap gap-2">
                 {canManageTenant && t.scope !== "mine" ? <TargetHiddenToggle targetId={t.id} hidden={t.hidden} /> : null}
-                {canEdit ? <LinkButton href={editHref} variant="secondary" size="sm"><Pencil className="h-4 w-4" /> Bearbeiten</LinkButton> : null}
+                {canEdit ? <LinkButton href={editHref} variant="secondary"><Pencil className="h-4 w-4" /> Bearbeiten</LinkButton> : null}
                 {canEdit ? <TargetDeleteButton targetId={t.id} /> : null}
               </div>
             </div>

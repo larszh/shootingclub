@@ -6,7 +6,7 @@ import { CheckCircle2, FileUp, Upload } from "lucide-react";
 import { confirmCamtImportAction, previewCamtImportAction, type ImportPreview } from "@/modules/billing/import-actions";
 import { IMPORT_STATUS_LABEL, type ImportPreviewItem, type ImportStatus } from "@/modules/billing/import-types";
 import { Alert, Badge, Button, Card, SectionTitle } from "@/components/ui";
-import { SubmitButton, Spinner } from "@/components/ui/form";
+import { SubmitButton, Spinner, submitKeepingValues } from "@/components/ui/form";
 import { formatMoney } from "@/lib/money";
 import { formatQrReference } from "@/lib/qr-reference";
 import { cn } from "@/lib/utils";
@@ -20,20 +20,20 @@ function swissDate(d: string) {
 }
 
 export function CamtImport() {
-  const [state, action] = useActionState(previewCamtImportAction, null);
+  const [state, action, pending] = useActionState(previewCamtImportAction, null);
   const [fileName, setFileName] = useState<string | null>(null);
   return (
     <div className="space-y-4">
       <Card className="animate-rise p-4">
-        <form action={action} className="space-y-3">
-          <label className={cn("press flex flex-col items-center justify-center gap-2 rounded-card border-2 border-dashed px-4 py-8 text-center cursor-pointer transition-colors", fileName ? "border-ink/40 bg-surface-2" : "border-line hover:border-ink/30")}>
+        <form onSubmit={submitKeepingValues(action)} className="space-y-3">
+          <label className={cn("press flex flex-col items-center justify-center gap-2 rounded-card border-2 border-dashed px-4 py-8 text-center cursor-pointer transition-colors has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-offset-2 has-[:focus-visible]:outline-accent", fileName ? "border-ink/40 bg-surface-2" : "border-line hover:border-ink/30")}>
             <FileUp className="h-7 w-7 text-ink-2" />
             <span className="font-medium">{fileName ?? "camt-Datei wählen"}</span>
             <span className="text-xs text-ink-3">XML aus dem E-Banking, max. 5 MB (camt.054 oder camt.053)</span>
             <input type="file" name="file" accept=".xml,application/xml,text/xml" className="sr-only" required onChange={(e) => setFileName(e.target.files?.[0]?.name ?? null)} />
           </label>
           {state && !state.ok ? <Alert>{state.error}</Alert> : null}
-          <SubmitButton className="w-full" disabled={!fileName} pendingText="Datei wird geprüft…"><Upload className="h-4 w-4" /> Datei prüfen</SubmitButton>
+          <SubmitButton className="w-full" disabled={!fileName} pending={pending} pendingText="Datei wird geprüft…"><Upload className="h-4 w-4" /> Datei prüfen</SubmitButton>
           <p className="text-xs text-ink-3">Es wird noch nichts verbucht. Du siehst zuerst eine Vorschau und bestätigst die Zuordnungen.</p>
         </form>
       </Card>

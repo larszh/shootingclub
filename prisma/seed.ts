@@ -11,7 +11,41 @@ const db = new PrismaClient({
   adapter: new PrismaMariaDb({ host: u.hostname, port: Number(u.port || 3306), user: decodeURIComponent(u.username), password: decodeURIComponent(u.password), database: u.pathname.slice(1), connectionLimit: 2 }),
 });
 
+/**
+ * Globale Programme und Scheiben anlegen, die noch fehlen (Abgleich über den Namen).
+ * Idempotent: bestehende Einträge, auch von Admins geänderte, bleiben unverändert.
+ */
+async function seedPresets(createdById: string | null) {
+  let programs = 0;
+  for (const p of PROGRAM_PRESETS) {
+    const exists = await db.program.findFirst({ where: { tenantId: null, name: p.name } });
+    if (exists) continue;
+    await db.program.create({
+      data: { tenantId: null, createdById, name: p.name, description: p.description ?? null, discipline: p.discipline, weaponNote: p.weaponNote ?? null, scoringMode: p.scoringMode, stagesJson: JSON.stringify(p.stages) },
+    });
+    programs++;
+  }
+
+  let targets = 0;
+  for (const t of TARGET_PRESETS) {
+    const exists = await db.targetTemplate.findFirst({ where: { tenantId: null, ownerUserId: null, name: t.name } });
+    if (exists) continue;
+    await db.targetTemplate.create({
+      data: { tenantId: null, ownerUserId: null, name: t.name, description: t.description ?? null, subject: t.subject, paperSizes: t.paperSizes.join(","), paramsJson: JSON.stringify(t.params ?? {}) },
+    });
+    targets++;
+  }
+  console.log(`Vorlagen: ${programs} neue globale Programme, ${targets} neue globale Scheiben.`);
+}
+
 async function main() {
+  // Nur Vorlagen (für Updates, siehe scripts/deploy.sh): legt kein Konto an und braucht keine SEED_ADMIN_*-Variablen.
+  if (process.argv.includes("--presets-only") || process.env.SEED_PRESETS_ONLY === "1") {
+    const superAdmin = await db.user.findFirst({ where: { isSuperAdmin: true }, orderBy: { createdAt: "asc" }, select: { id: true } });
+    await seedPresets(superAdmin?.id ?? null);
+    return;
+  }
+
   const email = (process.env.SEED_ADMIN_EMAIL ?? "admin@example.ch").toLowerCase();
   const password = process.env.SEED_ADMIN_PASSWORD ?? "admin1234";
 
@@ -21,23 +55,7 @@ async function main() {
     create: { email, name: "Super Admin", passwordHash: await bcrypt.hash(password, 10), isSuperAdmin: true },
   });
 
-  // Globale Programme (nur anlegen, wenn Name noch nicht existiert)
-  for (const p of PROGRAM_PRESETS) {
-    const exists = await db.program.findFirst({ where: { tenantId: null, name: p.name } });
-    if (exists) continue;
-    await db.program.create({
-      data: { tenantId: null, createdById: admin.id, name: p.name, description: p.description ?? null, discipline: p.discipline, weaponNote: p.weaponNote ?? null, scoringMode: p.scoringMode, stagesJson: JSON.stringify(p.stages) },
-    });
-  }
-
-  // Globale Scheiben
-  for (const t of TARGET_PRESETS) {
-    const exists = await db.targetTemplate.findFirst({ where: { tenantId: null, ownerUserId: null, name: t.name } });
-    if (exists) continue;
-    await db.targetTemplate.create({
-      data: { tenantId: null, ownerUserId: null, name: t.name, description: t.description ?? null, subject: t.subject, paperSizes: t.paperSizes.join(","), paramsJson: JSON.stringify(t.params ?? {}) },
-    });
-  }
+  await seedPresets(admin.id);
 
   // Demo-Verein mit zwei Mitgliedern (nur wenn SEED_DEMO=1, nie in Produktion)
   if (process.env.SEED_DEMO === "1" && process.env.NODE_ENV !== "production") {

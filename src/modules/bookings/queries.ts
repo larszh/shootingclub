@@ -5,6 +5,10 @@ import { safeJson } from "@/lib/utils";
 import { computeSlots } from "./availability";
 import { DEFAULT_DURATIONS, DEFAULT_OPENING_HOURS, durationOptionSchema, openingHoursSchema, type DurationOption, type OpeningHours } from "./types";
 import { z } from "zod";
+import type { Prisma } from "@/generated/prisma/client";
+
+/** Datenbank-Client oder offene Transaktion. */
+export type DbClient = typeof db | Prisma.TransactionClient;
 
 type TenantCtx = AppContext & { tenant: NonNullable<AppContext["tenant"]> };
 
@@ -68,12 +72,23 @@ export async function getResource(tenantId: string, id: string) {
   return r && r.tenantId === tenantId ? toResourceView(r) : null;
 }
 
-/** Verfallene Online-Buchungen ohne Zahlung freigeben (lazy, beim Lesen). */
+/**
+ * Verfallene Online-Buchungen ohne Zahlung freigeben (lazy, beim Lesen). Die Frist läuft ab der
+ * Bestätigung (bei Freigabe durch die Verwaltung erst ab dann). Buchungen mit einem gerade
+ * laufenden Checkout bleiben bestehen; fehlgeschlagene Zahlungen geben den Platz ebenfalls frei.
+ */
 export async function expireUnpaidOnlineBookings(tenantId: string) {
   const cutoff = new Date(Date.now() - 30 * 60_000);
   await db.booking.updateMany({
-    where: { tenantId, status: "CONFIRMED", paymentMethod: "ONLINE", paymentStatus: { in: ["UNPAID", "PENDING"] }, createdAt: { lt: cutoff } },
-    data: { status: "CANCELLED", cancelledAt: new Date(), adminNote: "Automatisch storniert: Online-Zahlung nicht abgeschlossen." },
+    where: {
+      tenantId,
+      status: "CONFIRMED",
+      paymentMethod: "ONLINE",
+      paymentStatus: { in: ["UNPAID", "PENDING", "FAILED"] },
+      OR: [{ confirmedAt: { lt: cutoff } }, { confirmedAt: null, createdAt: { lt: cutoff } }],
+      payments: { none: { status: "PENDING", createdAt: { gte: cutoff } } },
+    },
+    data: { status: "CANCELLED", cancelledAt: new Date(), paymentStatus: "NOT_REQUIRED", adminNote: "Automatisch storniert: Online-Zahlung nicht abgeschlossen." },
   });
 }
 
@@ -82,13 +97,14 @@ export async function expireUnpaidOnlineBookings(tenantId: string) {
  * Vorausbuchungsgrenze nicht; Öffnungszeiten, Sperrzeiten und Kapazität bleiben verbindlich.
  * Rückwirkende Erfassung ist dann bis 30 Tage zurück möglich.
  */
-export async function getSlotsForDay(tenantId: string, resource: ResourceView, settings: BookingSettingsView, dateStr: string, durationMinutes: number, opts?: { bypassLimits?: boolean }) {
+export async function getSlotsForDay(tenantId: string, resource: ResourceView, settings: BookingSettingsView, dateStr: string, durationMinutes: number, opts?: { bypassLimits?: boolean; client?: DbClient }) {
+  const client = opts?.client ?? db;
   const dayStart = new Date(`${dateStr}T00:00:00Z`);
   const dayEnd = new Date(dayStart.getTime() + 48 * 3_600_000);
   const windowStart = new Date(dayStart.getTime() - 24 * 3_600_000);
   const [bookings, blocks] = await Promise.all([
-    db.booking.findMany({ where: { resourceId: resource.id, status: { in: ["PENDING", "CONFIRMED"] }, startsAt: { lt: dayEnd }, endsAt: { gt: windowStart } }, select: { startsAt: true, endsAt: true } }),
-    db.resourceBlock.findMany({ where: { tenantId, OR: [{ resourceId: null }, { resourceId: resource.id }], startsAt: { lt: dayEnd }, endsAt: { gt: windowStart } }, select: { startsAt: true, endsAt: true } }),
+    client.booking.findMany({ where: { resourceId: resource.id, status: { in: ["PENDING", "CONFIRMED"] }, startsAt: { lt: dayEnd }, endsAt: { gt: windowStart } }, select: { startsAt: true, endsAt: true } }),
+    client.resourceBlock.findMany({ where: { tenantId, OR: [{ resourceId: null }, { resourceId: resource.id }], startsAt: { lt: dayEnd }, endsAt: { gt: windowStart } }, select: { startsAt: true, endsAt: true } }),
   ]);
   return computeSlots({
     dateStr, durationMinutes, slotStepMinutes: settings.slotStepMinutes, openingHours: settings.openingHours, capacity: resource.capacity,

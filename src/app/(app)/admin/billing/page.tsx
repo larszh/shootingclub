@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { ChevronRight, Download, Landmark, Printer } from "lucide-react";
-import { requirePermission } from "@/lib/tenant";
+import { requireBillingAdmin } from "@/modules/billing/guard";
 import { Badge, Card, PageHeader, SectionTitle } from "@/components/ui";
 import { AdminBillingTabs } from "@/modules/billing/ui/admin-tabs";
 import { currentYear, feeStats, listMembersForBilling, listRuns } from "@/modules/billing/queries";
@@ -14,7 +14,7 @@ import { formatDateZurich } from "@/lib/time";
 export const metadata: Metadata = { title: "Mitgliederbeiträge verwalten" };
 
 export default async function AdminBillingPage({ searchParams }: { searchParams: Promise<{ year?: string }> }) {
-  const ctx = await requirePermission("tenant.manage");
+  const ctx = await requireBillingAdmin();
   const sp = await searchParams;
   const rawYear = Number(sp.year);
   const year = Number.isInteger(rawYear) && rawYear >= 2000 && rawYear <= 2100 ? rawYear : currentYear();

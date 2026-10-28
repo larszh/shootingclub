@@ -1,10 +1,7 @@
-import { redirect } from "next/navigation";
-import { getCurrentUser } from "@/lib/auth";
 import { Logo } from "@/components/logo";
 
-export default async function AuthLayout({ children }: { children: React.ReactNode }) {
-  const user = await getCurrentUser();
-  if (user) redirect("/");
+// Angemeldete Benutzer leiten die Seiten selbst weiter (sie kennen ?code= und ?next=).
+export default function AuthLayout({ children }: { children: React.ReactNode }) {
   return (
     <div className="min-h-dvh flex flex-col">
       <main className="flex-1 flex items-center justify-center px-4 py-10">

@@ -213,7 +213,7 @@ export const rsvpSchema = z.object({
   eventId: z.string().min(1).max(40),
   status: z.enum(RSVP_STATUSES),
   guests: z.coerce.number().int().min(0).max(MAX_GUESTS).default(0),
-  note: z.preprocess((v) => (typeof v === "string" && v.trim() === "" ? undefined : v), z.string().trim().max(200, "Bemerkung ist zu lang (max. 200 Zeichen).").optional()),
+  note: z.preprocess((v) => (typeof v === "string" && v.trim() === "" ? undefined : v), z.string().trim().max(191, "Bemerkung ist zu lang (max. 191 Zeichen).").optional()),
 });
 
 // ---------------------------------------------------------------------------

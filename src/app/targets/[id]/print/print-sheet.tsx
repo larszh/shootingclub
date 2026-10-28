@@ -6,6 +6,7 @@ import { ArrowLeft, Minus, Plus, Printer } from "lucide-react";
 import { renderTargetSvg } from "@/modules/targets/svg";
 import { allowedLayouts, MAX_COPIES, printLayout } from "@/modules/targets/print";
 import { PAPER_MM, PRINT_LAYOUTS, type PaperSize, type PrintLayoutKey, type TargetParams, type TargetSubject } from "@/modules/targets/types";
+import { targetFileUrl } from "@/modules/targets/file-url";
 import { cn } from "@/lib/utils";
 
 type PrintTarget = {
@@ -15,6 +16,7 @@ type PrintTarget = {
   params: TargetParams;
   paperSizes: PaperSize[];
   mimeType: string | null;
+  filePath: string | null;
 };
 
 type Props = {
@@ -30,7 +32,7 @@ export function PrintSheet({ target, footer, initial, auto }: Props) {
   const [copies, setCopies] = useState(initial.copies);
 
   const isUpload = target.subject === "UPLOAD";
-  const isPdf = target.mimeType === "application/pdf";
+  const isPdf = isUpload && target.mimeType === "application/pdf";
   const allowed = allowedLayouts(target.paperSizes, isPdf);
   const sheet = useMemo(() => printLayout(layout, paper), [layout, paper]);
 
@@ -75,7 +77,7 @@ export function PrintSheet({ target, footer, initial, auto }: Props) {
   return (
     <div className="min-h-dvh bg-neutral-200 text-neutral-900 print:bg-white">
       <style>{`
-@page { size: ${sheet.sheet} ${sheet.orientation}; margin: 0; }
+@page { size: ${sheet.w}mm ${sheet.h}mm; margin: 0; }
 @media print {
   html, body { background: #fff !important; }
   .sheet-wrap { zoom: 1 !important; padding: 0 !important; gap: 0 !important; }
@@ -173,10 +175,10 @@ function Piece({ piece, target, svg, footer, isPdf }: { piece: { x: number; y: n
       {target.subject === "UPLOAD" ? (
         <div className="absolute" style={{ left: "10mm", top: "10mm", right: "10mm", bottom: "18mm" }}>
           {isPdf ? (
-            <iframe src={`/api/files/${target.id}#toolbar=0`} className="h-full w-full" title={target.name} />
+            <iframe src={`${targetFileUrl(target)}#toolbar=0`} className="h-full w-full" title={target.name} />
           ) : (
             // eslint-disable-next-line @next/next/no-img-element
-            <img src={`/api/files/${target.id}`} alt="" className="h-full w-full object-contain" />
+            <img src={targetFileUrl(target)} alt="" className="h-full w-full object-contain" />
           )}
         </div>
       ) : (

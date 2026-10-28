@@ -383,7 +383,7 @@ export function PasswordInput({ className, onKeyUp, onKeyDown, onBlur, ...props 
           autoCapitalize="none"
           autoCorrect="off"
           spellCheck={false}
-          aria-describedby={caps ? hintId : props["aria-describedby"]}
+          aria-describedby={[props["aria-describedby"], caps ? hintId : null].filter(Boolean).join(" ") || undefined}
           className={cn(inputClass, "pr-12", className)}
           onKeyUp={(e) => {
             check(e);

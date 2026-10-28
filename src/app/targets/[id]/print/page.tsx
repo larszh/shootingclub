@@ -16,13 +16,13 @@ export default async function PrintTargetPage({ params, searchParams }: { params
   const sp = await searchParams;
   const t = await getTarget(ctx, id);
   if (!t) notFound();
-  const isPdf = t.mimeType === "application/pdf";
+  const isPdf = t.subject === "UPLOAD" && t.mimeType === "application/pdf";
   const initial = normalizePrintOptions(sp, t.paperSizes, isPdf);
   const footer = printFooterText(ctx.user.name, ctx.tenant.name);
 
   return (
     <PrintSheet
-      target={{ id: t.id, name: t.name, subject: t.subject, params: t.params, paperSizes: t.paperSizes.length ? t.paperSizes : ["A4"], mimeType: t.mimeType }}
+      target={{ id: t.id, name: t.name, subject: t.subject, params: t.params, paperSizes: t.paperSizes.length ? t.paperSizes : ["A4"], mimeType: t.mimeType, filePath: t.filePath }}
       footer={footer}
       initial={initial}
       auto={sp.auto === "1"}

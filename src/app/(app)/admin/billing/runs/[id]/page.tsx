@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Download, Printer } from "lucide-react";
-import { requirePermission } from "@/lib/tenant";
+import { requireBillingAdmin } from "@/modules/billing/guard";
 import { Alert, Card, PageHeader, SectionTitle } from "@/components/ui";
 import { AdminBillingTabs } from "@/modules/billing/ui/admin-tabs";
 import { getRun, listInvoices } from "@/modules/billing/queries";
@@ -15,7 +15,7 @@ import { formatDateZurich } from "@/lib/time";
 export const metadata = { title: "Jahresrechnung" };
 
 export default async function RunDetailPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ created?: string; f?: string }> }) {
-  const ctx = await requirePermission("tenant.manage");
+  const ctx = await requireBillingAdmin();
   const { id } = await params;
   const sp = await searchParams;
   const run = await getRun(ctx.tenant.id, id);

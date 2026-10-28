@@ -4,7 +4,7 @@ import { useActionState, useState } from "react";
 import { AlertCircle, ArrowLeft } from "lucide-react";
 import { createTenantAction, joinTenantAction } from "@/modules/core/tenant-actions";
 import { Alert, Card, ClubhouseIllustration, Field, Input, Select, TeamIllustration } from "@/components/ui";
-import { SubmitButton } from "@/components/ui/form";
+import { SubmitButton, submitKeepingValues } from "@/components/ui/form";
 import { Hint, Segmented } from "@/components/ui/controls";
 import { Avatar } from "@/components/avatar";
 
@@ -77,12 +77,12 @@ function PathCard({ onClick, illustration, title, text, cta }: { onClick: () => 
 }
 
 function JoinForm({ initialCode, codeTenant }: { initialCode?: string; codeTenant?: { name: string; city: string | null; logoUrl: string | null } | null }) {
-  const [state, action] = useActionState(joinTenantAction, null);
+  const [state, action, pending] = useActionState(joinTenantAction, null);
   const [code, setCode] = useState(initialCode ?? "");
   const matches = !!codeTenant && code === initialCode;
   return (
     <Card className="p-5 animate-fade">
-      <form action={action} className="space-y-4">
+      <form onSubmit={submitKeepingValues(action)} className="space-y-4">
         {matches && codeTenant ? (
           <div className="flex items-center gap-3 rounded-control bg-surface-2 p-3">
             <Avatar name={codeTenant.name} src={codeTenant.logoUrl} size={40} tone="soft" className="rounded-xl" />
@@ -109,7 +109,7 @@ function JoinForm({ initialCode, codeTenant }: { initialCode?: string; codeTenan
           />
         </Field>
         {state && !state.ok ? <Alert icon={<AlertCircle className="h-4 w-4" />}>{state.error} Bitte prüfe den Code.</Alert> : null}
-        <SubmitButton className="w-full" size="lg" pendingText="Trete bei…" disabled={code.length < 4}>
+        <SubmitButton className="w-full" size="lg" pending={pending} pendingText="Trete bei…" disabled={code.length < 4}>
           Beitreten
         </SubmitButton>
         <p className="text-xs text-ink-3">Du startest als Mitglied. Der Vereinsadmin kann dir später eine andere Rolle geben.</p>
@@ -119,11 +119,11 @@ function JoinForm({ initialCode, codeTenant }: { initialCode?: string; codeTenan
 }
 
 function CreateForm() {
-  const [state, action] = useActionState(createTenantAction, null);
+  const [state, action, pending] = useActionState(createTenantAction, null);
   const [kind, setKind] = useState("CLUB");
   return (
     <Card className="p-5 animate-fade">
-      <form action={action} className="space-y-4">
+      <form onSubmit={submitKeepingValues(action)} className="space-y-4">
         <Field label="Name">
           <Input name="name" required minLength={2} placeholder={kind === "RANGE" ? "z.B. Schiessanlage Allmend" : kind === "PRIVATE" ? "z.B. Pistolengruppe Freitag" : "z.B. Schützengesellschaft Musterhausen"} autoFocus autoComplete="organization" />
         </Field>
@@ -139,7 +139,7 @@ function CreateForm() {
           <Field label="Kanton"><Input name="canton" placeholder="ZH" maxLength={2} className="uppercase" autoCapitalize="characters" /></Field>
         </div>
         {state && !state.ok ? <Alert icon={<AlertCircle className="h-4 w-4" />}>{state.error}</Alert> : null}
-        <SubmitButton className="w-full" size="lg" pendingText="Wird angelegt…">Anlegen</SubmitButton>
+        <SubmitButton className="w-full" size="lg" pending={pending} pendingText="Wird angelegt…">Anlegen</SubmitButton>
         <p className="text-xs text-ink-3">
           Du wirst Inhaber und lädst Mitglieder über einen Beitrittscode ein. Logo, Farben und Module stellst du danach unter «Verein» ein.{" "}
           <Hint label="Mehr zu Modulen" side="top">Punkteerfassung, Zielscheiben und Anlässe sind gleich aktiv. Module wie Reservationen oder Beiträge schaltest du nur ein, wenn du sie brauchst.</Hint>

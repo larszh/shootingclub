@@ -12,7 +12,7 @@ import { Alert, Badge, Button, Card } from "@/components/ui";
 import { Spinner } from "@/components/ui/form";
 import { formatMoney } from "@/lib/money";
 import { formatDateZurich } from "@/lib/time";
-import { cn } from "@/lib/utils";
+import { cn, plural } from "@/lib/utils";
 
 export type RunInvoiceDto = {
   id: string; memberName: string; number: string; categoryName: string; amountCents: number; currency: string; status: string;
@@ -73,7 +73,7 @@ export function RunInvoiceList({ invoices }: { invoices: RunInvoiceDto[] }) {
                 </div>
                 {i.reminders > 0 || i.overdue ? (
                   <div className="mt-0.5 flex flex-wrap gap-1">
-                    {i.overdue ? <Badge tone="accent">überfällig</Badge> : null}
+                    {i.overdue ? <span className="inline-flex items-center rounded-full bg-danger/10 px-2.5 py-0.5 text-xs font-medium text-danger">überfällig</span> : null}
                     {i.reminders > 0 ? <Badge tone="warn">{i.reminders}× gemahnt{i.remindedAt ? `, zuletzt ${d(i.remindedAt)}` : ""}</Badge> : null}
                   </div>
                 ) : null}
@@ -95,7 +95,7 @@ export function RunInvoiceList({ invoices }: { invoices: RunInvoiceDto[] }) {
             <span className="px-1.5 text-sm"><span className="font-semibold">{chosen.length}</span> gewählt · {formatMoney(chosenTotal, invoices[0]?.currency ?? "CHF")}</span>
             <div className="ml-auto flex gap-2">
               <Button type="button" size="sm" variant="secondary" disabled={pending} onClick={() => run(() => markRemindedAction(chosen))}><BellRing className="h-4 w-4" /> Gemahnt</Button>
-              <Button type="button" size="sm" disabled={pending} onClick={async () => { if ((await confirmDialog({ title: `${chosen.length} Rechnungen als bezahlt markieren?` }))) run(() => bulkMarkFeeInvoicesPaidAction(chosen)); }}>
+              <Button type="button" size="sm" disabled={pending} onClick={async () => { if ((await confirmDialog({ title: `${plural(chosen.length, "Rechnung", "Rechnungen")} als bezahlt markieren?`, confirmLabel: "Als bezahlt markieren" }))) run(() => bulkMarkFeeInvoicesPaidAction(chosen)); }}>
                 {pending ? <Spinner /> : <CheckCheck className="h-4 w-4" />} Als bezahlt markieren
               </Button>
             </div>

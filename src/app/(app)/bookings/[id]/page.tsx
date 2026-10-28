@@ -8,8 +8,9 @@ import { Avatar, userAvatarUrl } from "@/components/avatar";
 import { ResourceIcon } from "@/modules/bookings/ui/resource-icon";
 import { repeatTarget } from "@/modules/bookings/repeat";
 import { formatQrReference } from "@/lib/qr-reference";
+import { getBillingProfile } from "@/modules/billing/profile";
 import { cancellationInfo, getBooking, getBookingSettings } from "@/modules/bookings/queries";
-import { BOOKING_STATUS, PAYMENT_METHOD_LABEL, PAYMENT_STATUS, formatDuration, providerLabel } from "@/modules/bookings/types";
+import { BOOKING_STATUS, PAYMENT_METHOD_LABEL, formatDuration, paymentStatusView, providerLabel } from "@/modules/bookings/types";
 import { CancelBookingButton, DecideButtons, PaidToggle, PayNowButton, RefundedButton } from "@/modules/bookings/ui/booking-actions";
 import { formatDateTimeZurich, formatDateZurich, formatTimeRange } from "@/lib/time";
 import { formatMoney } from "@/lib/money";
@@ -22,9 +23,9 @@ export default async function BookingDetailPage({ params, searchParams }: { para
   const sp = await searchParams;
   const b = await getBooking(ctx, id);
   if (!b) notFound();
-  const settings = await getBookingSettings(ctx.tenant.id);
+  const [settings, billingProfile] = await Promise.all([getBookingSettings(ctx.tenant.id), getBillingProfile(ctx.tenant.id)]);
   const st = BOOKING_STATUS[b.status]!;
-  const ps = PAYMENT_STATUS[b.paymentStatus]!;
+  const ps = paymentStatusView(b);
   const isAdmin = ctx.can("tenant.manage");
   const { active, canCancel } = cancellationInfo(b, settings.cancellationHours, isAdmin);
   const canPay = b.isOwner && b.status === "CONFIRMED" && b.paymentMethod === "ONLINE" && ["UNPAID", "PENDING", "FAILED"].includes(b.paymentStatus);
@@ -61,7 +62,7 @@ export default async function BookingDetailPage({ params, searchParams }: { para
         <>
           <SectionTitle>Rechnung</SectionTitle>
           <Link href={`/bookings/${b.id}/invoice`} target="_blank" className="block press">
-            <Card className="p-4 flex items-center gap-3 hover:border-ink/30"><FileText className="h-5 w-5 text-ink-2" /><span className="flex-1 min-w-0"><span className="block font-medium">Rechnung {b.invoice.number}</span><span className="block text-xs text-ink-3">Fällig am {formatDateZurich(b.invoice.dueAt)} · {b.invoice.status === "PAID" ? "bezahlt" : b.invoice.status === "CANCELLED" ? "storniert" : "offen"}</span>{b.invoice.reference && b.invoice.status === "OPEN" ? <span className="block text-xs text-ink-3 font-mono truncate">Ref. {formatQrReference(b.invoice.reference)}</span> : null}</span><span className="text-sm text-ink-3">Öffnen / Drucken</span></Card>
+            <Card className="p-4 flex items-center gap-3 hover:border-ink/30"><FileText className="h-5 w-5 text-ink-2" /><span className="flex-1 min-w-0"><span className="block font-medium">Rechnung {b.invoice.number}</span><span className="block text-xs text-ink-3">Fällig am {formatDateZurich(b.invoice.dueAt)} · {b.invoice.status === "PAID" ? "bezahlt" : b.invoice.status === "CANCELLED" ? "storniert" : "offen"}</span>{b.invoice.reference && b.invoice.status === "OPEN" && billingProfile.qrIban ? <span className="block text-xs text-ink-3 font-mono truncate">Ref. {formatQrReference(b.invoice.reference)}</span> : null}</span><span className="text-sm text-ink-3">Öffnen / Drucken</span></Card>
           </Link>
         </>
       ) : null}
@@ -90,7 +91,7 @@ export default async function BookingDetailPage({ params, searchParams }: { para
           <SectionTitle>Aktionen</SectionTitle>
           <div className="animate-rise flex flex-wrap gap-2 items-center">
             {isAdmin && b.status === "PENDING" ? <DecideButtons bookingId={b.id} /> : null}
-            {isAdmin && b.totalCents > 0 && b.status !== "CANCELLED" && b.paymentStatus !== "REFUNDED" ? <PaidToggle bookingId={b.id} paid={b.paymentStatus === "PAID"} /> : null}
+            {isAdmin && b.totalCents > 0 && (b.status === "PENDING" || b.status === "CONFIRMED") && b.paymentStatus !== "REFUNDED" ? <PaidToggle bookingId={b.id} paid={b.paymentStatus === "PAID"} /> : null}
             {isAdmin && b.status === "CANCELLED" && b.paymentStatus === "PAID" ? <RefundedButton bookingId={b.id} /> : null}
             {canCancel ? <CancelBookingButton bookingId={b.id} /> : null}
           </div>

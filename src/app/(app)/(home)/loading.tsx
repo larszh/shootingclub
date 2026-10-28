@@ -1,6 +1,10 @@
 import { Skeleton } from "@/components/ui";
 
-/** Ladeansicht im App-Bereich: grob wie das Dashboard bzw. eine Listenseite. */
+/**
+ * Ladeansicht nur für das Dashboard. Liegt bewusst in der Route-Group (home) statt
+ * gruppenweit in (app): sonst würde sie auch die [id]-Detailseiten umschliessen,
+ * notFound() liefe erst nach Streaming-Beginn und ergäbe ein «weiches» 404 mit HTTP 200.
+ */
 export default function Loading() {
   return (
     <div className="animate-fade" role="status" aria-live="polite" aria-busy="true">

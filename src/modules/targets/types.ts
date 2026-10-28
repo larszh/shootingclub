@@ -83,7 +83,7 @@ export function parseTargetParams(raw: unknown): TargetParams {
 
 type ParamKind = "number" | "bool" | "select";
 export const PARAM_INFO: Record<ParamKey, { kind: ParamKind; label: string; min?: number; max?: number; step?: number; hint?: string }> = {
-  diameterMm: { kind: "number", label: "Durchmesser (mm)", min: 10, max: 300, hint: "Leer = so gross wie möglich" },
+  diameterMm: { kind: "number", label: "Durchmesser (mm)", min: 10, max: 300, hint: "Leer = so gross wie möglich (bei Distanz-Umrechnung: 300 mm)" },
   columns: { kind: "number", label: "Spalten", min: 1, max: 6 },
   rows: { kind: "number", label: "Reihen", min: 1, max: 8 },
   gridMm: { kind: "number", label: "Rasterweite (mm)", min: 2, max: 50 },

@@ -1,5 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { redirect } from "next/navigation";
+import { getCurrentUser } from "@/lib/auth";
 import { CalendarDays, Crosshair, Printer, Receipt } from "lucide-react";
 import { Avatar } from "@/components/avatar";
 import { RegisterForm } from "./form";
@@ -16,6 +18,8 @@ const FEATURES = [
 
 export default async function RegisterPage({ searchParams }: { searchParams: Promise<{ code?: string | string[] }> }) {
   const code = normalizeJoinCode((await searchParams).code);
+  // Bereits angemeldet: mit Code direkt zum Beitreten, statt den Code zu verlieren.
+  if (await getCurrentUser()) redirect(code ? `/onboarding?force=1&code=${encodeURIComponent(code)}` : "/");
   const tenant = await lookupJoinTenant(code);
   const loginHref = code ? `/login?code=${encodeURIComponent(code)}` : "/login";
 

@@ -20,6 +20,7 @@ import type { ModuleKey } from "@/lib/modules";
 import { ROLE_LABELS, isTenantRole } from "@/lib/permissions";
 import { formatMoney } from "@/lib/money";
 import { formatDateZurich, formatTimeRange } from "@/lib/time";
+import { brandColors, contrastRatio } from "@/lib/brand";
 import { cn, dayGreeting, formatDate, formatScore, plural } from "@/lib/utils";
 import { Avatar } from "@/components/avatar";
 import {
@@ -35,6 +36,7 @@ import {
 } from "@/components/ui";
 import { listMatches, listPrograms, userStats } from "@/modules/scores/queries";
 import { listMyBookings, partitionBookings } from "@/modules/bookings/queries";
+import { isOverdue } from "@/modules/billing/dates";
 import { AnnouncementsCard, UpcomingEventsCard } from "@/modules/events/ui/dashboard-cards";
 
 type TenantCtx = AppContext & { tenant: ActiveTenant };
@@ -69,7 +71,6 @@ async function loadScores(ctx: TenantCtx) {
   ]);
   return {
     favorites: programs.filter((p) => p.favorite).slice(0, 4),
-    favoriteCount: programs.filter((p) => p.favorite).length,
     openMine,
     recent,
     stats,
@@ -83,21 +84,30 @@ async function loadOpenInvoices(ctx: TenantCtx) {
     orderBy: { dueAt: "asc" },
     take: 20,
   });
-  const now = Date.now();
   const totalCents = rows.reduce((a, r) => a + r.amountCents, 0);
   return {
     count: rows.length,
     totalCents,
     currency: rows[0]?.currency ?? "CHF",
-    overdue: rows.filter((r) => r.dueAt.getTime() < now).length,
+    overdue: rows.filter((r) => isOverdue(r.dueAt)).length,
     nextDue: rows[0]?.dueAt ?? null,
   };
+}
+
+/**
+ * Der Verlauf (Farbe 1 → Farbe 2) trägt nur eine Textfarbe (accent-ink, passend zu Farbe 1).
+ * Reicht deren Kontrast auf Farbe 2 nicht (z.B. Gold + Dunkelblau), einfarbig bleiben.
+ */
+function gradientReadable(tenant: ActiveTenant) {
+  const c = brandColors(tenant.brandColor, tenant.brandColor2);
+  if (!c) return true;
+  return [c.light, c.dark].every((m) => contrastRatio(m.accentInk, m.accent2) >= Math.min(4.5, contrastRatio(m.accentInk, m.accent)));
 }
 
 type SetupItem = { key: string; title: string; text: string; href: string; done: boolean };
 
 /** Erste Schritte für Admins eines neuen Vereins. Leer, wenn alles erledigt ist. */
-async function loadSetupChecklist(ctx: TenantCtx, favoriteCount: number): Promise<SetupItem[]> {
+async function loadSetupChecklist(ctx: TenantCtx): Promise<SetupItem[]> {
   const tenantId = ctx.tenant.id;
   const bookingsOn = ctx.hasModule("bookings");
   const billingOn = ctx.hasModule("billing");
@@ -110,9 +120,8 @@ async function loadSetupChecklist(ctx: TenantCtx, favoriteCount: number): Promis
     { key: "brand", title: "Logo & Farben setzen", text: "Damit die App nach eurem Verein aussieht.", href: "/admin", done: !!(ctx.tenant.logoUrl || ctx.tenant.brandColor) },
     { key: "members", title: "Mitglieder einladen", text: "Teile den Beitrittscode oder füge Mitglieder per E-Mail hinzu.", href: "/admin/members", done: members >= 2 },
   ];
-  if (ctx.hasModule("scores")) {
-    items.push({ key: "programs", title: "Programme favorisieren", text: "Mit dem Stern erscheinen sie hier zum Schnellstart.", href: "/scores/programs", done: favoriteCount > 0 });
-  }
+  // Nur vereinsweite Schritte: Favoriten sind pro Person und gehören nicht in diese Liste
+  // (dafür gibt es unten den Schnellstart mit eigenem Hinweis).
   if (bookingsOn) {
     items.push({ key: "resources", title: "Ressourcen erfassen", text: "Anlagen, Bahnen oder Räume, die man reservieren kann.", href: "/admin/bookings/resources", done: resources > 0 });
   }
@@ -150,13 +159,14 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
     bookingsOn ? listMyBookings(ctx).then((b) => partitionBookings(b).upcoming.slice(0, 2)) : Promise.resolve([]),
     billingOn ? loadOpenInvoices(ctx) : Promise.resolve(null),
   ]);
-  const checklist = isAdmin ? await loadSetupChecklist(ctx, scores?.favoriteCount ?? 0) : [];
+  const checklist = isAdmin ? await loadSetupChecklist(ctx) : [];
 
   const greeting = dayGreeting();
   const firstName = ctx.user.name.split(" ")[0];
   const actions = QUICK_ACTIONS.filter((a) => ctx.hasModule(a.module));
   const role = ctx.tenant.role && isTenantRole(ctx.tenant.role) ? ROLE_LABELS[ctx.tenant.role] : ctx.user.isSuperAdmin ? "Super-Admin" : null;
   const doneCount = checklist.filter((i) => i.done).length;
+  const primaryBg = gradientReadable(ctx.tenant) ? "brand-gradient" : "bg-accent";
 
   return (
     <div>
@@ -197,7 +207,7 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
               href={a.href}
               className={cn(
                 "press group flex min-h-20 flex-col justify-between gap-3 rounded-card border p-4 transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent",
-                a.primary ? "brand-gradient border-transparent text-accent-ink shadow-sm" : "border-line bg-surface hover:border-ink/30",
+                a.primary ? cn(primaryBg, "border-transparent text-accent-ink shadow-sm") : "border-line bg-surface hover:border-ink/30",
                 a.primary && actions.length % 2 === 1 && i === 0 && "col-span-2 sm:col-span-1",
               )}
             >
@@ -300,7 +310,7 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
           {/* Favoriten */}
           <SectionTitle action={<Link href="/scores/programs" className="text-xs text-ink-3 hover:text-ink">Alle Programme</Link>}>Schnellstart</SectionTitle>
           {scores.favorites.length ? (
-            <div className="stagger grid gap-2.5 sm:grid-cols-2">
+            <div className="stagger grid grid-cols-1 gap-2.5 sm:grid-cols-2">
               {scores.favorites.map((p) => (
                 <Link key={p.id} href={`/scores/matches/new?programId=${p.id}`} className="press rounded-card focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent">
                   <Card className="flex h-full items-center gap-3 p-4 transition-colors hover:border-ink/30">

@@ -36,7 +36,7 @@ export function Toaster() {
 
 const toneStyle = {
   success: { icon: CheckCircle2, cls: "text-ok" },
-  error: { icon: XCircle, cls: "text-accent" },
+  error: { icon: XCircle, cls: "text-danger" },
   info: { icon: Info, cls: "text-ink-2" },
 } as const;
 

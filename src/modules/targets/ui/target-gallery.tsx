@@ -8,7 +8,9 @@ import { Input, Select } from "@/components/ui";
 import { TargetCard } from "./target-card";
 import { cn } from "@/lib/utils";
 
-type Scope = "all" | "global" | "tenant" | "mine";
+export type GalleryScope = "all" | "global" | "tenant" | "mine";
+type Scope = GalleryScope;
+export type GalleryFilters = { cat: TargetCategory | "all"; q: string; scope: Scope; onlyFav: boolean };
 
 function norm(s: string) {
   return s.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
@@ -20,11 +22,11 @@ function categoryOf(t: TargetView): TargetCategory {
   return subjectCategory(t.subject);
 }
 
-export function TargetGallery({ targets }: { targets: TargetView[] }) {
-  const [cat, setCat] = useState<TargetCategory | "all">("all");
-  const [q, setQ] = useState("");
-  const [scope, setScope] = useState<Scope>("all");
-  const [onlyFav, setOnlyFav] = useState(false);
+export function TargetGallery({ targets, initial }: { targets: TargetView[]; initial?: Partial<GalleryFilters> }) {
+  const [cat, setCatState] = useState<TargetCategory | "all">(initial?.cat ?? "all");
+  const [q, setQState] = useState(initial?.q ?? "");
+  const [scope, setScopeState] = useState<Scope>(initial?.scope ?? "all");
+  const [onlyFav, setOnlyFavState] = useState(initial?.onlyFav ?? false);
   const [favFirst, setFavFirst] = useState(true);
   const [large, setLarge] = useState(false);
 
@@ -48,6 +50,29 @@ export function TargetGallery({ targets }: { targets: TargetView[] }) {
     return filtered.map((t, i) => ({ t, i })).sort((a, b) => Number(b.t.favorite) - Number(a.t.favorite) || a.i - b.i).map((x) => x.t);
   }, [targets, cat, scope, onlyFav, favFirst, q]);
 
+  // Filter in der URL halten, damit sie nach «Zurück» erhalten bleiben
+  function setFilters(next: Partial<GalleryFilters>) {
+    const f: GalleryFilters = { cat, q, scope, onlyFav, ...next };
+    if (next.cat !== undefined) setCatState(next.cat);
+    if (next.q !== undefined) setQState(next.q);
+    if (next.scope !== undefined) setScopeState(next.scope);
+    if (next.onlyFav !== undefined) setOnlyFavState(next.onlyFav);
+    try {
+      const qs = new URLSearchParams();
+      if (f.cat !== "all") qs.set("cat", f.cat);
+      if (f.q) qs.set("q", f.q);
+      if (f.scope !== "all") qs.set("scope", f.scope);
+      if (f.onlyFav) qs.set("fav", "1");
+      const s = qs.toString();
+      window.history.replaceState(window.history.state, "", s ? `?${s}` : window.location.pathname);
+    } catch {
+      /* URL-Update ist nur Komfort */
+    }
+  }
+  const setCat = (v: TargetCategory | "all") => setFilters({ cat: v });
+  const setQ = (v: string) => setFilters({ q: v });
+  const setScope = (v: Scope) => setFilters({ scope: v });
+
   const chip = (active: boolean) =>
     cn("press shrink-0 h-10 rounded-full px-3.5 text-sm font-medium border transition-colors inline-flex items-center gap-1.5", active ? "bg-ink text-bg border-ink" : "bg-surface border-line text-ink-2");
 
@@ -63,17 +88,17 @@ export function TargetGallery({ targets }: { targets: TargetView[] }) {
         ) : null}
       </div>
 
-      <div className="animate-fade flex gap-1.5 overflow-x-auto pb-2 -mx-4 px-4 mb-1 [scrollbar-width:none]" role="tablist" aria-label="Kategorien">
-        <button type="button" role="tab" aria-selected={cat === "all"} onClick={() => setCat("all")} className={chip(cat === "all")}>Alle <span className="opacity-60">{targets.length}</span></button>
+      <div className="animate-fade flex gap-1.5 overflow-x-auto pb-2 -mx-4 px-4 mb-1 [scrollbar-width:none]" role="group" aria-label="Kategorien">
+        <button type="button" aria-pressed={cat === "all"} onClick={() => setCat("all")} className={chip(cat === "all")}>Alle <span className="opacity-60">{targets.length}</span></button>
         {TARGET_CATEGORIES.filter((c) => counts.get(c.key)).map((c) => (
-          <button key={c.key} type="button" role="tab" aria-selected={cat === c.key} onClick={() => setCat(c.key)} className={chip(cat === c.key)}>
+          <button key={c.key} type="button" aria-pressed={cat === c.key} onClick={() => setCat(c.key)} className={chip(cat === c.key)}>
             {c.label} <span className="opacity-60">{counts.get(c.key)}</span>
           </button>
         ))}
       </div>
 
       <div className="animate-fade flex flex-wrap items-center gap-2 mb-3">
-        <button type="button" aria-pressed={onlyFav} onClick={() => setOnlyFav((v) => !v)} className={chip(onlyFav)}>
+        <button type="button" aria-pressed={onlyFav} onClick={() => setFilters({ onlyFav: !onlyFav })} className={chip(onlyFav)}>
           <Star className={cn("h-4 w-4", onlyFav && "fill-current")} /> Nur Favoriten
         </button>
         <label className="inline-flex items-center gap-2 h-10 text-sm text-ink-2 cursor-pointer select-none">
@@ -100,7 +125,7 @@ export function TargetGallery({ targets }: { targets: TargetView[] }) {
       {list.length === 0 ? (
         <div className="text-center py-10">
           <p className="text-sm text-ink-3">Nichts gefunden.</p>
-          <button type="button" onClick={() => { setQ(""); setCat("all"); setScope("all"); setOnlyFav(false); }} className="mt-2 text-sm font-medium text-ink underline underline-offset-4">Filter zurücksetzen</button>
+          <button type="button" onClick={() => setFilters({ q: "", cat: "all", scope: "all", onlyFav: false })} className="mt-2 text-sm font-medium text-ink underline underline-offset-4">Filter zurücksetzen</button>
         </div>
       ) : null}
     </div>

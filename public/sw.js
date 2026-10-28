@@ -11,7 +11,7 @@
  * src/lib/offline/idb.ts übereinstimmen.
  */
 
-const VERSION = "2026-10-27.2";
+const VERSION = "2026-10-28.2";
 const DATA_VERSION = "v1"; // nur erhöhen, wenn sich das Format gecachter Seiten ändert
 
 const PRECACHE = `sc-precache-${VERSION}`;
@@ -36,6 +36,7 @@ const PRECACHE_ASSETS = [
 
 const LIMITS = { [STATIC]: 400, [PAGES]: 60, [RSC]: 120, [MEDIA]: 250 };
 const NAV_TIMEOUT = 6000;
+const PAGE_FRESH_MS = 60_000; // CACHE_PAGE: jüngere gecachte Seiten nicht erneut laden
 
 // Nie über den Service Worker cachen
 const NEVER = [/^\/api\/sync(\/|$)/, /^\/api\/payments(\/|$)/, /^\/api\/offline(\/|$)/, /^\/login(\/|$)/, /^\/register(\/|$)/, /^\/sw\.js$/];
@@ -46,7 +47,9 @@ const AUTH_PAGES = [/^\/login(\/|$)/, /^\/register(\/|$)/];
 // ---------------------------------------------------------------------------
 
 self.addEventListener("install", (event) => {
-  event.waitUntil(precacheShell());
+  // Streng: fehlt eine Offline-Seite oder eine ihrer Dateien, schlägt die Installation fehl und der
+  // bisherige Service Worker (samt seinem Offline-Cache) bleibt aktiv. Der Browser versucht es später erneut.
+  event.waitUntil(precacheShell(true));
   // Kein automatisches skipWaiting: die App fragt den Benutzer («Neue Version verfügbar»).
 });
 
@@ -67,8 +70,12 @@ self.addEventListener("activate", (event) => {
   );
 });
 
-/** Lädt die Offline-Seiten samt der darin referenzierten statischen Dateien. */
-async function precacheShell() {
+/**
+ * Lädt die Offline-Seiten samt der darin referenzierten statischen Dateien.
+ * `strict` (Installation): jeder Fehler bei Offline-Seiten oder ihren Dateien lässt das Promise scheitern.
+ */
+async function precacheShell(strict) {
+  const settle = (promises) => (strict ? Promise.all(promises) : Promise.allSettled(promises));
   const pre = await caches.open(PRECACHE);
   const stat = await caches.open(STATIC);
   await Promise.allSettled(
@@ -77,21 +84,25 @@ async function precacheShell() {
       if (res.ok) await pre.put(url, res);
     }),
   );
-  await Promise.allSettled(
+  await settle(
     SHELL_PAGES.map(async (url) => {
       const res = await fetch(url, { cache: "reload", credentials: "same-origin", redirect: "follow" });
-      if (!res.ok || res.redirected) return;
+      if (!res.ok || res.redirected) {
+        if (strict) throw new Error("Offline-Seite nicht verfügbar: " + url);
+        return;
+      }
       const html = await res.clone().text();
       await pre.put(url, res);
       const assets = new Set();
       const re = /["'(](\/_next\/static\/[^"'()\s\\]+)/g;
       let m;
       while ((m = re.exec(html))) assets.add(m[1]);
-      await Promise.allSettled(
+      await settle(
         [...assets].map(async (a) => {
           if (await stat.match(a)) return;
           const r = await fetch(a, { credentials: "same-origin" });
           if (r.ok) await stat.put(a, r);
+          else if (strict) throw new Error("Datei nicht verfügbar: " + a);
         }),
       );
     }),
@@ -108,6 +119,8 @@ self.addEventListener("message", (event) => {
     self.skipWaiting();
   } else if (data.type === "CLEAR_USER_CACHES") {
     event.waitUntil(clearUserCaches());
+  } else if (data.type === "CACHE_PAGE" && typeof data.url === "string") {
+    event.waitUntil(cachePage(data.url));
   } else if (data.type === "REFRESH_OFFLINE_SHELL") {
     event.waitUntil(precacheShell());
   } else if (data.type === "GET_VERSION" && event.source) {
@@ -117,6 +130,41 @@ self.addEventListener("message", (event) => {
 
 async function clearUserCaches() {
   await Promise.all(USER_CACHES.map((c) => caches.delete(c)));
+}
+
+/**
+ * Per Client-Navigation erreichte Seite als HTML ablegen (sonst gäbe es nur RSC-Daten, und ein
+ * Neuladen ohne Verbindung zeigte die allgemeine Offline-Seite).
+ */
+async function cachePage(href) {
+  let url;
+  try {
+    url = new URL(href, self.location.origin);
+  } catch (e) {
+    return;
+  }
+  url.hash = "";
+  const path = url.pathname;
+  if (url.origin !== self.location.origin || path.startsWith("/offline") || path.startsWith("/api/") || path.startsWith("/_next/") || NEVER.some((re) => re.test(path))) return;
+  const cache = await caches.open(PAGES);
+  const hit = await cache.match(url.href, { ignoreVary: true });
+  const hitDate = hit ? Date.parse(hit.headers.get("date") || "") : NaN;
+  if (hit && Number.isFinite(hitDate) && Date.now() - hitDate < PAGE_FRESH_MS) return;
+  try {
+    const res = await fetch(url.href, { credentials: "same-origin", headers: { Accept: "text/html" } });
+    if (cacheable(res) && !isLoginResponse(res) && (res.headers.get("content-type") || "").includes("text/html")) {
+      if (await isSoftNotFound(res)) {
+        await cache.delete(url.href);
+        return;
+      }
+      await cache.put(url.href, res);
+      await trim(PAGES);
+    } else if (res.status === 404 || res.status === 410) {
+      await cache.delete(url.href);
+    }
+  } catch (e) {
+    /* offline oder Serverfehler: nächster Besuch versucht es erneut */
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -186,6 +234,18 @@ function isRsc(req, url) {
 
 function cacheable(res) {
   return res && res.ok && res.type === "basic" && !res.redirected && res.status === 200;
+}
+
+/**
+ * notFound() hinter einer Loading-Grenze liefert Status 200 mit der 404-Ansicht («soft 404»).
+ * Solche Antworten erkennt man nur am Inhalt; sie dürfen nicht gecacht werden.
+ */
+async function isSoftNotFound(res) {
+  try {
+    return (await res.clone().text()).includes("NEXT_HTTP_ERROR_FALLBACK;404");
+  } catch (e) {
+    return true; // Inhalt nicht lesbar: lieber nicht cachen
+  }
 }
 
 async function trim(cacheName) {
@@ -267,9 +327,17 @@ async function networkFirstPage(event, req, url) {
         const pre = await caches.open(PRECACHE);
         await pre.put(url.pathname, res.clone());
       } else {
-        await cache.put(url.href, res.clone());
-        trim(PAGES);
+        const copy = res.clone();
+        // Im Hintergrund prüfen, damit die Antwort nicht auf den ganzen Inhalt warten muss
+        event.waitUntil(
+          isSoftNotFound(copy)
+            .then((notFound) => (notFound ? cache.delete(url.href) : cache.put(url.href, copy).then(() => trim(PAGES))))
+            .catch(() => null),
+        );
       }
+    } else if (res && (res.status === 404 || res.status === 410)) {
+      // Seite gibt es nicht mehr: veraltete Kopie entfernen
+      event.waitUntil(cache.delete(url.href).catch(() => null));
     }
     return res;
   })();
@@ -295,6 +363,11 @@ async function offlineFallback(req, url) {
     const shell = await caches.match(url.pathname, { ignoreSearch: true, ignoreVary: true });
     if (shell) return shell;
   }
+  // Durchgang ohne gespeicherte Seite: direkt zur Offline-Erfassung (liest den Stand aus IndexedDB)
+  const matchPage = /^\/scores\/matches\/([^/]+)\/?$/.exec(url.pathname);
+  if (matchPage && matchPage[1] !== "new" && req.mode === "navigate" && (await caches.match("/offline/match", { ignoreSearch: true, ignoreVary: true }))) {
+    return Response.redirect(new URL("/offline/match?key=" + encodeURIComponent("s:" + matchPage[1]), self.location.origin).href, 302);
+  }
   const offline = await caches.match(OFFLINE_URL, { ignoreVary: true });
   if (offline) return offline;
   return new Response(
@@ -312,7 +385,12 @@ async function networkFirstRsc(event, req) {
   try {
     const res = await fetch(req);
     if (!prefetch && cacheable(res) && !isLoginResponse(res)) {
-      event.waitUntil(cache.put(req, res.clone()).then(() => trim(RSC)));
+      const copy = res.clone();
+      event.waitUntil(
+        isSoftNotFound(copy)
+          .then((notFound) => (notFound ? cache.delete(req) : cache.put(req, copy).then(() => trim(RSC))))
+          .catch(() => null),
+      );
     }
     return res;
   } catch (e) {

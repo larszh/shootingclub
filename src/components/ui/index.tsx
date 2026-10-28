@@ -77,22 +77,15 @@ export function Select({ className, children, ...props }: React.SelectHTMLAttrib
   );
 }
 
-export function Field({ label, hint, error, children, className }: { label: string; hint?: string; error?: string; children: React.ReactNode; className?: string }) {
-  return (
-    <div className={className}>
-      <Label>{label}</Label>
-      {children}
-      {error ? <p className="mt-1 text-sm text-danger">{error}</p> : hint ? <p className="mt-1 text-xs text-ink-3">{hint}</p> : null}
-    </div>
-  );
-}
+export { Field } from "./field";
 
-export function Badge({ children, tone = "neutral", className }: { children: React.ReactNode; tone?: "neutral" | "accent" | "ok" | "warn" | "outline"; className?: string }) {
+export function Badge({ children, tone = "neutral", className }: { children: React.ReactNode; tone?: "neutral" | "accent" | "ok" | "warn" | "danger" | "outline"; className?: string }) {
   const tones = {
     neutral: "bg-surface-2 text-ink-2",
     accent: "bg-accent-soft text-accent",
     ok: "bg-ok/10 text-ok",
     warn: "bg-warn/10 text-warn",
+    danger: "bg-danger/10 text-danger",
     outline: "border border-line text-ink-3",
   };
   return <span className={cn("inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium", tones[tone], className)}>{children}</span>;
@@ -102,7 +95,7 @@ export function PageHeader({ title, subtitle, action, back }: { title: string; s
   return (
     <div className="animate-fade mb-5">
       {back ? (
-        <Link href={back.href} className="inline-flex items-center gap-1 text-sm text-ink-3 hover:text-ink mb-2">
+        <Link href={back.href} className="-ml-2 -mt-3 -mb-1 inline-flex min-h-11 items-center gap-1 px-2 text-sm text-ink-3 hover:text-ink">
           <span aria-hidden>←</span> {back.label ?? "Zurück"}
         </Link>
       ) : null}
@@ -145,13 +138,42 @@ export function SectionTitle({ children, action }: { children: React.ReactNode; 
   return (
     <div className="flex items-center justify-between mb-2.5 mt-6 first:mt-0">
       <h2 className="text-xs font-semibold uppercase tracking-wider text-ink-3">{children}</h2>
-      {action}
+      {/* Aktions-Link bekommt eine 44px hohe Trefferfläche, ohne die Zeile höher zu machen. */}
+      {action ? <div className="-my-3.5 -mr-2 flex shrink-0 items-center *:inline-flex *:min-h-11 *:items-center *:px-2">{action}</div> : null}
     </div>
   );
 }
 
 export function Skeleton({ className }: { className?: string }) {
   return <div className={cn("skeleton", className)} />;
+}
+
+/**
+ * Generische Ladeansicht für Listenseiten. Nur in loading.tsx von Segmenten ohne
+ * dynamische Unterrouten verwenden, damit notFound() in …/[id] vor dem Streaming
+ * läuft und ein echtes HTTP 404 liefert.
+ */
+export function ListSkeleton({ rows = 4 }: { rows?: number }) {
+  return (
+    <div className="animate-fade" role="status" aria-live="polite" aria-busy="true">
+      <span className="sr-only">Wird geladen…</span>
+      <div className="mb-5 min-w-0 space-y-2">
+        <Skeleton className="h-8 w-44 max-w-full" />
+        <Skeleton className="h-4 w-56 max-w-full" />
+      </div>
+      <div className="space-y-2.5">
+        {Array.from({ length: rows }, (_, i) => (
+          <div key={i} className="flex items-center gap-3 rounded-card border border-line bg-surface p-4">
+            <Skeleton className="h-10 w-10 shrink-0 rounded-full" />
+            <div className="min-w-0 flex-1 space-y-2">
+              <Skeleton className="h-4 w-2/3" />
+              <Skeleton className="h-3 w-1/3" />
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
 }
 
 /* ---------------------------------------------------------------- Neu (UX) */
@@ -228,7 +250,7 @@ export function ChecklistItem({ done, href, title, text }: { done: boolean; href
     <li>
       <Link href={href} className="press group flex items-center gap-3 rounded-control px-2 py-2.5 hover:bg-surface-2 focus-visible:outline-2 focus-visible:outline-accent">
         <span
-          className={cn("flex h-7 w-7 shrink-0 items-center justify-center rounded-full border-2 text-xs font-bold", done ? "border-ok bg-ok text-white" : "border-line text-transparent")}
+          className={cn("flex h-7 w-7 shrink-0 items-center justify-center rounded-full border-2 text-xs font-bold", done ? "border-ok bg-ok text-ok-ink" : "border-line text-transparent")}
           aria-hidden
         >
           ✓

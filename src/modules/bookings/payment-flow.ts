@@ -66,17 +66,37 @@ export async function verifyBookingPayment(bookingId: string) {
 }
 
 export async function markPaymentPaid(paymentId: string, details?: unknown) {
-  const p = await db.payment.findUnique({ where: { id: paymentId } });
+  const p = await db.payment.findUnique({ where: { id: paymentId }, include: { booking: { select: { status: true, adminNote: true } } } });
   if (!p || p.status === "PAID") return;
   const now = new Date();
+  // Zahlung nach (automatischer) Stornierung: Geld ist eingegangen, Platz aber nicht mehr reserviert.
+  const lateNote = ["CANCELLED", "REJECTED"].includes(p.booking.status) ? "Zahlung nach Stornierung eingegangen – Rückerstattung prüfen." : null;
   await db.$transaction([
     db.payment.update({ where: { id: paymentId }, data: { status: "PAID", detailsJson: JSON.stringify(details ?? null) } }),
-    db.booking.update({ where: { id: p.bookingId }, data: { paymentStatus: "PAID", paidAt: now } }),
+    db.booking.update({
+      where: { id: p.bookingId },
+      data: { paymentStatus: "PAID", paidAt: now, ...(lateNote ? { adminNote: [p.booking.adminNote, lateNote].filter(Boolean).join(" ").slice(-191) } : {}) },
+    }),
   ]);
+  if (lateNote) console.warn(`Zahlung ${paymentId} für stornierte Buchung ${p.bookingId} eingegangen.`);
 }
 
-export async function markPaidByProviderRef(providerRef: string, details?: unknown) {
-  const p = await db.payment.findFirst({ where: { providerRef } });
-  if (p) await markPaymentPaid(p.id, details);
-  return !!p;
+/**
+ * Markiert eine Zahlung anhand der Anbieter-Referenz als bezahlt – nur innerhalb des Vereins und
+ * Anbieters, dessen Webhook-Signatur geprüft wurde, und nur bei passendem Betrag und Währung.
+ */
+export async function markPaidByProviderRef(
+  scope: { tenantId: string; provider: string },
+  providerRef: string,
+  paid: { amountCents: number | null; currency: string | null },
+  details?: unknown,
+) {
+  const p = await db.payment.findFirst({ where: { providerRef, provider: scope.provider, booking: { tenantId: scope.tenantId } } });
+  if (!p) return false;
+  if (paid.amountCents !== p.amountCents || (paid.currency ?? "").toUpperCase() !== p.currency.toUpperCase()) {
+    console.warn(`Zahlung ${p.id}: Betrag/Währung aus Webhook (${paid.amountCents} ${paid.currency}) passt nicht zu ${p.amountCents} ${p.currency}.`);
+    return false;
+  }
+  await markPaymentPaid(p.id, details);
+  return true;
 }

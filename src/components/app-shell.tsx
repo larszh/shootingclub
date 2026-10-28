@@ -37,6 +37,12 @@ export function AppShell({
   const pathname = usePathname();
   const items = NAV.filter((n) => !n.module || enabledModules.includes(n.module));
   const isActive = (href: string) => (href === "/" ? pathname === "/" : pathname === href || pathname.startsWith(href + "/"));
+  // Tableiste: höchstens 5 Einträge, sonst werden die Beschriftungen auf schmalen Geräten abgeschnitten.
+  // Überzählige Module (Buchen, Beiträge) sind unter «Mehr» erreichbar.
+  const MAX_TABS = 5;
+  const tabs = items.length > MAX_TABS ? [...items.filter((n) => n.href !== "/me").slice(0, MAX_TABS - 1), items.find((n) => n.href === "/me")!] : items;
+  const overflowActive = tabs.length < items.length && items.some((n) => !tabs.includes(n) && isActive(n.href));
+  const isTabActive = (href: string) => isActive(href) || (href === "/me" && overflowActive);
   const title = tenant?.name ?? "Standchef";
 
   return (
@@ -89,9 +95,9 @@ export function AppShell({
 
         {/* Mobile-Tableiste */}
         <nav className="md:hidden fixed bottom-0 inset-x-0 z-20 border-t border-line bg-surface/95 backdrop-blur safe-bottom" aria-label="Hauptnavigation">
-          <div className="grid" style={{ gridTemplateColumns: `repeat(${items.length}, minmax(0, 1fr))` }}>
-            {items.map((n) => {
-              const active = isActive(n.href);
+          <div className="grid" style={{ gridTemplateColumns: `repeat(${tabs.length}, minmax(0, 1fr))` }}>
+            {tabs.map((n) => {
+              const active = isTabActive(n.href);
               return (
                 <Link key={n.href} href={n.href} aria-current={active ? "page" : undefined} className="press flex flex-col items-center gap-0.5 pt-2 pb-1 text-[11px] font-medium min-w-0">
                   <span className={cn("flex h-8 w-full max-w-14 items-center justify-center rounded-full transition-colors", active ? "bg-accent text-accent-ink" : "text-ink-3")}>

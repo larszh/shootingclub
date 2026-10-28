@@ -65,9 +65,15 @@ export function parseStages(raw: string): Stage[] {
   }
 }
 
-export function programTotals(stages: Stage[]) {
+/** Höchstmöglicher Wert eines Schusses; bei Zehntelwertung bis Maximalring + 0.9 (z.B. 10.9). */
+export function maxShotValue(stage: Stage, mode: string) {
+  return mode === "RINGS_DECIMAL" ? stage.maxPerShot + 0.9 : stage.maxPerShot;
+}
+
+/** Schusszahl, Maximum und Distanzen eines Programms. Das Maximum hängt vom Wertungsmodus ab. */
+export function programTotals(stages: Stage[], mode: string) {
   const shots = stages.reduce((a, s) => a + s.shots, 0);
-  const max = stages.reduce((a, s) => a + s.shots * s.maxPerShot, 0);
+  const max = Math.round(stages.reduce((a, s) => a + s.shots * maxShotValue(s, mode), 0) * 10) / 10;
   const distances = [...new Set(stages.map((s) => s.distanceM))].sort((a, b) => a - b);
   return { shots, max, distances };
 }
@@ -92,7 +98,7 @@ export function sanitizeShots(shots: unknown, stage: Stage, mode: ScoringMode): 
     const n = Number(v);
     if (!Number.isFinite(n) || n < 0) continue;
     if (mode === "HITS") out.push(n >= 1 ? 1 : 0);
-    else if (mode === "RINGS_DECIMAL") out.push(Math.min(Math.round(n * 10) / 10, stage.maxPerShot + 0.9));
+    else if (mode === "RINGS_DECIMAL") out.push(Math.min(Math.round(n * 10) / 10, maxShotValue(stage, mode)));
     else out.push(Math.min(Math.round(n), stage.maxPerShot));
   }
   return out;

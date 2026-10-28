@@ -1,6 +1,6 @@
 import "server-only";
 import { renderQrBillSvg } from "@/lib/qr-bill";
-import { addDaysFromNow } from "@/modules/billing/dates";
+import { dueDateInDays } from "@/modules/billing/dates";
 import { getBillingProfile, profileToCreditor, type BillingProfileView } from "./profile";
 import { ensureReference } from "./reference";
 import type { InvoiceDocumentProps } from "@/components/invoice-document";
@@ -40,7 +40,7 @@ export async function buildFeeInvoiceDocument(inv: Inv, tenantId: string, tenant
     title,
     number: inv.number,
     issuedAt: inv.issuedAt,
-    dueAt: opts?.reminder ? addDaysFromNow(14) : inv.dueAt,
+    dueAt: opts?.reminder ? dueDateInDays(14) : inv.dueAt,
     status: inv.status,
     currency: inv.currency,
     payee: creditor,

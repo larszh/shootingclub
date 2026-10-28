@@ -1,4 +1,4 @@
-import { requirePermission } from "@/lib/tenant";
+import { requireBillingAdmin } from "@/modules/billing/guard";
 import { Card, PageHeader } from "@/components/ui";
 import { AdminBillingTabs } from "@/modules/billing/ui/admin-tabs";
 import { CamtImport } from "@/modules/billing/ui/camt-import";
@@ -7,7 +7,7 @@ import { getBillingProfile } from "@/modules/billing/profile";
 export const metadata = { title: "Bankimport" };
 
 export default async function BillingImportPage() {
-  const ctx = await requirePermission("tenant.manage");
+  const ctx = await requireBillingAdmin({ orBookings: true });
   const profile = await getBillingProfile(ctx.tenant.id, ctx.tenant.name);
   return (
     <div>

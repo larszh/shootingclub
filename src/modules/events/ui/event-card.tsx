@@ -24,7 +24,7 @@ export function EventCard({ e, href }: { e: EventListItem; href?: string }) {
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-1.5">
             <KindChip kind={e.kind} />
-            {e.isCancelled ? <span className="inline-flex items-center gap-1 rounded-full bg-accent px-2 py-0.5 text-xs font-semibold text-accent-ink"><Ban className="h-3.5 w-3.5" /> Abgesagt</span> : null}
+            {e.isCancelled ? <span className="inline-flex items-center gap-1 rounded-full bg-danger px-2 py-0.5 text-xs font-semibold text-white"><Ban className="h-3.5 w-3.5" /> Abgesagt</span> : null}
             {!e.isCancelled && e.rsvpEnabled && !e.isPast ? <MyRsvpBadge status={e.myStatus} open={e.rsvpOpen} /> : null}
           </div>
           <h3 className={cn("mt-1 font-semibold leading-snug", e.isCancelled && "line-through decoration-1")}>{e.title}</h3>

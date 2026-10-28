@@ -34,7 +34,7 @@ export function buildScoresCsv(rows: Row[]) {
     r.isGuest ? "ja" : "nein",
     ...Array.from({ length: maxStages }, (_, i) => (i < r.stageTotals.length ? num(r.stageTotals[i]!, r.decimal) : "")),
     num(r.total, r.decimal),
-    r.max,
+    num(r.max, r.decimal),
   ]);
   return toCsv([header, ...body]);
 }
