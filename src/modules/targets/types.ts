@@ -21,6 +21,7 @@ export const TARGET_CATEGORIES = [
   { key: "games", label: "Spiele" },
   { key: "silhouettes", label: "Silhouetten" },
   { key: "zeroing", label: "Einschiessen" },
+  { key: "tactical", label: "Taktik & Polizei" },
   { key: "custom", label: "Eigene" },
 ] as const;
 export type TargetCategory = (typeof TARGET_CATEGORIES)[number]["key"];
@@ -60,6 +61,14 @@ export const targetParamsSchema = z.object({
   sighter: z.coerce.boolean().optional(),
   /** Distanzschritt in m (Distanzleiter) */
   stepM: z.coerce.number().min(1).max(100).optional(),
+  /** Anzahl Bedrohungen (Shoot/No-Shoot) */
+  threats: z.coerce.number().int().min(0).max(6).optional(),
+  /** Welches Ziel die Bedrohung ist (0 = gemäss Anordnung Nr.) */
+  threatPos: z.coerce.number().int().min(0).max(8).optional(),
+  /** Anteil Deckung in Prozent (Teildeckung, Fenster) */
+  coverPct: z.coerce.number().int().min(10).max(90).optional(),
+  /** Zonen-Legende und Kurzanleitung auf dem Blatt */
+  legend: z.coerce.boolean().optional(),
 });
 export type TargetParams = z.infer<typeof targetParamsSchema>;
 export type ParamKey = keyof TargetParams;
@@ -97,6 +106,10 @@ export const PARAM_INFO: Record<ParamKey, { kind: ParamKind; label: string; min?
   seed: { kind: "number", label: "Anordnung Nr.", min: 0, max: 9999, hint: "Andere Zahl = andere Reihenfolge" },
   sighter: { kind: "bool", label: "Probescheibe" },
   stepM: { kind: "number", label: "Distanzschritt (m)", min: 1, max: 100 },
+  threats: { kind: "number", label: "Anzahl Bedrohungen", min: 0, max: 6 },
+  threatPos: { kind: "number", label: "Bedrohung bei Nr.", min: 0, max: 8, hint: "0 = gemäss Anordnung Nr." },
+  coverPct: { kind: "number", label: "Deckung (%)", min: 10, max: 90, hint: "Wie viel der Figur verdeckt ist" },
+  legend: { kind: "bool", label: "Legende und Kurzanleitung anzeigen" },
 };
 
 export type FieldDef = {
@@ -274,6 +287,184 @@ export const TARGET_SUBJECTS = [
       { key: "variant", default: "zones", options: [{ value: "zones", label: "Zonen A/C/D" }, { value: "headchest", label: "Kopf/Brust" }, { value: "noshoot", label: "Mit NS-Zone" }] },
     ],
   },
+  // --- Taktik & Polizei --------------------------------------------------------
+  // Abstrakte, gesichtslose Figuren in Schwarz-Weiss. Zonen A (Zentrum), C, D, NS (No-Shoot).
+  {
+    key: "TAC_HOSTAGE", label: "Geiselnahme", isNew: true, category: "tactical",
+    description: "Bedroher teilweise verdeckt durch eine Geisel (grau schraffiert, NS). Nur Kopfseite und Schulter sind frei. Für Ausbildung und Training, abstrakte Darstellung.",
+    fields: [
+      { key: "variant", label: "Geisel", default: "right", options: [{ value: "right", label: "Geisel rechts" }, { value: "left", label: "Geisel links" }] },
+      { key: "count", label: "Szenen pro Blatt", default: 1, max: 4 },
+      { key: "numbers", label: "Szenen nummerieren", default: true },
+      { key: "legend", default: true },
+    ],
+    scalable: {},
+  },
+  {
+    key: "TAC_HOSTAGE_HEAD", label: "Geiselnahme: nur Kopf frei", isNew: true, category: "tactical",
+    description: "Vom Bedroher ist nur ein Teil des Kopfes neben der Geisel sichtbar – sehr hohe Schwierigkeit. Für Ausbildung und Training, abstrakte Darstellung.",
+    fields: [
+      { key: "variant", label: "Geisel", default: "left", options: [{ value: "left", label: "Geisel links" }, { value: "right", label: "Geisel rechts" }] },
+      { key: "count", label: "Szenen pro Blatt", default: 1, max: 4 },
+      { key: "numbers", label: "Szenen nummerieren", default: true },
+      { key: "legend", default: true },
+    ],
+    scalable: {},
+  },
+  {
+    key: "TAC_HOSTAGE_TWO", label: "Geiselnahme: zwei Geiseln", isNew: true, category: "tactical",
+    description: "Bedroher steht zwischen zwei Geiseln, frei ist nur der Kopf und ein schmaler Streifen. Für Ausbildung und Training, abstrakte Darstellung.",
+    fields: [
+      { key: "count", label: "Szenen pro Blatt", default: 1, max: 4 },
+      { key: "numbers", label: "Szenen nummerieren", default: true },
+      { key: "legend", default: true },
+    ],
+    scalable: {},
+  },
+  {
+    key: "TAC_HOSTAGE_KNEEL", label: "Geiselnahme: Geisel kniend", isNew: true, category: "tactical",
+    description: "Geisel kniet vor dem Bedroher und verdeckt den unteren Teil. Kopf und obere Brust sind frei. Für Ausbildung und Training, abstrakte Darstellung.",
+    fields: [
+      { key: "variant", label: "Geisel", default: "right", options: [{ value: "right", label: "leicht rechts" }, { value: "left", label: "leicht links" }] },
+      { key: "count", label: "Szenen pro Blatt", default: 1, max: 4 },
+      { key: "numbers", label: "Szenen nummerieren", default: true },
+      { key: "legend", default: true },
+    ],
+    scalable: {},
+  },
+  {
+    key: "TAC_SHOOT_NOSHOOT", label: "Shoot/No-Shoot-Entscheidung", isNew: true, category: "tactical",
+    description: "4–6 Figuren mit Symbolen in der Hand: Pistole = Bedrohung, Telefon, Portemonnaie, offene Hand oder Ausweis = keine Bedrohung. Anordnung Nr. ergibt reproduzierbare Varianten. Für Ausbildung und Training, abstrakte Darstellung.",
+    fields: [
+      { key: "count", label: "Anzahl Figuren", default: 6, min: 4, max: 6 },
+      { key: "threats", default: 2 },
+      { key: "seed", default: 1 },
+      { key: "variant", label: "Darstellung", default: "decision", options: [{ value: "decision", label: "Entscheidung (alle gleich)" }, { value: "marked", label: "Lernversion (NS markiert)" }] },
+      { key: "numbers", label: "Figuren nummerieren", default: true },
+      { key: "legend", default: true },
+    ],
+  },
+  {
+    key: "TAC_CROWD", label: "Gruppe mit Unbeteiligten", isNew: true, category: "tactical",
+    description: "5–7 Figuren in zwei oder drei gestaffelten Reihen, eine davon ist die Bedrohung (Pistolen-Symbol), alle anderen sind NS. Für Ausbildung und Training, abstrakte Darstellung.",
+    fields: [
+      { key: "count", label: "Anzahl Figuren", default: 6, min: 5, max: 7 },
+      { key: "threatPos", max: 7 },
+      { key: "seed", default: 1 },
+      { key: "numbers", label: "Figuren nummerieren", default: true },
+      { key: "legend", default: true },
+    ],
+  },
+  {
+    key: "TAC_COVER_LOW", label: "Teildeckung tief (Mauer)", isNew: true, category: "tactical",
+    description: "Figur hinter einer Mauer oder Kisten, nur der Oberkörper ist frei. Deckungshöhe einstellbar. Für Ausbildung und Training, abstrakte Darstellung.",
+    fields: [
+      { key: "variant", label: "Deckung", default: "wall", options: [{ value: "wall", label: "Mauer" }, { value: "crates", label: "Kisten" }] },
+      { key: "coverPct", default: 45 },
+      { key: "count", label: "Szenen pro Blatt", default: 1, max: 4 },
+      { key: "numbers", label: "Szenen nummerieren", default: true },
+      { key: "legend", default: true },
+    ],
+    scalable: {},
+  },
+  {
+    key: "TAC_COVER_SIDE", label: "Barrikade seitlich / Türrahmen", isNew: true, category: "tactical",
+    description: "Figur hinter einer seitlichen Deckung oder in einem Türrahmen, nur Schulter und Kopfseite sind frei. Für Ausbildung und Training, abstrakte Darstellung.",
+    fields: [
+      { key: "variant", label: "Deckung", default: "right", options: [{ value: "right", label: "rechts" }, { value: "left", label: "links" }, { value: "door", label: "Türrahmen" }] },
+      { key: "coverPct", default: 55, hint: "Bei «rechts»/«links» bleiben Kopfseite und eine Schulter immer frei" },
+      { key: "count", label: "Szenen pro Blatt", default: 1, max: 4 },
+      { key: "numbers", label: "Szenen nummerieren", default: true },
+      { key: "legend", default: true },
+    ],
+    scalable: {},
+  },
+  {
+    key: "TAC_COVER_WINDOW", label: "Fenster-Öffnung", isNew: true, category: "tactical",
+    description: "Figur hinter einer Wand, sichtbar nur durch eine Fensteröffnung – mittig, versetzt oder mit Fensterkreuz. Für Ausbildung und Training, abstrakte Darstellung.",
+    fields: [
+      { key: "variant", label: "Fenster", default: "center", options: [{ value: "center", label: "mittig" }, { value: "offset", label: "versetzt" }, { value: "cross", label: "mit Fensterkreuz" }] },
+      { key: "coverPct", label: "Wandanteil (%)", default: 55, hint: "Mehr = kleineres Fenster" },
+      { key: "count", label: "Szenen pro Blatt", default: 1, max: 4 },
+      { key: "numbers", label: "Szenen nummerieren", default: true },
+      { key: "legend", default: true },
+    ],
+    scalable: {},
+  },
+  {
+    key: "TAC_COVER_VEHICLE", label: "Fahrzeug-Deckung", isNew: true, category: "tactical",
+    description: "Figur hinter einem abstrakten Fahrzeug-Umriss: hinter dem Dach oder hinter der Motorhaube. Für Ausbildung und Training, abstrakte Darstellung.",
+    fields: [
+      { key: "variant", label: "Position", default: "roof", options: [{ value: "roof", label: "hinter dem Dach" }, { value: "hood", label: "hinter der Motorhaube" }] },
+      { key: "count", label: "Szenen pro Blatt", default: 1, max: 3 },
+      { key: "numbers", label: "Szenen nummerieren", default: true },
+      { key: "legend", default: true },
+    ],
+    scalable: {},
+  },
+  {
+    key: "TAC_HEAD_BOXES", label: "Kopfzonen-Präzision", isNew: true, category: "tactical",
+    description: "Kleine Kopfzonen als Boxen oder Dreiecke, nummeriert. Grösse frei oder per Distanz-Umrechnung (Kopfbreite 1:1 = 150 mm). Für Ausbildung und Training, abstrakte Darstellung.",
+    fields: [
+      { key: "variant", label: "Form", default: "boxes", options: [{ value: "boxes", label: "Boxen" }, { value: "triangles", label: "Dreiecke" }, { value: "mixed", label: "gemischt" }] },
+      { key: "count", label: "Anzahl Ziele", default: 6 },
+      { key: "diameterMm", label: "Breite je Ziel (mm)", hint: "Leer = so gross wie möglich (bei Distanz-Umrechnung: 150 mm)" },
+      { key: "numbers", label: "Ziele nummerieren", default: true },
+      { key: "legend", default: true },
+    ],
+    scalable: {},
+  },
+  {
+    key: "TAC_SEQUENCE", label: "Mehrfachziele Reihenfolge", isNew: true, category: "tactical",
+    description: "Nummerierte Figuren mit Muster-Code (Voll, Streifen, Punkte, Gitter, Leer) und Buchstaben für Reihenfolge-Drills ohne Farbe. Für Ausbildung und Training, abstrakte Darstellung.",
+    fields: [
+      { key: "count", label: "Anzahl Figuren", default: 5, min: 3, max: 8 },
+      { key: "seed", default: 1 },
+      { key: "numbers", label: "Reihenfolge-Nummern anzeigen", default: true },
+      { key: "legend", default: true },
+    ],
+  },
+  {
+    key: "TAC_CODED_SHAPES", label: "Formen mit Muster-Code", isNew: true, category: "tactical",
+    description: "Kreise, Quadrate, Dreiecke, Rauten und Sechsecke mit Muster, Buchstabe und Nummer – Ansage nach Form, Muster, Buchstabe oder Zahl. Für Ausbildung und Training, abstrakte Darstellung.",
+    fields: [
+      { key: "count", label: "Anzahl Ziele", default: 9, min: 4, max: 12 },
+      { key: "seed", default: 1 },
+      { key: "numbers", label: "Nummern anzeigen", default: true },
+      { key: "legend", default: true },
+    ],
+  },
+  {
+    key: "TAC_MOVER", label: "Bewegung simuliert (Vorhalt)", isNew: true, category: "tactical",
+    description: "Dieselbe Figur in versetzten Positionen: Ist-Position plus Vorhalte-Positionen +1, +2 … für das Vorhalten auf bewegte Ziele. Für Ausbildung und Training, abstrakte Darstellung.",
+    fields: [
+      { key: "variant", label: "Richtung", default: "right", options: [{ value: "right", label: "nach rechts" }, { value: "left", label: "nach links" }] },
+      { key: "count", label: "Positionen pro Bahn", default: 3, min: 2, max: 5 },
+      { key: "rows", label: "Bahnen", default: 2, max: 3 },
+      { key: "legend", default: true },
+    ],
+  },
+  {
+    key: "TAC_TURNED", label: "Verdrehte Figur (Profil)", isNew: true, category: "tactical",
+    description: "Figur seitlich (Profil) oder halb gedreht mit schmaler Trefferzone. Für Ausbildung und Training, abstrakte Darstellung.",
+    fields: [
+      { key: "variant", label: "Drehung", default: "mixed", options: [{ value: "profile", label: "Profil (90°)" }, { value: "half", label: "halb (45°)" }, { value: "mixed", label: "gemischt" }] },
+      { key: "count", label: "Figuren pro Blatt", default: 2, max: 3 },
+      { key: "numbers", label: "Figuren nummerieren", default: true },
+      { key: "legend", default: true },
+    ],
+    scalable: {},
+  },
+  {
+    key: "TAC_LOW_LIGHT", label: "Low-Light / Kontrast", isNew: true, category: "tactical",
+    description: "Dunkel: fast schwarzes Blatt mit dünnen weissen Umrissen (braucht viel Toner!). Minimal: nur feine graue Linien, kaum Tinte. Für Ausbildung und Training, abstrakte Darstellung.",
+    fields: [
+      { key: "variant", label: "Darstellung", default: "dark", options: [{ value: "dark", label: "dunkel (viel Toner)" }, { value: "minimal", label: "minimal (wenig Tinte)" }] },
+      { key: "count", label: "Anzahl Figuren", default: 3, max: 6 },
+      { key: "numbers", label: "Figuren nummerieren", default: true },
+      { key: "legend", default: true },
+    ],
+  },
   // --- Eigene -----------------------------------------------------------------
   {
     key: "UPLOAD", label: "Eigenes Sujet", description: "Hochgeladene Datei (PNG, JPG, SVG, PDF).", category: "custom",
@@ -312,6 +503,23 @@ export function subjectFields(key: string): FieldDef[] {
 export function subjectVariants(key: string): string[] {
   const f = subjectMeta(key)?.fields.find((x) => x.key === "variant");
   return f?.options ? f.options.map((o) => o.value) : [];
+}
+
+/**
+ * Abhängigkeiten zwischen Parametern, die das Schema allein nicht prüft
+ * (z.B. Bedrohung bei Nr. 7, aber nur 5 Figuren). Gibt eine deutsche Meldung oder null zurück.
+ */
+export function targetParamsIssue(subject: string, params: TargetParams): string | null {
+  const countField = subjectMeta(subject)?.fields.find((f) => f.key === "count");
+  const count = params.count ?? (typeof countField?.default === "number" ? countField.default : undefined);
+  if (count === undefined) return null;
+  if (subject === "TAC_CROWD" && params.threatPos !== undefined && params.threatPos > count) {
+    return `${PARAM_INFO.threatPos.label}: höchstens ${count} (Anzahl Figuren), 0 = gemäss Anordnung`;
+  }
+  if (subject === "TAC_SHOOT_NOSHOOT" && params.threats !== undefined && params.threats > count) {
+    return `${PARAM_INFO.threats.label}: höchstens ${count} (Anzahl Figuren)`;
+  }
+  return null;
 }
 
 export const targetInputSchema = z.object({

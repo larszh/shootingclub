@@ -2,6 +2,7 @@ import "server-only";
 import { db } from "@/lib/db";
 import { can } from "@/lib/permissions";
 import { buildIcs, bookingUid, eventUid, type IcsEvent } from "./ics";
+import { personsSuffix } from "@/modules/bookings/pricing";
 import { enabledEventTenantIds, isEventsModuleEnabled } from "./queries";
 import { kindMeta } from "./types";
 
@@ -75,7 +76,7 @@ export async function buildUserFeed(token: string, baseUrl: string) {
       : Promise.resolve([]),
     db.booking.findMany({
       where: { userId: user.id, status: { in: ["CONFIRMED", "PENDING"] }, startsAt: { gte: since } },
-      select: { id: true, startsAt: true, endsAt: true, status: true, note: true, createdAt: true, updatedAt: true, tenantId: true, resource: { select: { name: true } }, tenant: { select: { name: true } } },
+      select: { id: true, startsAt: true, endsAt: true, status: true, note: true, persons: true, isFlatRate: true, createdAt: true, updatedAt: true, tenantId: true, resource: { select: { name: true } }, tenant: { select: { name: true } } },
       orderBy: { startsAt: "asc" },
       take: 1000,
     }),
@@ -88,7 +89,7 @@ export async function buildUserFeed(token: string, baseUrl: string) {
     events.push({
       uid: bookingUid(b.id),
       summary: `Reservation: ${b.resource.name}${b.status === "PENDING" ? " (unbestätigt)" : ""}`,
-      description: [b.tenant.name, b.note].filter(Boolean).join("\n"),
+      description: [b.tenant.name, personsSuffix(b), b.note].filter(Boolean).join("\n"),
       location: `${b.resource.name}, ${b.tenant.name}`,
       url: `${baseUrl}/bookings/${b.id}`,
       startsAt: b.startsAt,

@@ -29,12 +29,14 @@ export async function GET(req: NextRequest) {
   if (to.getTime() - from.getTime() > 3 * 366 * 86_400_000) return new NextResponse("Zeitraum zu lang (max. 3 Jahre)", { status: 400 });
 
   const list = await listBookingsForExport(ctx.tenant.id, from, to);
-  const header = ["Datum", "Zeit", "Dauer (Min.)", "Ressource", "Mitglied", "E-Mail", "Status", "Grundpreis", "Rabatt", "Rabattgrund", "Total", "Währung", "Zahlungsart", "Zahlungsstatus", "Bezahlt am", "Rechnung", "QR-Referenz", "Bemerkung", "Notiz Verwaltung", "Erstellt"];
+  const header = ["Datum", "Zeit", "Dauer (Min.)", "Ressource", "Personen", "Pauschal", "Mitglied", "E-Mail", "Status", "Grundpreis", "Rabatt", "Rabattgrund", "Total", "Währung", "Zahlungsart", "Zahlungsstatus", "Bezahlt am", "Rechnung", "QR-Referenz", "Bemerkung", "Notiz Verwaltung", "Erstellt"];
   const rows = list.map((b) => [
     formatDateZurich(b.startsAt, { weekday: undefined }),
     formatTimeRange(b.startsAt, b.endsAt),
     b.durationMinutes,
     b.resource.name,
+    b.persons,
+    b.isFlatRate ? "ja" : "nein",
     b.user?.name ?? "Gast",
     b.user?.email ?? "",
     BOOKING_STATUS[b.status]?.label ?? b.status,

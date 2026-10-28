@@ -80,8 +80,9 @@ export default async function StatsPage({ searchParams }: { searchParams: Promis
           <SectionTitle>Pro Programm</SectionTitle>
           <Card className="animate-rise divide-y divide-line overflow-hidden">
             {stats.programs.map((p) => {
-              const pct = p.max ? Math.min(100, Math.round((p.best / p.max) * 100)) : 0;
-              const avgPct = p.max ? Math.min(100, Math.round((p.avg / p.max) * 100)) : 0;
+              // Auf 0–100 % begrenzen (Zonenwertung kann negative Totale haben)
+              const pct = p.max ? Math.max(0, Math.min(100, Math.round((p.best / p.max) * 100))) : 0;
+              const avgPct = p.max ? Math.max(0, Math.min(100, Math.round((p.avg / p.max) * 100))) : 0;
               return (
                 <Link key={p.programId} href={`/scores/stats?programId=${p.programId}`} scroll={false}
                   className={cn("block px-4 py-3 hover:bg-surface-2 transition-colors", p.programId === selectedId && "bg-surface-2")}>

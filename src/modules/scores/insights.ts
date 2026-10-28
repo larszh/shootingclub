@@ -124,7 +124,7 @@ export async function getLeaderboard(ctx: Ctx, programId: string, period: Period
     program: { id: program.id, name: program.name, scoringMode: program.scoringMode, max: program.totals.max },
     decimal: program.scoringMode === "RINGS_DECIMAL",
     showTopShots: program.scoringMode !== "HITS",
-    topShotsLabel: program.stages.every((st) => st.maxPerShot === 10) ? "Zehner" : "Höchstwerte",
+    topShotsLabel: program.scoringMode === "ZONES" ? "× beste Zone" : program.stages.every((st) => st.maxPerShot === 10) ? "Zehner" : "Höchstwerte",
     period,
     periodLabel: range.label,
     entries,
@@ -231,7 +231,8 @@ export async function getUserScoreStats(ctx: Ctx) {
       if (prog.scoringMode === "HITS") {
         d.hitShots += shots.length;
         d.hits += shots.filter((x) => x >= 1).length;
-      } else {
+      } else if (prog.scoringMode !== "ZONES") {
+        // Zonenpunkte (inkl. Strafpunkte) sind keine Ringe und fliessen nicht in den Ringschnitt ein
         d.ringShots += shots.length;
         d.ringSum += shots.reduce((a, b) => a + b, 0);
       }

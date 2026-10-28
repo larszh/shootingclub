@@ -24,7 +24,7 @@ export default async function ResourcesPage() {
             <div key={r.id} className="flex items-center gap-3 px-4 py-3">
               <div className="min-w-0 flex-1">
                 <div className="font-medium flex items-center gap-2">{r.name}{!r.isActive ? <Badge tone="warn">inaktiv</Badge> : null}{r.durationOptions ? <Badge tone="outline">eigene Preise</Badge> : null}</div>
-                <div className="text-xs text-ink-3">{resourceKindLabel(r.kind)} · {r.capacity} {r.capacity === 1 ? "Platz" : "Plätze"}{r.description ? ` · ${r.description}` : ""}</div>
+                <div className="text-xs text-ink-3">{resourceKindLabel(r.kind)} · {r.capacity} {r.capacity === 1 ? "Platz" : "Plätze"}{r.maxPersons ? ` · max. ${r.maxPersons} Pers.` : ""}{r.description ? ` · ${r.description}` : ""}</div>
               </div>
               <Link href={`/admin/bookings/resources/${r.id}/edit`} className="h-9 w-9 rounded-full flex items-center justify-center text-ink-3 hover:bg-surface-2" aria-label="Bearbeiten"><Pencil className="h-4 w-4" /></Link>
               <ResourceRowActions id={r.id} isActive={r.isActive} />

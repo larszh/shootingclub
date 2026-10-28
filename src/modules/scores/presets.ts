@@ -1,4 +1,49 @@
-import type { ProgramInput } from "./types";
+import { DEFAULT_ZONES, type ProgramInput, type Stage, type Zone } from "./types";
+
+// ---------------------------------------------------------------------------
+// Zonen für taktische Programme (Wertung «ZONES»). Jede Zone hat einen eigenen Punktwert.
+// ---------------------------------------------------------------------------
+
+/** Geiselnahme: nur der Kopfbereich des Täters zählt voll, Geisel getroffen ist ein schwerer Fehler. */
+const HOSTAGE_ZONES: Zone[] = [
+  { key: "K", label: "Kopfzone Täter", points: 5 },
+  { key: "A", label: "Rumpf Täter", points: 2 },
+  { key: "M", label: "Fehl", points: 0 },
+  { key: "VF", label: "Verfahrensfehler", points: -5 },
+  { key: "NS", label: "Geisel getroffen", points: -20 },
+];
+
+/** Shoot/No-Shoot: Bedrohung treffen, Unbeteiligte auf keinen Fall. */
+const SHOOT_NO_SHOOT_ZONES: Zone[] = [
+  { key: "T", label: "Bedrohung getroffen", points: 5 },
+  { key: "M", label: "Fehl", points: 0 },
+  { key: "VF", label: "Falsche Entscheidung (nicht geschossen)", points: -5 },
+  { key: "NS", label: "Unbeteiligte getroffen", points: -10 },
+];
+
+/** Kopf/Brust-Silhouette. */
+const HEAD_CHEST_ZONES: Zone[] = [
+  { key: "K", label: "Kopf", points: 5 },
+  { key: "B", label: "Brust", points: 3 },
+  { key: "R", label: "Rest Silhouette", points: 1 },
+  { key: "M", label: "Fehl", points: 0 },
+  { key: "NS", label: "Unbeteiligte getroffen", points: -10 },
+];
+
+/** Serie mit Zonenwertung; maxPerShot = höchste Zone. */
+function zoneStage(stage: Omit<Stage, "maxPerShot" | "zones">, zones: Zone[] = DEFAULT_ZONES): Stage {
+  return { ...stage, zones: zones.map((z) => ({ ...z })), maxPerShot: Math.max(1, ...zones.map((z) => z.points)) };
+}
+
+/** Serie mit Treffer/Fehler-Wertung. */
+function hitStage(stage: Omit<Stage, "maxPerShot">): Stage {
+  return { ...stage, maxPerShot: 1 };
+}
+
+/** n Serien à `shots` Schuss mit Ringwertung. */
+function ringSeries(n: number, base: Omit<Stage, "name">, prefix = "Serie", offset = 0): Stage[] {
+  return Array.from({ length: n }, (_, i) => ({ ...base, name: `${prefix} ${i + 1 + offset}` }));
+}
 
 /**
  * Globale Standardprogramme. Werden beim Seed als globale Programme (tenantId = null)
@@ -267,6 +312,254 @@ export const PROGRAM_PRESETS: ProgramInput[] = [
       { name: "Durchgang 1", distanceM: 7, shots: 4, maxPerShot: 1, timeLimitSec: 8, position: "STANDING", note: "2 Schuss – Nachladen – 2 Schuss" },
       { name: "Durchgang 2", distanceM: 7, shots: 4, maxPerShot: 1, timeLimitSec: 7, position: "STANDING", note: "2 Schuss – Nachladen – 2 Schuss" },
       { name: "Durchgang 3", distanceM: 10, shots: 4, maxPerShot: 1, timeLimitSec: 8, position: "STANDING", note: "2 Schuss – Nachladen – 2 Schuss" },
+    ],
+  },
+  // ---------------------------------------------------------------------------
+  // Sportprogramme (nachempfunden)
+  // ---------------------------------------------------------------------------
+  {
+    name: "Pistole 25 m Sport (30+30, nachempfunden)",
+    description: "An das Sportpistolenprogramm angelehnt: 30 Schuss Präzision (6 Serien à 5 Schuss, je 5 Minuten) und 30 Schuss Duell (6 Serien à 5 Schuss, 3 s sichtbar / 7 s verdeckt). Massgebend ist das aktuelle Reglement.",
+    discipline: "PISTOL",
+    weaponNote: "Sportpistole .22 lr",
+    scoringMode: "RINGS_INT",
+    stages: [
+      ...ringSeries(6, { distanceM: 25, shots: 5, maxPerShot: 10, timeLimitSec: 300, position: "STANDING", targetName: "Präzisionsscheibe 25 m" }, "Präzision"),
+      ...ringSeries(6, { distanceM: 25, shots: 5, maxPerShot: 10, position: "STANDING", targetName: "Schnellfeuerscheibe", note: "Je Schuss 3 s sichtbar, 7 s verdeckt" }, "Duell"),
+    ],
+  },
+  {
+    name: "Zentralfeuer 30+30 (nachempfunden)",
+    description: "An das Zentralfeuerprogramm angelehnt: 30 Schuss Präzision und 30 Schuss Duell auf 25 m mit Zentralfeuerpistole. Massgebend ist das aktuelle Reglement.",
+    discipline: "PISTOL",
+    weaponNote: "Zentralfeuerpistole .32 bis .38",
+    scoringMode: "RINGS_INT",
+    stages: [
+      ...ringSeries(6, { distanceM: 25, shots: 5, maxPerShot: 10, timeLimitSec: 300, position: "STANDING", targetName: "Präzisionsscheibe 25 m" }, "Präzision"),
+      ...ringSeries(6, { distanceM: 25, shots: 5, maxPerShot: 10, position: "STANDING", targetName: "Schnellfeuerscheibe", note: "Je Schuss 3 s sichtbar, 7 s verdeckt" }, "Duell"),
+    ],
+  },
+  {
+    name: "Standardpistole 150/20/10 s (nachempfunden)",
+    description: "An die Standardpistole angelehnt: je 4 Serien à 5 Schuss in 150 s, 20 s und 10 s auf 25 m. Massgebend ist das aktuelle Reglement.",
+    discipline: "PISTOL",
+    weaponNote: "Standardpistole .22 lr",
+    scoringMode: "RINGS_INT",
+    stages: [
+      ...ringSeries(4, { distanceM: 25, shots: 5, maxPerShot: 10, timeLimitSec: 150, position: "STANDING", targetName: "Präzisionsscheibe 25 m" }, "150 s – Serie"),
+      ...ringSeries(4, { distanceM: 25, shots: 5, maxPerShot: 10, timeLimitSec: 20, position: "STANDING", targetName: "Präzisionsscheibe 25 m" }, "20 s – Serie"),
+      ...ringSeries(4, { distanceM: 25, shots: 5, maxPerShot: 10, timeLimitSec: 10, position: "STANDING", targetName: "Präzisionsscheibe 25 m" }, "10 s – Serie"),
+    ],
+  },
+  {
+    name: "Schnellfeuerpistole 25 m 8/6/4 s (nachempfunden)",
+    description: "An die Schnellfeuerpistole angelehnt: je 2 Serien à 5 Schuss auf fünf Scheiben in 8 s, 6 s und 4 s. Massgebend ist das aktuelle Reglement.",
+    discipline: "PISTOL",
+    weaponNote: "Schnellfeuerpistole .22 kurz",
+    scoringMode: "RINGS_INT",
+    stages: [
+      ...ringSeries(2, { distanceM: 25, shots: 5, maxPerShot: 10, timeLimitSec: 8, position: "STANDING", targetName: "Schnellfeuer 5 Marken" }, "8 s – Serie"),
+      ...ringSeries(2, { distanceM: 25, shots: 5, maxPerShot: 10, timeLimitSec: 6, position: "STANDING", targetName: "Schnellfeuer 5 Marken" }, "6 s – Serie"),
+      ...ringSeries(2, { distanceM: 25, shots: 5, maxPerShot: 10, timeLimitSec: 4, position: "STANDING", targetName: "Schnellfeuer 5 Marken" }, "4 s – Serie"),
+    ],
+  },
+  {
+    name: "Gewehr 50 m Dreistellung (nachempfunden, Zehntel)",
+    description: "Kleinkaliber 50 m in drei Stellungen mit Zehntelwertung: je 2 Serien à 10 Schuss kniend, liegend und stehend. Massgebend ist das aktuelle Reglement.",
+    discipline: "RIFLE",
+    weaponNote: "Kleinkaliber .22 lr",
+    scoringMode: "RINGS_DECIMAL",
+    stages: [
+      ...ringSeries(2, { distanceM: 50, shots: 10, maxPerShot: 10, position: "KNEELING", targetName: "KK-Scheibe 50 m" }, "Kniend"),
+      ...ringSeries(2, { distanceM: 50, shots: 10, maxPerShot: 10, position: "PRONE", targetName: "KK-Scheibe 50 m" }, "Liegend"),
+      ...ringSeries(2, { distanceM: 50, shots: 10, maxPerShot: 10, position: "STANDING", targetName: "KK-Scheibe 50 m" }, "Stehend"),
+    ],
+  },
+  {
+    name: "Gewehr 300 m liegend – 60 Schuss (nachempfunden)",
+    description: "Sportgewehr 300 m liegend, 6 Serien à 10 Schuss auf die A10-Scheibe. Massgebend ist das aktuelle Reglement.",
+    discipline: "RIFLE",
+    weaponNote: "Sport- oder Standardgewehr",
+    scoringMode: "RINGS_INT",
+    stages: ringSeries(6, { distanceM: 300, shots: 10, maxPerShot: 10, position: "PRONE", targetName: "Scheibe A10" }),
+  },
+  // ---------------------------------------------------------------------------
+  // Taktik / Behörden: Trainingsprogramme für Polizei, Sicherheitsdienste und Ausbildung.
+  // Zonenwertung mit Strafpunkten (z.B. Geisel getroffen) oder Treffer/Fehler mit Zeitlimit.
+  // Nur unter Aufsicht einer ausgebildeten Schiessleitung durchführen.
+  // ---------------------------------------------------------------------------
+  {
+    name: "Geiselnahme – Präzision unter Zeit",
+    description: "Täter hinter einer Geisel: nur der freie Kopfbereich darf getroffen werden. Präzision vor Tempo – eine getroffene Geisel kostet 20 Punkte.",
+    discipline: "TACTICAL",
+    weaponNote: "Dienstpistole",
+    scoringMode: "ZONES",
+    stages: [
+      zoneStage({ name: "Geisel links, 5 m", distanceM: 5, shots: 2, timeLimitSec: 5, position: "STANDING", targetName: "Geiselnahme Geisel links", note: "Aus Bereitschaftshaltung, 2 Schuss Kopfzone" }, HOSTAGE_ZONES),
+      zoneStage({ name: "Geisel rechts, 5 m", distanceM: 5, shots: 2, timeLimitSec: 5, position: "STANDING", targetName: "Geiselnahme Geisel rechts", note: "Aus Bereitschaftshaltung, 2 Schuss Kopfzone" }, HOSTAGE_ZONES),
+      zoneStage({ name: "Geisel rechts, 7 m", distanceM: 7, shots: 2, timeLimitSec: 6, position: "STANDING", targetName: "Geiselnahme Geisel rechts" }, HOSTAGE_ZONES),
+      zoneStage({ name: "Geisel links, 10 m kniend", distanceM: 10, shots: 2, timeLimitSec: 8, position: "KNEELING", targetName: "Geiselnahme Geisel links" }, HOSTAGE_ZONES),
+    ],
+  },
+  {
+    name: "Shoot/No-Shoot Entscheidung",
+    description: "Sechs Ziele, Bedrohungen und Unbeteiligte gemischt. Die Schiessleitung sagt die Bedrohungen erst beim Startsignal an. Nicht geschossen auf eine Bedrohung = Verfahrensfehler.",
+    discipline: "TACTICAL",
+    weaponNote: "Dienstpistole",
+    scoringMode: "ZONES",
+    stages: [
+      zoneStage({ name: "Durchgang 1", distanceM: 7, shots: 4, timeLimitSec: 8, position: "STANDING", targetName: "Shoot/No-Shoot 6 Figuren", note: "Ansage beim Startsignal, je 2 Schuss pro Bedrohung" }, SHOOT_NO_SHOOT_ZONES),
+      zoneStage({ name: "Durchgang 2", distanceM: 7, shots: 4, timeLimitSec: 7, position: "STANDING", targetName: "Shoot/No-Shoot 6 Figuren", note: "Neue Ansage" }, SHOOT_NO_SHOOT_ZONES),
+      zoneStage({ name: "Durchgang 3", distanceM: 10, shots: 6, timeLimitSec: 10, position: "STANDING", targetName: "Shoot/No-Shoot 6 Figuren", note: "Drei Bedrohungen, je 2 Schuss" }, SHOOT_NO_SHOOT_ZONES),
+    ],
+  },
+  {
+    name: "Teildeckung links/rechts",
+    description: "Schiessen aus der Deckung: Barrikade links und rechts umgehen, möglichst wenig Körper zeigen. Wertung nach Trefferzonen A/C/D.",
+    discipline: "TACTICAL",
+    weaponNote: "Dienstpistole",
+    scoringMode: "ZONES",
+    stages: [
+      zoneStage({ name: "Deckung links, stehend", distanceM: 10, shots: 4, timeLimitSec: 8, position: "STANDING", targetName: "Barrikade seitlich", note: "Links an der Barrikade vorbei" }),
+      zoneStage({ name: "Deckung rechts, stehend", distanceM: 10, shots: 4, timeLimitSec: 8, position: "STANDING", targetName: "Barrikade seitlich", note: "Rechts an der Barrikade vorbei" }),
+      zoneStage({ name: "Deckung links, kniend", distanceM: 10, shots: 4, timeLimitSec: 10, position: "KNEELING", targetName: "Barrikade seitlich" }),
+      zoneStage({ name: "Deckung rechts, kniend", distanceM: 10, shots: 4, timeLimitSec: 10, position: "KNEELING", targetName: "Barrikade seitlich" }),
+    ],
+  },
+  {
+    name: "Distanzwechsel 3–7–15 m",
+    description: "Drei Distanzen in einem Ablauf: schnell auf 3 m, kontrolliert auf 7 m, präzise auf 15 m. Treffer/Fehler mit Zeitlimit.",
+    discipline: "TACTICAL",
+    weaponNote: "Dienstpistole",
+    scoringMode: "HITS",
+    stages: [
+      hitStage({ name: "3 m – aus der Hüfte", distanceM: 3, shots: 4, timeLimitSec: 4, position: "STANDING", targetName: "Oval-Silhouette", note: "Waffe nahe am Körper" }),
+      hitStage({ name: "7 m", distanceM: 7, shots: 4, timeLimitSec: 6, position: "STANDING", targetName: "Oval-Silhouette" }),
+      hitStage({ name: "15 m", distanceM: 15, shots: 4, timeLimitSec: 10, position: "STANDING", targetName: "Oval-Silhouette" }),
+    ],
+  },
+  {
+    name: "Mehrfachziele Reihenfolge",
+    description: "Drei Ziele in der angesagten Reihenfolge bekämpfen. Falsche Reihenfolge = Verfahrensfehler (−5 pro Fehler).",
+    discipline: "TACTICAL",
+    weaponNote: "Dienstpistole",
+    scoringMode: "ZONES",
+    stages: [
+      zoneStage({ name: "Links – Mitte – Rechts", distanceM: 7, shots: 6, timeLimitSec: 8, position: "STANDING", targetName: "Mehrfachziele Reihenfolge", note: "Je 2 Schuss pro Ziel" }),
+      zoneStage({ name: "Rechts – Links – Mitte", distanceM: 7, shots: 6, timeLimitSec: 8, position: "STANDING", targetName: "Mehrfachziele Reihenfolge", note: "Je 2 Schuss pro Ziel" }),
+      zoneStage({ name: "Ansage durch Schiessleitung", distanceM: 10, shots: 6, timeLimitSec: 10, position: "STANDING", targetName: "Mehrfachziele Reihenfolge", note: "Reihenfolge erst beim Startsignal" }),
+    ],
+  },
+  {
+    name: "Nachladen und Störung beheben",
+    description: "Ladehemmung und leeres Magazin unter Zeit: Störung erkennen, beheben, weiterschiessen. Übungspatronen (Dummies) vorher in die Magazine mischen.",
+    discipline: "TACTICAL",
+    weaponNote: "Dienstpistole, Übungspatronen",
+    scoringMode: "HITS",
+    stages: [
+      hitStage({ name: "Störung Typ 1", distanceM: 7, shots: 4, timeLimitSec: 8, position: "STANDING", note: "Dummy im Magazin: Antippen – Repetieren – weiter" }),
+      hitStage({ name: "Leeres Magazin", distanceM: 7, shots: 4, timeLimitSec: 8, position: "STANDING", note: "2 Schuss – Nachladen aus der Leerstellung – 2 Schuss" }),
+      hitStage({ name: "Taktisches Nachladen", distanceM: 10, shots: 4, timeLimitSec: 10, position: "KNEELING", note: "Hinter Deckung nachladen, Magazin sichern" }),
+    ],
+  },
+  {
+    name: "Schwache Hand",
+    description: "Einhändig mit der schwachen Hand, z.B. bei verletzter Schusshand. Mit Zonenwertung, damit Präzision zählt.",
+    discipline: "TACTICAL",
+    weaponNote: "Dienstpistole",
+    scoringMode: "ZONES",
+    stages: [
+      zoneStage({ name: "Schwache Hand, 5 m", distanceM: 5, shots: 5, timeLimitSec: 10, position: "STANDING", targetName: "Silhouette Zonen A/C/D", note: "Waffe in der schwachen Hand" }),
+      zoneStage({ name: "Schwache Hand, 7 m", distanceM: 7, shots: 5, timeLimitSec: 12, position: "STANDING", targetName: "Silhouette Zonen A/C/D" }),
+      zoneStage({ name: "Handwechsel unter Zeit", distanceM: 7, shots: 4, timeLimitSec: 12, position: "STANDING", targetName: "Silhouette Zonen A/C/D", note: "2 Schuss starke Hand – Wechsel – 2 Schuss schwache Hand" }),
+    ],
+  },
+  {
+    name: "Bewegung seitlich",
+    description: "Schiessen während seitlicher Bewegung: Tempo so wählen, dass die Treffer noch sitzen. Treffer/Fehler mit Zeitlimit.",
+    discipline: "TACTICAL",
+    weaponNote: "Dienstpistole",
+    scoringMode: "HITS",
+    stages: [
+      hitStage({ name: "Nach links", distanceM: 7, shots: 4, timeLimitSec: 8, position: "MOVING", targetName: "Oval-Silhouette", note: "3 m seitlich gehen" }),
+      hitStage({ name: "Nach rechts", distanceM: 7, shots: 4, timeLimitSec: 8, position: "MOVING", targetName: "Oval-Silhouette", note: "3 m seitlich gehen" }),
+      hitStage({ name: "Hin und zurück", distanceM: 10, shots: 6, timeLimitSec: 14, position: "MOVING", targetName: "Oval-Silhouette" }),
+    ],
+  },
+  {
+    name: "Kopfzone 5 m",
+    description: "Kurze Distanz, kleine Zone: kontrollierte Einzelschüsse auf den Kopfbereich. Wertung Kopf/Brust mit Strafpunkten für Unbeteiligte.",
+    discipline: "TACTICAL",
+    weaponNote: "Dienstpistole",
+    scoringMode: "ZONES",
+    stages: [
+      zoneStage({ name: "Einzelschüsse", distanceM: 5, shots: 5, timeLimitSec: 15, position: "STANDING", targetName: "Silhouette Kopf/Brust" }, HEAD_CHEST_ZONES),
+      zoneStage({ name: "Je 3 s", distanceM: 5, shots: 5, timeLimitSec: 15, position: "STANDING", targetName: "Silhouette Kopf/Brust", note: "Aus Bereitschaftshaltung, 3 s pro Schuss" }, HEAD_CHEST_ZONES),
+      zoneStage({ name: "Neben Unbeteiligter", distanceM: 5, shots: 4, timeLimitSec: 8, position: "STANDING", targetName: "Silhouette mit NS-Zone" }, HEAD_CHEST_ZONES),
+    ],
+  },
+  {
+    name: "Kontrolliertes Paar und Kopfschuss",
+    description: "Zwei Schuss Brust, ein Schuss Kopf. Trainiert den Wechsel von Tempo zu Präzision auf dieselbe Silhouette.",
+    discipline: "TACTICAL",
+    weaponNote: "Dienstpistole",
+    scoringMode: "ZONES",
+    stages: [
+      zoneStage({ name: "Durchgang 1", distanceM: 5, shots: 3, timeLimitSec: 4, position: "STANDING", targetName: "Silhouette Kopf/Brust", note: "Brust – Brust – Kopf" }, HEAD_CHEST_ZONES),
+      zoneStage({ name: "Durchgang 2", distanceM: 7, shots: 3, timeLimitSec: 5, position: "STANDING", targetName: "Silhouette Kopf/Brust", note: "Brust – Brust – Kopf" }, HEAD_CHEST_ZONES),
+      zoneStage({ name: "Durchgang 3", distanceM: 7, shots: 3, timeLimitSec: 5, position: "STANDING", targetName: "Silhouette Kopf/Brust", note: "Brust – Brust – Kopf" }, HEAD_CHEST_ZONES),
+      zoneStage({ name: "Durchgang 4", distanceM: 10, shots: 3, timeLimitSec: 6, position: "STANDING", targetName: "Silhouette Kopf/Brust", note: "Brust – Brust – Kopf" }, HEAD_CHEST_ZONES),
+    ],
+  },
+  {
+    name: "Low-Light Grundlagen",
+    description: "Schiessen bei wenig Licht mit Taschenlampe. Halle abdunkeln, Lampe in der schwachen Hand. Treffer/Fehler mit Zeitlimit.",
+    discipline: "TACTICAL",
+    weaponNote: "Dienstpistole, Taschenlampe",
+    scoringMode: "HITS",
+    stages: [
+      hitStage({ name: "Lampe an, 5 m", distanceM: 5, shots: 4, timeLimitSec: 8, position: "STANDING", targetName: "Low-Light dunkel", note: "Lampe dauernd an" }),
+      hitStage({ name: "Lampe kurz, 7 m", distanceM: 7, shots: 4, timeLimitSec: 10, position: "STANDING", targetName: "Low-Light dunkel", note: "Ziel nur kurz beleuchten, dann Position wechseln" }),
+      hitStage({ name: "Identifizieren, 7 m", distanceM: 7, shots: 4, timeLimitSec: 12, position: "STANDING", targetName: "Shoot/No-Shoot 6 Figuren", note: "Erst identifizieren, dann schiessen" }),
+    ],
+  },
+  {
+    name: "Qualifikation Dienstpistole (nachempfunden)",
+    description: "An gängige Qualifikationen für Dienstpistolen angelehnt: 30 Schuss von 3 bis 15 m mit Zonenwertung A/C/D. Kein offizielles Programm – massgebend sind die Vorgaben des eigenen Korps.",
+    discipline: "TACTICAL",
+    weaponNote: "Dienstpistole",
+    scoringMode: "ZONES",
+    stages: [
+      zoneStage({ name: "3 m, einhändig", distanceM: 3, shots: 4, timeLimitSec: 4, position: "STANDING", targetName: "Silhouette Zonen A/C/D", note: "Starke Hand" }),
+      zoneStage({ name: "5 m", distanceM: 5, shots: 6, timeLimitSec: 6, position: "STANDING", targetName: "Silhouette Zonen A/C/D" }),
+      zoneStage({ name: "7 m mit Nachladen", distanceM: 7, shots: 6, timeLimitSec: 12, position: "STANDING", targetName: "Silhouette Zonen A/C/D", note: "3 Schuss – Nachladen – 3 Schuss" }),
+      zoneStage({ name: "10 m kniend", distanceM: 10, shots: 6, timeLimitSec: 12, position: "KNEELING", targetName: "Silhouette Zonen A/C/D" }),
+      zoneStage({ name: "15 m aus Deckung", distanceM: 15, shots: 8, timeLimitSec: 20, position: "STANDING", targetName: "Silhouette Zonen A/C/D", note: "Je 4 Schuss links und rechts der Barrikade" }),
+    ],
+  },
+  {
+    name: "Teamübung 2 Schützen",
+    description: "Zwei Schützen arbeiten zusammen: Kommunikation, Feuerverteilung und Nachladen abwechselnd. Beide Schützen als Teilnehmer erfassen.",
+    discipline: "TACTICAL",
+    weaponNote: "Dienstpistole",
+    scoringMode: "ZONES",
+    stages: [
+      zoneStage({ name: "Feuerverteilung", distanceM: 7, shots: 4, timeLimitSec: 10, position: "STANDING", targetName: "Silhouette Zonen A/C/D", note: "Jeder Schütze seine Seite, 2 Ziele je 2 Schuss" }),
+      zoneStage({ name: "Nachladen im Wechsel", distanceM: 10, shots: 6, timeLimitSec: 20, position: "STANDING", targetName: "Silhouette Zonen A/C/D", note: "«Nachladen!» rufen, Partner deckt" }),
+      zoneStage({ name: "Shoot/No-Shoot zu zweit", distanceM: 10, shots: 4, timeLimitSec: 12, position: "KNEELING", targetName: "Shoot/No-Shoot 6 Figuren", note: "Ansage durch Schiessleitung" }, SHOOT_NO_SHOOT_ZONES),
+    ],
+  },
+  {
+    name: "Stress-Parcours Behörden",
+    description: "Kurzer Parcours mit Bewegung, Deckung und Unbeteiligten. Erst nach den Grundlagenübungen schiessen.",
+    discipline: "TACTICAL",
+    weaponNote: "Dienstpistole",
+    scoringMode: "ZONES",
+    stages: [
+      zoneStage({ name: "Start nach Belastung", distanceM: 7, shots: 4, timeLimitSec: 10, position: "STANDING", targetName: "Silhouette Zonen A/C/D", note: "Vorher 20 Liegestütze oder Sprint" }),
+      zoneStage({ name: "Vorrücken zur Deckung", distanceM: 10, shots: 4, timeLimitSec: 12, position: "MOVING", targetName: "Silhouette mit NS-Zone" }),
+      zoneStage({ name: "Geisel aus der Deckung", distanceM: 7, shots: 2, timeLimitSec: 6, position: "KNEELING", targetName: "Geiselnahme Geisel rechts" }, HOSTAGE_ZONES),
+      zoneStage({ name: "Abschluss", distanceM: 5, shots: 4, timeLimitSec: 6, position: "STANDING", targetName: "Shoot/No-Shoot 6 Figuren" }, SHOOT_NO_SHOOT_ZONES),
     ],
   },
   {

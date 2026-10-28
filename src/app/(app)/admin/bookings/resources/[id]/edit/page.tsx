@@ -14,7 +14,7 @@ export default async function EditResourcePage({ params }: { params: Promise<{ i
   return (
     <div>
       <PageHeader title={resource.name} subtitle="Ressource bearbeiten" back={{ href: "/admin/bookings/resources", label: "Ressourcen" }} />
-      <ResourceForm initial={resource} tenantDurations={settings.durationOptions} currency={settings.currency} />
+      <ResourceForm initial={resource} tenant={{ durationOptions: settings.durationOptions, currency: settings.currency, personPricing: settings.personPricing, maxPersons: settings.maxPersons, flatExclusive: settings.flatExclusive, capacityPerPerson: settings.capacityPerPerson }} />
     </div>
   );
 }

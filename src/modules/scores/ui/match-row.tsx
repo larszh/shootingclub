@@ -19,7 +19,8 @@ export function againHref(m: MatchListItem, meId: string) {
 
 export function MatchRow({ m, againFor }: { m: MatchListItem; /** Benutzer-ID: zeigt den «Nochmals»-Knopf */ againFor?: string }) {
   const decimal = m.program.scoringMode === "RINGS_DECIMAL";
-  const best = Math.max(0, ...m.participants.map((p) => p.total));
+  // Bestes Total (kann bei Zonenwertung mit Strafpunkten negativ sein)
+  const best = m.participants.length ? Math.max(...m.participants.map((p) => p.total)) : 0;
   const shown = m.participants.slice(0, 4);
   const body = (
     <div className="flex items-center justify-between gap-3">

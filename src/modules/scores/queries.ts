@@ -76,6 +76,11 @@ export async function getProgram(ctx: AppContext & { tenant: NonNullable<AppCont
   return toView(p, setting?.hidden ?? false, !!fav);
 }
 
+/** Offene Durchgänge des Vereins mit diesem Programm (Hinweis beim Bearbeiten). */
+export async function countOpenMatchesForProgram(ctx: AppContext & { tenant: NonNullable<AppContext["tenant"]> }, programId: string) {
+  return db.match.count({ where: { tenantId: ctx.tenant.id, programId, status: "OPEN" } });
+}
+
 export async function listGlobalPrograms() {
   const programs = await db.program.findMany({ where: { tenantId: null }, orderBy: { name: "asc" } });
   return programs.map((p) => toView(p, false, false));

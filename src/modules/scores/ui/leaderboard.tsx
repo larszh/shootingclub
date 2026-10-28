@@ -48,7 +48,7 @@ function Row({ e, board }: { e: LeaderboardEntry; board: Leaderboard }) {
         <div className="text-xs text-ink-3 truncate">
           {formatDay(e.date)}
           {e.attempts > 1 ? ` · ${e.attempts} Durchgänge` : ""}
-          {board.showTopShots && e.topShots ? ` · ${e.topShots} ${board.topShotsLabel}` : ""}
+          {board.showTopShots && e.topShots ? ` · ${e.topShots}${board.topShotsLabel.startsWith("×") ? "" : " "}${board.topShotsLabel}` : ""}
         </div>
       </div>
       <div className="text-right shrink-0">

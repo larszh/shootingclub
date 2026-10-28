@@ -11,8 +11,8 @@ import { zurichToUtc } from "@/lib/time";
 import { parseMoneyToCents } from "@/lib/money";
 import type { Prisma } from "@/generated/prisma/client";
 import { getBookingSettings, getResource, getSlotsForDay, expireUnpaidOnlineBookings, type BookingSettingsView, type ResourceView } from "./queries";
-import { quotePrice } from "./pricing";
-import { isCalendarDate, PROVIDER_FIELDS, providerKeys, resourceSchema, settingsSchema, type DurationOption, type PaymentProviderKey } from "./types";
+import { maxPersonsFor, planRequest, quotePrice } from "./pricing";
+import { isCalendarDate, PERSONS_LIMIT, PROVIDER_FIELDS, providerKeys, resourceSchema, settingsSchema, type DurationOption, type PaymentProviderKey } from "./types";
 import { ensureInvoiceForBooking } from "./invoice";
 import { startOnlinePayment } from "./payment-flow";
 
@@ -30,19 +30,23 @@ async function requireBookingsAdmin() {
 
 const SLOT_TAKEN = "Dieser Termin wurde soeben vergeben. Bitte eine andere Zeit wählen.";
 
+function personsLimitError(max: number) {
+  return `Höchstens ${max} ${max === 1 ? "Person" : "Personen"} pro Buchung.`;
+}
+
 /**
  * Prüft die Verfügbarkeit erneut und legt die Buchung im selben Schritt an. Die Ressourcen-Zeile
  * wird dafür gesperrt, damit parallele Anfragen die Kapazität nicht gemeinsam überschreiten.
  * Liefert null, wenn der Termin inzwischen belegt ist.
  */
 async function createBookingIfFree(
-  slotQuery: { tenantId: string; resource: ResourceView; settings: BookingSettingsView; date: string; time: string; durationMinutes: number; bypassLimits?: boolean },
+  slotQuery: { tenantId: string; resource: ResourceView; settings: BookingSettingsView; date: string; time: string; durationMinutes: number; requestedUnits: number; bypassLimits?: boolean },
   data: Prisma.BookingUncheckedCreateInput,
 ) {
-  const { tenantId, resource, settings, date, time, durationMinutes, bypassLimits } = slotQuery;
+  const { tenantId, resource, settings, date, time, durationMinutes, requestedUnits, bypassLimits } = slotQuery;
   return db.$transaction(async (tx) => {
     await tx.$queryRaw`SELECT id FROM \`Resource\` WHERE id = ${resource.id} FOR UPDATE`;
-    const slots = await getSlotsForDay(tenantId, resource, settings, date, durationMinutes, { bypassLimits, client: tx });
+    const slots = await getSlotsForDay(tenantId, resource, settings, date, durationMinutes, { bypassLimits, client: tx, requestedUnits });
     if (!slots.find((s) => s.time === time)?.available) return null;
     return tx.booking.create({ data });
   });
@@ -53,6 +57,7 @@ const createBookingSchema = z.object({
   date: z.string().refine(isCalendarDate),
   time: z.string().regex(/^\d{2}:\d{2}$/),
   durationMinutes: z.coerce.number().int().min(5),
+  persons: z.coerce.number().int().min(1).max(PERSONS_LIMIT).default(1),
   paymentMethod: z.enum(["INVOICE", "ONLINE"]).optional(),
   note: z.string().trim().max(191).optional(),
 });
@@ -64,25 +69,29 @@ export async function createBookingAction(_prev: ActionResult | null, formData: 
     date: formData.get("date"),
     time: formData.get("time"),
     durationMinutes: formData.get("durationMinutes"),
+    persons: formData.get("persons") || undefined,
     paymentMethod: formData.get("paymentMethod") || undefined,
     note: formData.get("note") || undefined,
   });
-  if (!parsed.success) return fail("Bitte Ressource, Datum, Zeit und Dauer wählen.");
-  const { resourceId, date, time, durationMinutes, note } = parsed.data;
+  if (!parsed.success) return fail("Bitte Ressource, Datum, Zeit, Dauer und Anzahl Personen wählen.");
+  const { resourceId, date, time, durationMinutes, persons, note } = parsed.data;
 
   const [settings, resource] = await Promise.all([getBookingSettings(ctx.tenant.id), getResource(ctx.tenant.id, resourceId)]);
   if (!resource || !resource.isActive) return fail("Ressource nicht verfügbar.");
   const options = resource.durationOptions ?? settings.durationOptions;
   const option = options.find((o) => o.minutes === durationMinutes);
   if (!option) return fail("Diese Dauer ist nicht buchbar.");
+  const maxPersons = maxPersonsFor(resource, settings);
+  if (persons > maxPersons) return fail(personsLimitError(maxPersons));
+  const plan = planRequest(option, resource, settings, persons);
 
   await expireUnpaidOnlineBookings(ctx.tenant.id);
-  const slots = await getSlotsForDay(ctx.tenant.id, resource, settings, date, durationMinutes);
+  const slots = await getSlotsForDay(ctx.tenant.id, resource, settings, date, durationMinutes, { requestedUnits: plan.units });
   const slot = slots.find((s) => s.time === time);
   if (!slot) return fail("Diese Zeit liegt ausserhalb der Öffnungszeiten.");
   if (!slot.available) return fail(`Dieser Termin ist nicht verfügbar (${slot.reason}).`);
 
-  const quote = quotePrice(option, slot.startsAt, settings);
+  const quote = quotePrice(option, slot.startsAt, settings, plan.persons);
   let paymentMethod: "NONE" | "INVOICE" | "ONLINE" = "NONE";
   if (quote.totalCents > 0) {
     const allowed: Array<"INVOICE" | "ONLINE"> = [];
@@ -95,13 +104,16 @@ export async function createBookingAction(_prev: ActionResult | null, formData: 
   }
 
   const status = settings.approvalRequired ? "PENDING" : "CONFIRMED";
-  const booking = await createBookingIfFree({ tenantId: ctx.tenant.id, resource, settings, date, time, durationMinutes }, {
+  const booking = await createBookingIfFree({ tenantId: ctx.tenant.id, resource, settings, date, time, durationMinutes, requestedUnits: plan.units }, {
     tenantId: ctx.tenant.id,
     resourceId,
     userId: ctx.user.id,
     startsAt: slot.startsAt,
     endsAt: slot.endsAt,
     durationMinutes,
+    persons: plan.persons,
+    units: plan.units,
+    isFlatRate: plan.isFlatRate,
     status,
     paymentMethod,
     paymentStatus: paymentMethod === "NONE" ? "NOT_REQUIRED" : "UNPAID",
@@ -163,12 +175,60 @@ export async function payBookingAction(bookingId: string): Promise<ActionResult>
 // Admin: Einstellungen
 // ---------------------------------------------------------------------------
 
+/** Eine Zeile aus dem Dauer-Editor (Beträge als Text, wie eingegeben). */
+const durationRowSchema = z.object({
+  minutes: z.coerce.number(),
+  price: z.union([z.string(), z.number()]).optional(),
+  personPrices: z.array(z.union([z.string(), z.number(), z.null()])).max(PERSONS_LIMIT).optional(),
+  flatFrom: z.union([z.string(), z.number(), z.null()]).optional(),
+  flatPrice: z.union([z.string(), z.number(), z.null()]).optional(),
+});
+
+function isBlank(v: unknown) {
+  return v === null || v === undefined || String(v).trim() === "";
+}
+
+/** Betrag aus dem Formular; wirft bei unlesbarer Eingabe (z.B. «abc»). */
+function moneyField(v: unknown, label: string) {
+  const txt = String(v).trim();
+  // Erlaubt «15», «15.50», «15,5», «15.–», «CHF 1'200.00».
+  const clean = txt.replace(/CHF|EUR|Fr\.?|['’\s]/gi, "").replace(/[.,][–-]+$/, "");
+  if (!/^\d+([.,]\d{0,2})?$/.test(clean)) throw new Error(`${label}: ungültiger Betrag «${txt.slice(0, 20)}».`);
+  return parseMoneyToCents(clean);
+}
+
+/**
+ * Dauer-Zeilen in Optionen übersetzen. Leere Personenpreise = Rückfall auf «Preis pro Person».
+ * Wirft Error mit verständlicher Meldung bei unvollständiger Pauschale oder unlesbaren Beträgen.
+ */
 function parseDurations(raw: unknown): DurationOption[] {
-  const arr = typeof raw === "string" ? (JSON.parse(raw) as Array<{ minutes: unknown; price: unknown }>) : [];
-  return arr
-    .map((d) => ({ minutes: Number(d.minutes), priceCents: parseMoneyToCents(d.price as string) }))
+  const json = typeof raw === "string" ? JSON.parse(raw) : [];
+  const rows = z.array(durationRowSchema).max(50).safeParse(json);
+  if (!rows.success) throw new Error("Ungültige Dauer-Angaben.");
+  return rows.data
     .filter((d) => Number.isFinite(d.minutes) && d.minutes > 0)
+    .map((d) => {
+      const label = `Dauer ${d.minutes} Min.`;
+      const opt: DurationOption = { minutes: Math.round(d.minutes), priceCents: isBlank(d.price) ? 0 : moneyField(d.price, label) };
+      const personPrices = (d.personPrices ?? []).map((p, i) => (isBlank(p) ? null : moneyField(p, `${label}, ${i + 1} Pers.`)));
+      while (personPrices.length && personPrices[personPrices.length - 1] === null) personPrices.pop();
+      if (personPrices.length) opt.personPrices = personPrices;
+      const hasFrom = !isBlank(d.flatFrom);
+      const hasFlatPrice = !isBlank(d.flatPrice);
+      if (hasFrom !== hasFlatPrice) throw new Error(`${label}: Für die Pauschale braucht es «ab … Personen» und den Pauschalpreis.`);
+      if (hasFrom) {
+        const from = Number(String(d.flatFrom).trim());
+        if (!Number.isInteger(from) || from < 1 || from > PERSONS_LIMIT) throw new Error(`${label}: «Pauschal ab» muss eine Zahl zwischen 1 und ${PERSONS_LIMIT} sein.`);
+        opt.flatFromPersons = from;
+        opt.flatPriceCents = moneyField(d.flatPrice, `${label}, Pauschalpreis`);
+      }
+      return opt;
+    })
     .sort((a, b) => a.minutes - b.minutes);
+}
+
+function durationsError(e: unknown, fallback: string) {
+  return e instanceof Error && !(e instanceof SyntaxError) && e.message ? e.message : fallback;
 }
 
 export async function saveBookingSettingsAction(_prev: ActionResult | null, formData: FormData): Promise<ActionResult> {
@@ -178,9 +238,10 @@ export async function saveBookingSettingsAction(_prev: ActionResult | null, form
   try {
     durationOptions = parseDurations(formData.get("durationsJson"));
     openingHours = JSON.parse(String(formData.get("openingHoursJson") ?? "{}"));
-  } catch {
-    return fail("Ungültige Eingaben bei Dauer oder Öffnungszeiten.");
+  } catch (e) {
+    return fail(durationsError(e, "Ungültige Eingaben bei Dauer oder Öffnungszeiten."));
   }
+  if (new Set(durationOptions.map((d) => d.minutes)).size !== durationOptions.length) return fail("Jede Dauer darf nur einmal vorkommen.");
   const parsed = settingsSchema.safeParse({
     currency: formData.get("currency") || "CHF",
     slotStepMinutes: formData.get("slotStepMinutes"),
@@ -198,6 +259,10 @@ export async function saveBookingSettingsAction(_prev: ActionResult | null, form
     invoiceDueDays: formData.get("invoiceDueDays") || 30,
     invoicePrefix: formData.get("invoicePrefix") ?? "R-",
     invoiceNote: formData.get("invoiceNote") || undefined,
+    personPricing: formData.get("personPricing") === "on",
+    maxPersons: formData.get("maxPersons") || 1,
+    flatExclusive: formData.get("flatExclusive") === "on",
+    capacityPerPerson: formData.get("capacityPerPerson") === "on",
   });
   if (!parsed.success) {
     const i = parsed.error.issues[0];
@@ -226,6 +291,10 @@ export async function saveBookingSettingsAction(_prev: ActionResult | null, form
     invoiceDueDays: s.invoiceDueDays,
     invoicePrefix: s.invoicePrefix,
     invoiceNote: s.invoiceNote ?? null,
+    personPricing: s.personPricing,
+    maxPersons: s.maxPersons,
+    flatExclusive: s.flatExclusive,
+    capacityPerPerson: s.capacityPerPerson,
   };
   await db.bookingSettings.upsert({ where: { tenantId: ctx.tenant.id }, create: { tenantId: ctx.tenant.id, ...data }, update: data });
   revalidatePath("/bookings");
@@ -244,20 +313,22 @@ export async function saveResourceAction(_prev: ActionResult | null, formData: F
   try {
     const raw = formData.get("durationsJson");
     durationOptions = raw && formData.get("ownDurations") === "on" ? parseDurations(raw) : undefined;
-  } catch {
-    return fail("Ungültige Dauer-Angaben.");
+  } catch (e) {
+    return fail(durationsError(e, "Ungültige Dauer-Angaben."));
   }
+  if (durationOptions && new Set(durationOptions.map((d) => d.minutes)).size !== durationOptions.length) return fail("Jede Dauer darf nur einmal vorkommen.");
   const parsed = resourceSchema.safeParse({
     name: formData.get("name"),
     description: formData.get("description") || undefined,
     kind: formData.get("kind") ?? "LANE",
     capacity: formData.get("capacity") || 1,
+    maxPersons: formData.get("maxPersons") ? formData.get("maxPersons") : null,
     durationOptions,
     isActive: formData.get("isActive") !== "off",
   });
   if (!parsed.success) return fail(parsed.error.issues[0]?.message ?? "Ungültige Eingabe");
   const r = parsed.data;
-  const data = { name: r.name, description: r.description ?? null, kind: r.kind, capacity: r.capacity, isActive: r.isActive, durationOptionsJson: r.durationOptions && r.durationOptions.length ? JSON.stringify(r.durationOptions) : null };
+  const data = { name: r.name, description: r.description ?? null, kind: r.kind, capacity: r.capacity, maxPersons: r.maxPersons, isActive: r.isActive, durationOptionsJson: r.durationOptions && r.durationOptions.length ? JSON.stringify(r.durationOptions) : null };
   if (id) {
     const ex = await db.resource.findUnique({ where: { id } });
     if (!ex || ex.tenantId !== ctx.tenant.id) return fail("Nicht gefunden");
@@ -391,6 +462,7 @@ const adminBookingSchema = z.object({
   date: z.string().refine(isCalendarDate),
   time: z.string().regex(/^\d{2}:\d{2}$/),
   durationMinutes: z.coerce.number().int().min(5).max(24 * 60),
+  persons: z.coerce.number().int().min(1).max(PERSONS_LIMIT).default(1),
   payment: z.enum(["INVOICE", "CASH", "FREE"]),
   note: z.string().trim().max(191).optional(),
 });
@@ -408,11 +480,12 @@ export async function adminCreateBookingAction(_prev: ActionResult | null, formD
     date: formData.get("date"),
     time: formData.get("time"),
     durationMinutes: formData.get("durationMinutes"),
+    persons: formData.get("persons") || undefined,
     payment: formData.get("payment") || "INVOICE",
     note: formData.get("note") || undefined,
   });
-  if (!parsed.success) return fail("Bitte Mitglied, Ressource, Datum, Zeit und Dauer wählen.");
-  const { userId, resourceId, date, time, durationMinutes, payment, note } = parsed.data;
+  if (!parsed.success) return fail("Bitte Mitglied, Ressource, Datum, Zeit, Dauer und Anzahl Personen wählen.");
+  const { userId, resourceId, date, time, durationMinutes, persons, payment, note } = parsed.data;
 
   const membership = await db.membership.findUnique({ where: { userId_tenantId: { userId, tenantId: ctx.tenant.id } }, select: { id: true } });
   if (!membership) return fail("Diese Person ist nicht Mitglied des Vereins.");
@@ -420,16 +493,19 @@ export async function adminCreateBookingAction(_prev: ActionResult | null, formD
   if (!resource) return fail("Ressource nicht gefunden.");
   const option = (resource.durationOptions ?? settings.durationOptions).find((o) => o.minutes === durationMinutes);
   if (!option) return fail("Diese Dauer ist für die Ressource nicht eingerichtet.");
+  const maxPersons = maxPersonsFor(resource, settings);
+  if (persons > maxPersons) return fail(personsLimitError(maxPersons));
+  const plan = planRequest(option, resource, settings, persons);
 
   await expireUnpaidOnlineBookings(ctx.tenant.id);
-  const slots = await getSlotsForDay(ctx.tenant.id, resource, settings, date, durationMinutes, { bypassLimits: true });
+  const slots = await getSlotsForDay(ctx.tenant.id, resource, settings, date, durationMinutes, { bypassLimits: true, requestedUnits: plan.units });
   const slot = slots.find((s) => s.time === time);
   if (!slot) return fail("Diese Zeit liegt ausserhalb der Öffnungszeiten.");
   if (!slot.available) return fail(`Dieser Termin ist nicht verfügbar (${slot.reason}).`);
 
-  const quote = quotePrice(option, slot.startsAt, settings);
+  const quote = quotePrice(option, slot.startsAt, settings, plan.persons);
   const now = new Date();
-  let pricing = quote;
+  let pricing: { basePriceCents: number; discountCents: number; discountReason: string | null; totalCents: number } = quote;
   let paymentMethod = "NONE";
   let paymentStatus = "NOT_REQUIRED";
   let paidAt: Date | null = null;
@@ -446,13 +522,16 @@ export async function adminCreateBookingAction(_prev: ActionResult | null, formD
     paymentStatus = "UNPAID";
   }
 
-  const booking = await createBookingIfFree({ tenantId: ctx.tenant.id, resource, settings, date, time, durationMinutes, bypassLimits: true }, {
+  const booking = await createBookingIfFree({ tenantId: ctx.tenant.id, resource, settings, date, time, durationMinutes, requestedUnits: plan.units, bypassLimits: true }, {
     tenantId: ctx.tenant.id,
     resourceId,
     userId,
     startsAt: slot.startsAt,
     endsAt: slot.endsAt,
     durationMinutes,
+    persons: plan.persons,
+    units: plan.units,
+    isFlatRate: plan.isFlatRate,
     status: "CONFIRMED",
     paymentMethod,
     paymentStatus,

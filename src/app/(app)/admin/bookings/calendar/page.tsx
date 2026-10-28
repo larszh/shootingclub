@@ -9,6 +9,12 @@ import { buildWeek, parseWeekParam, type CalendarCellItem } from "@/modules/book
 import { addDays, zurichToUtc } from "@/lib/time";
 import { cn } from "@/lib/utils";
 
+/** Kurzform der Personen für die enge Kalenderzelle: «3 P.», «5 P. pauschal». */
+function personsShort(it: { persons: number; isFlatRate: boolean }) {
+  if (it.isFlatRate) return `${it.persons} P. pauschal`;
+  return it.persons > 1 ? `${it.persons} P.` : null;
+}
+
 export const metadata = { title: "Belegungskalender" };
 
 export default async function BookingCalendarPage({ searchParams }: { searchParams: Promise<{ week?: string }> }) {
@@ -115,6 +121,7 @@ function Item({ it }: { it: CalendarCellItem }) {
       <div className="flex items-center gap-1 font-medium tabular-nums text-ink">
         {it.time}
         {it.status === "PENDING" ? <Clock className="h-3 w-3 shrink-0 text-warn" aria-hidden /> : null}
+        {personsShort(it) ? <span className="ml-auto font-normal text-ink-3">{personsShort(it)}</span> : null}
         <span className="sr-only">{it.status === "PENDING" ? "Freigabe offen" : "bestätigt"}</span>
       </div>
       <div className="flex items-center gap-1 min-w-0">
@@ -140,7 +147,7 @@ function AgendaRow({ it, resourceName }: { it: CalendarCellItem; resourceName: s
       <Avatar name={it.name} src={it.user ? userAvatarUrl(it.user) : null} size={36} tone={it.user ? "soft" : "guest"} />
       <div className="min-w-0 flex-1">
         <div className="font-medium truncate">{it.name}</div>
-        <div className="text-xs text-ink-3 truncate"><span className="tabular-nums">{it.time}</span> · {resourceName}{it.note ? ` · «${it.note}»` : ""}</div>
+        <div className="text-xs text-ink-3 truncate"><span className="tabular-nums">{it.time}</span> · {resourceName}{personsShort(it) ? ` · ${personsShort(it)}` : ""}{it.note ? ` · «${it.note}»` : ""}</div>
       </div>
       {it.status === "PENDING"
         ? <span className="inline-flex shrink-0 items-center gap-1 text-[10px] font-medium text-warn"><Clock className="h-3.5 w-3.5" aria-hidden /> Freigabe</span>

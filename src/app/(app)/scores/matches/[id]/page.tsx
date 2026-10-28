@@ -7,7 +7,7 @@ import { getMatch, isPersonalBest } from "@/modules/scores/queries";
 import { toScoreMatch } from "@/modules/scores/sync";
 import { ScoreEntry } from "@/modules/scores/ui/score-entry";
 import { formatDate } from "@/lib/utils";
-import { disciplineLabel } from "@/modules/scores/types";
+import { disciplineLabel, scoringModeLabel } from "@/modules/scores/types";
 
 export const metadata: Metadata = { title: "Durchgang" };
 
@@ -32,6 +32,7 @@ export default async function MatchPage({ params }: { params: Promise<{ id: stri
         {match.title ? <Badge>{match.program.name}</Badge> : null}
         <Badge tone="outline">{disciplineLabel(match.program.discipline)}</Badge>
         <Badge tone="outline">{match.program.totals.shots} Schuss · max. {match.program.totals.max}</Badge>
+        <Badge tone="outline">{scoringModeLabel(match.program.scoringMode, true)}</Badge>
       </div>
       {pb?.isBest ? (
         <div className="mb-4">

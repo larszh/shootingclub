@@ -197,6 +197,15 @@ async function loadMatchForActor(actor: ScoreActor, ref: { matchId?: string; mat
 // Serie speichern (last-write-wins über clientUpdatedAt)
 // ---------------------------------------------------------------------------
 
+function parseStoredShots(json: string): number[] | undefined {
+  try {
+    const v: unknown = JSON.parse(json);
+    return Array.isArray(v) ? v.map((x) => (typeof x === "number" ? x : Number.NaN)) : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 export async function saveStageResultCore(
   actor: ScoreActor,
   raw: SaveStageResultInput,
@@ -218,13 +227,21 @@ export async function saveStageResultCore(
   const stages = parseStages(match.program.stagesJson);
   const stage = stages[input.stageIndex];
   if (!stage) return coreFail("Serie nicht gefunden", "not_found");
-  const shots = sanitizeShots(input.shots, stage, match.program.scoringMode as ScoringMode);
+  const mode = match.program.scoringMode as ScoringMode;
+  const where = { participantId_stageIndex: { participantId: participant.id, stageIndex: input.stageIndex } };
+  const existing = await db.matchResult.findUnique({ where });
+  // Bereits gespeicherte Schüsse bleiben gültig, auch wenn das Programm seither geändert wurde
+  const stored = existing ? parseStoredShots(existing.shotsJson) : undefined;
+  const shots = sanitizeShots(input.shots, stage, mode, stored);
+  // Zonenwertung: Werte ausserhalb der Zonen der Serie nicht still verwerfen (würde Schüsse verschieben)
+  if (mode === "ZONES" && shots.length !== Math.min(input.shots.length, stage.shots)) {
+    const bad = input.shots.slice(0, stage.shots).findIndex((v, i) => shots[i] !== v);
+    return coreFail(bad >= 0 ? `Ungültiger Zonenwert bei Schuss ${bad + 1} – bitte diesen Schuss entfernen.` : "Ungültiger Zonenwert für diese Serie.", "invalid");
+  }
   const total = stageTotal(shots);
   const clientUpdatedAt = clampClientTime(input.clientUpdatedAt);
   const shotsJson = JSON.stringify(shots);
-  const where = { participantId_stageIndex: { participantId: participant.id, stageIndex: input.stageIndex } };
 
-  const existing = await db.matchResult.findUnique({ where });
   let ignored = false;
   if (!existing) {
     try {

@@ -3,7 +3,14 @@ import type { OpeningHours } from "./types";
 
 export type Interval = { startsAt: Date; endsAt: Date };
 
-export type Slot = { time: string; startsAt: Date; endsAt: Date; available: boolean; reason?: string };
+/** Belegung mit Kapazitätseinheiten (ältere Buchungen ohne Angabe zählen als 1). */
+export type UnitInterval = Interval & { units?: number };
+
+export type Slot = {
+  time: string; startsAt: Date; endsAt: Date; available: boolean; reason?: string;
+  /** Freie Kapazitätseinheiten im ganzen Zeitfenster (Kapazität minus höchste gleichzeitige Belegung). */
+  remaining: number;
+};
 
 type Params = {
   dateStr: string;
@@ -11,9 +18,11 @@ type Params = {
   slotStepMinutes: number;
   openingHours: OpeningHours;
   capacity: number;
+  /** Benötigte Einheiten der Anfrage (Standard 1). */
+  requestedUnits?: number;
   minLeadMinutes: number;
   maxAdvanceDays: number;
-  bookings: Interval[]; // aktive Buchungen der Ressource
+  bookings: UnitInterval[]; // aktive Buchungen der Ressource
   blocks: Interval[]; // Sperrzeiten
   now?: Date;
 };
@@ -30,17 +39,19 @@ function overlaps(a: Interval, b: Interval) {
 }
 
 /**
- * Höchste Anzahl gleichzeitig laufender Buchungen innerhalb des Fensters. Aufeinanderfolgende
+ * Höchste gleichzeitige Belegung (Summe der Einheiten) innerhalb des Fensters. Aufeinanderfolgende
  * Buchungen (10–11 und 11–12 Uhr) belegen denselben Platz nur nacheinander und zählen deshalb einfach.
+ * Buchungen ohne `units` zählen als 1 (bisheriges Verhalten).
  */
-export function peakConcurrency(bookings: Interval[], window: Interval) {
+export function peakConcurrency(bookings: UnitInterval[], window: Interval) {
   const events: Array<[number, number]> = [];
   for (const b of bookings) {
     if (!overlaps(b, window)) continue;
-    events.push([Math.max(b.startsAt.getTime(), window.startsAt.getTime()), 1]);
-    events.push([Math.min(b.endsAt.getTime(), window.endsAt.getTime()), -1]);
+    const units = Math.max(1, b.units ?? 1);
+    events.push([Math.max(b.startsAt.getTime(), window.startsAt.getTime()), units]);
+    events.push([Math.min(b.endsAt.getTime(), window.endsAt.getTime()), -units]);
   }
-  // Bei gleicher Zeit zuerst Enden (-1), dann Beginne (+1) verarbeiten.
+  // Bei gleicher Zeit zuerst Enden (negativ), dann Beginne (positiv) verarbeiten.
   events.sort((a, b) => a[0] - b[0] || a[1] - b[1]);
   let current = 0;
   let peak = 0;
@@ -58,6 +69,7 @@ export function computeSlots(p: Params): Slot[] {
   const earliest = new Date(now.getTime() + p.minLeadMinutes * 60_000);
   const lastDay = addDays(todayZurich(), p.maxAdvanceDays);
   const beyond = p.dateStr > lastDay;
+  const requested = Math.max(1, p.requestedUnits ?? 1);
   const slots: Slot[] = [];
   for (const [from, to] of ranges) {
     const start = toMinutes(from);
@@ -66,6 +78,8 @@ export function computeSlots(p: Params): Slot[] {
       const startsAt = zurichToUtc(p.dateStr, fromMinutes(t));
       const endsAt = new Date(startsAt.getTime() + p.durationMinutes * 60_000);
       const slot: Interval = { startsAt, endsAt };
+      const used = peakConcurrency(p.bookings, slot);
+      const remaining = Math.max(0, p.capacity - used);
       let available = true;
       let reason: string | undefined;
       if (beyond) {
@@ -77,11 +91,14 @@ export function computeSlots(p: Params): Slot[] {
       } else if (p.blocks.some((b) => overlaps(b, slot))) {
         available = false;
         reason = "Gesperrt";
-      } else if (peakConcurrency(p.bookings, slot) >= p.capacity) {
+      } else if (remaining <= 0) {
         available = false;
         reason = "Belegt";
+      } else if (used + requested > p.capacity) {
+        available = false;
+        reason = "Nicht genug Plätze frei";
       }
-      slots.push({ time: fromMinutes(t), startsAt, endsAt, available, reason });
+      slots.push({ time: fromMinutes(t), startsAt, endsAt, available, reason, remaining });
     }
   }
   return slots;

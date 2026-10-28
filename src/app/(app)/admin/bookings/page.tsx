@@ -10,6 +10,7 @@ import { DecideButtons } from "@/modules/bookings/ui/booking-actions";
 import { formatDateZurich, formatTimeRange, todayZurich } from "@/lib/time";
 import { formatMoney } from "@/lib/money";
 import Link from "next/link";
+import { personsSuffix } from "@/modules/bookings/pricing";
 
 export const metadata: Metadata = { title: "Reservationen verwalten" };
 
@@ -41,7 +42,7 @@ export default async function AdminBookingsPage() {
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
                   <Link href={`/bookings/${b.id}`} className="font-medium hover:underline">{b.resource.name} · {b.user?.name}</Link>
-                  <div className="text-xs text-ink-3">{formatDateZurich(b.startsAt)} · {formatTimeRange(b.startsAt, b.endsAt)} · {b.totalCents ? formatMoney(b.totalCents, b.currency) : "gratis"}</div>
+                  <div className="text-xs text-ink-3">{formatDateZurich(b.startsAt)} · {formatTimeRange(b.startsAt, b.endsAt)}{personsSuffix(b) ? ` · ${personsSuffix(b)}` : ""} · {b.totalCents ? formatMoney(b.totalCents, b.currency) : "gratis"}</div>
                   {b.note ? <div className="text-xs text-ink-3 italic mt-0.5">«{b.note}»</div> : null}
                 </div>
               </div>
@@ -62,7 +63,7 @@ export default async function AdminBookingsPage() {
       <SectionTitle>Export</SectionTitle>
       <Card className="animate-rise p-4">
         <form action="/api/export/bookings" method="get" className="space-y-3">
-          <p className="text-sm text-ink-3">Alle Buchungen eines Zeitraums als Tabelle (CSV für Excel) mit Ressource, Mitglied, Zeiten, Preis, Status und Zahlung.</p>
+          <p className="text-sm text-ink-3">Alle Buchungen eines Zeitraums als Tabelle (CSV für Excel) mit Ressource, Mitglied, Zeiten, Personen, Preis, Status und Zahlung.</p>
           <div className="grid grid-cols-2 gap-3">
             <label className="block"><span className="block text-sm font-medium text-ink-2 mb-1.5">Von</span><Input type="date" name="from" defaultValue={month.from} required /></label>
             <label className="block"><span className="block text-sm font-medium text-ink-2 mb-1.5">Bis</span><Input type="date" name="to" defaultValue={month.to} required /></label>

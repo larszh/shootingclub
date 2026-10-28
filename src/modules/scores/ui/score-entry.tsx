@@ -5,7 +5,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from
 import { unstable_rethrow, useRouter } from "next/navigation";
 import { AlertTriangle, Check, ChevronLeft, ChevronRight, CloudOff, Delete, Loader2, Lock, Trash2, Trophy, Unlock } from "lucide-react";
 import { deleteMatchAction, saveStageResultAction, setMatchStatusAction } from "@/modules/scores/actions";
-import { positionLabel, stageTotal } from "@/modules/scores/types";
+import { maxShotValue, positionLabel, stageTotal, stageZones, zoneForValue } from "@/modules/scores/types";
 import { Alert, Button, Card } from "@/components/ui";
 import { Avatar } from "@/components/avatar";
 import { cn, formatScore } from "@/lib/utils";
@@ -14,6 +14,7 @@ import { requestFlush } from "@/lib/offline/outbox";
 import { discardMatch, getMatchEntry, recordShots, recordStatus, upsertServerView } from "@/lib/offline/store";
 import { cellKey, type ScoreMatch, type SyncEvent } from "@/lib/offline/types";
 import { StageTimer } from "./stage-timer";
+import { formatZonePoints } from "./zone-legend";
 
 type CellState = Record<string, number>;
 
@@ -48,6 +49,7 @@ export function ScoreEntry({ match, storageKey, tenantId, userId, persistView = 
   const { online } = useSyncStatus();
   const decimal = match.program.scoringMode === "RINGS_DECIMAL";
   const hits = match.program.scoringMode === "HITS";
+  const zonesMode = match.program.scoringMode === "ZONES";
   const stages = match.program.stages;
   const isServerMatch = storageKey.startsWith("s:") && !!match.id;
 
@@ -335,6 +337,10 @@ export function ScoreEntry({ match, storageKey, tenantId, userId, persistView = 
     return !best || t > best.total ? { id: p.id, total: t } : best;
   }, null);
 
+  /** Zonen der aktiven Serie (nur Zonenwertung) und höchster Schusswert */
+  const zones = useMemo(() => (zonesMode ? stageZones(stage) : []), [zonesMode, stage]);
+  const topValue = maxShotValue(stage, match.program.scoringMode);
+
   const keypadValues = useMemo(() => {
     const max = Math.min(stage.maxPerShot, 12);
     return Array.from({ length: max + 1 }, (_, i) => max - i);
@@ -413,12 +419,22 @@ export function ScoreEntry({ match, storageKey, tenantId, userId, persistView = 
       <Card className="animate-rise [animation-delay:120ms] p-4">
         <div className="flex items-center justify-between mb-3">
           <span className="text-sm text-ink-3">{participant.name} · Schuss {Math.min(current.length + 1, stage.shots)} von {stage.shots}</span>
-          <span className="text-sm font-semibold tabular-nums">{formatScore(stageTotal(current), decimal)}{hits ? ` / ${stage.shots}` : ` / ${stage.shots * stage.maxPerShot}`}</span>
+          <span className="text-sm font-semibold tabular-nums">{formatScore(stageTotal(current), decimal)}{hits ? ` / ${stage.shots}` : ` / ${stage.shots * (zonesMode ? topValue : stage.maxPerShot)}`}</span>
         </div>
         <div className="flex flex-wrap gap-1.5 min-h-10">
           {Array.from({ length: stage.shots }, (_, i) => {
             const v = current[i];
             const isNext = i === current.length;
+            if (zonesMode && v !== undefined) {
+              const z = zoneForValue(stage, v);
+              return (
+                <span key={i} title={z ? `${z.label} (${formatZonePoints(v)})` : formatZonePoints(v)}
+                  className={cn("animate-pop flex h-10 min-w-10 px-2 items-center justify-center rounded-xl text-sm font-semibold border border-transparent",
+                    v < 0 ? "bg-danger/15 text-danger" : v >= topValue ? "bg-ink text-bg" : v === 0 ? "bg-surface-2 text-ink-3" : "bg-ink/10")}>
+                  {z?.key ?? formatZonePoints(v)}
+                </span>
+              );
+            }
             return (
               <span key={i} className={cn("flex h-10 min-w-10 px-2 items-center justify-center rounded-xl text-sm font-semibold tabular-nums border",
                 v !== undefined ? (hits ? (v ? "animate-pop bg-ok/15 text-ok border-transparent" : "animate-pop bg-accent-soft text-accent border-transparent") : v >= stage.maxPerShot ? "animate-pop bg-ink text-bg border-ink" : v >= stage.maxPerShot - 1 ? "animate-pop bg-ink/10 border-transparent" : "animate-pop bg-surface-2 border-transparent")
@@ -443,7 +459,19 @@ export function ScoreEntry({ match, storageKey, tenantId, userId, persistView = 
       {/* Eingabe */}
       {!finished ? (
         <div className="animate-rise [animation-delay:180ms]">
-          {hits ? (
+          {zonesMode ? (
+            <div className="grid grid-cols-2 gap-2">
+              {zones.map((z) => (
+                <Key key={z.key} onClick={() => addShot(z.points)} label={`${z.label}, ${formatZonePoints(z.points)} Punkte`}
+                  className={cn("h-20 flex-col gap-0.5 px-2",
+                    z.points < 0 ? "bg-danger/15 text-danger border-danger/30" : z.points === topValue ? "bg-ink text-bg" : z.points === 0 ? "bg-surface-2 text-ink-3" : "bg-surface border-line hover:bg-surface-2")}>
+                  <span className="flex items-baseline gap-2 leading-none"><span>{z.key}</span><span className="text-lg tabular-nums">{formatZonePoints(z.points)}</span></span>
+                  <span className="max-w-full truncate text-xs font-medium leading-tight opacity-90">{z.label}</span>
+                </Key>
+              ))}
+              <Key onClick={undo} className={cn("bg-surface", zones.length % 2 === 0 && "col-span-2")} variant="secondary"><Delete className="h-5 w-5" /> Rückgängig</Key>
+            </div>
+          ) : hits ? (
             <div className="grid grid-cols-2 gap-2">
               <Key onClick={() => addShot(1)} className="h-20 bg-ok/15 text-ok text-xl">Treffer</Key>
               <Key onClick={() => addShot(0)} className="h-20 bg-accent-soft text-accent text-xl">Fehler</Key>
