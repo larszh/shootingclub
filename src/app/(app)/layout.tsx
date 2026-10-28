@@ -3,6 +3,7 @@ import { getAppContext } from "@/lib/tenant";
 import { AppShell } from "@/components/app-shell";
 import { BrandTheme } from "@/components/brand-theme";
 import { DEFAULT_THEME_COLORS, brandColors } from "@/lib/brand";
+import { getUnreadChatCount } from "@/modules/chat/queries";
 
 /**
  * Browser-Leiste (theme-color): mit Vereinsfarbe die Akzentfarbe, sonst der Seitenhintergrund
@@ -34,6 +35,8 @@ export async function generateViewport(): Promise<Viewport> {
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const ctx = await getAppContext();
+  // Startwert für den Ungelesen-Zähler; danach aktualisiert ihn der Chat-Stream im Browser.
+  const chatUnread = ctx.tenant && ctx.hasModule("chat") ? await getUnreadChatCount(ctx.user.id, ctx.tenant.id).catch(() => 0) : null;
   return (
     <>
       <BrandTheme brandColor={ctx.tenant?.brandColor} brandColor2={ctx.tenant?.brandColor2} />
@@ -41,6 +44,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         enabledModules={ctx.tenant?.enabledModules ?? []}
         tenant={ctx.tenant ? { id: ctx.tenant.id, name: ctx.tenant.name, logoUrl: ctx.tenant.logoUrl } : null}
         user={{ name: ctx.user.name, email: ctx.user.email, avatarUrl: ctx.user.avatarUrl }}
+        chatUnread={chatUnread}
       >
         {children}
       </AppShell>

@@ -27,7 +27,10 @@ export type Permission =
   | "match.create"
   | "match.delete"
   | "events.manage" // Anlässe erfassen, bearbeiten, absagen, Anmeldelisten
-  | "announcements.manage"; // Mitteilungen an alle erfassen
+  | "announcements.manage" // Mitteilungen an alle erfassen
+  | "files.manage" // Dateiablage: Ordner, Sichtbarkeit, fremde Dateien verwalten
+  | "files.upload" // Dateiablage: Dateien hochladen
+  | "ammo.manage"; // Munition: Einstellungen, Sortiment, Ausgabe, Rechnungen
 
 const PERMISSION_MIN_ROLE: Record<Permission, TenantRole> = {
   "tenant.manage": "ADMIN",
@@ -38,6 +41,9 @@ const PERMISSION_MIN_ROLE: Record<Permission, TenantRole> = {
   "match.delete": "ADMIN",
   "events.manage": "TRAINER",
   "announcements.manage": "ADMIN",
+  "files.manage": "ADMIN",
+  "files.upload": "MEMBER",
+  "ammo.manage": "ADMIN",
 };
 
 export type Actor = { isSuperAdmin: boolean; role: string | null };

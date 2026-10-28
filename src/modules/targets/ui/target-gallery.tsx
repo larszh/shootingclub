@@ -3,7 +3,7 @@
 import { useMemo, useState } from "react";
 import { LayoutGrid, Search, Square, Star, X } from "lucide-react";
 import type { TargetView } from "@/modules/targets/queries";
-import { TARGET_CATEGORIES, subjectCategory, subjectLabel, type TargetCategory } from "@/modules/targets/types";
+import { TARGET_CATEGORIES, categoryLabel, subjectCategory, subjectLabel, type TargetCategory } from "@/modules/targets/types";
 import { Input, Select } from "@/components/ui";
 import { TargetCard } from "./target-card";
 import { cn } from "@/lib/utils";
@@ -42,7 +42,7 @@ export function TargetGallery({ targets, initial }: { targets: TargetView[]; ini
       if (cat !== "all" && categoryOf(t) !== cat) return false;
       if (scope !== "all" && t.scope !== scope) return false;
       if (onlyFav && !t.favorite) return false;
-      if (needle && !norm(`${t.name} ${t.description ?? ""} ${subjectLabel(t.subject)}`).includes(needle)) return false;
+      if (needle && !norm(`${t.name} ${t.description ?? ""} ${subjectLabel(t.subject)} ${categoryLabel(categoryOf(t))}`).includes(needle)) return false;
       return true;
     });
     if (!favFirst) return filtered;

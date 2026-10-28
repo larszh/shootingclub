@@ -68,9 +68,23 @@ export function paymentStatusView(b: { status: string; paymentStatus: string }) 
 }
 export const PAYMENT_METHOD_LABEL: Record<string, string> = { NONE: "Keine Zahlung", INVOICE: "Rechnung", ONLINE: "Online-Zahlung", CASH: "Bar / vor Ort" };
 
+/** Höchstzahl Personen pro Buchung, die sich überhaupt einstellen lässt. */
+export const PERSONS_LIMIT = 100;
+const centsSchema = z.coerce.number().int().min(0).max(100_000_00);
+
+/**
+ * Dauer mit Preis. `priceCents` ist der Preis pro Buchung bzw. (mit «Preise pro Person») der Preis
+ * pro Person als Rückfallwert. Optional pro Dauer:
+ * - `personPrices`: feste Preise je Gruppengrösse (Index 0 = 1 Person, Index 1 = 2 Personen, …);
+ *   `null` bzw. fehlend = Rückfallwert `priceCents × Personen`.
+ * - `flatFromPersons` + `flatPriceCents`: ab dieser Anzahl Personen gilt der Pauschalpreis.
+ */
 export const durationOptionSchema = z.object({
   minutes: z.coerce.number().int().min(5).max(24 * 60),
-  priceCents: z.coerce.number().int().min(0).max(100_000_00),
+  priceCents: centsSchema,
+  personPrices: z.array(centsSchema.nullable()).max(PERSONS_LIMIT).optional(),
+  flatFromPersons: z.coerce.number().int().min(1).max(PERSONS_LIMIT).optional(),
+  flatPriceCents: centsSchema.optional(),
 });
 export type DurationOption = z.infer<typeof durationOptionSchema>;
 
@@ -95,6 +109,10 @@ export const settingsSchema = z.object({
   invoiceDueDays: z.coerce.number().int().min(1).max(365),
   invoicePrefix: z.string().trim().max(10),
   invoiceNote: z.string().trim().max(500).optional(),
+  personPricing: z.boolean(),
+  maxPersons: z.coerce.number().int().min(1, "Mindestens 1 Person").max(PERSONS_LIMIT, `Höchstens ${PERSONS_LIMIT} Personen`),
+  flatExclusive: z.boolean(),
+  capacityPerPerson: z.boolean(),
 });
 export type SettingsInput = z.infer<typeof settingsSchema>;
 
@@ -118,6 +136,7 @@ export const resourceSchema = z.object({
   description: z.string().trim().max(400).optional(),
   kind: z.enum(resourceKindKeys),
   capacity: z.coerce.number().int().min(1).max(200),
+  maxPersons: z.coerce.number().int().min(1, "Mindestens 1 Person").max(PERSONS_LIMIT, `Höchstens ${PERSONS_LIMIT} Personen`).nullable(),
   durationOptions: z.array(durationOptionSchema).optional(),
   isActive: z.boolean().default(true),
 });

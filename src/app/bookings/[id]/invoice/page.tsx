@@ -6,6 +6,7 @@ import { ensureReference } from "@/modules/billing/reference";
 import { renderQrBillSvg } from "@/lib/qr-bill";
 import { formatDateZurich, formatTimeRange } from "@/lib/time";
 import { formatDuration } from "@/modules/bookings/types";
+import { personsSuffix } from "@/modules/bookings/pricing";
 import { InvoiceDocument, PrintShell } from "@/components/invoice-document";
 import { PrintButton } from "@/components/print-button";
 
@@ -30,7 +31,7 @@ export default async function InvoicePage({ params }: { params: Promise<{ id: st
       <InvoiceDocument
         number={inv.number} issuedAt={inv.issuedAt} dueAt={inv.dueAt} status={inv.status} currency={inv.currency}
         payee={creditor} debtor={{ name: b.user?.name ?? "Gast", email: b.user?.email, street: b.user?.street, zip: b.user?.zip, city: b.user?.city }}
-        lines={[{ label: `Reservation ${b.resource.name}`, sublabel: `${formatDateZurich(b.startsAt, { weekday: "long" })}, ${formatTimeRange(b.startsAt, b.endsAt)} · ${formatDuration(b.durationMinutes)}`, amountCents: b.basePriceCents }]}
+        lines={[{ label: [`Reservation ${b.resource.name}`, personsSuffix(b)].filter(Boolean).join(" · "), sublabel: `${formatDateZurich(b.startsAt, { weekday: "long" })}, ${formatTimeRange(b.startsAt, b.endsAt)} · ${formatDuration(b.durationMinutes)}`, amountCents: b.basePriceCents }]}
         discount={b.discountCents > 0 ? { label: b.discountReason ?? "Rabatt", amountCents: b.discountCents } : null}
         totalCents={inv.amountCents} note={s.invoiceNote} qrSvg={qr} reference={reference}
       />

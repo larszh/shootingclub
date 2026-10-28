@@ -7,13 +7,14 @@ import { Badge, Card, LinkButton, PageHeader, SectionTitle } from "@/components/
 import { getProgram, listMatches } from "@/modules/scores/queries";
 import { getLeaderboard, getProgramProgress, programUsageCounts } from "@/modules/scores/insights";
 import { formatDay } from "@/modules/scores/analytics";
-import { disciplineLabel, formatDistances, positionLabel, SCORING_MODES } from "@/modules/scores/types";
+import { disciplineLabel, formatDistances, maxShotValue, positionLabel, SCORING_MODES, stageZones } from "@/modules/scores/types";
 import { formatScore } from "@/lib/utils";
 import { FavoriteButton } from "@/modules/scores/ui/favorite-button";
 import { ProgramArchiveButton, ProgramHiddenToggle } from "@/modules/scores/ui/admin-controls";
 import { ProgramCopyButton } from "@/modules/scores/ui/program-tools";
 import { LeaderboardTeaser } from "@/modules/scores/ui/leaderboard";
 import { MatchRow } from "@/modules/scores/ui/match-row";
+import { dominantZones, sameZones, ZoneLegend } from "@/modules/scores/ui/zone-legend";
 
 export const metadata: Metadata = { title: "Programm" };
 
@@ -31,6 +32,8 @@ export default async function ProgramDetailPage({ params }: { params: Promise<{ 
   ]);
   const mode = SCORING_MODES.find((m) => m.key === p.scoringMode);
   const used = usage[p.id] ?? 0;
+  const isZones = p.scoringMode === "ZONES";
+  const programZones = isZones ? dominantZones(p.stages.map((s) => stageZones(s))) : null;
 
   return (
     <div>
@@ -41,7 +44,7 @@ export default async function ProgramDetailPage({ params }: { params: Promise<{ 
         {p.weaponNote ? <Badge tone="outline">{p.weaponNote}</Badge> : null}
         <Badge tone="outline">{formatDistances(p.totals.distances)}</Badge>
         <Badge tone="outline">{p.totals.shots} Schuss · max. {p.totals.max}</Badge>
-        <Badge tone="outline">{mode?.label}</Badge>
+        <Badge tone={isZones ? "danger" : "neutral"}>Wertung: {mode?.label ?? p.scoringMode}</Badge>
         {p.scope === "global" ? <Badge tone="accent">Global</Badge> : <Badge tone="accent">Verein</Badge>}
         {used ? <Badge tone="outline">{used}× im Verein geschossen</Badge> : null}
         {p.hidden ? <Badge tone="warn">Versteckt</Badge> : null}
@@ -50,6 +53,14 @@ export default async function ProgramDetailPage({ params }: { params: Promise<{ 
 
       {!p.isArchived && ctx.can("match.create") ? (
         <LinkButton href={`/scores/matches/new?programId=${p.id}`} size="lg" className="w-full animate-rise [animation-delay:80ms]"><Play className="h-5 w-5" /> Durchgang starten</LinkButton>
+      ) : null}
+
+      {isZones && programZones ? (
+        <Card className="animate-rise mt-4 p-4">
+          <div className="text-sm font-semibold">Trefferzonen</div>
+          <p className="mt-0.5 text-xs text-ink-3">Punkte pro Schuss. Rot markierte Zonen sind Strafpunkte und werden abgezogen – das Total kann negativ werden.</p>
+          <ZoneLegend zones={programZones} className="mt-3" />
+        </Card>
       ) : null}
 
       {progress && progress.count > 0 ? (
@@ -87,11 +98,14 @@ export default async function ProgramDetailPage({ params }: { params: Promise<{ 
             <div className="min-w-0 flex-1">
               <div className="font-medium">{s.name}</div>
               <div className="text-xs text-ink-3">
-                {s.distanceM} m · {s.shots} Schuss{p.scoringMode !== "HITS" ? ` · max. ${s.maxPerShot}` : ""}
+                {s.distanceM} m · {s.shots} Schuss{p.scoringMode !== "HITS" ? ` · max. ${isZones ? s.shots * maxShotValue(s, p.scoringMode) : s.maxPerShot}` : ""}
                 {s.position ? ` · ${positionLabel(s.position)}` : ""}{s.timeLimitSec ? ` · ${s.timeLimitSec} s` : ""}
                 {s.targetName ? ` · ${s.targetName}` : ""}
               </div>
               {s.note ? <div className="text-xs text-ink-3 italic mt-0.5">{s.note}</div> : null}
+              {isZones && programZones && !sameZones(stageZones(s), programZones) ? (
+                <div className="mt-1.5"><div className="text-[11px] text-ink-3 mb-1">Eigene Zonen:</div><ZoneLegend zones={stageZones(s)} compact /></div>
+              ) : null}
             </div>
           </div>
         ))}

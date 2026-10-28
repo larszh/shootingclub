@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { CalendarDays, CreditCard, Megaphone, Users } from "lucide-react";
+import { CalendarDays, CreditCard, FolderOpen, Megaphone, Package, Users, Wallet } from "lucide-react";
 import { requirePermission } from "@/lib/tenant";
 import { MODULES } from "@/lib/modules";
 import { db } from "@/lib/db";
@@ -37,6 +37,22 @@ export default async function AdminPage() {
       {ctx.hasModule("billing") ? (
         <Link href="/admin/billing" className="block press mt-2.5">
           <Card className="p-4 flex items-center gap-3 hover:border-ink/30"><CreditCard className="h-5 w-5 text-ink-2" aria-hidden /><span className="flex-1 font-medium">Mitgliederbeiträge verwalten</span></Card>
+        </Link>
+      ) : null}
+
+      {ctx.hasModule("billing") || ctx.hasModule("bookings") || ctx.hasModule("ammo") ? (
+        <Link href="/admin/payments" className="block press mt-2.5">
+          <Card className="p-4 flex items-center gap-3 hover:border-ink/30"><Wallet className="h-5 w-5 text-ink-2" aria-hidden /><span className="flex-1 font-medium">Offene Posten</span></Card>
+        </Link>
+      ) : null}
+      {ctx.hasModule("files") ? (
+        <Link href="/admin/files" className="block press mt-2.5">
+          <Card className="p-4 flex items-center gap-3 hover:border-ink/30"><FolderOpen className="h-5 w-5 text-ink-2" aria-hidden /><span className="flex-1 font-medium">Dateiablage & Speicherort</span></Card>
+        </Link>
+      ) : null}
+      {ctx.hasModule("ammo") ? (
+        <Link href="/admin/ammo" className="block press mt-2.5">
+          <Card className="p-4 flex items-center gap-3 hover:border-ink/30"><Package className="h-5 w-5 text-ink-2" aria-hidden /><span className="flex-1 font-medium">Munition verwalten</span></Card>
         </Link>
       ) : null}
 

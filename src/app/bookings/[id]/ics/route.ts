@@ -4,6 +4,7 @@ import { getCurrentUser } from "@/lib/auth";
 import { getAppContext } from "@/lib/tenant";
 import { slugify } from "@/lib/utils";
 import { formatDuration, BOOKING_STATUS } from "@/modules/bookings/types";
+import { personsSuffix } from "@/modules/bookings/pricing";
 
 export const dynamic = "force-dynamic";
 
@@ -49,7 +50,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
   const appUrl = (process.env.APP_URL ?? "https://standchef.ch").replace(/\/$/, "");
   const cancelled = b.status === "CANCELLED" || b.status === "REJECTED";
   const description = [
-    `${b.resource.name} · ${formatDuration(b.durationMinutes)}`,
+    [b.resource.name, formatDuration(b.durationMinutes), personsSuffix(b)].filter(Boolean).join(" · "),
     b.user && b.userId !== user.id ? `Gebucht für ${b.user.name}` : null,
     `Status: ${BOOKING_STATUS[b.status]?.label ?? b.status}`,
     b.note ? `Bemerkung: ${b.note}` : null,

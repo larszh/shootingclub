@@ -9,7 +9,7 @@ export type { ImportPreviewItem, ImportTarget, ImportStatus } from "./import-typ
 type Candidate = ImportTarget & { reference: string | null };
 
 async function loadCandidates(tenantId: string, since: Date): Promise<Candidate[]> {
-  const [fees, invoices] = await Promise.all([
+  const [fees, invoices, ammo] = await Promise.all([
     db.feeInvoice.findMany({
       where: { tenantId, issuedAt: { gte: since } },
       select: { id: true, number: true, reference: true, amountCents: true, currency: true, status: true, memberName: true, year: true, categoryName: true },
@@ -18,10 +18,27 @@ async function loadCandidates(tenantId: string, since: Date): Promise<Candidate[
       where: { tenantId, issuedAt: { gte: since } },
       select: { id: true, number: true, reference: true, amountCents: true, currency: true, status: true, booking: { select: { user: { select: { name: true } }, resource: { select: { name: true } } } } },
     }),
+    // Munitionsrechnungen entstehen bei der Ausgabe (invoiceNumber + invoiceIssuedAt gesetzt).
+    db.ammoOrder.findMany({
+      where: { tenantId, invoiceNumber: { not: null }, invoiceIssuedAt: { gte: since } },
+      select: { id: true, invoiceNumber: true, reference: true, totalCents: true, currency: true, status: true, paymentStatus: true, user: { select: { name: true } }, items: { select: { productName: true }, take: 2 } },
+    }),
   ]);
   return [
     ...fees.map((f) => ({ kind: "FEE" as const, id: f.id, number: f.number, reference: f.reference, amountCents: f.amountCents, currency: f.currency, status: f.status, name: f.memberName, label: `Beitrag ${f.year} · ${f.categoryName}` })),
     ...invoices.map((i) => ({ kind: "BOOKING" as const, id: i.id, number: i.number, reference: i.reference, amountCents: i.amountCents, currency: i.currency, status: i.status, name: i.booking.user?.name ?? "Gast", label: `Reservation ${i.booking.resource.name}` })),
+    ...ammo.map((a) => ({
+      kind: "AMMO" as const,
+      id: a.id,
+      number: a.invoiceNumber ?? "",
+      reference: a.reference,
+      amountCents: a.totalCents,
+      currency: a.currency,
+      // gleiche Statuswerte wie bei den anderen Rechnungen: OPEN | PAID | CANCELLED
+      status: a.paymentStatus === "PAID" ? "PAID" : a.paymentStatus === "CANCELLED" || a.status !== "ISSUED" ? "CANCELLED" : "OPEN",
+      name: a.user?.name ?? "Ehemaliges Mitglied",
+      label: `Munition${a.items.length ? ` · ${a.items.map((i) => i.productName).join(", ")}` : ""}`.slice(0, 120),
+    })),
   ];
 }
 
@@ -50,6 +67,7 @@ function toTarget(c: Candidate): ImportTarget {
  * Ordnet Gutschriften offenen Rechnungen zu:
  * 1. über die QR-Referenz (eindeutig),
  * 2. sonst über Rechnungsnummer in der Mitteilung und exakten Betrag.
+ * Berücksichtigt Mitgliederbeiträge, Reservations- und Munitionsrechnungen.
  */
 export async function matchCredits(tenantId: string, credits: CamtCredit[], since: Date): Promise<ImportPreviewItem[]> {
   const candidates = await loadCandidates(tenantId, since);

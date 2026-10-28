@@ -1,10 +1,12 @@
 "use client";
 
 import { useActionState, useEffect, useMemo, useRef, useState, useTransition } from "react";
-import { Banknote, Check, ChevronLeft, ChevronRight, FileText, Gift, Search } from "lucide-react";
+import { Banknote, Check, ChevronLeft, ChevronRight, FileText, Gift, Info, Search } from "lucide-react";
 import { adminCreateBookingAction } from "@/modules/bookings/actions";
 import { fetchAdminSlotsAction, type SlotDto } from "@/modules/bookings/slot-actions";
 import { formatDuration, type DurationOption } from "@/modules/bookings/types";
+import { basePriceFor, maxPersonsFor, wholeResourceLabel } from "@/modules/bookings/pricing";
+import { PersonsStepper } from "./persons-stepper";
 import { Avatar } from "@/components/avatar";
 import { Alert, Card, Field, Input } from "@/components/ui";
 import { SubmitButton, Spinner } from "@/components/ui/form";
@@ -12,7 +14,8 @@ import { formatMoney } from "@/lib/money";
 import { cn } from "@/lib/utils";
 
 type MemberDto = { userId: string; name: string; email: string; avatarUrl: string | null; memberNumber: string | null };
-type ResourceDto = { id: string; name: string; durationOptions: DurationOption[] | null };
+type ResourceDto = { id: string; name: string; kind: string; capacity: number; maxPersons: number | null; durationOptions: DurationOption[] | null };
+type PersonSettings = { personPricing: boolean; maxPersons: number; flatExclusive: boolean; capacityPerPerson: boolean };
 type Payment = "INVOICE" | "CASH" | "FREE";
 
 function shiftDate(dateStr: string, days: number) {
@@ -30,17 +33,23 @@ const PAYMENTS: Array<{ key: Payment; label: string; hint: string; icon: React.R
   { key: "FREE", label: "Gratis", hint: "ohne Bezahlung", icon: <Gift className="h-4 w-4" /> },
 ];
 
-export function AdminBookingForm({ members, resources, durationOptions, currency, today, initial }: {
+export function AdminBookingForm({ members, resources, durationOptions, currency, today, initial, personSettings }: {
   members: MemberDto[]; resources: ResourceDto[]; durationOptions: DurationOption[]; currency: string; today: string;
-  initial: { resourceId?: string; date?: string; userId?: string; duration?: number; time?: string };
+  initial: { resourceId?: string; date?: string; userId?: string; duration?: number; time?: string; persons?: number };
+  personSettings: PersonSettings;
 }) {
   const [state, action] = useActionState(adminCreateBookingAction, null);
   const optionsFor = (rid: string) => resources.find((r) => r.id === rid)?.durationOptions ?? durationOptions;
+  const maxFor = (rid: string) => {
+    const r = resources.find((x) => x.id === rid);
+    return r ? maxPersonsFor(r, personSettings) : 1;
+  };
   const firstResource = resources.find((r) => r.id === initial.resourceId)?.id ?? resources[0]?.id ?? "";
   const [sel, setSel] = useState(() => {
     const opts = optionsFor(firstResource);
     const duration = opts.some((o) => o.minutes === initial.duration) ? initial.duration! : opts[0]?.minutes ?? 60;
-    return { resourceId: firstResource, duration, date: initial.date ?? today };
+    const persons = Math.min(Math.max(1, initial.persons ?? 1), maxFor(firstResource));
+    return { resourceId: firstResource, duration, persons, date: initial.date ?? today };
   });
   const [userId, setUserId] = useState(members.some((m) => m.userId === initial.userId) ? initial.userId! : "");
   const [query, setQuery] = useState("");
@@ -54,19 +63,21 @@ export function AdminBookingForm({ members, resources, durationOptions, currency
   const requestId = useRef(0);
   const load = (next: typeof sel) => start(async () => {
     const id = ++requestId.current;
-    const r = await fetchAdminSlotsAction(next.resourceId, next.date, next.duration);
+    const r = await fetchAdminSlotsAction(next.resourceId, next.date, next.duration, next.persons);
     if (id !== requestId.current) return;
     setSlots(r.slots);
     setSlotError(r.error ?? null);
+    setTime((t) => (t && r.slots.some((x) => x.time === t && x.available) ? t : null));
   });
   const update = (patch: Partial<typeof sel>) => {
     const next = { ...sel, ...patch };
     if (patch.resourceId) {
       const opts = optionsFor(patch.resourceId);
       if (!opts.some((o) => o.minutes === next.duration)) next.duration = opts[0]?.minutes ?? 60;
+      next.persons = Math.min(next.persons, maxFor(patch.resourceId));
     }
     setSel(next);
-    setTime(null);
+    if (patch.persons === undefined) setTime(null);
     load(next);
   };
 
@@ -74,7 +85,7 @@ export function AdminBookingForm({ members, resources, durationOptions, currency
     if (!sel.resourceId) return;
     let cancelled = false;
     const id = ++requestId.current;
-    fetchAdminSlotsAction(sel.resourceId, sel.date, sel.duration).then((r) => {
+    fetchAdminSlotsAction(sel.resourceId, sel.date, sel.duration, sel.persons).then((r) => {
       if (cancelled || id !== requestId.current) return;
       setSlots(r.slots);
       setSlotError(r.error ?? null);
@@ -89,9 +100,16 @@ export function AdminBookingForm({ members, resources, durationOptions, currency
     return list.slice(0, 8);
   }, [members, query]);
   const member = members.find((m) => m.userId === userId) ?? null;
-  const selected = slots?.find((s) => s.time === time && s.available) ?? null;
+  // Während neue Zeiten (und Preise) geladen werden, gilt keine Auswahl (kein veralteter Preis).
+  const selected = loading ? null : slots?.find((s) => s.time === time && s.available) ?? null;
   const options = optionsFor(sel.resourceId);
   const price = selected ? (payment === "FREE" ? 0 : selected.totalCents) : null;
+  const resource = resources.find((r) => r.id === sel.resourceId);
+  const maxPersons = maxFor(sel.resourceId);
+  const option = options.find((o) => o.minutes === sel.duration) ?? null;
+  const flatFrom = personSettings.personPricing && option?.flatFromPersons && option.flatPriceCents !== undefined && option.flatFromPersons <= maxPersons ? option.flatFromPersons : null;
+  const showRemaining = personSettings.capacityPerPerson && (resource?.capacity ?? 1) > 1;
+  const tooFew = !!slots?.some((s) => s.reason === "Nicht genug Plätze frei");
 
   return (
     <form action={action} className="space-y-5">
@@ -100,6 +118,7 @@ export function AdminBookingForm({ members, resources, durationOptions, currency
       <input type="hidden" name="date" value={sel.date} />
       <input type="hidden" name="time" value={time ?? ""} />
       <input type="hidden" name="durationMinutes" value={sel.duration} />
+      <input type="hidden" name="persons" value={sel.persons} />
       <input type="hidden" name="payment" value={payment} />
 
       <section className="animate-rise">
@@ -141,10 +160,21 @@ export function AdminBookingForm({ members, resources, durationOptions, currency
           {options.map((o) => (
             <button key={o.minutes} type="button" onClick={() => update({ duration: o.minutes })}
               className={cn("press h-10 rounded-full px-3.5 text-sm font-medium border", sel.duration === o.minutes ? "bg-ink text-bg border-ink" : "bg-surface border-line text-ink-2")}>
-              {formatDuration(o.minutes)}<span className={cn("ml-1.5 text-xs", sel.duration === o.minutes ? "text-bg/70" : "text-ink-3")}>{o.priceCents ? formatMoney(o.priceCents, currency) : "gratis"}</span>
+              {formatDuration(o.minutes)}<span className={cn("ml-1.5 text-xs", sel.duration === o.minutes ? "text-bg/70" : "text-ink-3")}>{(() => { const c = basePriceFor(o, sel.persons, personSettings.personPricing).baseCents; return c ? formatMoney(c, currency) : "gratis"; })()}</span>
             </button>
           ))}
         </div>
+        {maxPersons > 1 ? (
+          <Card className="mt-2 p-3 space-y-2">
+            <PersonsStepper value={sel.persons} max={maxPersons} onChange={(n) => update({ persons: n })} />
+            {flatFrom ? (
+              <p className={cn("flex items-start gap-1.5 rounded-control px-3 py-2 text-xs", sel.persons >= flatFrom ? "bg-accent-soft text-ink" : "bg-surface-2 text-ink-2")}>
+                <Info className="h-3.5 w-3.5 mt-0.5 shrink-0" aria-hidden />
+                <span>Ab {flatFrom} Personen gilt der Pauschalpreis{personSettings.flatExclusive ? ` für ${wholeResourceLabel(resource?.kind ?? "OTHER")}` : ""} ({formatMoney(option!.flatPriceCents!, currency)}).</span>
+              </p>
+            ) : null}
+          </Card>
+        ) : null}
       </section>
 
       <section className="animate-rise [animation-delay:120ms]">
@@ -170,13 +200,16 @@ export function AdminBookingForm({ members, resources, durationOptions, currency
               <div className="grid grid-cols-4 gap-1.5 sm:grid-cols-6">
                 {slots.map((s) => (
                   <button key={s.time} type="button" disabled={!s.available} onClick={() => setTime(s.time)} title={s.reason}
-                    className={cn("press h-11 rounded-control text-sm font-medium tabular-nums border transition-colors",
-                      time === s.time ? "bg-ink text-bg border-ink" : s.available ? "bg-surface border-line hover:border-ink/40" : "bg-surface-2 border-transparent text-ink-3/60 line-through cursor-not-allowed")}>
-                    {s.time}
+                    aria-label={`${s.time} Uhr${s.available ? (showRemaining ? `, ${s.remaining} frei` : "") : `, ${s.reason ?? "nicht verfügbar"}`}`}
+                    className={cn("press min-h-11 rounded-control text-sm font-medium tabular-nums border transition-colors flex flex-col items-center justify-center leading-tight",
+                      time === s.time ? "bg-ink text-bg border-ink" : s.available ? "bg-surface border-line hover:border-ink/40" : "bg-surface-2 border-transparent text-ink-3/60 cursor-not-allowed")}>
+                    <span className={cn(!s.available && "line-through")}>{s.time}</span>
+                    {showRemaining && s.available ? <span className={cn("text-[10px] font-normal", time === s.time ? "text-bg/70" : "text-ink-3")}>{s.remaining} frei</span> : null}
                   </button>
                 ))}
               </div>
             )}
+            {tooFew ? <p className="mt-2 text-xs text-ink-3">Durchgestrichene Zeiten: Nicht genug Plätze frei für {sel.persons === 1 ? "1 Person" : `${sel.persons} Personen`}.</p> : null}
           </div>
           <p className="mt-2 text-xs text-ink-3">Als Verwaltung gelten Vorlauf und Vorausbuchung nicht. Öffnungszeiten, Sperrzeiten und Plätze werden beachtet.</p>
         </Card>
@@ -201,6 +234,7 @@ export function AdminBookingForm({ members, resources, durationOptions, currency
               {selected?.discountReason && payment !== "FREE" ? <span className="ml-2 text-xs font-normal text-ok">{selected.discountReason}</span> : null}
             </span>
           </div>
+          {selected?.unitLabel ? <div className="flex items-center justify-between gap-3 text-xs text-ink-3"><span>{selected.unitLabel}</span>{selected.detail ? <span className="tabular-nums">{selected.detail}</span> : null}</div> : null}
           <Field label="Bemerkung (optional)"><Input name="note" placeholder="z.B. Telefonisch reserviert" maxLength={191} /></Field>
         </Card>
       </section>
@@ -208,7 +242,7 @@ export function AdminBookingForm({ members, resources, durationOptions, currency
       {state && !state.ok ? <Alert>{state.error}</Alert> : null}
       <div className="sticky bottom-24 md:bottom-4">
         <SubmitButton size="lg" className="w-full shadow-lg" disabled={!selected || !userId} pendingText="Wird gebucht…">
-          <Check className="h-5 w-5" /> {!userId ? "Mitglied wählen" : !selected ? "Zeit wählen" : `Für ${member?.name.split(" ")[0] ?? "Mitglied"} buchen`}
+          <Check className="h-5 w-5" /> {!userId ? "Mitglied wählen" : !selected ? (loading ? "Wird geladen…" : "Zeit wählen") : `Für ${member?.name.split(" ")[0] ?? "Mitglied"} buchen`}
         </SubmitButton>
       </div>
     </form>

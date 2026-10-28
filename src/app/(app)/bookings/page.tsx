@@ -19,7 +19,7 @@ export default async function BookingsPage({ searchParams }: { searchParams: Pro
     sp.repeat ? getRepeatSource(ctx, sp.repeat) : Promise.resolve(null),
   ]);
   const repeatResource = source ? resources.find((r) => r.id === source.resourceId) : null;
-  const prefill = source && repeatResource ? { resourceId: source.resourceId, duration: source.durationMinutes, ...repeatTarget(source.startsAt) } : null;
+  const prefill = source && repeatResource ? { resourceId: source.resourceId, duration: source.durationMinutes, persons: source.persons, ...repeatTarget(source.startsAt) } : null;
   const { upcoming, past } = partitionBookings(mine);
   const canManage = ctx.can("tenant.manage");
 
@@ -42,11 +42,12 @@ export default async function BookingsPage({ searchParams }: { searchParams: Pro
       ) : null}
       {resources.length ? (
         <BookingWizard
-          resources={resources.map((r) => ({ id: r.id, name: r.name, kind: r.kind, capacity: r.capacity, description: r.description, durationOptions: r.durationOptions }))}
+          resources={resources.map((r) => ({ id: r.id, name: r.name, kind: r.kind, capacity: r.capacity, maxPersons: r.maxPersons, description: r.description, durationOptions: r.durationOptions }))}
           settings={{
             currency: settings.currency, durationOptions: settings.durationOptions, allowInvoice: settings.allowInvoice, allowOnline: settings.allowOnline, onlineProvider: settings.onlineProvider,
             approvalRequired: settings.approvalRequired, lastMinuteDiscountPercent: settings.lastMinuteDiscountPercent, lastMinuteWindowHours: settings.lastMinuteWindowHours,
             maxAdvanceDays: settings.maxAdvanceDays, cancellationHours: settings.cancellationHours,
+            personPricing: settings.personPricing, maxPersons: settings.maxPersons, flatExclusive: settings.flatExclusive, capacityPerPerson: settings.capacityPerPerson,
           }}
           today={todayZurich()}
           prefill={prefill}

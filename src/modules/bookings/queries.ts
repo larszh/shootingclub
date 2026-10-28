@@ -3,6 +3,7 @@ import { db } from "@/lib/db";
 import type { AppContext } from "@/lib/tenant";
 import { safeJson } from "@/lib/utils";
 import { computeSlots } from "./availability";
+import { bookingUnits } from "./pricing";
 import { DEFAULT_DURATIONS, DEFAULT_OPENING_HOURS, durationOptionSchema, openingHoursSchema, type DurationOption, type OpeningHours } from "./types";
 import { z } from "zod";
 import type { Prisma } from "@/generated/prisma/client";
@@ -29,6 +30,14 @@ export type BookingSettingsView = {
   invoiceDueDays: number;
   invoicePrefix: string;
   invoiceNote: string | null;
+  /** Preise pro Person (Preistabelle in den Dauer-Optionen). */
+  personPricing: boolean;
+  /** Standard-Höchstzahl Personen pro Buchung. */
+  maxPersons: number;
+  /** Pauschalbuchung belegt die ganze Ressource. */
+  flatExclusive: boolean;
+  /** Jede Person belegt einen Platz der Kapazität. */
+  capacityPerPerson: boolean;
   exists: boolean;
 };
 
@@ -39,13 +48,15 @@ export async function getBookingSettings(tenantId: string): Promise<BookingSetti
       currency: "CHF", slotStepMinutes: 30, durationOptions: DEFAULT_DURATIONS, openingHours: DEFAULT_OPENING_HOURS,
       approvalRequired: false, allowInvoice: true, allowOnline: false, onlineProvider: "NONE",
       lastMinuteDiscountPercent: 0, lastMinuteWindowHours: 24, minLeadMinutes: 60, maxAdvanceDays: 60, cancellationHours: 24,
-      invoiceDueDays: 30, invoicePrefix: "R-", invoiceNote: null, exists: false,
+      invoiceDueDays: 30, invoicePrefix: "R-", invoiceNote: null,
+      personPricing: false, maxPersons: 1, flatExclusive: true, capacityPerPerson: false, exists: false,
     };
   }
   const d = z.array(durationOptionSchema).safeParse(safeJson(s.durationOptionsJson, []));
   const oh = openingHoursSchema.safeParse(safeJson(s.openingHoursJson, {}));
   return {
     ...s,
+    maxPersons: Math.max(1, s.maxPersons),
     durationOptions: d.success && d.data.length ? d.data : DEFAULT_DURATIONS,
     openingHours: oh.success ? oh.data : DEFAULT_OPENING_HOURS,
     exists: true,
@@ -54,12 +65,18 @@ export async function getBookingSettings(tenantId: string): Promise<BookingSetti
 
 export type ResourceView = {
   id: string; name: string; description: string | null; kind: string; capacity: number; isActive: boolean; sortOrder: number;
+  /** Abweichende Höchstzahl Personen (null = Vereinsstandard). */
+  maxPersons: number | null;
   durationOptions: DurationOption[] | null;
 };
 
-function toResourceView(r: { id: string; name: string; description: string | null; kind: string; capacity: number; isActive: boolean; sortOrder: number; durationOptionsJson: string | null }): ResourceView {
+function toResourceView(r: { id: string; name: string; description: string | null; kind: string; capacity: number; maxPersons: number | null; isActive: boolean; sortOrder: number; durationOptionsJson: string | null }): ResourceView {
   const d = r.durationOptionsJson ? z.array(durationOptionSchema).safeParse(safeJson(r.durationOptionsJson, [])) : null;
-  return { ...r, durationOptions: d && d.success && d.data.length ? d.data : null };
+  return {
+    id: r.id, name: r.name, description: r.description, kind: r.kind, capacity: r.capacity, isActive: r.isActive, sortOrder: r.sortOrder,
+    maxPersons: r.maxPersons && r.maxPersons > 0 ? r.maxPersons : null,
+    durationOptions: d && d.success && d.data.length ? d.data : null,
+  };
 }
 
 export async function listResources(tenantId: string, opts?: { includeInactive?: boolean }) {
@@ -96,21 +113,28 @@ export async function expireUnpaidOnlineBookings(tenantId: string) {
  * Verfügbare Startzeiten eines Tages. Mit `bypassLimits` (Verwaltung) gelten Vorlauf und
  * Vorausbuchungsgrenze nicht; Öffnungszeiten, Sperrzeiten und Kapazität bleiben verbindlich.
  * Rückwirkende Erfassung ist dann bis 30 Tage zurück möglich.
+ * `requestedUnits`: benötigte Kapazitätseinheiten der Anfrage (Summe der Einheiten überlappender Buchungen
+ * plus Anfrage darf die Kapazität nicht übersteigen).
  */
-export async function getSlotsForDay(tenantId: string, resource: ResourceView, settings: BookingSettingsView, dateStr: string, durationMinutes: number, opts?: { bypassLimits?: boolean; client?: DbClient }) {
+export async function getSlotsForDay(tenantId: string, resource: ResourceView, settings: BookingSettingsView, dateStr: string, durationMinutes: number, opts?: { bypassLimits?: boolean; client?: DbClient; requestedUnits?: number }) {
   const client = opts?.client ?? db;
   const dayStart = new Date(`${dateStr}T00:00:00Z`);
   const dayEnd = new Date(dayStart.getTime() + 48 * 3_600_000);
   const windowStart = new Date(dayStart.getTime() - 24 * 3_600_000);
   const [bookings, blocks] = await Promise.all([
-    client.booking.findMany({ where: { resourceId: resource.id, status: { in: ["PENDING", "CONFIRMED"] }, startsAt: { lt: dayEnd }, endsAt: { gt: windowStart } }, select: { startsAt: true, endsAt: true } }),
+    client.booking.findMany({ where: { resourceId: resource.id, status: { in: ["PENDING", "CONFIRMED"] }, startsAt: { lt: dayEnd }, endsAt: { gt: windowStart } }, select: { startsAt: true, endsAt: true, units: true, persons: true, isFlatRate: true } }),
     client.resourceBlock.findMany({ where: { tenantId, OR: [{ resourceId: null }, { resourceId: resource.id }], startsAt: { lt: dayEnd }, endsAt: { gt: windowStart } }, select: { startsAt: true, endsAt: true } }),
   ]);
   return computeSlots({
     dateStr, durationMinutes, slotStepMinutes: settings.slotStepMinutes, openingHours: settings.openingHours, capacity: resource.capacity,
+    requestedUnits: opts?.requestedUnits ?? 1,
     minLeadMinutes: opts?.bypassLimits ? -30 * 24 * 60 : settings.minLeadMinutes,
     maxAdvanceDays: opts?.bypassLimits ? 730 : settings.maxAdvanceDays,
-    bookings, blocks,
+    // Gespeicherte Einheiten gegen die aktuelle Konfiguration prüfen: Wird die Kapazität später erhöht
+    // oder «Jede Person belegt einen Platz» eingeschaltet, belegen bestehende Buchungen (z.B. Pauschal
+    // für den ganzen Raum) weiterhin mindestens so viel, wie sie nach heutigen Regeln belegen würden.
+    bookings: bookings.map((b) => ({ startsAt: b.startsAt, endsAt: b.endsAt, units: Math.max(b.units, bookingUnits(b, resource.capacity, settings)) })),
+    blocks,
   });
 }
 
@@ -215,7 +239,7 @@ export async function listBookingsForExport(tenantId: string, from: Date, to: Da
 
 /** Letzte Buchung eines Mitglieds für «Wiederholen» (nur eigene, im aktiven Verein). */
 export async function getRepeatSource(ctx: TenantCtx, bookingId: string) {
-  const b = await db.booking.findUnique({ where: { id: bookingId }, select: { id: true, tenantId: true, userId: true, resourceId: true, durationMinutes: true, startsAt: true } });
+  const b = await db.booking.findUnique({ where: { id: bookingId }, select: { id: true, tenantId: true, userId: true, resourceId: true, durationMinutes: true, startsAt: true, persons: true } });
   if (!b || b.tenantId !== ctx.tenant.id || b.userId !== ctx.user.id) return null;
   return b;
 }

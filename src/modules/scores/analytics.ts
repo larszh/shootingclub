@@ -3,7 +3,7 @@
  * damit sie in Abfragen, Routen und Komponenten gleichermassen nutzbar sind.
  */
 import { addDays, APP_TZ, zurichParts, zurichToUtc } from "@/lib/time";
-import type { Stage } from "./types";
+import { maxShotValue, type Stage } from "./types";
 
 // ---------------------------------------------------------------------------
 // Zeiträume
@@ -89,12 +89,16 @@ export function round1(n: number) {
   return Math.round(n * 10) / 10;
 }
 
-/** Anzahl Höchstwerte (z.B. Zehner) über alle Serien. Bei Treffer/Fehler-Wertung immer 0. */
+/**
+ * Anzahl Höchstwerte (z.B. Zehner, bei Zonenwertung Treffer in der besten Zone) über alle Serien.
+ * Bei Treffer/Fehler-Wertung immer 0.
+ */
 export function countTopShots(shotsPerStage: number[][], stages: Stage[], scoringMode: string) {
   if (scoringMode === "HITS") return 0;
   let n = 0;
   shotsPerStage.forEach((shots, i) => {
-    const max = stages[i]?.maxPerShot ?? 10;
+    const st = stages[i];
+    const max = st ? (scoringMode === "ZONES" ? maxShotValue(st, scoringMode) : st.maxPerShot) : 10;
     for (const s of shots) if (s >= max) n += 1;
   });
   return n;
@@ -169,8 +173,9 @@ export function weekStreaks(dates: Date[], now: Date) {
 function csvCell(v: string | number | null | undefined) {
   if (v === null || v === undefined) return "";
   let s = typeof v === "number" ? String(v) : v;
-  // Formel-Injection verhindern (Excel interpretiert =, +, -, @ am Anfang).
-  if (typeof v === "string" && /^[=+\-@\t\r]/.test(s)) s = `'${s}`;
+  // Formel-Injection verhindern (Excel interpretiert =, +, -, @ am Anfang). Reine Zahlen
+  // (auch negative, z.B. Zonenwertung mit Strafpunkten) bleiben unverändert.
+  if (typeof v === "string" && /^[=+\-@\t\r]/.test(s) && !/^-\d+(\.\d+)?$/.test(s)) s = `'${s}`;
   if (/[";\n\r]/.test(s)) s = `"${s.replace(/"/g, '""')}"`;
   return s;
 }

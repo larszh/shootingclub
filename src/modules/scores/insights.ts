@@ -2,7 +2,7 @@ import "server-only";
 import { db } from "@/lib/db";
 import type { AppContext } from "@/lib/tenant";
 import { safeJson } from "@/lib/utils";
-import { parseStages, programTotals, type Stage } from "./types";
+import { firedShots, parseStages, programTotals, type Stage } from "./types";
 import { assignRanks, compareEntries, countTopShots, periodRange, round1, weekStreaks, type Period, type RankedEntry } from "./analytics";
 
 type Ctx = AppContext & { tenant: NonNullable<AppContext["tenant"]> };
@@ -18,7 +18,8 @@ function summarize(results: ResultRow[], stages: Stage[], scoringMode: string) {
   const byIdx = new Map(results.map((r) => [r.stageIndex, r]));
   const shotsPerStage = stages.map((_, i) => safeJson<number[]>(byIdx.get(i)?.shotsJson, []));
   const total = round1(results.reduce((a, r) => a + r.total, 0));
-  const shots = shotsPerStage.reduce((a, s) => a + s.length, 0);
+  // Strafen ohne Schuss (z.B. Verfahrensfehler) sind keine Schüsse
+  const shots = shotsPerStage.reduce((a, s, i) => a + firedShots(stages[i]!, s, scoringMode), 0);
   const last = stages.length ? byIdx.get(stages.length - 1)?.total ?? 0 : 0;
   return {
     total,
@@ -124,7 +125,7 @@ export async function getLeaderboard(ctx: Ctx, programId: string, period: Period
     program: { id: program.id, name: program.name, scoringMode: program.scoringMode, max: program.totals.max },
     decimal: program.scoringMode === "RINGS_DECIMAL",
     showTopShots: program.scoringMode !== "HITS",
-    topShotsLabel: program.stages.every((st) => st.maxPerShot === 10) ? "Zehner" : "Höchstwerte",
+    topShotsLabel: program.scoringMode === "ZONES" ? "× beste Zone" : program.stages.every((st) => st.maxPerShot === 10) ? "Zehner" : "Höchstwerte",
     period,
     periodLabel: range.label,
     entries,
@@ -227,11 +228,12 @@ export async function getUserScoreStats(ctx: Ctx) {
       const dist = stages[i]?.distanceM;
       if (dist === undefined || shots.length === 0) return;
       const d = byDistance.get(dist) ?? { shots: 0, ringShots: 0, ringSum: 0, hitShots: 0, hits: 0 };
-      d.shots += shots.length;
+      d.shots += firedShots(stages[i]!, shots, prog.scoringMode);
       if (prog.scoringMode === "HITS") {
         d.hitShots += shots.length;
         d.hits += shots.filter((x) => x >= 1).length;
-      } else {
+      } else if (prog.scoringMode !== "ZONES") {
+        // Zonenpunkte (inkl. Strafpunkte) sind keine Ringe und fliessen nicht in den Ringschnitt ein
         d.ringShots += shots.length;
         d.ringSum += shots.reduce((a, b) => a + b, 0);
       }

@@ -5,6 +5,9 @@ import { PrismaMariaDb } from "@prisma/adapter-mariadb";
 import { PROGRAM_PRESETS } from "../src/modules/scores/presets";
 import { TARGET_PRESETS } from "../src/modules/targets/presets";
 import { seedDemoEvents } from "../src/modules/events/seed";
+import { seedDemoFiles } from "../src/modules/files/seed";
+import { seedDemoChat } from "../src/modules/chat/seed";
+import { seedDemoAmmo } from "../src/modules/ammo/seed";
 
 const u = new URL(process.env.DATABASE_URL ?? "mysql://standchef:standchef@127.0.0.1:3306/standchef");
 const db = new PrismaClient({
@@ -109,6 +112,14 @@ async function main() {
       await db.user.update({ where: { id: beat.id }, data: { street: "Bahnhofstrasse 12", zip: "8001", city: "Zürich" } });
     }
     await seedDemoEvents(db, demo.id, anna.id, [anna.id, beat.id, admin.id]);
+
+    // Dateiablage, Chat und Munition im Demo-Verein einschalten und mit Beispieldaten füllen (idempotent)
+    for (const moduleKey of ["files", "chat", "ammo"] as const) {
+      await db.tenantModule.upsert({ where: { tenantId_moduleKey: { tenantId: demo.id, moduleKey } }, update: { enabled: true }, create: { tenantId: demo.id, moduleKey, enabled: true } });
+    }
+    await seedDemoFiles(db, demo.id, anna.id);
+    await seedDemoChat(db, demo.id, [anna.id, beat.id, admin.id]);
+    await seedDemoAmmo(db, demo.id);
     console.log("Demo-Verein: Beitrittscode DEMO42 · anna@example.ch / beat@example.ch (Passwort demo1234)");
   }
 

@@ -6,7 +6,7 @@ import { MODULES } from "@/lib/modules";
 import { can, type Permission } from "@/lib/permissions";
 import type { CurrentUser } from "@/lib/auth";
 import type { ScoreMatch, SyncMapping, SyncOpResult } from "@/lib/offline/types";
-import { parseStages, sanitizeShots, stageTotal, type ScoringMode } from "./types";
+import { MAX_STAGE_PENALTIES, parseStages, sanitizeShots, stageEntryLimit, stageTotal, type ScoringMode } from "./types";
 import type { MatchView } from "./queries";
 
 /**
@@ -53,7 +53,7 @@ export const saveStageResultInputSchema = z.intersection(
   z.object({
     participantKey: z.union([z.string().trim().min(1).max(64), z.number().int().min(0).max(100)]).transform(String),
     stageIndex: z.number().int().min(0).max(100),
-    shots: z.array(z.number()).max(200),
+    shots: z.array(z.number()).max(200 + MAX_STAGE_PENALTIES),
     clientUpdatedAt: timestampSchema,
   }),
 );
@@ -197,6 +197,15 @@ async function loadMatchForActor(actor: ScoreActor, ref: { matchId?: string; mat
 // Serie speichern (last-write-wins über clientUpdatedAt)
 // ---------------------------------------------------------------------------
 
+function parseStoredShots(json: string): number[] | undefined {
+  try {
+    const v: unknown = JSON.parse(json);
+    return Array.isArray(v) ? v.map((x) => (typeof x === "number" ? x : Number.NaN)) : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 export async function saveStageResultCore(
   actor: ScoreActor,
   raw: SaveStageResultInput,
@@ -218,13 +227,23 @@ export async function saveStageResultCore(
   const stages = parseStages(match.program.stagesJson);
   const stage = stages[input.stageIndex];
   if (!stage) return coreFail("Serie nicht gefunden", "not_found");
-  const shots = sanitizeShots(input.shots, stage, match.program.scoringMode as ScoringMode);
+  const mode = match.program.scoringMode as ScoringMode;
+  const where = { participantId_stageIndex: { participantId: participant.id, stageIndex: input.stageIndex } };
+  const existing = await db.matchResult.findUnique({ where });
+  // Bereits gespeicherte Schüsse bleiben gültig, auch wenn das Programm seither geändert wurde
+  const stored = existing ? parseStoredShots(existing.shotsJson) : undefined;
+  const shots = sanitizeShots(input.shots, stage, mode, stored);
+  // Zonenwertung: Werte ausserhalb der Zonen der Serie nicht still verwerfen (würde Schüsse verschieben)
+  // (Strafen ohne Schuss zählen nicht als Schuss, darum ist die Liste dort länger als stage.shots)
+  const limit = stageEntryLimit(stage, mode);
+  if (mode === "ZONES" && shots.length !== Math.min(input.shots.length, limit)) {
+    const bad = input.shots.slice(0, limit).findIndex((v, i) => shots[i] !== v);
+    return coreFail(bad >= 0 ? `Ungültiger Eintrag bei Nr. ${bad + 1} (Zonenwert oder zu viele Schüsse) – bitte diesen Eintrag entfernen.` : "Ungültiger Zonenwert für diese Serie.", "invalid");
+  }
   const total = stageTotal(shots);
   const clientUpdatedAt = clampClientTime(input.clientUpdatedAt);
   const shotsJson = JSON.stringify(shots);
-  const where = { participantId_stageIndex: { participantId: participant.id, stageIndex: input.stageIndex } };
 
-  const existing = await db.matchResult.findUnique({ where });
   let ignored = false;
   if (!existing) {
     try {

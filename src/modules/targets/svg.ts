@@ -1,4 +1,8 @@
 import { PAPER_MM, parseTargetParams, type PaperSize, type TargetParams, type TargetSubject } from "./types";
+import { circle, clamp, fmtM, formatRatio, int, joinNote, line, n, plain, range, rect, shuffle, text, esc, type Body, type Box, type Ctx } from "./svg-kit";
+import { renderTactical, TACTICAL_KEYS } from "./tactical";
+
+export { formatRatio };
 
 /**
  * Erzeugt ein druckfertiges SVG (schwarz/weiss) in Millimetern.
@@ -31,14 +35,6 @@ export function renderTarget(subject: TargetSubject, size: PaperSize, params: Ta
 ${r.body}${noteSvg}
 </svg>`;
   return { svg, note: r.note };
-}
-
-type Box = { x: number; y: number; w: number; h: number };
-type Ctx = { box: Box; p: TargetParams; size: PaperSize };
-type Body = { body: string; note: string | null };
-
-function plain(body: string): Body {
-  return { body, note: null };
 }
 
 function renderBody(subject: TargetSubject, c: Ctx): Body {
@@ -93,6 +89,8 @@ function renderBody(subject: TargetSubject, c: Ctx): Body {
     case "HUMANOID":
       return humanoid(c);
     default:
+      // Taktik & Polizei (eigenes Modul)
+      if (TACTICAL_KEYS.has(subject)) return renderTactical(subject, c);
       return plain("");
   }
 }
@@ -101,32 +99,6 @@ function renderBody(subject: TargetSubject, c: Ctx): Body {
 // Hilfsfunktionen
 // ---------------------------------------------------------------------------
 
-/** Zahl kompakt mit max. 2 Nachkommastellen */
-function n(v: number) {
-  return String(Math.round(v * 100) / 100);
-}
-function esc(s: string) {
-  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-}
-function clamp(v: number, lo: number, hi: number) {
-  return Math.max(lo, Math.min(hi, v));
-}
-function int(v: number | undefined, def: number, lo: number, hi: number) {
-  return clamp(Math.round(v ?? def), lo, hi);
-}
-function circle(cx: number, cy: number, r: number, attrs: string) {
-  return `<circle cx="${n(cx)}" cy="${n(cy)}" r="${n(r)}" ${attrs}/>`;
-}
-function text(x: number, y: number, fs: number, s: string, attrs = 'fill="#000" text-anchor="middle" dominant-baseline="central"') {
-  return `<text x="${n(x)}" y="${n(y)}" font-size="${n(fs)}" ${attrs}>${esc(s)}</text>`;
-}
-function line(x1: number, y1: number, x2: number, y2: number, sw: number, color = "#000", extra = "") {
-  return `<line x1="${n(x1)}" y1="${n(y1)}" x2="${n(x2)}" y2="${n(y2)}" stroke="${color}" stroke-width="${n(sw)}"${extra ? " " + extra : ""}/>`;
-}
-function rect(x: number, y: number, w: number, h: number, attrs: string) {
-  return `<rect x="${n(x)}" y="${n(y)}" width="${n(w)}" height="${n(h)}" ${attrs}/>`;
-}
-
 /** Hinweiszeile oben links im Druckrand (grau, klein). */
 function noteText(note: string, margin: number, maxW: number) {
   const est = note.length * 0.52;
@@ -134,20 +106,6 @@ function noteText(note: string, margin: number, maxW: number) {
   // Zu lang für die Breite (z.B. A6): auf Randbreite zusammendrücken statt abschneiden
   const fit = est * fs > maxW ? ` textLength="${n(maxW)}" lengthAdjust="spacingAndGlyphs"` : "";
   return `\n<text x="${margin}" y="7" font-size="${n(fs)}" fill="#666"${fit}>${esc(note)}</text>`;
-}
-
-/** Massstab als Text, z.B. 1:12 oder 2:1 */
-export function formatRatio(s: number) {
-  if (Math.abs(s - 1) < 0.005) return "1:1";
-  const fmt = (v: number) => {
-    const d = v >= 10 ? 1 : 2;
-    return String(Math.round(v * 10 ** d) / 10 ** d);
-  };
-  return s < 1 ? `1:${fmt(1 / s)}` : `${fmt(s)}:1`;
-}
-
-function fmtM(v: number) {
-  return String(Math.round(v * 10) / 10);
 }
 
 /**
@@ -176,31 +134,6 @@ function resolveScale(
   return { s, note: parts.join(" · ") };
 }
 
-function joinNote(...parts: Array<string | null | undefined>) {
-  const x = parts.filter(Boolean);
-  return x.length ? x.join(" · ") : null;
-}
-
-/** Deterministischer Zufall (mulberry32), damit Anordnungen reproduzierbar sind. */
-function rng(seed: number) {
-  let a = (seed * 2654435761) >>> 0 || 1;
-  return () => {
-    a = (a + 0x6d2b79f5) | 0;
-    let t = Math.imul(a ^ (a >>> 15), 1 | a);
-    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
-}
-function shuffle<T>(arr: T[], seed: number): T[] {
-  const out = [...arr];
-  const r = rng(seed);
-  for (let i = out.length - 1; i > 0; i--) {
-    const j = Math.floor(r() * (i + 1));
-    [out[i], out[j]] = [out[j], out[i]];
-  }
-  return out;
-}
-
 // ---------------------------------------------------------------------------
 // Ringscheiben nach Spezifikation (Masse in mm, 1:1)
 // ---------------------------------------------------------------------------
@@ -227,7 +160,6 @@ function spec(values: number[], diameter: (v: number) => number, blackD: number,
     labels,
   };
 }
-const range = (a: number, b: number) => Array.from({ length: b - a + 1 }, (_, i) => a + i);
 
 /** 25/50 m Präzision: 10er 50 mm, je +50 mm Durchmesser, 1er 500 mm, Spiegel 7–10 = 200 mm, Innenzehner 25 mm */
 const ISSF_PISTOL = spec(range(1, 10), (v) => 50 + (10 - v) * 50, 200, range(1, 8), 25);

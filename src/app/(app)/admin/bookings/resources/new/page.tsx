@@ -11,7 +11,7 @@ export default async function NewResourcePage() {
   return (
     <div>
       <PageHeader title="Neue Ressource" back={{ href: "/admin/bookings/resources", label: "Ressourcen" }} />
-      <ResourceForm tenantDurations={settings.durationOptions} currency={settings.currency} />
+      <ResourceForm tenant={{ durationOptions: settings.durationOptions, currency: settings.currency, personPricing: settings.personPricing, maxPersons: settings.maxPersons, flatExclusive: settings.flatExclusive, capacityPerPerson: settings.capacityPerPerson }} />
     </div>
   );
 }

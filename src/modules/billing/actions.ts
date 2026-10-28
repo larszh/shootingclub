@@ -20,7 +20,7 @@ const revalidate = () => { revalidatePath("/admin/billing"); revalidatePath("/bi
 // --- Rechnungsprofil --------------------------------------------------------
 
 export async function saveBillingProfileAction(_prev: ActionResult | null, formData: FormData): Promise<ActionResult> {
-  const ctx = await requireBillingAdmin({ orBookings: true });
+  const ctx = await requireBillingAdmin({ orBookings: true, orAmmo: true });
   const parsed = profileSchema.safeParse({
     payeeName: formData.get("payeeName") || undefined,
     payeeStreet: formData.get("payeeStreet") || undefined,

@@ -1,19 +1,22 @@
 "use client";
 
 import { useActionState, useEffect, useMemo, useRef, useState, useTransition } from "react";
-import { ChevronLeft, ChevronRight, Clock, CreditCard, FileText, MapPin, Tag } from "lucide-react";
+import { ChevronLeft, ChevronRight, Clock, CreditCard, FileText, Info, MapPin, Tag, Users } from "lucide-react";
 import { createBookingAction } from "@/modules/bookings/actions";
 import { fetchSlotsAction, type SlotDto } from "@/modules/bookings/slot-actions";
 import { formatDuration, resourceKindLabel, type DurationOption } from "@/modules/bookings/types";
+import { basePriceFor, maxPersonsFor, wholeResourceLabel } from "@/modules/bookings/pricing";
+import { PersonsStepper } from "./persons-stepper";
 import { Alert, Card, Field, Input } from "@/components/ui";
 import { SubmitButton, Spinner } from "@/components/ui/form";
 import { formatMoney } from "@/lib/money";
 import { cn } from "@/lib/utils";
 
-type ResourceDto = { id: string; name: string; kind: string; capacity: number; description: string | null; durationOptions: DurationOption[] | null };
+type ResourceDto = { id: string; name: string; kind: string; capacity: number; maxPersons: number | null; description: string | null; durationOptions: DurationOption[] | null };
 type SettingsDto = {
   currency: string; durationOptions: DurationOption[]; allowInvoice: boolean; allowOnline: boolean; onlineProvider: string; approvalRequired: boolean;
   lastMinuteDiscountPercent: number; lastMinuteWindowHours: number; maxAdvanceDays: number; cancellationHours: number;
+  personPricing: boolean; maxPersons: number; flatExclusive: boolean; capacityPerPerson: boolean;
 };
 
 function shiftDate(dateStr: string, days: number) {
@@ -25,35 +28,46 @@ function weekdayLabel(dateStr: string) {
   return new Intl.DateTimeFormat("de-CH", { weekday: "long", day: "numeric", month: "long", timeZone: "UTC" }).format(new Date(`${dateStr}T12:00:00Z`));
 }
 
-export type WizardPrefill = { resourceId: string; duration: number; date: string; time: string };
+export type WizardPrefill = { resourceId: string; duration: number; date: string; time: string; persons?: number };
 
 export function BookingWizard({ resources, settings, today, prefill }: { resources: ResourceDto[]; settings: SettingsDto; today: string; prefill?: WizardPrefill | null }) {
   const [state, action] = useActionState(createBookingAction, null);
   const optionsFor = (rid: string) => resources.find((r) => r.id === rid)?.durationOptions ?? settings.durationOptions;
+  const maxFor = (rid: string) => {
+    const r = resources.find((x) => x.id === rid);
+    return r ? maxPersonsFor(r, settings) : 1;
+  };
   const [sel, setSel] = useState(() => {
     const pre = prefill && resources.some((r) => r.id === prefill.resourceId) ? prefill : null;
     const resourceId = pre?.resourceId ?? resources[0]?.id ?? "";
     const opts = optionsFor(resourceId);
     const duration = pre && opts.some((o) => o.minutes === pre.duration) ? pre.duration : opts[0]?.minutes ?? 60;
-    return { resourceId, duration, date: pre?.date && pre.date >= today ? pre.date : today };
+    const persons = Math.min(Math.max(1, pre?.persons ?? 1), maxFor(resourceId));
+    return { resourceId, duration, persons, date: pre?.date && pre.date >= today ? pre.date : today };
   });
   const [prefillNote, setPrefillNote] = useState<string | null>(null);
-  const { resourceId, duration, date } = sel;
+  const { resourceId, duration, date, persons } = sel;
   const resource = resources.find((r) => r.id === resourceId);
   const options = optionsFor(resourceId);
+  const maxPersons = maxFor(resourceId);
+  const option = options.find((o) => o.minutes === duration) ?? null;
+  const flatFrom = settings.personPricing && option?.flatFromPersons && option.flatPriceCents !== undefined && option.flatFromPersons <= maxPersons ? option.flatFromPersons : null;
   const [slots, setSlots] = useState<SlotDto[] | null>(null);
+  const [slotError, setSlotError] = useState<string | null>(null);
   const [time, setTime] = useState<string | null>(null);
   const [loading, start] = useTransition();
   const [paymentMethod, setPaymentMethod] = useState<"INVOICE" | "ONLINE">(settings.allowOnline ? "ONLINE" : "INVOICE");
 
   // Nur die Antwort der jeweils letzten Anfrage übernehmen (schnelles Blättern).
   const requestId = useRef(0);
-  const load = (next: { resourceId: string; duration: number; date: string }) => {
+  const load = (next: typeof sel) => {
     start(async () => {
       const id = ++requestId.current;
-      const r = await fetchSlotsAction(next.resourceId, next.date, next.duration);
+      const r = await fetchSlotsAction(next.resourceId, next.date, next.duration, next.persons);
       if (id !== requestId.current) return;
       setSlots(r.slots);
+      setSlotError(r.error ?? null);
+      setTime((t) => (t && r.slots.some((x) => x.time === t && x.available) ? t : null));
     });
   };
   const update = (patch: Partial<typeof sel>) => {
@@ -61,12 +75,15 @@ export function BookingWizard({ resources, settings, today, prefill }: { resourc
     if (patch.resourceId) {
       const opts = optionsFor(patch.resourceId);
       if (!opts.some((o) => o.minutes === next.duration)) next.duration = opts[0]?.minutes ?? 60;
+      next.persons = Math.min(next.persons, maxFor(patch.resourceId));
     }
     setSel(next);
-    setTime(null);
+    // Beim Ändern der Personenzahl bleibt die gewählte Zeit, falls sie weiterhin passt (siehe `selected`).
+    if (patch.persons === undefined) setTime(null);
     setPrefillNote(null);
     load(next);
   };
+  const setPersons = (n: number) => update({ persons: n });
   const setResourceId = (id: string) => update({ resourceId: id });
   const setDuration = (d: number) => update({ duration: d });
   const setDate = (d: string) => update({ date: d });
@@ -76,9 +93,10 @@ export function BookingWizard({ resources, settings, today, prefill }: { resourc
     if (!sel.resourceId) return;
     let cancelled = false;
     const id = ++requestId.current;
-    fetchSlotsAction(sel.resourceId, sel.date, sel.duration).then((r) => {
+    fetchSlotsAction(sel.resourceId, sel.date, sel.duration, sel.persons).then((r) => {
       if (cancelled || id !== requestId.current) return;
       setSlots(r.slots);
+      setSlotError(r.error ?? null);
       if (prefill && prefill.resourceId === sel.resourceId && prefill.date === sel.date) {
         const slot = r.slots.find((x) => x.time === prefill.time);
         if (slot?.available) {
@@ -93,7 +111,9 @@ export function BookingWizard({ resources, settings, today, prefill }: { resourc
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const selected = slots?.find((s) => s.time === time && s.available) ?? null;
+  // Während neue Zeiten (und Preise) geladen werden, gilt keine Auswahl: sonst stünde nach einer
+  // Änderung der Personenzahl kurz der alte Preis da, und es könnte zu diesem Stand gebucht werden.
+  const selected = loading ? null : slots?.find((s) => s.time === time && s.available) ?? null;
   const maxDate = shiftDate(today, settings.maxAdvanceDays);
   const payChoices = useMemo(() => {
     const c: Array<"INVOICE" | "ONLINE"> = [];
@@ -102,6 +122,10 @@ export function BookingWizard({ resources, settings, today, prefill }: { resourc
     return c;
   }, [settings]);
   const needsPayment = (selected?.totalCents ?? 0) > 0;
+  const showPersons = maxPersons > 1;
+  const stepWhen = showPersons ? 4 : 3;
+  const showRemaining = settings.capacityPerPerson && (resource?.capacity ?? 1) > 1;
+  const tooFew = !!slots?.some((s) => s.reason === "Nicht genug Plätze frei");
 
   return (
     <form action={action} className="space-y-5">
@@ -109,6 +133,7 @@ export function BookingWizard({ resources, settings, today, prefill }: { resourc
       <input type="hidden" name="date" value={date} />
       <input type="hidden" name="time" value={time ?? ""} />
       <input type="hidden" name="durationMinutes" value={duration} />
+      <input type="hidden" name="persons" value={persons} />
       {needsPayment && payChoices.length > 1 ? <input type="hidden" name="paymentMethod" value={paymentMethod} /> : null}
 
       {/* 1 Ressource */}
@@ -132,7 +157,7 @@ export function BookingWizard({ resources, settings, today, prefill }: { resourc
           {options.map((o) => (
             <button key={o.minutes} type="button" onClick={() => setDuration(o.minutes)}
               className={cn("press h-11 rounded-control px-4 text-sm font-medium border", duration === o.minutes ? "bg-ink text-bg border-ink" : "bg-surface border-line text-ink-2")}>
-              {formatDuration(o.minutes)}<span className={cn("ml-2 text-xs", duration === o.minutes ? "text-bg/70" : "text-ink-3")}>{o.priceCents ? formatMoney(o.priceCents, settings.currency) : "gratis"}</span>
+              {formatDuration(o.minutes)}<span className={cn("ml-2 text-xs", duration === o.minutes ? "text-bg/70" : "text-ink-3")}>{(() => { const c = basePriceFor(o, persons, settings.personPricing).baseCents; return c ? formatMoney(c, settings.currency) : "gratis"; })()}</span>
             </button>
           ))}
         </div>
@@ -141,9 +166,30 @@ export function BookingWizard({ resources, settings, today, prefill }: { resourc
         ) : null}
       </section>
 
-      {/* 3 Datum + Zeit */}
+      {/* 3 Personen (nur wenn mehrere möglich) */}
+      {showPersons ? (
+        <section className="animate-rise [animation-delay:90ms]">
+          <h2 className="text-xs font-semibold uppercase tracking-wider text-ink-3 mb-2">3 · Wie viele Personen</h2>
+          <Card className="p-3 space-y-2">
+            <PersonsStepper value={persons} max={maxPersons} onChange={setPersons} />
+            {settings.personPricing && option ? (
+              <p className="text-center text-xs text-ink-3">
+                {(() => { const bp = basePriceFor(option, persons, true); return bp.isFlatRate ? `Pauschalpreis ${formatMoney(bp.baseCents, settings.currency)}` : bp.perPersonCents !== null ? `${persons} × ${formatMoney(bp.perPersonCents, settings.currency)} = ${formatMoney(bp.baseCents, settings.currency)}` : `${formatMoney(bp.baseCents, settings.currency)} für ${persons === 1 ? "1 Person" : `${persons} Personen`}`; })()}
+              </p>
+            ) : null}
+            {flatFrom ? (
+              <p className={cn("flex items-start gap-1.5 rounded-control px-3 py-2 text-xs", persons >= flatFrom ? "bg-accent-soft text-ink" : "bg-surface-2 text-ink-2")}>
+                <Info className="h-3.5 w-3.5 mt-0.5 shrink-0" aria-hidden />
+                <span>Ab {flatFrom} Personen gilt der Pauschalpreis{settings.flatExclusive ? ` für ${wholeResourceLabel(resource?.kind ?? "OTHER")}` : ""} ({formatMoney(option!.flatPriceCents!, settings.currency)}).</span>
+              </p>
+            ) : null}
+          </Card>
+        </section>
+      ) : null}
+
+      {/* Datum + Zeit */}
       <section className="animate-rise [animation-delay:120ms]">
-        <h2 className="text-xs font-semibold uppercase tracking-wider text-ink-3 mb-2">3 · Wann</h2>
+        <h2 className="text-xs font-semibold uppercase tracking-wider text-ink-3 mb-2">{stepWhen} · Wann</h2>
         <Card className="p-3">
           <div className="flex items-center gap-2">
             <button type="button" aria-label="Vorheriger Tag" onClick={() => setDate(shiftDate(date, -1))} disabled={date <= today} className="press h-11 w-11 rounded-full hover:bg-surface-2 disabled:opacity-30 flex items-center justify-center"><ChevronLeft className="h-5 w-5" /></button>
@@ -160,35 +206,44 @@ export function BookingWizard({ resources, settings, today, prefill }: { resourc
           <div className="mt-3 min-h-16">
             {loading || (slots === null && resourceId) ? (
               <div className="flex items-center justify-center gap-2 py-6 text-sm text-ink-3"><Spinner /> Verfügbarkeit wird geladen…</div>
+            ) : slotError ? (
+              <p className="py-6 text-center text-sm text-accent">{slotError}</p>
             ) : !slots || slots.length === 0 ? (
               <p className="py-6 text-center text-sm text-ink-3">An diesem Tag geschlossen oder keine passende Zeit.</p>
             ) : (
               <div className="grid grid-cols-4 gap-1.5 sm:grid-cols-6">
                 {slots.map((s) => (
                   <button key={s.time} type="button" disabled={!s.available} onClick={() => setTime(s.time)} title={s.reason}
-                    className={cn("press h-11 rounded-control text-sm font-medium tabular-nums border transition-colors",
-                      time === s.time ? "bg-ink text-bg border-ink" : s.available ? "bg-surface border-line hover:border-ink/40" : "bg-surface-2 border-transparent text-ink-3/60 line-through cursor-not-allowed")}>
-                    {s.time}
+                    aria-label={`${s.time} Uhr${s.available ? (showRemaining ? `, ${s.remaining} frei` : "") : `, ${s.reason ?? "nicht verfügbar"}`}`}
+                    className={cn("press min-h-11 rounded-control text-sm font-medium tabular-nums border transition-colors flex flex-col items-center justify-center leading-tight",
+                      time === s.time ? "bg-ink text-bg border-ink" : s.available ? "bg-surface border-line hover:border-ink/40" : "bg-surface-2 border-transparent text-ink-3/60 cursor-not-allowed")}>
+                    <span className={cn(!s.available && "line-through")}>{s.time}</span>
+                    {showRemaining && s.available ? <span className={cn("text-[10px] font-normal", time === s.time ? "text-bg/70" : "text-ink-3")}>{s.remaining} frei</span> : null}
                   </button>
                 ))}
               </div>
             )}
+            {tooFew ? <p className="mt-2 flex items-center gap-1.5 text-xs text-ink-3"><Users className="h-3.5 w-3.5" aria-hidden /> Durchgestrichene Zeiten: Nicht genug Plätze frei für {persons === 1 ? "1 Person" : `${persons} Personen`}{flatFrom && persons >= flatFrom && settings.flatExclusive ? ` (Pauschale belegt ${wholeResourceLabel(resource?.kind ?? "OTHER")})` : ""}.</p> : null}
           </div>
         </Card>
       </section>
 
-      {/* 4 Zusammenfassung */}
+      {/* Zusammenfassung */}
       <section className={cn("animate-rise [animation-delay:180ms]", !selected && "opacity-50 pointer-events-none")}>
-        <h2 className="text-xs font-semibold uppercase tracking-wider text-ink-3 mb-2">4 · Bestätigen</h2>
+        <h2 className="text-xs font-semibold uppercase tracking-wider text-ink-3 mb-2">{stepWhen + 1} · Bestätigen</h2>
         <Card className="p-4 space-y-3">
           <div className="flex items-start justify-between gap-3">
             <div>
               <div className="font-medium">{resource?.name}</div>
               <div className="text-sm text-ink-3 inline-flex items-center gap-1.5"><Clock className="h-3.5 w-3.5" /> {weekdayLabel(date)}, {time ?? "–"} Uhr · {formatDuration(duration)}</div>
+              {showPersons || selected?.unitLabel ? (
+                <div className="text-sm text-ink-3 inline-flex items-center gap-1.5"><Users className="h-3.5 w-3.5" /> {persons === 1 ? "1 Person" : `${persons} Personen`}{selected?.isFlatRate ? " · Pauschal" : ""}</div>
+              ) : null}
             </div>
             <div className="text-right">
               {selected && selected.discountCents > 0 ? <div className="text-xs text-ink-3 line-through tabular-nums">{formatMoney(selected.basePriceCents, settings.currency)}</div> : null}
               <div className="text-xl font-semibold tabular-nums">{selected ? (selected.totalCents ? formatMoney(selected.totalCents, settings.currency) : "gratis") : "–"}</div>
+              {selected?.detail ? <div className="text-xs text-ink-3 tabular-nums">{selected.detail}</div> : null}
               {selected?.discountReason ? <div className="text-xs text-ok">{selected.discountReason}</div> : null}
             </div>
           </div>
@@ -204,7 +259,7 @@ export function BookingWizard({ resources, settings, today, prefill }: { resourc
           ) : needsPayment && payChoices.length === 1 ? (
             <p className="text-sm text-ink-3">{payChoices[0] === "ONLINE" ? "Bezahlung online direkt nach der Buchung." : "Du erhältst eine Rechnung."}</p>
           ) : null}
-          <Field label="Bemerkung (optional)"><Input name="note" placeholder="z.B. Training mit 2 Personen" maxLength={191} /></Field>
+          <Field label="Bemerkung (optional)"><Input name="note" placeholder="z.B. Training mit Gästen" maxLength={191} /></Field>
           <p className="text-xs text-ink-3">
             {settings.approvalRequired ? "Die Buchung wird von der Verwaltung geprüft und freigegeben. " : "Die Buchung ist sofort gültig. "}
             {settings.cancellationHours > 0 ? `Kostenlose Stornierung bis ${settings.cancellationHours} Stunden vor Beginn.` : ""}

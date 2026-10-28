@@ -89,11 +89,93 @@ npx tsx prisma/seed.ts --presets-only   # oder: npm run db:seed:presets
 
 ## Hochgeladene Dateien
 
-Uploads (eigene Scheiben) liegen in `storage/uploads`. Dieser Ordner liegt ausserhalb von Git und bleibt bei Updates erhalten. Ins Backup aufnehmen, zusammen mit der Datenbank (CloudPanel → Databases → Backup, oder `mysqldump`).
+Uploads (eigene Scheiben, Logos, Profilbilder und – beim Speicherort «Server» – die Dateiablage und Chat-Anhänge) liegen in `storage/uploads` (`UPLOAD_DIR`). Dieser Ordner liegt ausserhalb von Git und bleibt bei Updates erhalten. Ins Backup aufnehmen, zusammen mit der Datenbank (CloudPanel → Databases → Backup, oder `mysqldump`).
+
+Grössere Dateien in der Dateiablage (pro Verein einstellbar, höchstens 200 MB) brauchen ein passendes Upload-Limit in nginx. In CloudPanel → Site → **Vhost** im `server`-Block anpassen:
+
+```nginx
+client_max_body_size 200M;
+```
+
+## Dateiablage: Speicherort pro Verein
+
+Jeder Verein wählt unter **Mehr → Verwaltung → Dateiablage & Speicherort** (`/admin/files`), wo seine Dateien liegen. Zugangsdaten werden wie die Zahlungsanbieter mit AES-256-GCM verschlüsselt (`StorageConfig.credentialsEnc`, Schlüssel aus `AUTH_SECRET`). Beim Speichern schreibt, liest und löscht Standchef eine kleine Testdatei, falsche Angaben fallen also sofort auf. Bestehende Dateien werden bei einem Wechsel **nicht** verschoben.
+
+| Speicherort | Angaben |
+|---|---|
+| **Server** (Standard) | keine; Dateien unter `UPLOAD_DIR/tenant-files/<tenant-id>/…` |
+| **S3 / AWS** | Region (z.B. `eu-central-2` Zürich), Bucket, Access Key, Secret Key, optional Präfix |
+| **S3 / Hetzner** | Standort `fsn1`, `nbg1` oder `hel1`, Bucket, S3-Zugangsschlüssel aus der Hetzner Console |
+| **S3-kompatibel** (Infomaniak, Exoscale, MinIO …) | Endpoint, optional Region, Bucket, Schlüssel, Pfad-Stil |
+| **Nextcloud** (WebDAV) | WebDAV-Adresse, Benutzername, App-Passwort |
+
+### S3 / AWS: minimale Rechte
+
+Eigenen IAM-Benutzer nur für Standchef anlegen, Bucket **ohne** öffentlichen Zugriff lassen («Block all public access» an). Standchef braucht nur Objekte schreiben, lesen und löschen – keine Bucket-Rechte, kein Auflisten:
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "StandchefObjects",
+      "Effect": "Allow",
+      "Action": ["s3:PutObject", "s3:GetObject", "s3:DeleteObject"],
+      "Resource": "arn:aws:s3:::<bucket-name>/*"
+    }
+  ]
+}
+```
+
+Mit Präfix (z.B. `standchef`) lässt sich die Resource auf `arn:aws:s3:::<bucket-name>/standchef/*` einschränken. Dateien werden immer unter `tenant-files/<tenant-id>/…` (nach dem Präfix) abgelegt und nur über die App ausgeliefert (Rechteprüfung pro Ordner), nie per öffentlicher URL.
+
+### S3 / Hetzner Object Storage
+
+Endpoint-Format: `https://<standort>.your-objectstorage.com`, also `https://fsn1.your-objectstorage.com` (Falkenstein), `https://nbg1.your-objectstorage.com` (Nürnberg) oder `https://hel1.your-objectstorage.com` (Helsinki). Die App setzt den Endpoint aus dem gewählten Standort selbst. Bucket in der Hetzner Console im gleichen Standort anlegen, unter **Security → S3 Credentials** einen Schlüssel erzeugen (Secret wird nur einmal angezeigt).
+
+### Nextcloud (WebDAV)
+
+- **WebDAV-Adresse**: `https://<nextcloud>/remote.php/dav/files/<benutzer>/<ordner>`, z.B. `https://cloud.example.ch/remote.php/dav/files/verein/Standchef`. Der Ordner muss existieren. Die genaue Adresse zeigt Nextcloud unter **Dateien → Dateieinstellungen (unten links) → WebDAV**.
+- **App-Passwort** statt des normalen Passworts: Nextcloud → **Persönliche Einstellungen → Sicherheit → Geräte & Sitzungen → Neues App-Passwort erstellen**. So lässt sich der Zugang jederzeit einzeln widerrufen, und Zwei-Faktor-Anmeldung stört nicht.
+- Empfohlen: eigenes Nextcloud-Konto für den Verein statt eines persönlichen Kontos.
+
+Aus Sicherheitsgründen lehnt die App Speicher-Adressen in privaten Netzen (127.0.0.1, 10.x, 192.168.x …) ab. Läuft MinIO oder Nextcloud bewusst im gleichen Netz, `FILE_STORAGE_ALLOW_PRIVATE_HOSTS=1` in `.env` setzen.
+
+## Chat: Server-Sent Events hinter nginx
+
+Der Chat hält pro geöffnetem Browser-Tab eine Verbindung zu `/api/chat/stream` offen (Server-Sent Events). Die Route sendet zwar `X-Accel-Buffering: no`, sicherer ist aber eine eigene `location` im Vhost, damit nginx nichts puffert oder komprimiert und die Verbindung nicht nach 60 s trennt. In CloudPanel → Site → **Vhost** **vor** dem bestehenden `location /`-Block einfügen:
+
+```nginx
+location /api/chat/stream {
+  proxy_pass http://127.0.0.1:{{app_port}};
+  proxy_http_version 1.1;
+  proxy_set_header Host $host;
+  proxy_set_header X-Real-IP $remote_addr;
+  proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+  proxy_set_header X-Forwarded-Proto $scheme;
+  proxy_set_header Connection "";
+  proxy_buffering off;
+  proxy_cache off;
+  gzip off;
+  proxy_read_timeout 3600s;
+  proxy_send_timeout 3600s;
+}
+```
+
+`{{app_port}}` ist der Platzhalter der CloudPanel-Vorlage für den App-Port; steht im bestehenden `location /` eine feste Zahl (z.B. `3000`), dieselbe verwenden. Danach **Save** – CloudPanel prüft und lädt nginx neu.
+
+Hinweise:
+- Ohne `proxy_buffering off` kommen Nachrichten erst verzögert oder gar nicht an; die App fällt dann nach zwei Fehlversuchen auf Abfragen alle paar Sekunden zurück («degraded»), funktioniert also weiter, nur langsamer.
+- Läuft die Domain über **Cloudflare**, funktioniert SSE ebenfalls (Proxy-Modus). Der Server schickt alle 25 s ein Lebenszeichen und schliesst jede Verbindung nach 30 Minuten; der Browser verbindet automatisch neu.
+- Neue Nachrichten werden innerhalb des Node-Prozesses sofort verteilt. Bei mehreren PM2-Instanzen gleicht zusätzlich eine Datenbankabfrage alle 5 s ab; die Standardkonfiguration (`instances: 1`) braucht nichts davon.
+
+## Munition: nur auf Rechnung
+
+Das Modul **Munition** kennt bewusst keine Bar-, Karten- oder Online-Zahlung. Mitglieder bestellen in der App, die Abgabe erfolgt auf dem Platz (optional mit Ausweisprüfung und Freigabe), und erst bei der Abgabe entsteht eine Rechnung mit fortlaufender Nummer (z.B. `MU-2026-0001`) und QR-Zahlteil aus dem Rechnungsprofil. So ist jede Abgabe einer Person zugeordnet und nachvollziehbar. Bei QR-IBAN erhält die Rechnung eine QR-Referenz; der Bankimport (camt.053/054) ordnet Munitionsrechnungen wie Beiträge und Reservationen automatisch zu. Die Verantwortung für die gesetzlichen Vorgaben beim Munitionsverkauf bleibt beim Verein.
 
 ## Rechnungsprofil (pro Verein)
 
-Unter **Mehr → Mitgliederbeiträge verwalten → Rechnungsprofil** trägt jeder Verein Zahlungsempfänger, Adresse und IBAN ein. Ohne diese Angaben werden Rechnungen ohne QR-Zahlteil erstellt. Mitglieder hinterlegen ihre Adresse unter **Mehr → Profil**, damit sie im QR-Code als Zahler erscheinen.
+Unter **Mehr → Mitgliederbeiträge verwalten → Rechnungsprofil** (`/admin/billing/settings`, auch erreichbar, wenn nur Reservationen oder Munition aktiv sind) trägt jeder Verein Zahlungsempfänger, Adresse und IBAN ein. Es gilt für Beiträge, Reservations- und Munitionsrechnungen. Ohne diese Angaben werden Rechnungen ohne QR-Zahlteil erstellt. Mitglieder hinterlegen ihre Adresse unter **Mehr → Profil**, damit sie im QR-Code als Zahler erscheinen.
 
 ## Zahlungsanbieter (pro Verein)
 
@@ -103,7 +185,7 @@ Jeder Verein richtet seinen Anbieter selbst unter **Mehr → Reservationen verwa
 - **Worldline Saferpay**: Customer ID, Terminal ID, JSON-API-Benutzer und -Passwort aus dem Backoffice; Umgebung `test` oder `live`.
 - **SumUp**: API Key (Secret) und Händlercode aus dem SumUp-Dashboard.
 
-Die Zugangsdaten werden mit einem aus `AUTH_SECRET` abgeleiteten Schlüssel verschlüsselt. **`AUTH_SECRET` nach der Einrichtung nicht mehr ändern**, sonst müssen alle Vereine ihre Anbieter neu eintragen.
+Die Zugangsdaten werden mit einem aus `AUTH_SECRET` abgeleiteten Schlüssel verschlüsselt. **`AUTH_SECRET` nach der Einrichtung nicht mehr ändern**, sonst müssen alle Vereine ihre Anbieter und Speicher-Zugangsdaten (Dateiablage) neu eintragen.
 
 ## Betrieb
 

@@ -10,6 +10,7 @@ import { isModuleKey } from "@/lib/modules";
 import { isTenantRole } from "@/lib/permissions";
 import { fail, ok, type ActionResult } from "@/lib/action-result";
 import { randomCode, slugify } from "@/lib/utils";
+import { removeUserFromTenantChats } from "@/modules/chat/service";
 
 const TENANT_KINDS = ["CLUB", "RANGE", "PRIVATE"] as const;
 
@@ -97,6 +98,13 @@ export async function removeMemberAction(membershipId: string): Promise<ActionRe
   if (!m || m.tenantId !== ctx.tenant.id) return fail("Nicht gefunden");
   if (m.role === "OWNER") return fail("Inhaber können nicht entfernt werden.");
   await db.membership.delete({ where: { id: membershipId } });
+  // Aus allen Chats dieses Vereins entfernen (Nachrichten bleiben erhalten). Ein Fehler hier darf
+  // das Entfernen nicht rückgängig machen: Lesezugriffe prüfen die Mitgliedschaft ohnehin.
+  try {
+    await removeUserFromTenantChats(m.userId, ctx.tenant.id);
+  } catch (e) {
+    console.error("Chat-Mitgliedschaften konnten nicht entfernt werden:", e);
+  }
   revalidatePath("/admin/members");
   return ok();
 }

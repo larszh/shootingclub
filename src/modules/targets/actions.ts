@@ -8,7 +8,7 @@ import { requireModule, requirePermission, requireSuperAdmin } from "@/lib/tenan
 import { deleteStoredFile, saveFile } from "@/lib/storage";
 import { fail, ok, type ActionResult } from "@/lib/action-result";
 import { getTarget } from "./queries";
-import { ALLOWED_UPLOAD_TYPES, MAX_UPLOAD_BYTES, PAPER_SIZES, PARAM_INFO, subjectVariants, targetInputSchema, type ParamKey, type TargetInput } from "./types";
+import { ALLOWED_UPLOAD_TYPES, MAX_UPLOAD_BYTES, PAPER_SIZES, PARAM_INFO, subjectVariants, targetInputSchema, targetParamsIssue, type ParamKey, type TargetInput } from "./types";
 
 function parseTargetForm(formData: FormData) {
   const subject = String(formData.get("subject") ?? "");
@@ -72,6 +72,8 @@ export async function saveTargetAction(_prev: ActionResult | null, formData: For
     return fail(`${label}: ${first.message}`);
   }
   const input = parsed.data;
+  const paramsIssue = targetParamsIssue(input.subject, input.params);
+  if (paramsIssue) return fail(paramsIssue);
 
   // Zuerst Berechtigung und Besitz prüfen, erst danach Dateien speichern (keine verwaisten Uploads).
   let target: { tenantId: string | null; ownerUserId: string | null; sharedWithTenant?: boolean };

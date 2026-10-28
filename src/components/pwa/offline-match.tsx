@@ -6,7 +6,7 @@ import { CloudOff, ExternalLink } from "lucide-react";
 import { Badge, EmptyState, Skeleton } from "@/components/ui";
 import { formatDate } from "@/lib/utils";
 import { APP_TZ } from "@/lib/time";
-import { disciplineLabel } from "@/modules/scores/types";
+import { disciplineLabel, scoringModeLabel } from "@/modules/scores/types";
 import { ScoreEntry } from "@/modules/scores/ui/score-entry";
 import { useSyncEvents, useSyncStatus } from "@/lib/offline/hooks";
 import { getMatchEntry } from "@/lib/offline/store";
@@ -115,6 +115,7 @@ export function OfflineMatch() {
         {view.title ? <Badge>{view.program.name}</Badge> : null}
         <Badge tone="outline">{disciplineLabel(view.program.discipline)}</Badge>
         <Badge tone="outline">{view.program.totals.shots} Schuss · max. {view.program.totals.max}</Badge>
+        <Badge tone="outline">{scoringModeLabel(view.program.scoringMode, true)}</Badge>
       </div>
       {online && redirectTo ? (
         <a href={redirectTo} className="animate-fade mb-4 flex items-center gap-2 rounded-control bg-ok/10 px-3.5 py-2.5 text-sm text-ok">

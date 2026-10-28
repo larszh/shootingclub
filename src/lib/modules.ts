@@ -2,7 +2,15 @@
 // Neue Module: hier eintragen, Routen unter src/app/(app)/<key> anlegen und
 // Server-Logik unter src/modules/<key>.
 
-export type ModuleKey = "scores" | "targets" | "events" | "bookings" | "billing";
+export type ModuleKey =
+  | "scores"
+  | "targets"
+  | "events"
+  | "bookings"
+  | "billing"
+  | "files"
+  | "chat"
+  | "ammo";
 
 export type ModuleDefinition = {
   key: ModuleKey;
@@ -52,6 +60,30 @@ export const MODULES: ModuleDefinition[] = [
     name: "Mitgliederbeiträge",
     description: "Beitragskategorien, Jahresrechnung mit QR-Rechnung, Zahlungsübersicht und Erinnerungen.",
     href: "/billing",
+    status: "ready",
+    defaultEnabled: false,
+  },
+  {
+    key: "files",
+    name: "Dateiablage",
+    description: "Dokumente, Reglemente und Fotos in Ordnern ablegen, mit Sichtbarkeit pro Gruppe. Speicherort wählbar: Server, S3/AWS, Hetzner oder Nextcloud.",
+    href: "/files",
+    status: "ready",
+    defaultEnabled: false,
+  },
+  {
+    key: "chat",
+    name: "Chat",
+    description: "Direktnachrichten und Gruppenchats unter Vereinsmitgliedern, mit Ungelesen-Anzeige.",
+    href: "/chat",
+    status: "ready",
+    defaultEnabled: true,
+  },
+  {
+    key: "ammo",
+    name: "Munition",
+    description: "Munition im Verein bestellen und ausgeben, Abrechnung nur auf Rechnung mit QR-Rechnung.",
+    href: "/ammo",
     status: "ready",
     defaultEnabled: false,
   },

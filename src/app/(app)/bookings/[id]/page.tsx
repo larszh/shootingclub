@@ -14,6 +14,7 @@ import { BOOKING_STATUS, PAYMENT_METHOD_LABEL, formatDuration, paymentStatusView
 import { CancelBookingButton, DecideButtons, PaidToggle, PayNowButton, RefundedButton } from "@/modules/bookings/ui/booking-actions";
 import { formatDateTimeZurich, formatDateZurich, formatTimeRange } from "@/lib/time";
 import { formatMoney } from "@/lib/money";
+import { personsSuffix } from "@/modules/bookings/pricing";
 
 export const metadata: Metadata = { title: "Reservation" };
 
@@ -30,7 +31,7 @@ export default async function BookingDetailPage({ params, searchParams }: { para
   const { active, canCancel } = cancellationInfo(b, settings.cancellationHours, isAdmin);
   const canPay = b.isOwner && b.status === "CONFIRMED" && b.paymentMethod === "ONLINE" && ["UNPAID", "PENDING", "FAILED"].includes(b.paymentStatus);
   const again = repeatTarget(b.startsAt);
-  const adminAgainHref = `/admin/bookings/new?resourceId=${b.resourceId}&date=${again.date}&time=${again.time}&duration=${b.durationMinutes}${b.userId ? `&userId=${b.userId}` : ""}`;
+  const adminAgainHref = `/admin/bookings/new?resourceId=${b.resourceId}&date=${again.date}&time=${again.time}&duration=${b.durationMinutes}${b.persons > 1 ? `&persons=${b.persons}` : ""}${b.userId ? `&userId=${b.userId}` : ""}`;
 
   return (
     <div>
@@ -45,9 +46,10 @@ export default async function BookingDetailPage({ params, searchParams }: { para
       <Card className="animate-rise divide-y divide-line overflow-hidden">
         <div className="flex items-center gap-3 px-4 py-3">
           <ResourceIcon kind={b.resource.kind} size={40} />
-          <div className="min-w-0 flex-1"><div className="font-medium truncate">{b.resource.name}</div><div className="text-xs text-ink-3">{formatDateZurich(b.startsAt, { weekday: "long" })} · <span className="tabular-nums">{formatTimeRange(b.startsAt, b.endsAt)}</span></div></div>
+          <div className="min-w-0 flex-1"><div className="font-medium truncate">{b.resource.name}</div><div className="text-xs text-ink-3">{formatDateZurich(b.startsAt, { weekday: "long" })} · <span className="tabular-nums">{formatTimeRange(b.startsAt, b.endsAt)}</span>{personsSuffix(b) ? ` · ${personsSuffix(b)}` : ""}</div></div>
         </div>
         <Row k="Gebucht von" v={<span className="inline-flex items-center gap-2">{b.user ? <Avatar name={b.user.name} src={userAvatarUrl(b.user)} size={24} tone="soft" /> : null}{b.user?.name ?? "Unbekannt"}</span>} />
+        {b.persons > 1 || b.isFlatRate ? <Row k="Personen" v={b.isFlatRate ? `${b.persons} · Pauschalpreis` : String(b.persons)} /> : null}
         <Row k="Preis" v={b.totalCents ? <span className="tabular-nums">{b.discountCents > 0 ? <span className="text-ink-3 line-through mr-2">{formatMoney(b.basePriceCents, b.currency)}</span> : null}{formatMoney(b.totalCents, b.currency)}{b.discountReason ? <span className="text-ok text-xs ml-2">{b.discountReason}</span> : null}</span> : "gratis"} />
         {b.totalCents > 0 ? <Row k="Zahlung" v={<span className="inline-flex items-center gap-2">{PAYMENT_METHOD_LABEL[b.paymentMethod]} <Badge tone={ps.tone}>{ps.label}</Badge></span>} /> : null}
         {b.paidAt ? <Row k="Bezahlt am" v={formatDateTimeZurich(b.paidAt)} /> : null}

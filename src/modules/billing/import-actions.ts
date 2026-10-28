@@ -14,6 +14,7 @@ import { matchCredits } from "./import";
 import type { ImportPreviewItem } from "./import-types";
 import { appendPaymentNote, NOTE_MAX } from "./types";
 import { addDaysFromNow } from "./dates";
+import { markAmmoInvoicePaid } from "@/modules/ammo/payments";
 
 
 const MAX_BYTES = 5 * 1024 * 1024;
@@ -30,7 +31,7 @@ export type ImportPreview = {
 
 /** Schritt 1: Datei lesen und Vorschau berechnen (es wird noch nichts gespeichert). */
 export async function previewCamtImportAction(_prev: ActionResult<ImportPreview> | null, formData: FormData): Promise<ActionResult<ImportPreview>> {
-  const ctx = await requireBillingAdmin({ orBookings: true });
+  const ctx = await requireBillingAdmin({ orBookings: true, orAmmo: true });
   const file = formData.get("file");
   if (!(file instanceof File) || file.size === 0) return fail("Bitte eine camt-Datei (XML) wählen.");
   if (file.size > MAX_BYTES) return fail("Die Datei ist grösser als 5 MB.");
@@ -55,7 +56,7 @@ export async function previewCamtImportAction(_prev: ActionResult<ImportPreview>
 const confirmSchema = z.object({
   fileName: z.string().max(200),
   items: z.array(z.object({
-    kind: z.enum(["FEE", "BOOKING"]),
+    kind: z.enum(["FEE", "BOOKING", "AMMO"]),
     id: z.string().min(1).max(40),
     bookingDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
     amountCents: z.number().int().min(1).max(100_000_000),
@@ -76,7 +77,7 @@ function swissDate(d: string) {
  * Vereins werden geändert; bereits bezahlte werden übersprungen.
  */
 export async function confirmCamtImportAction(input: ConfirmImportInput): Promise<ActionResult<{ paid: number; skipped: number }>> {
-  const ctx = await requireBillingAdmin({ orBookings: true });
+  const ctx = await requireBillingAdmin({ orBookings: true, orAmmo: true });
   const parsed = confirmSchema.safeParse(input);
   if (!parsed.success) return fail("Ungültige Auswahl.");
   const { fileName, items } = parsed.data;
@@ -107,6 +108,17 @@ export async function confirmCamtImportAction(input: ConfirmImportInput): Promis
       });
       if (res.count) paid++;
       else skipped++;
+    } else if (it.kind === "AMMO") {
+      // Idempotent und auf den Verein beschränkt (nur ausgegebene, unbezahlte Rechnungen).
+      const order = await db.ammoOrder.findFirst({ where: { id: it.id, tenantId: ctx.tenant.id }, select: { totalCents: true, currency: true } });
+      if (!order) {
+        skipped++;
+        continue;
+      }
+      const diff = order.totalCents !== it.amountCents ? ` – Betrag abweichend, Rechnung ${formatMoney(order.totalCents, order.currency)}` : "";
+      const res = await markAmmoInvoicePaid(ctx.tenant.id, it.id, paidAt, `${line}${diff}`);
+      if (res === "paid") paid++;
+      else skipped++;
     } else {
       const inv = await db.invoice.findUnique({ where: { id: it.id }, select: { id: true, tenantId: true, status: true, bookingId: true, amountCents: true, currency: true, booking: { select: { adminNote: true } } } });
       if (!inv || inv.tenantId !== ctx.tenant.id || inv.status !== "OPEN") {
@@ -129,5 +141,9 @@ export async function confirmCamtImportAction(input: ConfirmImportInput): Promis
   revalidatePath("/billing");
   revalidatePath("/admin/bookings");
   revalidatePath("/bookings");
+  revalidatePath("/admin/ammo");
+  revalidatePath("/ammo");
+  revalidatePath("/payments");
+  revalidatePath("/admin/payments");
   return ok({ paid, skipped }, `${paid} ${paid === 1 ? "Zahlung" : "Zahlungen"} verbucht${skipped ? `, ${skipped} übersprungen` : ""}.`);
 }
