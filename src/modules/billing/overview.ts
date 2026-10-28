@@ -155,8 +155,9 @@ export async function listMyPayments(ctx: TenantCtx, now: Date): Promise<MyPayme
 
   for (const f of fees) {
     const status = normalizeInvoiceStatus(f.status);
-    // Offene Rechnungen erhalten bei QR-IBAN ihre Referenz (ältere werden nachgeführt).
-    const reference = status === "OPEN" && qrIban ? await ensureReference("FEE", f, qrIban) : f.reference;
+    // QR-Referenzen gelten nur mit QR-IBAN (wie auf der QR-Rechnung); offene werden dann nachgeführt.
+    // Ohne QR-IBAN keine (veraltete) Referenz zeigen, die Bank würde sie zurückweisen.
+    const reference = !qrIban ? null : status === "OPEN" ? await ensureReference("FEE", f, qrIban) : f.reference;
     items.push({
       key: `FEE:${f.id}`, source: "FEE", id: f.id, number: f.number,
       title: f.run?.title ?? `Mitgliederbeitrag ${f.year}`, detail: f.categoryName, memberName: null,
@@ -169,7 +170,7 @@ export async function listMyPayments(ctx: TenantCtx, now: Date): Promise<MyPayme
 
   for (const i of invoices) {
     const status = normalizeInvoiceStatus(i.status);
-    const reference = status === "OPEN" && qrIban ? await ensureReference("BOOKING", i, qrIban) : i.reference;
+    const reference = !qrIban ? null : status === "OPEN" ? await ensureReference("BOOKING", i, qrIban) : i.reference;
     items.push({
       key: `BOOKING:${i.id}`, source: "BOOKING", id: i.id, number: i.number,
       title: `Reservation ${i.booking.resource.name}`, detail: `Termin ${formatDateZurich(i.booking.startsAt, { weekday: undefined })}`, memberName: null,
@@ -193,10 +194,11 @@ export async function listMyPayments(ctx: TenantCtx, now: Date): Promise<MyPayme
   }
 
   for (const a of ammo) {
-    const reference = a.status === "OPEN" && qrIban ? await ensureAmmoReference({ id: a.id, tenantId, invoiceNumber: a.number || null, reference: a.reference }, qrIban) : a.reference;
+    const reference = !qrIban ? null : a.status === "OPEN" ? await ensureAmmoReference({ id: a.id, tenantId, invoiceNumber: a.number || null, reference: a.reference }, qrIban) : a.reference;
     items.push({
       key: `AMMO:${a.id}`, source: "AMMO", id: a.id, number: a.number,
-      title: a.title, detail: null, memberName: null,
+      // Nummer steht separat in `number` (sonst doppelt im Zahlungszweck).
+      title: "Munition", detail: null, memberName: null,
       amountCents: a.amountCents, currency: a.currency, status: a.status, group: groupOf(a.status),
       issuedAt: a.issuedAt, dueAt: a.dueAt, paidAt: a.paidAt,
       overdue: a.status === "OPEN" && !!a.dueAt && isOverdue(a.dueAt, now), reference,
@@ -262,7 +264,8 @@ export type OpenItemsOverview = {
 export async function listOpenItems(ctx: TenantCtx, now: Date): Promise<OpenItemsOverview> {
   const tenantId = ctx.tenant.id;
   const src = enabledSources(ctx);
-  const [fees, invoices, ammo] = await Promise.all([
+  const [profile, fees, invoices, ammo] = await Promise.all([
+    getBillingProfile(tenantId, ctx.tenant.name),
     src.fee
       ? db.feeInvoice.findMany({
           where: { tenantId, status: "OPEN" },
@@ -289,26 +292,28 @@ export async function listOpenItems(ctx: TenantCtx, now: Date): Promise<OpenItem
       : Promise.resolve([]),
   ]);
 
+  // QR-Referenzen nur mit QR-IBAN ausweisen (wie auf der QR-Rechnung).
+  const ref = (r: string | null) => (profile.qrIban ? r : null);
   const items: PaymentItem[] = [
     ...fees.map<PaymentItem>((f) => ({
       key: `FEE:${f.id}`, source: "FEE", id: f.id, number: f.number,
       title: f.run?.title ?? `Mitgliederbeitrag ${f.year}`, detail: f.categoryName, memberName: f.memberName,
       amountCents: f.amountCents, currency: f.currency, status: "OPEN", group: "open",
-      issuedAt: f.issuedAt, dueAt: f.dueAt, paidAt: null, overdue: isOverdue(f.dueAt, now), reference: f.reference,
+      issuedAt: f.issuedAt, dueAt: f.dueAt, paidAt: null, overdue: isOverdue(f.dueAt, now), reference: ref(f.reference),
       href: `/billing/invoices/${f.id}/print`, external: true,
     })),
     ...invoices.map<PaymentItem>((i) => ({
       key: `BOOKING:${i.id}`, source: "BOOKING", id: i.id, number: i.number,
       title: `Reservation ${i.booking.resource.name}`, detail: null, memberName: i.booking.user?.name ?? "Gast",
       amountCents: i.amountCents, currency: i.currency, status: "OPEN", group: "open",
-      issuedAt: i.issuedAt, dueAt: i.dueAt, paidAt: null, overdue: isOverdue(i.dueAt, now), reference: i.reference,
+      issuedAt: i.issuedAt, dueAt: i.dueAt, paidAt: null, overdue: isOverdue(i.dueAt, now), reference: ref(i.reference),
       href: `/bookings/${i.bookingId}/invoice`, external: true,
     })),
     ...ammo.map<PaymentItem>((a) => ({
       key: `AMMO:${a.id}`, source: "AMMO", id: a.id, number: a.invoiceNumber ?? "",
-      title: `Munition ${a.invoiceNumber ?? ""}`.trim(), detail: null, memberName: a.user?.name ?? "Ehemaliges Mitglied",
+      title: "Munition", detail: null, memberName: a.user?.name ?? "Ehemaliges Mitglied",
       amountCents: a.totalCents, currency: a.currency, status: "OPEN", group: "open",
-      issuedAt: a.invoiceIssuedAt, dueAt: a.dueAt, paidAt: null, overdue: !!a.dueAt && isOverdue(a.dueAt, now), reference: a.reference,
+      issuedAt: a.invoiceIssuedAt, dueAt: a.dueAt, paidAt: null, overdue: !!a.dueAt && isOverdue(a.dueAt, now), reference: ref(a.reference),
       href: `/ammo/${a.id}/invoice`, external: true,
     })),
   ];

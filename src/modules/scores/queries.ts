@@ -2,7 +2,7 @@ import "server-only";
 import { db } from "@/lib/db";
 import type { AppContext } from "@/lib/tenant";
 import type { Prisma } from "@/generated/prisma/client";
-import { parseStages, programTotals, type Stage } from "./types";
+import { firedShots, parseStages, programTotals, type Stage } from "./types";
 
 export type ProgramView = {
   id: string;
@@ -224,7 +224,15 @@ export async function userStats(ctx: AppContext & { tenant: NonNullable<AppConte
     orderBy: [{ match: { date: "desc" } }, { match: { createdAt: "desc" } }],
     take: 200,
   });
-  const totalShots = parts.reduce((a, p) => a + p.results.reduce((b, r) => b + (JSON.parse(r.shotsJson) as number[]).length, 0), 0);
+  // Strafen ohne Schuss (z.B. Verfahrensfehler) zählen nicht als Schuss
+  const totalShots = parts.reduce((a, p) => {
+    const stages = parseStages(p.match.program.stagesJson);
+    return a + p.results.reduce((b, r) => {
+      const shots = JSON.parse(r.shotsJson) as number[];
+      const st = stages[r.stageIndex];
+      return b + (st ? firedShots(st, shots, p.match.program.scoringMode) : shots.length);
+    }, 0);
+  }, 0);
   const byProgram = new Map<string, { name: string; best: number; count: number; max: number; last: number; decimal: boolean }>();
   for (const p of parts) {
     const total = Math.round(p.results.reduce((a, r) => a + r.total, 0) * 10) / 10;

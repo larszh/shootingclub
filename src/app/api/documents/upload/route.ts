@@ -3,7 +3,7 @@ import { getCurrentUser } from "@/lib/auth";
 import { getAppContext } from "@/lib/tenant";
 import { loadStorageSettings } from "@/lib/file-storage";
 import { canSeeFolder, loadFolderTree } from "@/modules/files/queries";
-import { FileServiceError, fileErrorMessage, saveTenantFile } from "@/modules/files/service";
+import { FileServiceError, fileErrorMessage, readUploadForm, saveTenantFile } from "@/modules/files/service";
 import { MB } from "@/modules/files/types";
 
 export const dynamic = "force-dynamic";
@@ -41,20 +41,14 @@ export async function POST(req: Request) {
   if (!ctx.can("files.upload")) return json(403, { error: "Du darfst keine Dateien hochladen." });
   const tenantId = ctx.tenant.id;
 
-  // Grösse vor dem Einlesen prüfen (Content-Length enthält zusätzlich die Multipart-Hülle).
+  // Einlesen mit fester Obergrenze (auch ohne Content-Length), danach Dateigrösse genau prüfen.
   const settings = await loadStorageSettings(tenantId);
   const limit = settings.maxFileMb * MB;
-  const declared = Number(req.headers.get("content-length"));
-  if (Number.isFinite(declared) && declared > limit + 64 * 1024) {
-    return json(413, { error: `Die Datei ist zu gross. Erlaubt sind höchstens ${settings.maxFileMb} MB pro Datei.` });
-  }
-  if (!(req.headers.get("content-type") ?? "").startsWith("multipart/form-data")) return json(400, { error: "Ungültige Anfrage." });
-
   let form: FormData;
   try {
-    form = await req.formData();
-  } catch {
-    return json(400, { error: "Die Datei konnte nicht gelesen werden. Bitte nochmals versuchen." });
+    form = await readUploadForm(req, settings.maxFileMb);
+  } catch (e) {
+    return json(e instanceof FileServiceError ? e.status : 400, { error: fileErrorMessage(e) });
   }
 
   const expectedTenant = form.get("tenantId");

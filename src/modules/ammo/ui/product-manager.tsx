@@ -39,6 +39,7 @@ export function ProductManager({ products, currency }: { products: AdminProduct[
       <Card className="animate-rise p-4">
         <form ref={formRef} key={editing?.id ?? "new"} onSubmit={submitKeepingValues(action)} className="space-y-3">
           {editing ? <input type="hidden" name="id" value={editing.id} /> : null}
+          {editing ? <input type="hidden" name="stockUnitsLoaded" value={editing.stockUnits ?? ""} /> : null}
           <div className="flex items-center justify-between">
             <h2 className="font-semibold">{editing ? `«${editing.name}» bearbeiten` : "Neues Produkt"}</h2>
             {editing ? (

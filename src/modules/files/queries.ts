@@ -90,8 +90,10 @@ export async function getFilesView(opts: { tenantId: string; role: string | null
     }));
 
   const q = opts.q.trim().slice(0, 100);
+  // % und _ sind in LIKE Platzhalter; als normale Zeichen suchen.
+  const escapeLike = (v: string) => v.replace(/[\\%_]/g, (c) => "\\" + c);
   const fileWhere = q
-    ? { tenantId, context: "FILES", name: { contains: q }, OR: [{ folderId: null }, { folderId: { in: [...visibleIds] } }] }
+    ? { tenantId, context: "FILES", name: { contains: escapeLike(q) }, OR: [{ folderId: null }, { folderId: { in: [...visibleIds] } }] }
     : { tenantId, context: "FILES", folderId: currentId };
   const files = await db.storedFile.findMany({
     where: fileWhere,

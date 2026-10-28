@@ -67,12 +67,12 @@ export function MessageBubble({
       {!mine && showAvatar ? (
         showAvatar === true ? <Avatar name={msg.senderName} src={msg.senderAvatar} size={32} /> : <span className="w-8 shrink-0" aria-hidden />
       ) : null}
-      <div className={cn("group relative flex max-w-[82%] flex-col sm:max-w-[70%]", mine ? "items-end" : "items-start")}>
+      <div className={cn("group relative flex min-w-0 max-w-[82%] flex-col sm:max-w-[70%]", mine ? "items-end" : "items-start")}>
         {showSender && !mine ? <span className="mb-0.5 px-3 text-xs font-medium text-ink-3">{msg.senderName}</span> : null}
         <div
           onClick={deleted || state !== "sent" ? undefined : onOpenActions}
           className={cn(
-            "relative rounded-2xl text-[15px] leading-snug",
+            "relative min-w-0 max-w-full rounded-2xl text-[15px] leading-snug",
             image && !deleted ? "overflow-hidden p-1" : "px-3.5 py-2",
             mine ? "rounded-br-md bg-accent text-accent-ink" : "rounded-bl-md border border-line bg-surface text-ink",
             deleted && "border border-dashed border-line bg-transparent text-ink-3",
@@ -116,7 +116,7 @@ export function MessageBubble({
                 </span>
               ) : null}
               {msg.body ? (
-                <p className={cn("whitespace-pre-wrap break-words [overflow-wrap:anywhere]", image && "px-2.5 pb-1.5 pt-1")}>
+                <p className={cn("whitespace-pre-wrap [overflow-wrap:anywhere]", image && "px-2.5 pb-1.5 pt-1")}>
                   <Linkified text={msg.body} />
                 </p>
               ) : null}

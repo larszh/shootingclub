@@ -133,8 +133,8 @@ export function AmmoShop({ products, currency, maxRounds, onSiteOnly, approvalRe
           {overStock.length ? <Alert>Nicht genug an Lager: {overStock.map((p) => p.name).join(", ")}.</Alert> : null}
           {chosen.length > 0 && onSiteOnly && !onSite ? <p className="text-xs text-warn">Bitte oben bestätigen, dass die Munition auf dem Platz verbraucht wird.</p> : null}
           {error ? <Alert>{error}</Alert> : null}
-          <Button type="button" size="lg" className="h-auto min-h-13 w-full whitespace-normal py-2.5 text-center" disabled={!canOrder} onClick={submit} aria-busy={pending || undefined}>
-            {pending ? <span className="inline-flex items-center gap-2"><Spinner /> Wird bestellt…</span> : <><ShoppingBag className="h-5 w-5 shrink-0" /> Verbindlich bestellen – Bezahlung auf Rechnung</>}
+          <Button type="button" size="lg" className="h-auto min-h-13 w-full py-2.5 text-center" disabled={!canOrder} onClick={submit} aria-busy={pending || undefined}>
+            {pending ? <span className="inline-flex items-center gap-2"><Spinner /> Wird bestellt…</span> : <><ShoppingBag className="h-5 w-5 shrink-0" /><span className="min-w-0 whitespace-normal">Verbindlich bestellen – Bezahlung auf Rechnung</span></>}
           </Button>
           <p className="text-center text-xs text-ink-3">
             {approvalRequired ? "Der Verein gibt die Bestellung zuerst frei. " : ""}Die Rechnung mit QR-Zahlteil erhältst du bei der Ausgabe.

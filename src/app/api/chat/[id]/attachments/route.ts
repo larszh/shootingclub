@@ -4,7 +4,8 @@ import { db } from "@/lib/db";
 import { apiConversationAccess, json, sameOrigin } from "@/modules/chat/api";
 import { createMessage, messageSelect, toMessageDTO } from "@/modules/chat/service";
 import { clientIdSchema, messageBodySchema } from "@/modules/chat/types";
-import { deleteTenantFile, fileErrorMessage, saveTenantFile } from "@/modules/files/service";
+import { deleteTenantFile, fileErrorMessage, FileServiceError, readUploadForm, saveTenantFile } from "@/modules/files/service";
+import { loadStorageSettings } from "@/lib/file-storage";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -22,11 +23,14 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   const access = await apiConversationAccess(user, id);
   if (!access) return json({ error: "Diese Unterhaltung ist nicht mehr verfügbar." }, 404);
 
+  // Begrenzt lesen: bricht ab, sobald mehr als die erlaubte Dateigrösse ankommt
+  // (auch ohne Content-Length, z.B. bei chunked Uploads).
+  const settings = await loadStorageSettings(access.conversation.tenantId);
   let form: FormData;
   try {
-    form = await req.formData();
-  } catch {
-    return json({ error: "Die Datei konnte nicht gelesen werden." }, 400);
+    form = await readUploadForm(req, settings.maxFileMb);
+  } catch (e) {
+    return json({ error: fileErrorMessage(e) }, e instanceof FileServiceError ? e.status : 400);
   }
   const clientId = clientIdSchema.safeParse(String(form.get("clientId") ?? ""));
   if (!clientId.success) return json({ error: "Ungültige Nachrichten-ID." }, 400);

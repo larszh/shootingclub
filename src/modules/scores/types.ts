@@ -42,6 +42,11 @@ export const zoneSchema = z.object({
     .int("Punkte als ganze Zahl")
     .min(ZONE_LIMITS.minPoints, `Punkte mindestens ${ZONE_LIMITS.minPoints}`)
     .max(ZONE_LIMITS.maxPoints, `Punkte höchstens ${ZONE_LIMITS.maxPoints}`),
+  /**
+   * Strafe ohne Schuss (z.B. Verfahrensfehler): wird zusätzlich zu den Schüssen erfasst und
+   * belegt keinen Schussplatz der Serie. Nur bei negativen Punkten.
+   */
+  penalty: z.boolean().optional(),
 });
 export type Zone = z.infer<typeof zoneSchema>;
 
@@ -50,7 +55,7 @@ export type Zone = z.infer<typeof zoneSchema>;
  * einen eigenen Punktwert (sonst wäre die Zone eines Schusses nicht mehr eindeutig).
  * Gibt eine lesbare Fehlermeldung zurück oder null.
  */
-export function validateZones(zones: Array<{ key: string; label: string; points: number }>): string | null {
+export function validateZones(zones: Array<{ key: string; label: string; points: number; penalty?: boolean }>): string | null {
   if (zones.length === 0) return "Mindestens eine Zone erfassen.";
   if (zones.length > ZONE_LIMITS.maxZones) return `Höchstens ${ZONE_LIMITS.maxZones} Zonen.`;
   for (const z0 of zones) {
@@ -62,6 +67,8 @@ export function validateZones(zones: Array<{ key: string; label: string; points:
   const pts = zones.map((z0) => Number(z0.points));
   if (new Set(pts).size !== pts.length) return "Jede Zone braucht einen eigenen Punktwert.";
   if (!pts.some((p) => p > 0)) return "Mindestens eine Zone muss positive Punkte geben.";
+  const badPenalty = zones.find((z0) => z0.penalty && !(Number(z0.points) < 0));
+  if (badPenalty) return `Zone «${badPenalty.key || badPenalty.label || "?"}»: Strafen ohne Schuss brauchen negative Punkte.`;
   return null;
 }
 
@@ -80,7 +87,7 @@ export const DEFAULT_ZONES: Zone[] = [
   { key: "C", label: "C-Zone", points: 3 },
   { key: "D", label: "D-Zone", points: 1 },
   { key: "M", label: "Fehl", points: 0 },
-  { key: "VF", label: "Verfahrensfehler", points: -5 },
+  { key: "VF", label: "Verfahrensfehler", points: -5, penalty: true },
   { key: "NS", label: "Unbeteiligte/Geisel getroffen", points: -10 },
 ];
 
@@ -118,6 +125,29 @@ function maxZonePoints(zones: Zone[]) {
 /** Zonen einer Serie (Fallback: Standard-Zonen). */
 export function stageZones(stage: Pick<Stage, "zones">): Zone[] {
   return stage.zones && stage.zones.length ? stage.zones : DEFAULT_ZONES;
+}
+
+/** Höchstzahl Strafen ohne Schuss pro Serie (zusätzlich zu den Schüssen). */
+export const MAX_STAGE_PENALTIES = 20;
+
+/**
+ * Punktwerte der Strafen ohne Schuss einer Serie (nur Zonenwertung). Da jede Zone einen
+ * eigenen Punktwert hat, ist ein gespeicherter Wert eindeutig Schuss oder Strafe.
+ */
+export function penaltyValues(stage: Pick<Stage, "zones">, mode: string): Set<number> {
+  if (mode !== "ZONES") return new Set();
+  return new Set(stageZones(stage).filter((z0) => z0.penalty).map((z0) => z0.points));
+}
+
+/** Anzahl abgegebener Schüsse einer Serie (ohne Strafen ohne Schuss). */
+export function firedShots(stage: Pick<Stage, "zones">, shots: readonly number[], mode: string): number {
+  const pen = penaltyValues(stage, mode);
+  return pen.size ? shots.filter((v) => !pen.has(v)).length : shots.length;
+}
+
+/** Höchstzahl Einträge einer Serie: Schüsse plus (bei Zonenwertung) Strafen ohne Schuss. */
+export function stageEntryLimit(stage: Pick<Stage, "zones" | "shots">, mode: string): number {
+  return penaltyValues(stage, mode).size ? stage.shots + MAX_STAGE_PENALTIES : stage.shots;
 }
 
 /** Zone zu einem gespeicherten Schusswert (Punkte), falls vorhanden. */
@@ -200,23 +230,37 @@ export function sanitizeShots(shots: unknown, stage: Stage, mode: ScoringMode, s
   if (!Array.isArray(shots)) return [];
   const out: number[] = [];
   const zonePoints = mode === "ZONES" ? new Set(stageZones(stage).map((z0) => z0.points)) : null;
-  for (const [i, v] of shots.slice(0, stage.shots).entries()) {
+  // Strafen ohne Schuss (z.B. Verfahrensfehler) belegen keinen Schussplatz
+  const penalties = penaltyValues(stage, mode);
+  let fired = 0;
+  let penaltyCount = 0;
+  const accept = (n: number) => {
+    if (penalties.has(n)) {
+      if (penaltyCount >= MAX_STAGE_PENALTIES) return;
+      penaltyCount += 1;
+    } else {
+      if (fired >= stage.shots) return;
+      fired += 1;
+    }
+    out.push(n);
+  };
+  for (const [i, v] of shots.slice(0, stageEntryLimit(stage, mode)).entries()) {
     const n = Number(v);
     if (!Number.isFinite(n)) continue;
     // Bereits gespeicherter Wert an derselben Stelle bleibt gültig, auch wenn das Programm
     // (Zonen, Wertung, Maximum) inzwischen geändert wurde – sonst wäre die Serie nicht mehr speicherbar.
     if (stored && typeof v === "number" && stored[i] === n) {
-      out.push(n);
+      accept(n);
       continue;
     }
     if (zonePoints) {
-      if (typeof v === "number" && Number.isInteger(n) && zonePoints.has(n)) out.push(n);
+      if (typeof v === "number" && Number.isInteger(n) && zonePoints.has(n)) accept(n);
       continue;
     }
     if (n < 0) continue;
-    if (mode === "HITS") out.push(n >= 1 ? 1 : 0);
-    else if (mode === "RINGS_DECIMAL") out.push(Math.min(Math.round(n * 10) / 10, maxShotValue(stage, mode)));
-    else out.push(Math.min(Math.round(n), stage.maxPerShot));
+    if (mode === "HITS") accept(n >= 1 ? 1 : 0);
+    else if (mode === "RINGS_DECIMAL") accept(Math.min(Math.round(n * 10) / 10, maxShotValue(stage, mode)));
+    else accept(Math.min(Math.round(n), stage.maxPerShot));
   }
   return out;
 }

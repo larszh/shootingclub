@@ -33,7 +33,8 @@ const OPTIONS: Array<{ value: StorageChoice; title: string; text: string; icon: 
   { value: "WEBDAV", title: "Nextcloud / WebDAV", text: "Ein Ordner in der Nextcloud des Vereins.", icon: Cloud },
 ];
 
-const SECRET_HINT = "Leer lassen = unverändert.";
+const SECRET_HINT_S3 = "Leer lassen = unverändert (nur bei gleichem Endpoint und Access Key).";
+const SECRET_HINT_DAV = "Leer lassen = unverändert (nur bei gleicher Adresse und gleichem Benutzer).";
 
 export function StorageSettingsForm(props: Props) {
   const router = useRouter();
@@ -137,7 +138,7 @@ export function StorageSettingsForm(props: Props) {
           <Field label="Access Key" error={fe?.accessKeyId}>
             <Input name="accessKeyId" defaultValue={s3?.accessKeyId ?? ""} autoComplete="off" spellCheck={false} className="font-mono text-sm" />
           </Field>
-          <Field label="Secret Key" error={fe?.secretAccessKey} hint={s3?.hasSecret ? SECRET_HINT : "Wird verschlüsselt gespeichert und nie wieder angezeigt."}>
+          <Field label="Secret Key" error={fe?.secretAccessKey} hint={s3?.hasSecret ? SECRET_HINT_S3 : "Wird verschlüsselt gespeichert und nie wieder angezeigt."}>
             <PasswordInput name="secretAccessKey" autoComplete="new-password" placeholder={s3?.hasSecret ? "••••••••" : ""} className="font-mono text-sm" />
           </Field>
           <Field label="Präfix (optional)" error={fe?.prefix} hint="Unterordner im Bucket, z.B. standchef. Praktisch, wenn der Bucket auch für anderes genutzt wird.">
@@ -158,7 +159,7 @@ export function StorageSettingsForm(props: Props) {
           <Field label="Benutzername" error={fe?.username}>
             <Input name="username" defaultValue={props.webdav?.username ?? ""} autoComplete="off" spellCheck={false} />
           </Field>
-          <Field label="App-Passwort" error={fe?.password} hint={props.webdav?.hasPassword ? SECRET_HINT : "Bitte ein App-Passwort verwenden, nicht das normale Passwort."}>
+          <Field label="App-Passwort" error={fe?.password} hint={props.webdav?.hasPassword ? SECRET_HINT_DAV : "Bitte ein App-Passwort verwenden, nicht das normale Passwort."}>
             <PasswordInput name="password" autoComplete="new-password" placeholder={props.webdav?.hasPassword ? "••••••••" : ""} />
           </Field>
         </Card>

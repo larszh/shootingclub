@@ -6,7 +6,7 @@ import { MODULES } from "@/lib/modules";
 import { can, type Permission } from "@/lib/permissions";
 import type { CurrentUser } from "@/lib/auth";
 import type { ScoreMatch, SyncMapping, SyncOpResult } from "@/lib/offline/types";
-import { parseStages, sanitizeShots, stageTotal, type ScoringMode } from "./types";
+import { MAX_STAGE_PENALTIES, parseStages, sanitizeShots, stageEntryLimit, stageTotal, type ScoringMode } from "./types";
 import type { MatchView } from "./queries";
 
 /**
@@ -53,7 +53,7 @@ export const saveStageResultInputSchema = z.intersection(
   z.object({
     participantKey: z.union([z.string().trim().min(1).max(64), z.number().int().min(0).max(100)]).transform(String),
     stageIndex: z.number().int().min(0).max(100),
-    shots: z.array(z.number()).max(200),
+    shots: z.array(z.number()).max(200 + MAX_STAGE_PENALTIES),
     clientUpdatedAt: timestampSchema,
   }),
 );
@@ -234,9 +234,11 @@ export async function saveStageResultCore(
   const stored = existing ? parseStoredShots(existing.shotsJson) : undefined;
   const shots = sanitizeShots(input.shots, stage, mode, stored);
   // Zonenwertung: Werte ausserhalb der Zonen der Serie nicht still verwerfen (würde Schüsse verschieben)
-  if (mode === "ZONES" && shots.length !== Math.min(input.shots.length, stage.shots)) {
-    const bad = input.shots.slice(0, stage.shots).findIndex((v, i) => shots[i] !== v);
-    return coreFail(bad >= 0 ? `Ungültiger Zonenwert bei Schuss ${bad + 1} – bitte diesen Schuss entfernen.` : "Ungültiger Zonenwert für diese Serie.", "invalid");
+  // (Strafen ohne Schuss zählen nicht als Schuss, darum ist die Liste dort länger als stage.shots)
+  const limit = stageEntryLimit(stage, mode);
+  if (mode === "ZONES" && shots.length !== Math.min(input.shots.length, limit)) {
+    const bad = input.shots.slice(0, limit).findIndex((v, i) => shots[i] !== v);
+    return coreFail(bad >= 0 ? `Ungültiger Eintrag bei Nr. ${bad + 1} (Zonenwert oder zu viele Schüsse) – bitte diesen Eintrag entfernen.` : "Ungültiger Zonenwert für diese Serie.", "invalid");
   }
   const total = stageTotal(shots);
   const clientUpdatedAt = clampClientTime(input.clientUpdatedAt);

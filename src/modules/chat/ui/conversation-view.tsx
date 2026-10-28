@@ -96,6 +96,8 @@ export function ConversationView({
   const [savingEdit, startEditTransition] = useTransition();
   // Lesestand beim Öffnen: Markierung «Neue Nachrichten» bleibt stehen, bis die Seite neu geladen wird.
   const [openedReadAt] = useState(detail.lastReadAt);
+  // Nur Nachrichten, die beim Öffnen schon da waren, können die Markierung tragen; live eingehende nicht.
+  const [openedLatestAt] = useState(() => detail.messages.reduce<string | null>((max, m) => (!max || m.createdAt > max ? m.createdAt : max), null));
 
   const rootRef = useRef<HTMLDivElement>(null);
   const scrollerRef = useRef<HTMLDivElement>(null);
@@ -559,7 +561,7 @@ export function ConversationView({
         prevSender = undefined;
       }
       const mine = m.senderId === me.id;
-      if (!unreadPlaced && openedReadAt && !mine && item.state === "sent" && m.createdAt > openedReadAt) {
+      if (!unreadPlaced && openedReadAt && openedLatestAt && !mine && item.state === "sent" && m.createdAt > openedReadAt && m.createdAt <= openedLatestAt) {
         out.push({ kind: "unread", key: "unread" });
         unreadPlaced = true;
         prevSender = undefined;
@@ -587,7 +589,7 @@ export function ConversationView({
     return out;
     // uploadFile ist eine stabile Hilfsfunktion dieser Komponente (nur Setter und id).
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [messages, pendingForConv, uploads, reads, otherMembers, isGroup, me.id, me.name, me.avatarUrl, id, online, now, openedReadAt]);
+  }, [messages, pendingForConv, uploads, reads, otherMembers, isGroup, me.id, me.name, me.avatarUrl, id, online, now, openedReadAt, openedLatestAt]);
 
   const selectedOwn = selected?.senderId === me.id;
   const selectedChangeable = selected ? selectedOwn && !selected.deletedAt : false;

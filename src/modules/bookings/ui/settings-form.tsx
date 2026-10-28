@@ -241,7 +241,7 @@ export function BookingSettingsForm({ settings, providers }: { settings: Booking
           <Field label="Nummernpräfix"><Input name="invoicePrefix" defaultValue={settings.invoicePrefix} placeholder="R-" /></Field>
           <Field label="Zahlungsfrist (Tage)"><Input name="invoiceDueDays" type="number" inputMode="numeric" min={1} defaultValue={settings.invoiceDueDays} /></Field>
         </div>
-        <p className="text-xs text-ink-3">Zahlungsempfänger und IBAN für die QR-Rechnung werden im <a href="/admin/billing/settings" className="underline">Rechnungsprofil</a> gepflegt und gelten für Reservationen und Mitgliederbeiträge.</p>
+        <p className="text-xs text-ink-3">Zahlungsempfänger und IBAN für die QR-Rechnung werden im <a href="/admin/billing/settings" className="underline">Rechnungsprofil</a> gepflegt und gelten für Reservationen, Mitgliederbeiträge und Munition.</p>
         <Field label="Hinweistext auf der Rechnung (optional)"><Textarea name="invoiceNote" defaultValue={settings.invoiceNote ?? ""} className="min-h-16" placeholder="z.B. Vielen Dank für die Unterstützung unseres Vereins." /></Field>
       </Card>
 

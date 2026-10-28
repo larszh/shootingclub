@@ -156,7 +156,9 @@ export async function createMessage(input: { userId: string; access: Conversatio
     const present = await db.chatMember.findUnique({ where: { conversationId_userId: { conversationId: conv.id, userId: other } }, select: { id: true } });
     if (!present) {
       try {
-        await db.chatMember.create({ data: { conversationId: conv.id, userId: other } });
+        // Bisheriger Verlauf gilt als gelesen – sonst erschiene beim Wiederauftauchen alles als ungelesen.
+        const last = await db.chatConversation.findUnique({ where: { id: conv.id }, select: { lastMessageAt: true } });
+        await db.chatMember.create({ data: { conversationId: conv.id, userId: other, lastReadAt: last?.lastMessageAt ?? null } });
         rejoined = true;
       } catch (e) {
         if (!isUniqueViolation(e)) throw e;

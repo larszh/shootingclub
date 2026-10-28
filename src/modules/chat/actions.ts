@@ -173,7 +173,9 @@ export async function addGroupMembersAction(conversationId: string, userIds: str
   if (!Array.isArray(userIds) || userIds.length > 1000) return fail("Ungültige Auswahl.");
   const valid = await filterTenantMembers(ctx.tenant.id, userIds);
   if (!valid.length) return fail("Bitte mindestens ein Vereinsmitglied wählen.");
-  const res = await db.chatMember.createMany({ data: valid.map((userId) => ({ conversationId: access.conversation.id, userId })), skipDuplicates: true });
+  // Hinzugefügte (auch ehemalige) Mitglieder starten ohne ungelesenen Altbestand.
+  const lastReadAt = new Date();
+  const res = await db.chatMember.createMany({ data: valid.map((userId) => ({ conversationId: access.conversation.id, userId, lastReadAt })), skipDuplicates: true });
   publishChat({ type: "conversation", tenantId: ctx.tenant.id, conversationId: access.conversation.id });
   revalidateChat(access.conversation.id);
   return ok({ added: res.count }, res.count === 1 ? "1 Mitglied hinzugefügt." : `${res.count} Mitglieder hinzugefügt.`);

@@ -1,6 +1,10 @@
 import "server-only";
+import http from "node:http";
+import https from "node:https";
+import { Readable } from "node:stream";
+import type { ReadableStream as NodeWebReadableStream } from "node:stream/web";
 import { assertTenantKey, buildTestKey } from "./keys";
-import { assertPublicHost, parseStorageUrl } from "./net";
+import { assertPublicHost, isPrivateAddressError, parseStorageUrl, storageHttpAgent, storageHttpsAgent } from "./net";
 import { StorageError, type GetResult, type PutOptions, type StorageAdapter, type WebdavCredentials } from "./types";
 
 const TIMEOUT_MS = 60_000;
@@ -17,7 +21,64 @@ function statusError(status: number, what: string): StorageError {
   return new StorageError(`${what}: Der WebDAV-Server antwortet mit Status ${status}.`, "UNKNOWN");
 }
 
-/** Nextcloud / ownCloud / andere WebDAV-Server, umgesetzt mit fetch (PUT, GET, DELETE, MKCOL, PROPFIND). */
+type RequestBody = string | Uint8Array | ReadableStream<Uint8Array>;
+
+/**
+ * HTTP-Anfrage über die Speicher-Agents (DNS-Prüfung beim Verbindungsaufbau, keine Weiterleitungen).
+ * Die Zeitbegrenzung gilt bis zu den Antwort-Headern und für Stillstand der Verbindung,
+ * nicht für die gesamte Übertragung grosser Dateien.
+ */
+function storageRequest(url: string, method: string, headers: Record<string, string>, body: RequestBody | undefined): Promise<Response> {
+  return new Promise((resolve, reject) => {
+    const u = new URL(url);
+    const isHttps = u.protocol === "https:";
+    const hdrs: Record<string, string> = { ...headers };
+    if (typeof body === "string" || body instanceof Uint8Array) hdrs["Content-Length"] = String(Buffer.byteLength(body));
+    const req = (isHttps ? https : http).request(u, { method, headers: hdrs, agent: isHttps ? storageHttpsAgent : storageHttpAgent });
+    let settled = false;
+    const fail = (e: unknown) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      reject(e);
+    };
+    const timer = setTimeout(() => {
+      const e = new Error("timeout");
+      e.name = "TimeoutError";
+      req.destroy(e);
+    }, TIMEOUT_MS);
+    req.setTimeout(TIMEOUT_MS, () => {
+      const e = new Error("timeout");
+      e.name = "TimeoutError";
+      req.destroy(e);
+    });
+    req.on("error", fail);
+    req.on("response", (res) => {
+      clearTimeout(timer);
+      if (settled) return void res.destroy();
+      settled = true;
+      const status = res.statusCode ?? 500;
+      const resHeaders = new Headers();
+      for (const [k, v] of Object.entries(res.headers)) {
+        if (v === undefined) continue;
+        if (Array.isArray(v)) v.forEach((x) => resHeaders.append(k, x));
+        else resHeaders.set(k, v);
+      }
+      const noBody = status === 204 || status === 205 || status === 304 || method === "HEAD";
+      if (noBody) res.resume();
+      resolve(new Response(noBody ? null : (Readable.toWeb(res) as unknown as ReadableStream<Uint8Array>), { status: status < 200 || status > 599 ? 500 : status, headers: resHeaders }));
+    });
+    if (body === undefined) req.end();
+    else if (typeof body === "string" || body instanceof Uint8Array) req.end(body);
+    else {
+      const src = Readable.fromWeb(body as unknown as NodeWebReadableStream<Uint8Array>);
+      src.on("error", (e) => req.destroy(e));
+      src.pipe(req);
+    }
+  });
+}
+
+/** Nextcloud / ownCloud / andere WebDAV-Server (PUT, GET, DELETE, MKCOL, PROPFIND). */
 export class WebdavStorageAdapter implements StorageAdapter {
   readonly provider = "WEBDAV" as const;
   private readonly base: URL;
@@ -43,19 +104,12 @@ export class WebdavStorageAdapter implements StorageAdapter {
     return new URL(encoded, this.base).toString();
   }
 
-  private async request(method: string, url: string, init: { body?: BodyInit; headers?: Record<string, string>; duplex?: boolean } = {}) {
+  private async request(method: string, url: string, init: { body?: RequestBody; headers?: Record<string, string> } = {}) {
     await assertPublicHost(this.base, "WebDAV-Adresse");
     try {
-      return await fetch(url, {
-        method,
-        body: init.body,
-        headers: { Authorization: this.auth, ...init.headers },
-        redirect: "manual",
-        cache: "no-store",
-        signal: AbortSignal.timeout(TIMEOUT_MS),
-        ...(init.duplex ? { duplex: "half" } : {}),
-      } as RequestInit);
+      return await storageRequest(url, method, { Authorization: this.auth, ...init.headers }, init.body);
     } catch (e) {
+      if (isPrivateAddressError(e)) throw new StorageError("WebDAV-Adresse: Interne Adressen sind nicht erlaubt.", "INVALID");
       if (e instanceof Error && (e.name === "TimeoutError" || e.name === "AbortError")) throw new StorageError("Der WebDAV-Server antwortet nicht (Zeitüberschreitung).", "NETWORK");
       throw new StorageError("Der WebDAV-Server ist nicht erreichbar. Adresse prüfen.", "NETWORK");
     }
@@ -83,11 +137,9 @@ export class WebdavStorageAdapter implements StorageAdapter {
   async put(key: string, body: Buffer | ReadableStream<Uint8Array>, opts: PutOptions) {
     assertTenantKey(this.tenantId, key);
     await this.ensureParents(key);
-    const isBuf = Buffer.isBuffer(body);
     const res = await this.request("PUT", this.urlFor(key), {
-      body: isBuf ? new Uint8Array(body) : body,
+      body,
       headers: { "Content-Type": opts.contentType || "application/octet-stream", "OC-Total-Length": String(opts.size) },
-      duplex: !isBuf,
     });
     await res.body?.cancel();
     if (res.status !== 201 && res.status !== 204 && res.status !== 200) throw statusError(res.status, "Hochladen");

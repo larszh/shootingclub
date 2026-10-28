@@ -51,7 +51,8 @@ export function ProgramForm({ scope, initial, openMatches = 0 }: Props) {
   const [stages, setStages] = useState<FormStage[]>(init.stages);
   const [programZones, setProgramZones] = useState<ZoneDraft[]>(init.programZones);
   const [scoringMode, setScoringMode] = useState(initial?.scoringMode ?? "RINGS_INT");
-  const [clientError, setClientError] = useState<string | null>(null);
+  /** Speichern wurde wegen ungültiger Zonen blockiert: ab dann den aktuellen Zonenfehler unten anzeigen. */
+  const [zoneSubmitBlocked, setZoneSubmitBlocked] = useState(false);
 
   const isHits = scoringMode === "HITS";
   const isZones = scoringMode === "ZONES";
@@ -97,13 +98,15 @@ export function ProgramForm({ scope, initial, openMatches = 0 }: Props) {
   const onSubmit = (e: React.FormEvent<HTMLFormElement>) => {
     if (zoneError) {
       e.preventDefault();
-      setClientError(zoneError);
+      setZoneSubmitBlocked(true);
       return;
     }
-    setClientError(null);
+    setZoneSubmitBlocked(false);
     submit(e);
   };
 
+  // Live statt Momentaufnahme: verschwindet, sobald die Zonen korrigiert sind
+  const clientError = zoneSubmitBlocked ? zoneError : null;
   const toggleOwnZones = (i: number, on: boolean) => update(i, { ownZones: on ? programZones.map((z) => ({ ...z })) : undefined });
   const simpleInputs = isHits || isZones;
   const mode = SCORING_MODES.find((m) => m.key === scoringMode);
@@ -151,7 +154,7 @@ export function ProgramForm({ scope, initial, openMatches = 0 }: Props) {
       <div>
         <div className="flex items-center justify-between mb-2">
           <h2 className="text-xs font-semibold uppercase tracking-wider text-ink-3">Serien / Stationen</h2>
-          <span className="text-xs text-ink-3 tabular-nums">{totals.shots} Schuss · max. {totals.max} {isHits ? "Treffer" : "Punkte"}</span>
+          <span className="text-xs text-ink-3 tabular-nums">{totals.shots} Schuss · max. {zoneError ? "–" : totals.max} {isHits ? "Treffer" : "Punkte"}</span>
         </div>
         <div className="space-y-3">
           {stages.map((s, i) => (

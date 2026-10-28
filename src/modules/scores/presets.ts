@@ -9,7 +9,7 @@ const HOSTAGE_ZONES: Zone[] = [
   { key: "K", label: "Kopfzone Täter", points: 5 },
   { key: "A", label: "Rumpf Täter", points: 2 },
   { key: "M", label: "Fehl", points: 0 },
-  { key: "VF", label: "Verfahrensfehler", points: -5 },
+  { key: "VF", label: "Verfahrensfehler", points: -5, penalty: true },
   { key: "NS", label: "Geisel getroffen", points: -20 },
 ];
 

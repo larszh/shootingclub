@@ -5,7 +5,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from
 import { unstable_rethrow, useRouter } from "next/navigation";
 import { AlertTriangle, Check, ChevronLeft, ChevronRight, CloudOff, Delete, Loader2, Lock, Trash2, Trophy, Unlock } from "lucide-react";
 import { deleteMatchAction, saveStageResultAction, setMatchStatusAction } from "@/modules/scores/actions";
-import { maxShotValue, positionLabel, stageTotal, stageZones, zoneForValue } from "@/modules/scores/types";
+import { firedShots, MAX_STAGE_PENALTIES, maxShotValue, penaltyValues, positionLabel, stageTotal, stageZones, zoneForValue } from "@/modules/scores/types";
 import { Alert, Button, Card } from "@/components/ui";
 import { Avatar } from "@/components/avatar";
 import { cn, formatScore } from "@/lib/utils";
@@ -49,7 +49,8 @@ export function ScoreEntry({ match, storageKey, tenantId, userId, persistView = 
   const { online } = useSyncStatus();
   const decimal = match.program.scoringMode === "RINGS_DECIMAL";
   const hits = match.program.scoringMode === "HITS";
-  const zonesMode = match.program.scoringMode === "ZONES";
+  const mode = match.program.scoringMode;
+  const zonesMode = mode === "ZONES";
   const stages = match.program.stages;
   const isServerMatch = storageKey.startsWith("s:") && !!match.id;
 
@@ -62,7 +63,7 @@ export function ScoreEntry({ match, storageKey, tenantId, userId, persistView = 
   const [activeP, setActiveP] = useState(match.participants.find((p) => p.isMe)?.id ?? match.participants[0]!.id);
   const [activeS, setActiveS] = useState(() => {
     const p = match.participants.find((x) => x.isMe) ?? match.participants[0]!;
-    const idx = stages.findIndex((st, i) => (p.results.find((r) => r.stageIndex === i)?.shots.length ?? 0) < st.shots);
+    const idx = stages.findIndex((st, i) => firedShots(st, p.results.find((r) => r.stageIndex === i)?.shots ?? [], mode) < st.shots);
     return idx === -1 ? 0 : idx;
   });
   const [dirty, setDirty] = useState<CellState>({});
@@ -82,6 +83,12 @@ export function ScoreEntry({ match, storageKey, tenantId, userId, persistView = 
 
   const stage = stages[activeS]!;
   const current = shots[activeP]?.[activeS] ?? [];
+  // Strafen ohne Schuss (z.B. Verfahrensfehler) zählen zusätzlich und belegen keinen Schussplatz
+  const stagePenalties = penaltyValues(stage, mode);
+  const currentFired = current.filter((v) => !stagePenalties.has(v));
+  const currentPenalties = current.filter((v) => stagePenalties.has(v));
+  /** Abgegebene Schüsse (ohne Strafen) einer Serie eines Teilnehmers */
+  const firedIn = (pid: string, i: number) => firedShots(stages[i]!, shots[pid]?.[i] ?? [], mode);
   const participant = match.participants.find((p) => p.id === activeP)!;
   const ctx = useMemo(() => ({ storageKey, view: match, tenantId, userId }), [storageKey, match, tenantId, userId]);
 
@@ -216,12 +223,17 @@ export function ScoreEntry({ match, storageKey, tenantId, userId, persistView = 
   };
 
   const addShot = (v: number) => {
-    if (finished || current.length >= stage.shots) return;
-    const next = [...current, v];
-    setCurrent(next);
+    if (finished) return;
+    if (stagePenalties.has(v)) {
+      if (currentPenalties.length >= MAX_STAGE_PENALTIES) return;
+      setCurrent([...current, v]);
+      return;
+    }
+    if (currentFired.length >= stage.shots) return;
+    setCurrent([...current, v]);
     // Serie voll: automatisch zur nächsten unvollständigen Serie springen
-    if (next.length >= stage.shots) {
-      const nextIdx = stages.findIndex((st, i) => i > activeS && (shots[activeP]?.[i]?.length ?? 0) < st.shots);
+    if (currentFired.length + 1 >= stage.shots) {
+      const nextIdx = stages.findIndex((st, i) => i > activeS && firedIn(activeP, i) < st.shots);
       if (nextIdx !== -1) setTimeout(() => setActiveS(nextIdx), 350);
     }
   };
@@ -372,7 +384,7 @@ export function ScoreEntry({ match, storageKey, tenantId, userId, persistView = 
                   <span className="flex items-center gap-1.5 font-medium truncate">{p.name}{isLeader ? <Trophy className="h-4 w-4 text-accent" /> : null}{p.isMe ? <span className="text-xs text-ink-3">(du)</span> : null}</span>
                   <span className="flex gap-1 mt-1 flex-wrap">
                     {t.stages.map((sv, i) => (
-                      <span key={i} className={cn("rounded-md px-1.5 py-0.5 text-[11px] tabular-nums", (shots[p.id]?.[i]?.length ?? 0) >= stages[i]!.shots ? "bg-ink/10 text-ink" : "bg-surface-2 text-ink-3")}>{formatScore(sv, decimal)}</span>
+                      <span key={i} className={cn("rounded-md px-1.5 py-0.5 text-[11px] tabular-nums", firedIn(p.id, i) >= stages[i]!.shots ? "bg-ink/10 text-ink" : "bg-surface-2 text-ink-3")}>{formatScore(sv, decimal)}</span>
                     ))}
                   </span>
                   {st ? (
@@ -406,7 +418,7 @@ export function ScoreEntry({ match, storageKey, tenantId, userId, persistView = 
         </div>
         <div className="flex gap-1 justify-center">
           {stages.map((st, i) => {
-            const done = (shots[activeP]?.[i]?.length ?? 0) >= st.shots;
+            const done = firedIn(activeP, i) >= st.shots;
             return <button key={i} type="button" onClick={() => setActiveS(i)} aria-label={st.name} className={cn("h-1.5 rounded-full transition-all", i === activeS ? "w-6 bg-ink" : done ? "w-3 bg-ink/40" : "w-3 bg-line")} />;
           })}
         </div>
@@ -418,13 +430,13 @@ export function ScoreEntry({ match, storageKey, tenantId, userId, persistView = 
       {/* Schüsse */}
       <Card className="animate-rise [animation-delay:120ms] p-4">
         <div className="flex items-center justify-between mb-3">
-          <span className="text-sm text-ink-3">{participant.name} · Schuss {Math.min(current.length + 1, stage.shots)} von {stage.shots}</span>
+          <span className="text-sm text-ink-3">{participant.name} · Schuss {Math.min(currentFired.length + 1, stage.shots)} von {stage.shots}</span>
           <span className="text-sm font-semibold tabular-nums">{formatScore(stageTotal(current), decimal)}{hits ? ` / ${stage.shots}` : ` / ${stage.shots * (zonesMode ? topValue : stage.maxPerShot)}`}</span>
         </div>
         <div className="flex flex-wrap gap-1.5 min-h-10">
           {Array.from({ length: stage.shots }, (_, i) => {
-            const v = current[i];
-            const isNext = i === current.length;
+            const v = currentFired[i];
+            const isNext = i === currentFired.length;
             if (zonesMode && v !== undefined) {
               const z = zoneForValue(stage, v);
               return (
@@ -444,6 +456,19 @@ export function ScoreEntry({ match, storageKey, tenantId, userId, persistView = 
             );
           })}
         </div>
+        {currentPenalties.length ? (
+          <div className="mt-2 flex flex-wrap items-center gap-1.5" aria-label="Strafen ohne Schuss">
+            <span className="text-xs text-ink-3">Strafen:</span>
+            {currentPenalties.map((v, i) => {
+              const z = zoneForValue(stage, v);
+              return (
+                <span key={i} title={z ? `${z.label} (${formatZonePoints(v)})` : formatZonePoints(v)} className="animate-pop flex h-8 min-w-8 items-center justify-center gap-1 rounded-xl border border-dashed border-danger/40 bg-danger/10 px-2 text-xs font-semibold text-danger">
+                  {z?.key ?? ""} <span className="tabular-nums">{formatZonePoints(v)}</span>
+                </span>
+              );
+            })}
+          </div>
+        ) : null}
         <div className="mt-2 min-h-4 text-[11px] text-ink-3 text-right" aria-live="polite">
           {failed[activeCell] ? (
             <span className="inline-flex items-center gap-1 text-accent"><AlertTriangle className="h-3 w-3" /> Nicht gespeichert: {failed[activeCell]}</span>
@@ -462,11 +487,11 @@ export function ScoreEntry({ match, storageKey, tenantId, userId, persistView = 
           {zonesMode ? (
             <div className="grid grid-cols-2 gap-2">
               {zones.map((z) => (
-                <Key key={z.key} onClick={() => addShot(z.points)} label={`${z.label}, ${formatZonePoints(z.points)} Punkte`}
+                <Key key={z.key} onClick={() => addShot(z.points)} label={`${z.label}, ${formatZonePoints(z.points)} Punkte${z.penalty ? ", Strafe ohne Schuss" : ""}`}
                   className={cn("h-20 flex-col gap-0.5 px-2",
-                    z.points < 0 ? "bg-danger/15 text-danger border-danger/30" : z.points === topValue ? "bg-ink text-bg" : z.points === 0 ? "bg-surface-2 text-ink-3" : "bg-surface border-line hover:bg-surface-2")}>
+                    z.points < 0 ? cn("bg-danger/15 text-danger border-danger/30", z.penalty && "border-dashed") : z.points === topValue ? "bg-ink text-bg" : z.points === 0 ? "bg-surface-2 text-ink-3" : "bg-surface border-line hover:bg-surface-2")}>
                   <span className="flex items-baseline gap-2 leading-none"><span>{z.key}</span><span className="text-lg tabular-nums">{formatZonePoints(z.points)}</span></span>
-                  <span className="max-w-full truncate text-xs font-medium leading-tight opacity-90">{z.label}</span>
+                  <span className="max-w-full truncate text-xs font-medium leading-tight opacity-90">{z.penalty ? `${z.label} · ohne Schuss` : z.label}</span>
                 </Key>
               ))}
               <Key onClick={undo} className={cn("bg-surface", zones.length % 2 === 0 && "col-span-2")} variant="secondary"><Delete className="h-5 w-5" /> Rückgängig</Key>

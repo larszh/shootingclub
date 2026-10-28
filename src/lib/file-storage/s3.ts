@@ -3,7 +3,7 @@ import { createHash } from "node:crypto";
 import { Readable } from "node:stream";
 import { DeleteObjectCommand, GetObjectCommand, PutObjectCommand, S3Client, S3ServiceException } from "@aws-sdk/client-s3";
 import { assertTenantKey, buildTestKey } from "./keys";
-import { assertPublicHost, parseStorageUrl } from "./net";
+import { assertPublicHost, isPrivateAddressError, parseStorageUrl, storageHttpAgent, storageHttpsAgent } from "./net";
 import { StorageError, type GetResult, type PutOptions, type S3Credentials, type StorageAdapter } from "./types";
 
 const clients = new Map<string, S3Client>();
@@ -21,6 +21,8 @@ function clientFor(c: S3Credentials) {
       requestChecksumCalculation: "WHEN_REQUIRED",
       responseChecksumValidation: "WHEN_REQUIRED",
       maxAttempts: 2,
+      // DNS-Prüfung beim Verbindungsaufbau (Schutz gegen DNS-Rebinding auf interne Adressen).
+      requestHandler: { httpsAgent: storageHttpsAgent, httpAgent: storageHttpAgent },
     });
     if (clients.size > 50) clients.clear();
     clients.set(id, client);
@@ -39,6 +41,7 @@ export function normalisePrefix(prefix: string | undefined) {
 
 function mapError(e: unknown, bucket: string): StorageError {
   if (e instanceof StorageError) return e;
+  if (isPrivateAddressError(e)) return new StorageError("Endpoint: Interne Adressen sind nicht erlaubt.", "INVALID");
   if (e instanceof S3ServiceException) {
     switch (e.name) {
       case "NoSuchKey":

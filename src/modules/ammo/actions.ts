@@ -47,11 +47,31 @@ export async function saveAmmoSettingsAction(_prev: ActionResult | null, fd: For
 
 // --- Sortiment -------------------------------------------------------------------
 
+/**
+ * Preis streng lesen: «15», «15.50», «15,5», «15.–», «CHF 1'200.00», «Fr. 12.50». Alles andere → null
+ * (nie stillschweigend 0, sonst würde ohne Rechnung verkauft). Gleiche Regeln wie moneyField in bookings/actions.ts.
+ */
+function parsePriceStrict(raw: string): number | null {
+  const clean = raw.replace(/CHF|EUR|Fr\.?|['’\s]/gi, "").replace(/[.,][–-]+$/, "");
+  if (!/^\d+([.,]\d{0,2})?$/.test(clean)) return null;
+  return parseMoneyToCents(clean);
+}
+
+/** Leerer Bestand = nicht geführt (null), sonst ganze Zahl; undefined = unlesbar. */
+function parseLoadedStock(v: FormDataEntryValue | null): number | null | undefined {
+  const s = String(v ?? "").trim();
+  if (s === "") return null;
+  const n = Number(s);
+  return Number.isInteger(n) ? n : undefined;
+}
+
 export async function saveProductAction(_prev: ActionResult | null, fd: FormData): Promise<ActionResult> {
   const ctx = await requireAmmoAdmin();
   const id = fd.get("id") ? String(fd.get("id")) : null;
   const rawPrice = String(fd.get("price") ?? "").trim();
   if (!rawPrice) return fail("Preis fehlt.", { price: "Preis fehlt." });
+  const priceCents = parsePriceStrict(rawPrice);
+  if (priceCents === null) return fail("Ungültiger Betrag.", { price: "Ungültiger Betrag." });
   const parsed = productSchema.safeParse({
     name: fd.get("name") ?? "",
     caliber: fd.get("caliber") ?? "",
@@ -59,7 +79,7 @@ export async function saveProductAction(_prev: ActionResult | null, fd: FormData
     description: fd.get("description") ?? "",
     unitLabel: fd.get("unitLabel") ?? "",
     roundsPerUnit: fd.get("roundsPerUnit") ?? "",
-    priceCents: parseMoneyToCents(rawPrice),
+    priceCents,
     stockUnits: fd.get("stockUnits") ?? "",
     isActive: fd.get("isActive") !== "off",
     sortOrder: fd.get("sortOrder") || 0,
@@ -72,8 +92,21 @@ export async function saveProductAction(_prev: ActionResult | null, fd: FormData
   const p = parsed.data;
   const data = { ...p, manufacturer: p.manufacturer ?? null, description: p.description ?? null };
   if (id) {
-    const res = await db.ammoProduct.updateMany({ where: { id, tenantId: ctx.tenant.id }, data });
-    if (res.count === 0) return fail("Produkt nicht gefunden.");
+    // Bestand nie blind überschreiben: Ausgaben, Stornos und Zu-/Abgänge ändern ihn, während das Formular offen ist.
+    // Unverändertes Feld → Bestand bleibt unangetastet; geändertes Feld → nur, wenn der geladene Wert noch stimmt.
+    const { stockUnits, ...rest } = data;
+    const loaded = fd.has("stockUnitsLoaded") ? parseLoadedStock(fd.get("stockUnitsLoaded")) : undefined;
+    const stockChanged = loaded !== undefined && stockUnits !== loaded;
+    const res = await db.ammoProduct.updateMany({
+      where: { id, tenantId: ctx.tenant.id, ...(stockChanged ? { stockUnits: loaded } : {}) },
+      data: stockChanged ? data : rest,
+    });
+    if (res.count === 0) {
+      const exists = stockChanged && (await db.ammoProduct.count({ where: { id, tenantId: ctx.tenant.id } })) > 0;
+      if (!exists) return fail("Produkt nicht gefunden.");
+      const msg = "Der Bestand hat sich inzwischen geändert. Bitte «Bearbeiten» neu öffnen oder den Bestand mit Zugang/Abgang korrigieren.";
+      return fail(msg, { stockUnits: msg });
+    }
   } else {
     await db.ammoProduct.create({ data: { ...data, tenantId: ctx.tenant.id } });
   }

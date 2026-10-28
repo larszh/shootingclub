@@ -229,6 +229,15 @@ function normalisePrefixSafe(p: string | undefined) {
   }
 }
 
+/** Gleicher Server (Protokoll, Host, Port)? Ungültige Adressen gelten als verschieden. */
+function sameOrigin(a: string, b: string) {
+  try {
+    return new URL(a).origin === new URL(b).origin;
+  } catch {
+    return false;
+  }
+}
+
 export async function saveStorageSettingsAction(_prev: ActionResult | null, fd: FormData): Promise<ActionResult> {
   const ctx = await filesCtx();
   if (!ctx.can("tenant.manage")) return fail("Nur Admins dürfen den Speicher einstellen.");
@@ -278,8 +287,11 @@ export async function saveStorageSettingsAction(_prev: ActionResult | null, fd: 
     }
     if (!input.bucket) fe.bucket = "Bucket fehlt.";
     if (!input.accessKeyId) fe.accessKeyId = "Access Key fehlt.";
-    const secret = input.secretAccessKey || current.credentials.s3?.secretAccessKey || "";
-    if (!secret) fe.secretAccessKey = "Secret Key fehlt.";
+    // Gespeicherten Secret nur für denselben Endpoint und Schlüssel wiederverwenden.
+    const prevS3 = current.credentials.s3;
+    const sameS3Target = !!prevS3 && (prevS3.endpoint ?? "") === endpoint && prevS3.accessKeyId === input.accessKeyId;
+    const secret = input.secretAccessKey || (sameS3Target ? prevS3.secretAccessKey : "") || "";
+    if (!secret) fe.secretAccessKey = prevS3?.secretAccessKey && !sameS3Target ? "Endpoint oder Access Key geändert: Secret Key bitte neu eingeben." : "Secret Key fehlt.";
     let prefix = "";
     try {
       prefix = normalisePrefix(input.prefix);
@@ -292,8 +304,11 @@ export async function saveStorageSettingsAction(_prev: ActionResult | null, fd: 
     provider = "WEBDAV";
     if (!input.url) fe.url = "WebDAV-Adresse fehlt.";
     if (!input.username) fe.username = "Benutzername fehlt.";
-    const password = input.password || current.credentials.webdav?.password || "";
-    if (!password) fe.password = "App-Passwort fehlt.";
+    // Gespeichertes App-Passwort nur an denselben Server und Benutzer senden, sonst neu verlangen.
+    const prevDav = current.credentials.webdav;
+    const sameDavTarget = !!prevDav && prevDav.username === input.username && sameOrigin(prevDav.url, input.url);
+    const password = input.password || (sameDavTarget ? prevDav.password : "") || "";
+    if (!password) fe.password = prevDav?.password && !sameDavTarget ? "Adresse oder Benutzername geändert: App-Passwort bitte neu eingeben." : "App-Passwort fehlt.";
     if (Object.keys(fe).length) return fail(Object.values(fe)[0]!, fe);
     const w: WebdavCredentials = { url: input.url.replace(/\/+$/, ""), username: input.username, password };
     bundle.webdav = w;

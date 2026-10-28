@@ -48,7 +48,7 @@ export type PayeeInfo = { iban: string | null; payeeName: string; qrIban: boolea
 
 /** Offene Rechnung als Karte mit Kopierknöpfen für IBAN, Referenz bzw. Zahlungszweck und Betrag. */
 export function OpenPaymentCard({ item, payee }: { item: PaymentItem; payee: PayeeInfo }) {
-  const purpose = `${item.title} ${item.number}`.trim();
+  const purpose = (item.number && !item.title.includes(item.number) ? `${item.title} ${item.number}` : item.title).trim();
   const due = dueText(item);
   return (
     <Card className={cn("p-4", item.overdue && "border-danger/50")}>

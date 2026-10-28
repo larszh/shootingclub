@@ -18,7 +18,7 @@ export function ZoneLegend({ zones, className, compact }: { zones: Zone[]; class
   return (
     <ul className={cn("flex flex-wrap gap-1.5", className)} aria-label="Trefferzonen">
       {zones.map((z, i) => (
-        <li key={`${i}-${z.key}`} className={cn("inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs", zoneToneClass(z.points))}>
+        <li key={`${i}-${z.key}`} title={z.penalty ? "Strafe ohne Schuss (belegt keinen Schussplatz)" : undefined} className={cn("inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs", zoneToneClass(z.points), z.penalty && "border-dashed")}>
           <span className="font-semibold">{z.key}</span>
           {compact ? null : <span className="opacity-80">{z.label}</span>}
           <span className="font-semibold tabular-nums">{formatZonePoints(z.points)}</span>
@@ -31,7 +31,7 @@ export function ZoneLegend({ zones, className, compact }: { zones: Zone[]; class
 /** Gleiche Zonen (Reihenfolge egal)? */
 export function sameZones(a: Zone[], b: Zone[]) {
   if (a.length !== b.length) return false;
-  const key = (zs: Zone[]) => zs.map((z) => `${z.key.trim().toLowerCase()}|${z.label.trim()}|${z.points}`).sort().join(";");
+  const key = (zs: Zone[]) => zs.map((z) => `${z.key.trim().toLowerCase()}|${z.label.trim()}|${z.points}|${z.penalty ? 1 : 0}`).sort().join(";");
   return key(a) === key(b);
 }
 

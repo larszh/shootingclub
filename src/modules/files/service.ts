@@ -28,6 +28,55 @@ export function fileErrorMessage(e: unknown) {
   return "Die Datei konnte nicht verarbeitet werden. Bitte nochmals versuchen.";
 }
 
+/** Platz für die Multipart-Hülle und weitere Formularfelder zusätzlich zur Datei. */
+const MULTIPART_OVERHEAD_BYTES = 64 * 1024;
+
+/**
+ * Liest ein multipart/form-data-Upload mit fester Obergrenze ein (maxFileMb + Multipart-Hülle).
+ * Ohne Content-Length (chunked) wird beim Einlesen mitgezählt und abgebrochen, sobald die
+ * Grenze überschritten ist. So kann niemand den Server mit beliebig grossen Anfragen füllen.
+ * Wirft FileServiceError (400/413).
+ */
+export async function readUploadForm(req: Request, maxFileMb: number): Promise<FormData> {
+  const contentType = req.headers.get("content-type") ?? "";
+  if (!contentType.toLowerCase().startsWith("multipart/form-data")) throw new FileServiceError("Ungültige Anfrage.", 400);
+  const maxBytes = maxFileMb * MB + MULTIPART_OVERHEAD_BYTES;
+  const tooBig = () => new FileServiceError(`Die Datei ist zu gross. Erlaubt sind höchstens ${maxFileMb} MB pro Datei.`, 413);
+  const declaredRaw = req.headers.get("content-length");
+  if (declaredRaw !== null) {
+    const declared = Number(declaredRaw);
+    if (!Number.isFinite(declared) || declared < 0) throw new FileServiceError("Ungültige Anfrage.", 400);
+    if (declared > maxBytes) throw tooBig();
+  }
+  if (!req.body) throw new FileServiceError("Keine Datei erhalten.", 400);
+
+  const reader = req.body.getReader();
+  let received = 0;
+  let exceeded = false;
+  const limited = new ReadableStream<Uint8Array>({
+    async pull(controller) {
+      const { done, value } = await reader.read();
+      if (done) return controller.close();
+      received += value.byteLength;
+      if (received > maxBytes) {
+        exceeded = true;
+        await reader.cancel().catch(() => undefined);
+        return controller.error(tooBig());
+      }
+      controller.enqueue(value);
+    },
+    cancel(reason) {
+      return reader.cancel(reason);
+    },
+  });
+  try {
+    return await new Response(limited, { headers: { "content-type": contentType } }).formData();
+  } catch {
+    if (exceeded) throw tooBig();
+    throw new FileServiceError("Die Datei konnte nicht gelesen werden. Bitte nochmals versuchen.", 400);
+  }
+}
+
 function normaliseMime(raw: string) {
   const m = (raw || "").split(";")[0]!.trim().toLowerCase();
   if (!m || m.length > 100 || !/^[a-z0-9!#$&^_.+-]+\/[a-z0-9!#$&^_.+-]+$/.test(m)) return "application/octet-stream";
@@ -61,8 +110,15 @@ export async function saveTenantFile(input: {
   if (size > settings.maxFileMb * MB) throw new FileServiceError(`Die Datei ist zu gross (${formatBytes(size)}). Erlaubt sind höchstens ${settings.maxFileMb} MB pro Datei.`, 413);
   if (settings.quotaMb != null) {
     const usage = await tenantStorageUsage(tenantId);
-    if (usage.bytes + size > settings.quotaMb * MB) {
-      throw new FileServiceError(`Der Speicherplatz des Vereins ist voll (${formatBytes(usage.bytes)} von ${settings.quotaMb} MB belegt). Bitte alte Dateien löschen oder das Kontingent erhöhen.`, 413);
+    const quotaBytes = settings.quotaMb * MB;
+    if (usage.bytes + size > quotaBytes) {
+      const free = Math.max(quotaBytes - usage.bytes, 0);
+      throw new FileServiceError(
+        free === 0
+          ? `Der Speicherplatz des Vereins ist voll (${formatBytes(usage.bytes)} von ${settings.quotaMb} MB belegt). Bitte alte Dateien löschen oder das Kontingent erhöhen.`
+          : `Nicht genug Speicherplatz frei: Die Datei braucht ${formatBytes(size)}, frei sind noch ${formatBytes(free)} (von ${settings.quotaMb} MB). Bitte alte Dateien löschen oder das Kontingent erhöhen.`,
+        413,
+      );
     }
   }
 
@@ -159,11 +215,10 @@ async function moduleEnabled(tenantId: string, key: "files" | "chat") {
  *       (oder selbst hochgeladen). Super-Admins dürfen alles.
  */
 export async function canAccessFile(actor: FileActor, file: Pick<StoredFile, "id" | "tenantId" | "folderId" | "context" | "uploadedById">): Promise<boolean> {
-  if (actor.isSuperAdmin) return true;
-  const role = roleInTenant(actor, file.tenantId);
-  if (!role || !isTenantRole(role)) return false;
-
+  // Chat-Anhänge nur für Mitglieder der Unterhaltung: auch Super-Admins sehen fremde Chats nicht.
   if (file.context === "CHAT") {
+    const chatRole = roleInTenant(actor, file.tenantId);
+    if (!chatRole || !isTenantRole(chatRole)) return false;
     if (!(await moduleEnabled(file.tenantId, "chat"))) return false;
     if (file.uploadedById === actor.userId) return true;
     const msg = await db.chatMessage.findFirst({
@@ -173,6 +228,9 @@ export async function canAccessFile(actor: FileActor, file: Pick<StoredFile, "id
     return !!msg;
   }
 
+  if (actor.isSuperAdmin) return true;
+  const role = roleInTenant(actor, file.tenantId);
+  if (!role || !isTenantRole(role)) return false;
   if (!(await moduleEnabled(file.tenantId, "files"))) return false;
   const minRole = await effectiveFolderMinRole(file.tenantId, file.folderId);
   if (!minRole) return false;
