@@ -2,9 +2,10 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Home, Target, Crosshair, Menu, CalendarDays, CreditCard } from "lucide-react";
+import { Home, Target, Crosshair, Menu, CalendarDays, CreditCard, Megaphone } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { Logo } from "@/components/logo";
+import { TenantLogo } from "@/components/logo";
+import { Avatar } from "@/components/avatar";
 import type { ModuleKey } from "@/lib/modules";
 
 type NavItem = { href: string; label: string; icon: React.ComponentType<{ className?: string }>; module?: ModuleKey };
@@ -13,56 +14,96 @@ const NAV: NavItem[] = [
   { href: "/", label: "Start", icon: Home },
   { href: "/scores", label: "Schiessen", icon: Crosshair, module: "scores" },
   { href: "/targets", label: "Scheiben", icon: Target, module: "targets" },
+  { href: "/events", label: "Anlässe", icon: Megaphone, module: "events" },
   { href: "/bookings", label: "Buchen", icon: CalendarDays, module: "bookings" },
   { href: "/billing", label: "Beiträge", icon: CreditCard, module: "billing" },
   { href: "/me", label: "Mehr", icon: Menu },
 ];
 
-export function AppShell({ children, enabledModules, tenantName, userInitials }: { children: React.ReactNode; enabledModules: ModuleKey[]; tenantName: string | null; userInitials: string }) {
+export type ShellTenant = { id: string; name: string; logoUrl: string | null };
+export type ShellUser = { name: string; email: string; avatarUrl: string | null };
+
+export function AppShell({
+  children,
+  enabledModules,
+  tenant,
+  user,
+}: {
+  children: React.ReactNode;
+  enabledModules: ModuleKey[];
+  tenant: ShellTenant | null;
+  user: ShellUser;
+}) {
   const pathname = usePathname();
   const items = NAV.filter((n) => !n.module || enabledModules.includes(n.module));
-  const isActive = (href: string) => (href === "/" ? pathname === "/" : pathname.startsWith(href));
+  const isActive = (href: string) => (href === "/" ? pathname === "/" : pathname === href || pathname.startsWith(href + "/"));
+  // Tableiste: höchstens 5 Einträge, sonst werden die Beschriftungen auf schmalen Geräten abgeschnitten.
+  // Überzählige Module (Buchen, Beiträge) sind unter «Mehr» erreichbar.
+  const MAX_TABS = 5;
+  const tabs = items.length > MAX_TABS ? [...items.filter((n) => n.href !== "/me").slice(0, MAX_TABS - 1), items.find((n) => n.href === "/me")!] : items;
+  const overflowActive = tabs.length < items.length && items.some((n) => !tabs.includes(n) && isActive(n.href));
+  const isTabActive = (href: string) => isActive(href) || (href === "/me" && overflowActive);
+  const title = tenant?.name ?? "Standchef";
 
   return (
     <div className="min-h-dvh md:flex">
       {/* Desktop-Seitenleiste */}
-      <aside className="hidden md:flex md:w-60 md:flex-col md:border-r md:border-line md:bg-surface md:sticky md:top-0 md:h-dvh">
-        <Link href="/" className="flex items-center gap-2 px-5 h-16 font-semibold tracking-tight">
-          <Logo /> Standchef
+      <aside className="hidden md:flex md:w-64 md:flex-col md:border-r md:border-line md:bg-surface md:sticky md:top-0 md:h-dvh">
+        <Link href="/" className="flex items-center gap-3 px-5 h-18 min-h-16 py-3 group" title={title}>
+          <TenantLogo src={tenant?.logoUrl} size={36} />
+          <span className="min-w-0">
+            <span className="block font-semibold tracking-tight leading-tight truncate">{title}</span>
+            {tenant ? <span className="block text-[11px] text-ink-3 leading-tight">mit Standchef</span> : null}
+          </span>
         </Link>
-        {tenantName ? <div className="px-5 pb-3 text-xs text-ink-3 truncate">{tenantName}</div> : null}
-        <nav className="px-3 space-y-0.5">
-          {items.map((n) => (
-            <Link key={n.href} href={n.href}
-              className={cn("flex items-center gap-3 rounded-control px-3 h-11 text-[15px] font-medium transition-colors", isActive(n.href) ? "bg-surface-2 text-ink" : "text-ink-2 hover:bg-surface-2")}>
-              <n.icon className="h-5 w-5" /> {n.label}
-            </Link>
-          ))}
+        <div className="mx-5 mb-3 h-0.5 rounded-full brand-gradient opacity-80" aria-hidden />
+        <nav className="flex-1 px-3 space-y-0.5 overflow-y-auto" aria-label="Hauptnavigation">
+          {items.map((n) => {
+            const active = isActive(n.href);
+            return (
+              <Link key={n.href} href={n.href} aria-current={active ? "page" : undefined}
+                className={cn("flex items-center gap-3 rounded-control px-3 h-11 text-[15px] font-medium transition-colors", active ? "bg-accent-soft text-accent" : "text-ink-2 hover:bg-surface-2")}>
+                <n.icon className="h-5 w-5" /> {n.label}
+              </Link>
+            );
+          })}
         </nav>
+        <Link href="/me" className={cn("m-3 flex items-center gap-3 rounded-control px-3 py-2.5 transition-colors", isActive("/me") ? "bg-surface-2" : "hover:bg-surface-2")}>
+          <Avatar name={user.name} src={user.avatarUrl} size={36} />
+          <span className="min-w-0">
+            <span className="block text-sm font-medium truncate">{user.name}</span>
+            <span className="block text-xs text-ink-3 truncate">{user.email}</span>
+          </span>
+        </Link>
       </aside>
 
       <div className="flex-1 min-w-0 flex flex-col">
         {/* Mobile-Kopfzeile */}
-        <header className="md:hidden sticky top-0 z-20 bg-bg/80 backdrop-blur border-b border-line">
-          <div className="flex items-center justify-between h-14 px-4">
-            <Link href="/" className="flex items-center gap-2 font-semibold tracking-tight"><Logo size={24} /> Standchef</Link>
-            <Link href="/me" className="flex h-9 w-9 items-center justify-center rounded-full bg-surface-2 text-xs font-semibold">{userInitials}</Link>
+        <header className="md:hidden sticky top-0 z-20 bg-bg/85 backdrop-blur border-b border-line safe-top">
+          <div className="flex items-center justify-between gap-3 h-14 px-4">
+            <Link href="/" className="flex min-w-0 items-center gap-2.5 font-semibold tracking-tight">
+              <TenantLogo src={tenant?.logoUrl} size={28} />
+              <span className="truncate">{title}</span>
+            </Link>
+            <Link href="/me" className="press shrink-0 rounded-full ring-2 ring-transparent focus-visible:ring-accent" aria-label="Profil und Einstellungen">
+              <Avatar name={user.name} src={user.avatarUrl} size={36} />
+            </Link>
           </div>
         </header>
 
         <main className="flex-1 w-full max-w-3xl mx-auto px-4 pt-5 pb-28 md:pb-10 md:px-8">{children}</main>
 
         {/* Mobile-Tableiste */}
-        <nav className="md:hidden fixed bottom-0 inset-x-0 z-20 border-t border-line bg-surface/95 backdrop-blur safe-bottom">
-          <div className="grid" style={{ gridTemplateColumns: `repeat(${items.length}, minmax(0, 1fr))` }}>
-            {items.map((n) => {
-              const active = isActive(n.href);
+        <nav className="md:hidden fixed bottom-0 inset-x-0 z-20 border-t border-line bg-surface/95 backdrop-blur safe-bottom" aria-label="Hauptnavigation">
+          <div className="grid" style={{ gridTemplateColumns: `repeat(${tabs.length}, minmax(0, 1fr))` }}>
+            {tabs.map((n) => {
+              const active = isTabActive(n.href);
               return (
-                <Link key={n.href} href={n.href} className="press flex flex-col items-center gap-0.5 pt-2 pb-1 text-[11px] font-medium">
-                  <span className={cn("flex h-8 w-14 items-center justify-center rounded-full transition-colors", active ? "bg-ink text-bg" : "text-ink-3")}>
+                <Link key={n.href} href={n.href} aria-current={active ? "page" : undefined} className="press flex flex-col items-center gap-0.5 pt-2 pb-1 text-[11px] font-medium min-w-0">
+                  <span className={cn("flex h-8 w-full max-w-14 items-center justify-center rounded-full transition-colors", active ? "bg-accent text-accent-ink" : "text-ink-3")}>
                     <n.icon className="h-5 w-5" />
                   </span>
-                  <span className={active ? "text-ink" : "text-ink-3"}>{n.label}</span>
+                  <span className={cn("truncate max-w-full px-0.5", active ? "text-ink" : "text-ink-3")}>{n.label}</span>
                 </Link>
               );
             })}

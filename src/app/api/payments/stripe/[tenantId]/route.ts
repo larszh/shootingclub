@@ -11,8 +11,8 @@ export async function POST(req: Request, { params }: { params: Promise<{ tenantI
   if (!signature) return new NextResponse("Signatur fehlt", { status: 400 });
   const raw = await req.text();
   try {
-    const { paidSessionId } = stripe.parseWebhook(raw, signature);
-    if (paidSessionId) await markPaidByProviderRef(paidSessionId, { source: "webhook" });
+    const { paidSessionId, amountCents, currency } = stripe.parseWebhook(raw, signature);
+    if (paidSessionId) await markPaidByProviderRef({ tenantId, provider: "STRIPE" }, paidSessionId, { amountCents, currency }, { source: "webhook" });
     return NextResponse.json({ received: true });
   } catch (e) {
     console.error("Stripe-Webhook abgelehnt:", e);

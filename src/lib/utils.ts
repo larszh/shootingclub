@@ -32,7 +32,8 @@ export function slugify(s: string) {
     .slice(0, 48);
 }
 
-export function randomCode(len = 6) {
+/** Beitrittscodes: 8 Zeichen (32^8 ≈ 1.1e12) gegen Durchprobieren. */
+export function randomCode(len = 8) {
   const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
   let out = "";
   const bytes = crypto.getRandomValues(new Uint8Array(len));
@@ -56,4 +57,38 @@ export function initials(name: string) {
     .slice(0, 2)
     .map((p) => p[0]!.toUpperCase())
     .join("");
+}
+
+/** Stunde (0–23) in Schweizer Zeit. Ohne Argument: jetzt. */
+export function zurichHour(at: Date = new Date()) {
+  const h = new Intl.DateTimeFormat("en-US", { timeZone: "Europe/Zurich", hourCycle: "h23", hour: "2-digit" }).format(at);
+  return Number(h) % 24;
+}
+
+/** Tageszeitabhängiger Gruss in Schweizer Zeit («Guten Morgen», «Hallo», «Guten Abend»). */
+export function dayGreeting(at: Date = new Date()) {
+  const hour = zurichHour(at);
+  if (hour >= 5 && hour < 11) return "Guten Morgen";
+  if (hour < 18) return "Hallo";
+  return "Guten Abend";
+}
+
+/** Einzahl/Mehrzahl: plural(1, "Rechnung", "Rechnungen") → "1 Rechnung" */
+export function plural(n: number, one: string, many: string) {
+  return `${n} ${n === 1 ? one : many}`;
+}
+
+/**
+ * Prüft ein Rücksprungziel (z.B. ?next= nach der Anmeldung): nur relative Pfade
+ * auf derselben Origin, keine Protokoll-relativen URLs ("//…", "/\…") und nicht
+ * zurück auf /login bzw. /register. Gibt null zurück, wenn ungültig.
+ */
+export function safeNextPath(raw: unknown): string | null {
+  const v = Array.isArray(raw) ? raw[0] : raw;
+  if (typeof v !== "string" || v.length > 512) return null;
+  if (!v.startsWith("/") || v.startsWith("//") || v.startsWith("/\\")) return null;
+  // Steuerzeichen und Backslashes werden von Browsern teils zu "/" normalisiert.
+  if (/[\u0000-\u001f\u007f\\]/.test(v)) return null;
+  if (/^\/(login|register)(?:[/?#]|$)/.test(v)) return null;
+  return v;
 }

@@ -1,59 +1,216 @@
 "use client";
 
+import { confirmDialog } from "@/components/ui/dialog";
 import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react";
-import { useRouter } from "next/navigation";
-import { Check, ChevronLeft, ChevronRight, Delete, Lock, Trash2, Trophy, Unlock } from "lucide-react";
+import { unstable_rethrow, useRouter } from "next/navigation";
+import { AlertTriangle, Check, ChevronLeft, ChevronRight, CloudOff, Delete, Loader2, Lock, Trash2, Trophy, Unlock } from "lucide-react";
 import { deleteMatchAction, saveStageResultAction, setMatchStatusAction } from "@/modules/scores/actions";
-import type { MatchView } from "@/modules/scores/queries";
 import { positionLabel, stageTotal } from "@/modules/scores/types";
-import { Button, Card } from "@/components/ui";
-import { cn, formatScore, initials } from "@/lib/utils";
+import { Alert, Button, Card } from "@/components/ui";
+import { Avatar } from "@/components/avatar";
+import { cn, formatScore } from "@/lib/utils";
+import { useSyncEvents, useSyncStatus } from "@/lib/offline/hooks";
+import { requestFlush } from "@/lib/offline/outbox";
+import { discardMatch, getMatchEntry, recordShots, recordStatus, upsertServerView } from "@/lib/offline/store";
+import { cellKey, type ScoreMatch, type SyncEvent } from "@/lib/offline/types";
+import { StageTimer } from "./stage-timer";
 
-type SaveState = "idle" | "saving" | "saved" | "error";
+type CellState = Record<string, number>;
 
-export function ScoreEntry({ match }: { match: MatchView }) {
+function omit<T extends Record<string, unknown>>(obj: T, key: string): T {
+  if (!(key in obj)) return obj;
+  const next = { ...obj };
+  delete next[key];
+  return next;
+}
+
+/** Gerätezeit für last-write-wins (nur in Event-Handlern aufrufen). */
+function clientNow() {
+  return Date.now();
+}
+
+function tap() {
+  try {
+    navigator.vibrate?.(10);
+  } catch {
+    // nicht unterstützt
+  }
+}
+
+/**
+ * Resultat-Eingabe, offline-fähig: Jeder Schuss wird sofort in IndexedDB gespeichert und
+ * über die Outbox an den Server übertragen (sofort, wenn online; sonst bei Wiederverbindung).
+ *
+ * `storageKey`: "s:<matchId>" für Server-Durchgänge, "c:<clientId>" für offline erstellte.
+ */
+export function ScoreEntry({ match, storageKey, tenantId, userId, persistView = true, onStatusChange }: { match: ScoreMatch; storageKey: string; tenantId: string; userId: string; /** Serveransicht in IndexedDB ablegen (false, wenn die Ansicht selbst aus IndexedDB stammt) */ persistView?: boolean; /** Meldet Statuswechsel (z.B. für die Kopfzeile der Offline-Ansicht) */ onStatusChange?: (status: string) => void }) {
   const router = useRouter();
+  const { online } = useSyncStatus();
   const decimal = match.program.scoringMode === "RINGS_DECIMAL";
   const hits = match.program.scoringMode === "HITS";
   const stages = match.program.stages;
-  const finished = match.status === "FINISHED";
+  const isServerMatch = storageKey.startsWith("s:") && !!match.id;
 
   // Lokaler Zustand: shots[participantId][stageIndex]
   const [shots, setShots] = useState<Record<string, number[][]>>(() =>
-    Object.fromEntries(match.participants.map((p) => [p.id, p.results.map((r) => r.shots)])),
+    Object.fromEntries(match.participants.map((p) => [p.id, stages.map((_, i) => p.results.find((r) => r.stageIndex === i)?.shots ?? [])])),
   );
+  const [status, setStatus] = useState(match.status);
+  const finished = status === "FINISHED";
   const [activeP, setActiveP] = useState(match.participants.find((p) => p.isMe)?.id ?? match.participants[0]!.id);
   const [activeS, setActiveS] = useState(() => {
     const p = match.participants.find((x) => x.isMe) ?? match.participants[0]!;
-    const idx = p.results.findIndex((r, i) => r.shots.length < stages[i]!.shots);
+    const idx = stages.findIndex((st, i) => (p.results.find((r) => r.stageIndex === i)?.shots.length ?? 0) < st.shots);
     return idx === -1 ? 0 : idx;
   });
-  const [saveState, setSaveState] = useState<SaveState>("idle");
+  const [dirty, setDirty] = useState<CellState>({});
+  const [failed, setFailed] = useState<Record<string, string>>({});
+  const [saved, setSaved] = useState<Record<string, boolean>>({});
+  const [notice, setNotice] = useState<string | null>(null);
   const [decimalBuffer, setDecimalBuffer] = useState("");
   const [pending, start] = useTransition();
-  const timers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
+  const touched = useRef(new Set<string>());
+  const directTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
+  /** Fallback ohne IndexedDB: noch nicht bestätigte Direkt-Speicherungen pro Zelle */
+  const directPending = useRef<Record<string, { participantId: string; stageIndex: number; list: number[]; ts: number }>>({});
+  const statusListener = useRef(onStatusChange);
+  useEffect(() => {
+    statusListener.current = onStatusChange;
+  }, [onStatusChange]);
 
   const stage = stages[activeS]!;
   const current = shots[activeP]?.[activeS] ?? [];
   const participant = match.participants.find((p) => p.id === activeP)!;
+  const ctx = useMemo(() => ({ storageKey, view: match, tenantId, userId }), [storageKey, match, tenantId, userId]);
 
-  const persist = useCallback(
-    (participantId: string, stageIndex: number, list: number[]) => {
-      const key = `${participantId}:${stageIndex}`;
-      clearTimeout(timers.current[key]);
-      setSaveState("saving");
-      timers.current[key] = setTimeout(async () => {
-        const res = await saveStageResultAction({ matchId: match.id, participantId, stageIndex, shots: list });
-        setSaveState(res.ok ? "saved" : "error");
-        if (res.ok) router.refresh();
-      }, 500);
+  // Lokalen Stand laden (z.B. Seite aus dem Offline-Cache oder ungesicherte Eingaben nach Neuladen)
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const entry = isServerMatch && persistView ? await upsertServerView(match, tenantId, userId) : await getMatchEntry(storageKey);
+        if (cancelled || !entry || entry.serverId) return;
+        setShots((prev) => {
+          const next: Record<string, number[][]> = {};
+          for (const p of match.participants) {
+            const local = entry.shots[p.id];
+            next[p.id] = stages.map((_, i) => (touched.current.has(cellKey(p.id, i)) ? (prev[p.id]?.[i] ?? []) : (local?.[i] ?? prev[p.id]?.[i] ?? [])));
+          }
+          return next;
+        });
+        setDirty((d) => ({ ...entry.dirty, ...d }));
+        // Lokaler Stand ist massgebend (ungesicherter Statuswechsel oder neuere Ansicht als die Seite)
+        setStatus(entry.status);
+        statusListener.current?.(entry.status);
+      } catch {
+        // IndexedDB nicht verfügbar: Serverstand bleibt
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [isServerMatch, persistView, match, stages, storageKey, tenantId, userId]);
+
+  /** Direkt-Speicherung einer Zelle senden (ohne Verzögerung). */
+  const sendDirect = useCallback(
+    async (ck: string) => {
+      const item = directPending.current[ck];
+      if (!item || !match.id) return;
+      clearTimeout(directTimers.current[ck]);
+      delete directTimers.current[ck];
+      try {
+        const res = await saveStageResultAction({ matchId: match.id, participantId: item.participantId, stageIndex: item.stageIndex, shots: item.list, clientUpdatedAt: item.ts });
+        if (res.ok) {
+          if (directPending.current[ck]?.ts === item.ts) delete directPending.current[ck];
+          setDirty((d) => (d[ck] !== undefined && d[ck]! <= item.ts ? omit(d, ck) : d));
+          setFailed((f) => omit(f, ck));
+          setSaved((s) => ({ ...s, [item.participantId]: true }));
+        } else {
+          // Dauerhafter Fehler (z.B. abgeschlossen, keine Berechtigung): nicht automatisch wiederholen
+          if (directPending.current[ck]?.ts === item.ts) delete directPending.current[ck];
+          setFailed((f) => ({ ...f, [ck]: res.error }));
+        }
+      } catch {
+        setFailed((f) => ({ ...f, [ck]: "Keine Verbindung" }));
+      }
     },
-    [match.id, router],
+    [match.id],
   );
 
+  // Fallback ohne IndexedDB: beim Verlassen sofort senden, bei Wiederverbindung erneut versuchen,
+  // und vor dem Schliessen warnen, solange etwas nicht gespeichert ist.
+  useEffect(() => {
+    const timers = directTimers.current;
+    const pendingCells = directPending.current;
+    const flushAll = () => Object.keys(pendingCells).forEach((ck) => void sendDirect(ck));
+    const onBeforeUnload = (e: BeforeUnloadEvent) => {
+      if (Object.keys(pendingCells).length === 0) return;
+      flushAll();
+      e.preventDefault();
+      e.returnValue = "";
+    };
+    window.addEventListener("online", flushAll);
+    window.addEventListener("pagehide", flushAll);
+    window.addEventListener("beforeunload", onBeforeUnload);
+    return () => {
+      window.removeEventListener("online", flushAll);
+      window.removeEventListener("pagehide", flushAll);
+      window.removeEventListener("beforeunload", onBeforeUnload);
+      Object.values(timers).forEach(clearTimeout);
+      flushAll();
+    };
+  }, [sendDirect]);
+
+  // Bestätigungen und Fehler der Synchronisierung
+  const onSyncEvent = useCallback(
+    (ev: SyncEvent) => {
+      if (ev.type !== "acked" && ev.type !== "failed") return;
+      const op = ev.op;
+      if (op.originKey !== storageKey) return;
+      if (op.type === "saveStageResult") {
+        const pk = op.uiParticipantKey ?? op.payload.participantKey;
+        const ck = cellKey(pk, op.payload.stageIndex);
+        if (ev.type === "acked") {
+          setDirty((d) => (d[ck] !== undefined && d[ck]! <= op.payload.clientUpdatedAt ? omit(d, ck) : d));
+          setFailed((f) => omit(f, ck));
+          setSaved((s) => (s[pk] ? s : { ...s, [pk]: true }));
+        } else {
+          setFailed((f) => ({ ...f, [ck]: ev.result.error ?? "Fehler" }));
+        }
+      } else if (op.type === "setMatchStatus") {
+        if (ev.type === "failed") setNotice(ev.result.error ?? "Status konnte nicht gespeichert werden.");
+        else if (isServerMatch) router.refresh();
+      }
+    },
+    [storageKey, isServerMatch, router],
+  );
+  useSyncEvents(onSyncEvent);
+
+  /** Fallback ohne IndexedDB (z.B. gesperrter Speicher): direkt per Server Action speichern. */
+  const persistDirect = (participantId: string, stageIndex: number, list: number[], ts: number) => {
+    if (!isServerMatch || !match.id) {
+      setNotice("Lokales Speichern ist auf diesem Gerät nicht möglich.");
+      return;
+    }
+    const ck = cellKey(participantId, stageIndex);
+    directPending.current[ck] = { participantId, stageIndex, list, ts };
+    clearTimeout(directTimers.current[ck]);
+    directTimers.current[ck] = setTimeout(() => void sendDirect(ck), 500);
+  };
+
   const setCurrent = (list: number[]) => {
-    setShots((s) => ({ ...s, [activeP]: s[activeP]!.map((arr, i) => (i === activeS ? list : arr)) }));
-    persist(activeP, activeS, list);
+    const ts = clientNow();
+    const pId = activeP;
+    const sIdx = activeS;
+    const ck = cellKey(pId, sIdx);
+    touched.current.add(ck);
+    setShots((s) => ({ ...s, [pId]: (s[pId] ?? stages.map(() => [])).map((arr, i) => (i === sIdx ? list : arr)) }));
+    setDirty((d) => ({ ...d, [ck]: ts }));
+    setFailed((f) => omit(f, ck));
+    // Write-through: sofort dauerhaft lokal speichern und Übertragung einreihen
+    recordShots(ctx, pId, sIdx, list, ts)
+      .then(() => requestFlush())
+      .catch(() => persistDirect(pId, sIdx, list, ts));
   };
 
   const addShot = (v: number) => {
@@ -69,6 +226,7 @@ export function ScoreEntry({ match }: { match: MatchView }) {
   const undo = () => {
     if (finished) return;
     if (decimal && decimalBuffer) return setDecimalBuffer("");
+    if (current.length === 0) return;
     setCurrent(current.slice(0, -1));
   };
   const pushDecimal = (ch: string) => {
@@ -97,6 +255,74 @@ export function ScoreEntry({ match }: { match: MatchView }) {
     if (Number.isFinite(n) && n <= stage.maxPerShot + 0.9) addShot(n);
   };
 
+  const toggleStatus = () => {
+    const next = finished ? "OPEN" : "FINISHED";
+    const ts = clientNow();
+    setNotice(null);
+    setStatus(next);
+    onStatusChange?.(next);
+    // Über die Outbox, damit der Status erst nach allen ausstehenden Schüssen gesetzt wird
+    recordStatus(ctx, next, ts)
+      .then(() => requestFlush(0))
+      .catch(() => {
+        if (!isServerMatch || !match.id) return setNotice("Status konnte lokal nicht gespeichert werden.");
+        start(async () => {
+          try {
+            const res = await setMatchStatusAction(match.id!, next);
+            if (!res.ok) setNotice(res.error);
+            router.refresh();
+          } catch {
+            setStatus(finished ? "FINISHED" : "OPEN");
+            onStatusChange?.(finished ? "FINISHED" : "OPEN");
+            setNotice("Keine Verbindung. Bitte später nochmals versuchen.");
+          }
+        });
+      });
+  };
+
+  const remove = async () => {
+    if (!(await confirmDialog({ title: "Durchgang wirklich löschen?", tone: "danger", confirmLabel: "Löschen" }))) return;
+    setNotice(null);
+    let serverId = isServerMatch ? match.id : null;
+    if (!isServerMatch) {
+      const entry = await getMatchEntry(storageKey).catch(() => undefined);
+      serverId = entry?.serverId ?? null;
+      if (!serverId) {
+        // Noch nicht übertragen: nur lokal verwerfen
+        await discardMatch(storageKey).catch(() => undefined);
+        window.location.assign(navigator.onLine ? "/scores" : "/offline");
+        return;
+      }
+    }
+    if (!navigator.onLine) {
+      setNotice("Löschen ist nur mit Internetverbindung möglich.");
+      return;
+    }
+    start(async () => {
+      // Lokale Kopie samt ausstehender Eingaben erst verwerfen, wenn der Server gelöscht hat:
+      // schlägt das Löschen fehl, bleiben die noch nicht übertragenen Eingaben erhalten.
+      const discardLocal = () => discardMatch(storageKey).catch(() => undefined);
+      try {
+        // Bei Erfolg leitet die Server Action auf /scores um; zurück kommt nur ein Fehler
+        const res = await deleteMatchAction(serverId!);
+        if (res && !res.ok) {
+          setNotice(res.error);
+          router.refresh();
+        } else await discardLocal();
+      } catch (e) {
+        try {
+          unstable_rethrow(e);
+        } catch (redirect) {
+          // Weiterleitung nach erfolgreichem Löschen
+          await discardLocal();
+          throw redirect;
+        }
+        setNotice("Keine Verbindung. Bitte später nochmals versuchen.");
+        router.refresh();
+      }
+    });
+  };
+
   const totals = useMemo(
     () =>
       Object.fromEntries(
@@ -109,12 +335,19 @@ export function ScoreEntry({ match }: { match: MatchView }) {
     return !best || t > best.total ? { id: p.id, total: t } : best;
   }, null);
 
-  useEffect(() => () => Object.values(timers.current).forEach(clearTimeout), []);
-
   const keypadValues = useMemo(() => {
     const max = Math.min(stage.maxPerShot, 12);
     return Array.from({ length: max + 1 }, (_, i) => max - i);
   }, [stage.maxPerShot]);
+
+  /** Speicherstand pro Teilnehmer */
+  const participantState = (pid: string): "failed" | "pending" | "saved" | null => {
+    const prefix = `${pid}|`;
+    if (Object.keys(failed).some((k) => k.startsWith(prefix))) return "failed";
+    if (Object.keys(dirty).some((k) => k.startsWith(prefix))) return "pending";
+    return saved[pid] ? "saved" : null;
+  };
+  const activeCell = cellKey(activeP, activeS);
 
   return (
     <div className="space-y-5">
@@ -124,17 +357,25 @@ export function ScoreEntry({ match }: { match: MatchView }) {
           {match.participants.map((p) => {
             const t = totals[p.id]!;
             const isLeader = finished && leader?.id === p.id && match.participants.length > 1;
+            const st = participantState(p.id);
             return (
               <button key={p.id} type="button" onClick={() => setActiveP(p.id)}
                 className={cn("flex w-full items-center gap-3 px-4 py-3 text-left transition-colors", activeP === p.id ? "bg-surface-2" : "hover:bg-surface-2/60")}>
-                <span className={cn("flex h-9 w-9 items-center justify-center rounded-full text-xs font-semibold", p.isGuest ? "bg-warn/20 text-warn" : "bg-ink text-bg")}>{initials(p.name)}</span>
+                <Avatar name={p.name} src={p.avatarUrl} size={40} tone={p.isGuest ? "guest" : "ink"} />
                 <span className="min-w-0 flex-1">
                   <span className="flex items-center gap-1.5 font-medium truncate">{p.name}{isLeader ? <Trophy className="h-4 w-4 text-accent" /> : null}{p.isMe ? <span className="text-xs text-ink-3">(du)</span> : null}</span>
                   <span className="flex gap-1 mt-1 flex-wrap">
-                    {t.stages.map((st, i) => (
-                      <span key={i} className={cn("rounded-md px-1.5 py-0.5 text-[11px] tabular-nums", (shots[p.id]?.[i]?.length ?? 0) >= stages[i]!.shots ? "bg-ink/10 text-ink" : "bg-surface-2 text-ink-3")}>{formatScore(st, decimal)}</span>
+                    {t.stages.map((sv, i) => (
+                      <span key={i} className={cn("rounded-md px-1.5 py-0.5 text-[11px] tabular-nums", (shots[p.id]?.[i]?.length ?? 0) >= stages[i]!.shots ? "bg-ink/10 text-ink" : "bg-surface-2 text-ink-3")}>{formatScore(sv, decimal)}</span>
                     ))}
                   </span>
+                  {st ? (
+                    <span className={cn("mt-1 flex items-center gap-1 text-[11px]", st === "failed" ? "text-accent" : st === "pending" ? (online ? "text-ink-3" : "text-warn") : "text-ok")}>
+                      {st === "failed" ? <><AlertTriangle className="h-3 w-3" /> nicht gespeichert</>
+                        : st === "pending" ? (online ? <><Loader2 className="h-3 w-3 animate-spin" /> wird gespeichert…</> : <><CloudOff className="h-3 w-3" /> wartet auf Verbindung</>)
+                        : <><Check className="h-3 w-3" /> gespeichert</>}
+                    </span>
+                  ) : null}
                 </span>
                 <span className="text-right">
                   <span className="block text-2xl font-semibold tabular-nums leading-none">{formatScore(t.total, decimal)}</span>
@@ -149,12 +390,13 @@ export function ScoreEntry({ match }: { match: MatchView }) {
       {/* Serien-Navigation */}
       <div className="animate-rise [animation-delay:60ms]">
         <div className="flex items-center justify-between mb-2">
-          <button type="button" onClick={() => setActiveS((s) => Math.max(0, s - 1))} disabled={activeS === 0} className="press h-9 w-9 rounded-full hover:bg-surface-2 disabled:opacity-30 flex items-center justify-center"><ChevronLeft className="h-5 w-5" /></button>
+          <button type="button" onClick={() => setActiveS((s) => Math.max(0, s - 1))} disabled={activeS === 0} aria-label="Vorherige Serie" className="press h-11 w-11 rounded-full hover:bg-surface-2 disabled:opacity-30 flex items-center justify-center"><ChevronLeft className="h-5 w-5" /></button>
           <div className="text-center">
             <div className="font-semibold">{stage.name}</div>
             <div className="text-xs text-ink-3">{stage.distanceM} m · {stage.shots} Schuss{stage.position ? ` · ${positionLabel(stage.position)}` : ""}{stage.timeLimitSec ? ` · ${stage.timeLimitSec} s` : ""}</div>
+            {stage.note ? <div className="text-xs text-ink-3 mt-0.5">{stage.note}</div> : null}
           </div>
-          <button type="button" onClick={() => setActiveS((s) => Math.min(stages.length - 1, s + 1))} disabled={activeS === stages.length - 1} className="press h-9 w-9 rounded-full hover:bg-surface-2 disabled:opacity-30 flex items-center justify-center"><ChevronRight className="h-5 w-5" /></button>
+          <button type="button" onClick={() => setActiveS((s) => Math.min(stages.length - 1, s + 1))} disabled={activeS === stages.length - 1} aria-label="Nächste Serie" className="press h-11 w-11 rounded-full hover:bg-surface-2 disabled:opacity-30 flex items-center justify-center"><ChevronRight className="h-5 w-5" /></button>
         </div>
         <div className="flex gap-1 justify-center">
           {stages.map((st, i) => {
@@ -163,6 +405,9 @@ export function ScoreEntry({ match }: { match: MatchView }) {
           })}
         </div>
       </div>
+
+      {/* Zeitnehmung */}
+      {!finished ? <StageTimer key={`${activeS}-${stage.timeLimitSec ?? 0}`} timeLimitSec={stage.timeLimitSec} /> : null}
 
       {/* Schüsse */}
       <Card className="animate-rise [animation-delay:120ms] p-4">
@@ -183,8 +428,15 @@ export function ScoreEntry({ match }: { match: MatchView }) {
             );
           })}
         </div>
-        <div className="mt-2 h-4 text-[11px] text-ink-3 text-right">
-          {saveState === "saving" ? "Speichern…" : saveState === "saved" ? <span className="inline-flex items-center gap-1 text-ok"><Check className="h-3 w-3" /> Gespeichert</span> : saveState === "error" ? <span className="text-accent">Speichern fehlgeschlagen</span> : null}
+        <div className="mt-2 min-h-4 text-[11px] text-ink-3 text-right" aria-live="polite">
+          {failed[activeCell] ? (
+            <span className="inline-flex items-center gap-1 text-accent"><AlertTriangle className="h-3 w-3" /> Nicht gespeichert: {failed[activeCell]}</span>
+          ) : dirty[activeCell] !== undefined ? (
+            online ? <span className="inline-flex items-center gap-1"><Loader2 className="h-3 w-3 animate-spin" /> Speichern…</span>
+              : <span className="inline-flex items-center gap-1 text-warn"><CloudOff className="h-3 w-3" /> Auf dem Gerät gespeichert – wird übertragen, sobald Empfang da ist</span>
+          ) : saved[activeP] ? (
+            <span className="inline-flex items-center gap-1 text-ok"><Check className="h-3 w-3" /> Gespeichert</span>
+          ) : null}
         </div>
       </Card>
 
@@ -202,7 +454,7 @@ export function ScoreEntry({ match }: { match: MatchView }) {
               {["7", "8", "9", "4", "5", "6", "1", "2", "3", ".", "0"].map((k) => (
                 <Key key={k} onClick={() => pushDecimal(k)}>{k}</Key>
               ))}
-              <Key onClick={undo} variant="secondary"><Delete className="h-5 w-5" /></Key>
+              <Key onClick={undo} variant="secondary" label="Rückgängig"><Delete className="h-5 w-5" /></Key>
               <Key onClick={() => { setDecimalBuffer(""); addShot(stage.maxPerShot + 0.9); }} className="col-span-2 bg-ink text-bg">{stage.maxPerShot}.9 (Mouche)</Key>
               <Key onClick={commitDecimalBuffer} variant="secondary" disabled={!decimalBuffer}>OK</Key>
             </div>
@@ -212,23 +464,23 @@ export function ScoreEntry({ match }: { match: MatchView }) {
                 <Key key={v} onClick={() => addShot(v)} className={cn(v === stage.maxPerShot && "bg-ink text-bg col-span-2", v === 0 && "text-ink-3")}>{v}</Key>
               ))}
               {stage.maxPerShot > 12 ? <ManualInput max={stage.maxPerShot} onAdd={addShot} /> : null}
-              <Key onClick={undo} variant="secondary" className={cn(keypadValues.length % 4 === 1 ? "col-span-2" : "")}><Delete className="h-5 w-5" /></Key>
+              <Key onClick={undo} variant="secondary" label="Rückgängig" className={cn(keypadValues.length % 4 === 1 ? "col-span-2" : "")}><Delete className="h-5 w-5" /></Key>
             </div>
           )}
         </div>
       ) : null}
 
+      {notice ? <Alert tone="info">{notice}</Alert> : null}
+
       {/* Aktionen */}
       <div className="animate-rise [animation-delay:240ms] flex flex-col gap-2 pt-2">
         {match.canEdit ? (
-          <Button type="button" variant={finished ? "secondary" : "primary"} size="lg" disabled={pending}
-            onClick={() => start(async () => { await setMatchStatusAction(match.id, finished ? "OPEN" : "FINISHED"); router.refresh(); })}>
+          <Button type="button" variant={finished ? "secondary" : "primary"} size="lg" disabled={pending} onClick={toggleStatus}>
             {finished ? <><Unlock className="h-4 w-4" /> Wieder öffnen</> : <><Lock className="h-4 w-4" /> Durchgang abschliessen</>}
           </Button>
         ) : null}
         {match.canDelete ? (
-          <Button type="button" variant="ghost" size="sm" disabled={pending} className="text-ink-3"
-            onClick={() => { if (confirm("Durchgang wirklich löschen?")) start(() => deleteMatchAction(match.id).then(() => undefined)); }}>
+          <Button type="button" variant="ghost" size="sm" disabled={pending} className="text-ink-3" onClick={() => void remove()}>
             <Trash2 className="h-4 w-4" /> Löschen
           </Button>
         ) : null}
@@ -237,11 +489,11 @@ export function ScoreEntry({ match }: { match: MatchView }) {
   );
 }
 
-function Key({ children, onClick, className, variant = "primary", disabled }: { children: React.ReactNode; onClick: () => void; className?: string; variant?: "primary" | "secondary"; disabled?: boolean }) {
+function Key({ children, onClick, className, variant = "primary", disabled, label }: { children: React.ReactNode; onClick: () => void; className?: string; variant?: "primary" | "secondary"; disabled?: boolean; label?: string }) {
   const customBg = /\bbg-/.test(className ?? "");
   return (
-    <button type="button" onClick={onClick} disabled={disabled}
-      className={cn("press h-14 rounded-2xl text-2xl font-semibold tabular-nums flex items-center justify-center gap-2 select-none disabled:opacity-40 border border-transparent",
+    <button type="button" aria-label={label} onClick={() => { tap(); onClick(); }} disabled={disabled}
+      className={cn("press h-14 rounded-2xl text-2xl font-semibold tabular-nums flex items-center justify-center gap-2 select-none touch-manipulation disabled:opacity-40 border border-transparent",
         variant === "primary" ? (customBg ? "" : "bg-surface border-line hover:bg-surface-2") : "bg-surface-2 text-ink-2 text-base", className)}>
       {children}
     </button>
@@ -251,8 +503,8 @@ function Key({ children, onClick, className, variant = "primary", disabled }: { 
 function ManualInput({ max, onAdd }: { max: number; onAdd: (v: number) => void }) {
   const [v, setV] = useState("");
   return (
-    <form className="col-span-3 flex gap-2" onSubmit={(e) => { e.preventDefault(); const n = Number(v); if (Number.isFinite(n) && n >= 0 && n <= max) { onAdd(n); setV(""); } }}>
-      <input value={v} onChange={(e) => setV(e.target.value)} type="number" inputMode="numeric" min={0} max={max} placeholder={`0–${max}`} className="flex-1 h-14 rounded-2xl border border-line bg-surface px-4 text-2xl tabular-nums focus:outline-none focus:border-ink" />
+    <form className="col-span-3 flex gap-2" onSubmit={(e) => { e.preventDefault(); const n = Number(v); if (Number.isFinite(n) && n >= 0 && n <= max) { tap(); onAdd(n); setV(""); } }}>
+      <input value={v} onChange={(e) => setV(e.target.value)} type="number" inputMode="numeric" min={0} max={max} placeholder={`0–${max}`} aria-label="Wert eingeben" className="flex-1 h-14 rounded-2xl border border-line bg-surface px-4 text-2xl tabular-nums focus:outline-none focus:border-ink" />
       <button type="submit" className="press h-14 px-5 rounded-2xl bg-ink text-bg font-semibold">OK</button>
     </form>
   );

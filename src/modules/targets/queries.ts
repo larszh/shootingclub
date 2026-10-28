@@ -1,7 +1,7 @@
 import "server-only";
 import { db } from "@/lib/db";
 import type { AppContext } from "@/lib/tenant";
-import { parsePaperSizes, targetParamsSchema, type PaperSize, type TargetParams } from "./types";
+import { parsePaperSizes, parseTargetParams, type PaperSize, type TargetParams } from "./types";
 
 export type TargetView = {
   id: string;
@@ -30,8 +30,7 @@ type Row = {
 function toView(t: Row, userId: string, hidden: boolean, favorite: boolean): TargetView {
   let params: TargetParams = {};
   try {
-    const parsed = targetParamsSchema.safeParse(JSON.parse(t.paramsJson));
-    if (parsed.success) params = parsed.data;
+    params = parseTargetParams(JSON.parse(t.paramsJson));
   } catch { /* leer */ }
   const scope: TargetView["scope"] = t.ownerUserId ? (t.ownerUserId === userId ? "mine" : "tenant") : t.tenantId ? "tenant" : "global";
   return {

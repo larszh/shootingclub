@@ -33,13 +33,13 @@ export class StripeProvider implements PaymentProvider {
   }
 
   /** Webhook-Signatur prüfen und Session-ID bei erfolgreicher Zahlung zurückgeben. */
-  parseWebhook(rawBody: string, signature: string): { paidSessionId: string | null } {
+  parseWebhook(rawBody: string, signature: string): { paidSessionId: string | null; amountCents: number | null; currency: string | null } {
     if (!this.creds.webhookSecret) throw new PaymentError("Stripe: Webhook Secret nicht konfiguriert");
     const event = this.client.webhooks.constructEvent(rawBody, signature, this.creds.webhookSecret);
     if (event.type === "checkout.session.completed" || event.type === "checkout.session.async_payment_succeeded") {
       const s = event.data.object as Stripe.Checkout.Session;
-      return { paidSessionId: s.payment_status === "paid" ? s.id : null };
+      return { paidSessionId: s.payment_status === "paid" ? s.id : null, amountCents: s.amount_total ?? null, currency: s.currency ?? null };
     }
-    return { paidSessionId: null };
+    return { paidSessionId: null, amountCents: null, currency: null };
   }
 }

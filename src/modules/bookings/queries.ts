@@ -5,6 +5,10 @@ import { safeJson } from "@/lib/utils";
 import { computeSlots } from "./availability";
 import { DEFAULT_DURATIONS, DEFAULT_OPENING_HOURS, durationOptionSchema, openingHoursSchema, type DurationOption, type OpeningHours } from "./types";
 import { z } from "zod";
+import type { Prisma } from "@/generated/prisma/client";
+
+/** Datenbank-Client oder offene Transaktion. */
+export type DbClient = typeof db | Prisma.TransactionClient;
 
 type TenantCtx = AppContext & { tenant: NonNullable<AppContext["tenant"]> };
 
@@ -24,11 +28,6 @@ export type BookingSettingsView = {
   cancellationHours: number;
   invoiceDueDays: number;
   invoicePrefix: string;
-  payeeName: string | null;
-  payeeStreet: string | null;
-  payeeZip: string | null;
-  payeeCity: string | null;
-  iban: string | null;
   invoiceNote: string | null;
   exists: boolean;
 };
@@ -40,7 +39,7 @@ export async function getBookingSettings(tenantId: string): Promise<BookingSetti
       currency: "CHF", slotStepMinutes: 30, durationOptions: DEFAULT_DURATIONS, openingHours: DEFAULT_OPENING_HOURS,
       approvalRequired: false, allowInvoice: true, allowOnline: false, onlineProvider: "NONE",
       lastMinuteDiscountPercent: 0, lastMinuteWindowHours: 24, minLeadMinutes: 60, maxAdvanceDays: 60, cancellationHours: 24,
-      invoiceDueDays: 30, invoicePrefix: "R-", payeeName: null, payeeStreet: null, payeeZip: null, payeeCity: null, iban: null, invoiceNote: null, exists: false,
+      invoiceDueDays: 30, invoicePrefix: "R-", invoiceNote: null, exists: false,
     };
   }
   const d = z.array(durationOptionSchema).safeParse(safeJson(s.durationOptionsJson, []));
@@ -73,32 +72,51 @@ export async function getResource(tenantId: string, id: string) {
   return r && r.tenantId === tenantId ? toResourceView(r) : null;
 }
 
-/** Verfallene Online-Buchungen ohne Zahlung freigeben (lazy, beim Lesen). */
+/**
+ * Verfallene Online-Buchungen ohne Zahlung freigeben (lazy, beim Lesen). Die Frist läuft ab der
+ * Bestätigung (bei Freigabe durch die Verwaltung erst ab dann). Buchungen mit einem gerade
+ * laufenden Checkout bleiben bestehen; fehlgeschlagene Zahlungen geben den Platz ebenfalls frei.
+ */
 export async function expireUnpaidOnlineBookings(tenantId: string) {
   const cutoff = new Date(Date.now() - 30 * 60_000);
   await db.booking.updateMany({
-    where: { tenantId, status: "CONFIRMED", paymentMethod: "ONLINE", paymentStatus: { in: ["UNPAID", "PENDING"] }, createdAt: { lt: cutoff } },
-    data: { status: "CANCELLED", cancelledAt: new Date(), adminNote: "Automatisch storniert: Online-Zahlung nicht abgeschlossen." },
+    where: {
+      tenantId,
+      status: "CONFIRMED",
+      paymentMethod: "ONLINE",
+      paymentStatus: { in: ["UNPAID", "PENDING", "FAILED"] },
+      OR: [{ confirmedAt: { lt: cutoff } }, { confirmedAt: null, createdAt: { lt: cutoff } }],
+      payments: { none: { status: "PENDING", createdAt: { gte: cutoff } } },
+    },
+    data: { status: "CANCELLED", cancelledAt: new Date(), paymentStatus: "NOT_REQUIRED", adminNote: "Automatisch storniert: Online-Zahlung nicht abgeschlossen." },
   });
 }
 
-export async function getSlotsForDay(tenantId: string, resource: ResourceView, settings: BookingSettingsView, dateStr: string, durationMinutes: number) {
+/**
+ * Verfügbare Startzeiten eines Tages. Mit `bypassLimits` (Verwaltung) gelten Vorlauf und
+ * Vorausbuchungsgrenze nicht; Öffnungszeiten, Sperrzeiten und Kapazität bleiben verbindlich.
+ * Rückwirkende Erfassung ist dann bis 30 Tage zurück möglich.
+ */
+export async function getSlotsForDay(tenantId: string, resource: ResourceView, settings: BookingSettingsView, dateStr: string, durationMinutes: number, opts?: { bypassLimits?: boolean; client?: DbClient }) {
+  const client = opts?.client ?? db;
   const dayStart = new Date(`${dateStr}T00:00:00Z`);
   const dayEnd = new Date(dayStart.getTime() + 48 * 3_600_000);
   const windowStart = new Date(dayStart.getTime() - 24 * 3_600_000);
   const [bookings, blocks] = await Promise.all([
-    db.booking.findMany({ where: { resourceId: resource.id, status: { in: ["PENDING", "CONFIRMED"] }, startsAt: { lt: dayEnd }, endsAt: { gt: windowStart } }, select: { startsAt: true, endsAt: true } }),
-    db.resourceBlock.findMany({ where: { tenantId, OR: [{ resourceId: null }, { resourceId: resource.id }], startsAt: { lt: dayEnd }, endsAt: { gt: windowStart } }, select: { startsAt: true, endsAt: true } }),
+    client.booking.findMany({ where: { resourceId: resource.id, status: { in: ["PENDING", "CONFIRMED"] }, startsAt: { lt: dayEnd }, endsAt: { gt: windowStart } }, select: { startsAt: true, endsAt: true } }),
+    client.resourceBlock.findMany({ where: { tenantId, OR: [{ resourceId: null }, { resourceId: resource.id }], startsAt: { lt: dayEnd }, endsAt: { gt: windowStart } }, select: { startsAt: true, endsAt: true } }),
   ]);
   return computeSlots({
     dateStr, durationMinutes, slotStepMinutes: settings.slotStepMinutes, openingHours: settings.openingHours, capacity: resource.capacity,
-    minLeadMinutes: settings.minLeadMinutes, maxAdvanceDays: settings.maxAdvanceDays, bookings, blocks,
+    minLeadMinutes: opts?.bypassLimits ? -30 * 24 * 60 : settings.minLeadMinutes,
+    maxAdvanceDays: opts?.bypassLimits ? 730 : settings.maxAdvanceDays,
+    bookings, blocks,
   });
 }
 
 const bookingInclude = {
   resource: { select: { id: true, name: true, kind: true } },
-  user: { select: { id: true, name: true, email: true } },
+  user: { select: { id: true, name: true, email: true, avatarPath: true, updatedAt: true, street: true, zip: true, city: true } },
   invoice: true,
   payments: { orderBy: { createdAt: "desc" as const } },
 };
@@ -159,4 +177,45 @@ export function cancellationInfo(b: { startsAt: Date; status: string }, cancella
   const active = ["PENDING", "CONFIRMED"].includes(b.status);
   const hoursAhead = (b.startsAt.getTime() - Date.now()) / 3_600_000;
   return { active, canCancel: active && (isAdmin || hoursAhead >= cancellationHours) };
+}
+
+/** Mitglieder des Vereins für die Auswahl «Buchung für Mitglied erfassen». */
+export async function listMembersForBooking(tenantId: string) {
+  const rows = await db.membership.findMany({
+    where: { tenantId },
+    include: { user: { select: { id: true, name: true, email: true, avatarPath: true, updatedAt: true } } },
+    orderBy: { user: { name: "asc" } },
+  });
+  return rows.map((m) => ({ userId: m.user.id, name: m.user.name, email: m.user.email, avatarPath: m.user.avatarPath, updatedAt: m.user.updatedAt, memberNumber: m.memberNumber }));
+}
+
+/** Buchungen und Sperrzeiten in einem Zeitfenster (Kalender der Verwaltung). */
+export async function listCalendarItems(tenantId: string, from: Date, to: Date) {
+  await expireUnpaidOnlineBookings(tenantId);
+  const [bookings, blocks] = await Promise.all([
+    db.booking.findMany({
+      where: { tenantId, status: { in: ["PENDING", "CONFIRMED"] }, startsAt: { lt: to }, endsAt: { gt: from } },
+      include: { user: { select: { id: true, name: true, avatarPath: true, updatedAt: true } } },
+      orderBy: { startsAt: "asc" },
+    }),
+    db.resourceBlock.findMany({ where: { tenantId, startsAt: { lt: to }, endsAt: { gt: from } }, orderBy: { startsAt: "asc" } }),
+  ]);
+  return { bookings, blocks };
+}
+
+/** Buchungen eines Zeitraums für den CSV-Export (alle Status). */
+export async function listBookingsForExport(tenantId: string, from: Date, to: Date) {
+  return db.booking.findMany({
+    where: { tenantId, startsAt: { gte: from, lt: to } },
+    include: { resource: { select: { name: true } }, user: { select: { name: true, email: true } }, invoice: { select: { number: true, status: true, reference: true } } },
+    orderBy: { startsAt: "asc" },
+    take: 20_000,
+  });
+}
+
+/** Letzte Buchung eines Mitglieds für «Wiederholen» (nur eigene, im aktiven Verein). */
+export async function getRepeatSource(ctx: TenantCtx, bookingId: string) {
+  const b = await db.booking.findUnique({ where: { id: bookingId }, select: { id: true, tenantId: true, userId: true, resourceId: true, durationMinutes: true, startsAt: true } });
+  if (!b || b.tenantId !== ctx.tenant.id || b.userId !== ctx.user.id) return null;
+  return b;
 }

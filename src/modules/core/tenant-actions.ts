@@ -4,7 +4,7 @@ import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { db } from "@/lib/db";
-import { getCurrentUser } from "@/lib/auth";
+import { THROTTLE, clientIp, getCurrentUser, throttle } from "@/lib/auth";
 import { getAppContext, requirePermission, requireSuperAdmin, setActiveTenantCookie } from "@/lib/tenant";
 import { isModuleKey } from "@/lib/modules";
 import { isTenantRole } from "@/lib/permissions";
@@ -54,6 +54,10 @@ export async function joinTenantAction(_prev: ActionResult | null, formData: For
   if (!user) redirect("/login");
   const code = String(formData.get("joinCode") ?? "").trim().toUpperCase();
   if (!code) return fail("Code fehlt.");
+  const limited =
+    throttle(`join-user:${user.id}`, THROTTLE.joinCode.limit, THROTTLE.joinCode.windowMs) ??
+    throttle(`join-ip:${await clientIp()}`, THROTTLE.joinCode.limit, THROTTLE.joinCode.windowMs);
+  if (limited) return fail(limited);
   const tenant = await db.tenant.findUnique({ where: { joinCode: code } });
   if (!tenant) return fail("Beitrittscode nicht gefunden.");
   await db.membership.upsert({
@@ -104,11 +108,11 @@ export async function addMemberByEmailAction(_prev: ActionResult | null, formDat
   if (!isTenantRole(role) || role === "OWNER") return fail("Ungültige Rolle");
   const user = await db.user.findUnique({ where: { email } });
   if (!user) return fail("Kein Konto mit dieser E-Mail. Die Person kann sich mit dem Beitrittscode registrieren.");
-  await db.membership.upsert({
-    where: { userId_tenantId: { userId: user.id, tenantId: ctx.tenant.id } },
-    create: { userId: user.id, tenantId: ctx.tenant.id, role },
-    update: { role },
-  });
+  // Bestehende Mitgliedschaften (inkl. Inhaber) nicht über diesen Weg ändern;
+  // Rollenwechsel laufen über updateMemberRoleAction mit den Inhaber-Prüfungen.
+  const existing = await db.membership.findUnique({ where: { userId_tenantId: { userId: user.id, tenantId: ctx.tenant.id } } });
+  if (existing) return fail("Bereits Mitglied – Rolle unter Mitglieder ändern.");
+  await db.membership.create({ data: { userId: user.id, tenantId: ctx.tenant.id, role } });
   revalidatePath("/admin/members");
   return ok(undefined, `${user.name} hinzugefügt.`);
 }
@@ -132,7 +136,24 @@ export async function setModuleEnabledAction(moduleKey: string, enabled: boolean
   return ok();
 }
 
-const updateTenantSchema = createTenantSchema;
+/** Webseite normalisieren: «verein.ch» → «https://verein.ch». Nur http(s). */
+function normalizeWebsite(raw: string): string | null | false {
+  const v = raw.trim();
+  if (!v) return null;
+  const withProto = /^https?:\/\//i.test(v) ? v : `https://${v}`;
+  try {
+    const u = new URL(withProto);
+    if (u.protocol !== "http:" && u.protocol !== "https:") return false;
+    if (!u.hostname.includes(".")) return false;
+    return u.toString().slice(0, 190);
+  } catch {
+    return false;
+  }
+}
+
+const updateTenantSchema = createTenantSchema.extend({
+  description: z.string().trim().max(2000, "Beschreibung zu lang (max. 2000 Zeichen)").optional(),
+});
 export async function updateTenantAction(_prev: ActionResult | null, formData: FormData): Promise<ActionResult> {
   const ctx = await requirePermission("tenant.manage");
   const parsed = updateTenantSchema.safeParse({
@@ -140,9 +161,16 @@ export async function updateTenantAction(_prev: ActionResult | null, formData: F
     kind: formData.get("kind") ?? "CLUB",
     city: formData.get("city") || undefined,
     canton: formData.get("canton") || undefined,
+    description: formData.get("description") || undefined,
   });
   if (!parsed.success) return fail(parsed.error.issues[0]?.message ?? "Ungültige Eingabe");
-  await db.tenant.update({ where: { id: ctx.tenant.id }, data: parsed.data });
+  const website = normalizeWebsite(String(formData.get("website") ?? ""));
+  if (website === false) return fail("Ungültige Webseite, z.B. «www.sv-beispiel.ch».", { website: "Ungültige Adresse" });
+  const { description, ...rest } = parsed.data;
+  await db.tenant.update({
+    where: { id: ctx.tenant.id },
+    data: { ...rest, city: rest.city ?? null, canton: rest.canton ?? null, description: description || null, website },
+  });
   revalidatePath("/", "layout");
   return ok(undefined, "Gespeichert.");
 }
@@ -182,7 +210,8 @@ export async function updateProfileAction(_prev: ActionResult | null, formData: 
   const ctx = await getAppContext();
   const name = String(formData.get("name") ?? "").trim();
   if (name.length < 2) return fail("Name zu kurz");
-  await db.user.update({ where: { id: ctx.user.id }, data: { name } });
+  const opt = (k: string) => { const v = String(formData.get(k) ?? "").trim(); return v ? v.slice(0, 80) : null; };
+  await db.user.update({ where: { id: ctx.user.id }, data: { name, street: opt("street"), zip: opt("zip"), city: opt("city") } });
   revalidatePath("/", "layout");
   return ok(undefined, "Gespeichert.");
 }

@@ -9,23 +9,52 @@ import { encryptJson, decryptJson } from "@/lib/crypto";
 import { fail, ok, type ActionResult } from "@/lib/action-result";
 import { zurichToUtc } from "@/lib/time";
 import { parseMoneyToCents } from "@/lib/money";
-import { getBookingSettings, getResource, getSlotsForDay, expireUnpaidOnlineBookings } from "./queries";
+import type { Prisma } from "@/generated/prisma/client";
+import { getBookingSettings, getResource, getSlotsForDay, expireUnpaidOnlineBookings, type BookingSettingsView, type ResourceView } from "./queries";
 import { quotePrice } from "./pricing";
-import { PROVIDER_FIELDS, providerKeys, resourceSchema, settingsSchema, type DurationOption, type PaymentProviderKey } from "./types";
+import { isCalendarDate, PROVIDER_FIELDS, providerKeys, resourceSchema, settingsSchema, type DurationOption, type PaymentProviderKey } from "./types";
 import { ensureInvoiceForBooking } from "./invoice";
 import { startOnlinePayment } from "./payment-flow";
+
+/** Verwaltungsrecht und aktives Modul «bookings» verlangen. */
+async function requireBookingsAdmin() {
+  const ctx = await requirePermission("tenant.manage");
+  if (!ctx.hasModule("bookings")) redirect("/?module=bookings");
+  return ctx;
+}
+
 
 // ---------------------------------------------------------------------------
 // Mitglieder
 // ---------------------------------------------------------------------------
 
+const SLOT_TAKEN = "Dieser Termin wurde soeben vergeben. Bitte eine andere Zeit wählen.";
+
+/**
+ * Prüft die Verfügbarkeit erneut und legt die Buchung im selben Schritt an. Die Ressourcen-Zeile
+ * wird dafür gesperrt, damit parallele Anfragen die Kapazität nicht gemeinsam überschreiten.
+ * Liefert null, wenn der Termin inzwischen belegt ist.
+ */
+async function createBookingIfFree(
+  slotQuery: { tenantId: string; resource: ResourceView; settings: BookingSettingsView; date: string; time: string; durationMinutes: number; bypassLimits?: boolean },
+  data: Prisma.BookingUncheckedCreateInput,
+) {
+  const { tenantId, resource, settings, date, time, durationMinutes, bypassLimits } = slotQuery;
+  return db.$transaction(async (tx) => {
+    await tx.$queryRaw`SELECT id FROM \`Resource\` WHERE id = ${resource.id} FOR UPDATE`;
+    const slots = await getSlotsForDay(tenantId, resource, settings, date, durationMinutes, { bypassLimits, client: tx });
+    if (!slots.find((s) => s.time === time)?.available) return null;
+    return tx.booking.create({ data });
+  });
+}
+
 const createBookingSchema = z.object({
   resourceId: z.string().min(1),
-  date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  date: z.string().refine(isCalendarDate),
   time: z.string().regex(/^\d{2}:\d{2}$/),
   durationMinutes: z.coerce.number().int().min(5),
   paymentMethod: z.enum(["INVOICE", "ONLINE"]).optional(),
-  note: z.string().trim().max(300).optional(),
+  note: z.string().trim().max(191).optional(),
 });
 
 export async function createBookingAction(_prev: ActionResult | null, formData: FormData): Promise<ActionResult> {
@@ -66,26 +95,25 @@ export async function createBookingAction(_prev: ActionResult | null, formData: 
   }
 
   const status = settings.approvalRequired ? "PENDING" : "CONFIRMED";
-  const booking = await db.booking.create({
-    data: {
-      tenantId: ctx.tenant.id,
-      resourceId,
-      userId: ctx.user.id,
-      startsAt: slot.startsAt,
-      endsAt: slot.endsAt,
-      durationMinutes,
-      status,
-      paymentMethod,
-      paymentStatus: paymentMethod === "NONE" ? "NOT_REQUIRED" : "UNPAID",
-      basePriceCents: quote.basePriceCents,
-      discountCents: quote.discountCents,
-      discountReason: quote.discountReason,
-      totalCents: quote.totalCents,
-      currency: settings.currency,
-      note: note ?? null,
-      confirmedAt: status === "CONFIRMED" ? new Date() : null,
-    },
+  const booking = await createBookingIfFree({ tenantId: ctx.tenant.id, resource, settings, date, time, durationMinutes }, {
+    tenantId: ctx.tenant.id,
+    resourceId,
+    userId: ctx.user.id,
+    startsAt: slot.startsAt,
+    endsAt: slot.endsAt,
+    durationMinutes,
+    status,
+    paymentMethod,
+    paymentStatus: paymentMethod === "NONE" ? "NOT_REQUIRED" : "UNPAID",
+    basePriceCents: quote.basePriceCents,
+    discountCents: quote.discountCents,
+    discountReason: quote.discountReason,
+    totalCents: quote.totalCents,
+    currency: settings.currency,
+    note: note ?? null,
+    confirmedAt: status === "CONFIRMED" ? new Date() : null,
   });
+  if (!booking) return fail(SLOT_TAKEN);
 
   if (status === "CONFIRMED" && paymentMethod === "INVOICE") await ensureInvoiceForBooking(booking.id);
 
@@ -107,8 +135,10 @@ export async function cancelBookingAction(bookingId: string): Promise<ActionResu
     if (hoursAhead < settings.cancellationHours) return fail(`Stornierung nur bis ${settings.cancellationHours} Stunden vor Beginn möglich.`);
   }
   const refundNote = b.paymentStatus === "PAID" ? "Rückerstattung prüfen." : null;
+  // Offene Zahlungen entfallen mit der Stornierung; bezahlte bleiben sichtbar (Rückerstattung).
+  const paymentStatus = ["UNPAID", "PENDING", "FAILED"].includes(b.paymentStatus) ? "NOT_REQUIRED" : b.paymentStatus;
   await db.$transaction([
-    db.booking.update({ where: { id: bookingId }, data: { status: "CANCELLED", cancelledAt: new Date(), adminNote: refundNote ? [b.adminNote, refundNote].filter(Boolean).join(" ") : b.adminNote } }),
+    db.booking.update({ where: { id: bookingId }, data: { status: "CANCELLED", cancelledAt: new Date(), paymentStatus, adminNote: refundNote ? [b.adminNote, refundNote].filter(Boolean).join(" ").slice(-191) : b.adminNote } }),
     db.invoice.updateMany({ where: { bookingId, status: "OPEN" }, data: { status: "CANCELLED" } }),
   ]);
   revalidatePath("/bookings");
@@ -142,7 +172,7 @@ function parseDurations(raw: unknown): DurationOption[] {
 }
 
 export async function saveBookingSettingsAction(_prev: ActionResult | null, formData: FormData): Promise<ActionResult> {
-  const ctx = await requirePermission("tenant.manage");
+  const ctx = await requireBookingsAdmin();
   let durationOptions: DurationOption[];
   let openingHours: unknown;
   try {
@@ -167,11 +197,6 @@ export async function saveBookingSettingsAction(_prev: ActionResult | null, form
     cancellationHours: formData.get("cancellationHours") || 0,
     invoiceDueDays: formData.get("invoiceDueDays") || 30,
     invoicePrefix: formData.get("invoicePrefix") ?? "R-",
-    payeeName: formData.get("payeeName") || undefined,
-    payeeStreet: formData.get("payeeStreet") || undefined,
-    payeeZip: formData.get("payeeZip") || undefined,
-    payeeCity: formData.get("payeeCity") || undefined,
-    iban: formData.get("iban") || undefined,
     invoiceNote: formData.get("invoiceNote") || undefined,
   });
   if (!parsed.success) {
@@ -200,11 +225,6 @@ export async function saveBookingSettingsAction(_prev: ActionResult | null, form
     cancellationHours: s.cancellationHours,
     invoiceDueDays: s.invoiceDueDays,
     invoicePrefix: s.invoicePrefix,
-    payeeName: s.payeeName ?? null,
-    payeeStreet: s.payeeStreet ?? null,
-    payeeZip: s.payeeZip ?? null,
-    payeeCity: s.payeeCity ?? null,
-    iban: s.iban ?? null,
     invoiceNote: s.invoiceNote ?? null,
   };
   await db.bookingSettings.upsert({ where: { tenantId: ctx.tenant.id }, create: { tenantId: ctx.tenant.id, ...data }, update: data });
@@ -218,7 +238,7 @@ export async function saveBookingSettingsAction(_prev: ActionResult | null, form
 // ---------------------------------------------------------------------------
 
 export async function saveResourceAction(_prev: ActionResult | null, formData: FormData): Promise<ActionResult> {
-  const ctx = await requirePermission("tenant.manage");
+  const ctx = await requireBookingsAdmin();
   const id = formData.get("id") ? String(formData.get("id")) : null;
   let durationOptions: DurationOption[] | undefined;
   try {
@@ -252,7 +272,7 @@ export async function saveResourceAction(_prev: ActionResult | null, formData: F
 }
 
 export async function setResourceActiveAction(id: string, active: boolean): Promise<ActionResult> {
-  const ctx = await requirePermission("tenant.manage");
+  const ctx = await requireBookingsAdmin();
   const ex = await db.resource.findUnique({ where: { id } });
   if (!ex || ex.tenantId !== ctx.tenant.id) return fail("Nicht gefunden");
   await db.resource.update({ where: { id }, data: { isActive: active } });
@@ -262,7 +282,7 @@ export async function setResourceActiveAction(id: string, active: boolean): Prom
 }
 
 export async function deleteResourceAction(id: string): Promise<ActionResult> {
-  const ctx = await requirePermission("tenant.manage");
+  const ctx = await requireBookingsAdmin();
   const ex = await db.resource.findUnique({ where: { id }, include: { _count: { select: { bookings: true } } } });
   if (!ex || ex.tenantId !== ctx.tenant.id) return fail("Nicht gefunden");
   if (ex._count.bookings > 0) return fail("Ressource hat Buchungen. Bitte deaktivieren statt löschen.");
@@ -273,7 +293,7 @@ export async function deleteResourceAction(id: string): Promise<ActionResult> {
 
 const blockSchema = z.object({
   resourceId: z.string().optional(),
-  date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  date: z.string().refine(isCalendarDate),
   from: z.string().regex(/^\d{2}:\d{2}$/),
   toDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
   to: z.string().regex(/^\d{2}:\d{2}$/),
@@ -281,7 +301,7 @@ const blockSchema = z.object({
 });
 
 export async function addBlockAction(_prev: ActionResult | null, formData: FormData): Promise<ActionResult> {
-  const ctx = await requirePermission("tenant.manage");
+  const ctx = await requireBookingsAdmin();
   const parsed = blockSchema.safeParse({
     resourceId: formData.get("resourceId") || undefined,
     date: formData.get("date"),
@@ -306,7 +326,7 @@ export async function addBlockAction(_prev: ActionResult | null, formData: FormD
 }
 
 export async function deleteBlockAction(id: string): Promise<ActionResult> {
-  const ctx = await requirePermission("tenant.manage");
+  const ctx = await requireBookingsAdmin();
   const b = await db.resourceBlock.findUnique({ where: { id } });
   if (!b || b.tenantId !== ctx.tenant.id) return fail("Nicht gefunden");
   await db.resourceBlock.delete({ where: { id } });
@@ -319,29 +339,33 @@ export async function deleteBlockAction(id: string): Promise<ActionResult> {
 // ---------------------------------------------------------------------------
 
 export async function decideBookingAction(bookingId: string, decision: "APPROVE" | "REJECT", adminNote?: string): Promise<ActionResult> {
-  const ctx = await requirePermission("tenant.manage");
+  const ctx = await requireBookingsAdmin();
   const b = await db.booking.findUnique({ where: { id: bookingId } });
   if (!b || b.tenantId !== ctx.tenant.id) return fail("Nicht gefunden");
   if (b.status !== "PENDING") return fail("Buchung wartet nicht auf Freigabe.");
-  if (decision === "APPROVE") {
-    await db.booking.update({ where: { id: bookingId }, data: { status: "CONFIRMED", confirmedAt: new Date(), adminNote: adminNote ?? b.adminNote } });
-    if (b.paymentMethod === "INVOICE") await ensureInvoiceForBooking(bookingId);
-  } else {
-    await db.booking.update({ where: { id: bookingId }, data: { status: "REJECTED", adminNote: adminNote ?? b.adminNote } });
-  }
+  if (decision !== "APPROVE" && decision !== "REJECT") return fail("Ungültige Entscheidung");
+  adminNote = adminNote?.trim().slice(0, 191) || undefined;
+  // Bedingt auf PENDING: bei gleichzeitiger Entscheidung gewinnt nur eine.
+  const data = decision === "APPROVE"
+    ? { status: "CONFIRMED", confirmedAt: new Date(), adminNote: adminNote ?? b.adminNote }
+    : { status: "REJECTED", paymentStatus: ["UNPAID", "PENDING", "FAILED"].includes(b.paymentStatus) ? "NOT_REQUIRED" : b.paymentStatus, adminNote: adminNote ?? b.adminNote };
+  const res = await db.booking.updateMany({ where: { id: bookingId, tenantId: ctx.tenant.id, status: "PENDING" }, data });
+  if (res.count === 0) return fail("Buchung wartet nicht auf Freigabe.");
+  if (decision === "APPROVE" && b.paymentMethod === "INVOICE") await ensureInvoiceForBooking(bookingId);
   revalidatePath("/bookings");
   revalidatePath("/admin/bookings");
   return ok(undefined, decision === "APPROVE" ? "Buchung freigegeben." : "Buchung abgelehnt.");
 }
 
 export async function markBookingPaidAction(bookingId: string, paid: boolean): Promise<ActionResult> {
-  const ctx = await requirePermission("tenant.manage");
+  const ctx = await requireBookingsAdmin();
   const b = await db.booking.findUnique({ where: { id: bookingId } });
   if (!b || b.tenantId !== ctx.tenant.id) return fail("Nicht gefunden");
+  if (!["PENDING", "CONFIRMED"].includes(b.status)) return fail("Die Buchung ist storniert oder abgelehnt.");
   const now = new Date();
   await db.$transaction([
     db.booking.update({ where: { id: bookingId }, data: { paymentStatus: paid ? "PAID" : "UNPAID", paidAt: paid ? now : null } }),
-    db.invoice.updateMany({ where: { bookingId }, data: { status: paid ? "PAID" : "OPEN", paidAt: paid ? now : null } }),
+    db.invoice.updateMany({ where: { bookingId, status: { not: "CANCELLED" } }, data: { status: paid ? "PAID" : "OPEN", paidAt: paid ? now : null } }),
   ]);
   revalidatePath("/bookings");
   revalidatePath("/admin/bookings");
@@ -349,7 +373,7 @@ export async function markBookingPaidAction(bookingId: string, paid: boolean): P
 }
 
 export async function markBookingRefundedAction(bookingId: string): Promise<ActionResult> {
-  const ctx = await requirePermission("tenant.manage");
+  const ctx = await requireBookingsAdmin();
   const b = await db.booking.findUnique({ where: { id: bookingId } });
   if (!b || b.tenantId !== ctx.tenant.id) return fail("Nicht gefunden");
   await db.booking.update({ where: { id: bookingId }, data: { paymentStatus: "REFUNDED" } });
@@ -358,11 +382,104 @@ export async function markBookingRefundedAction(bookingId: string): Promise<Acti
 }
 
 // ---------------------------------------------------------------------------
+// Admin: Buchung für ein Mitglied erfassen
+// ---------------------------------------------------------------------------
+
+const adminBookingSchema = z.object({
+  userId: z.string().min(1).max(40),
+  resourceId: z.string().min(1).max(40),
+  date: z.string().refine(isCalendarDate),
+  time: z.string().regex(/^\d{2}:\d{2}$/),
+  durationMinutes: z.coerce.number().int().min(5).max(24 * 60),
+  payment: z.enum(["INVOICE", "CASH", "FREE"]),
+  note: z.string().trim().max(191).optional(),
+});
+
+/**
+ * Verwaltung bucht im Namen eines Mitglieds. Öffnungszeiten, Sperrzeiten und Kapazität gelten,
+ * Vorlauf und Vorausbuchungsgrenze nicht. Die Buchung ist sofort bestätigt.
+ */
+export async function adminCreateBookingAction(_prev: ActionResult | null, formData: FormData): Promise<ActionResult> {
+  const ctx = await requireBookingsAdmin();
+  if (!ctx.hasModule("bookings")) return fail("Das Modul Reservationen ist nicht aktiv.");
+  const parsed = adminBookingSchema.safeParse({
+    userId: formData.get("userId"),
+    resourceId: formData.get("resourceId"),
+    date: formData.get("date"),
+    time: formData.get("time"),
+    durationMinutes: formData.get("durationMinutes"),
+    payment: formData.get("payment") || "INVOICE",
+    note: formData.get("note") || undefined,
+  });
+  if (!parsed.success) return fail("Bitte Mitglied, Ressource, Datum, Zeit und Dauer wählen.");
+  const { userId, resourceId, date, time, durationMinutes, payment, note } = parsed.data;
+
+  const membership = await db.membership.findUnique({ where: { userId_tenantId: { userId, tenantId: ctx.tenant.id } }, select: { id: true } });
+  if (!membership) return fail("Diese Person ist nicht Mitglied des Vereins.");
+  const [settings, resource] = await Promise.all([getBookingSettings(ctx.tenant.id), getResource(ctx.tenant.id, resourceId)]);
+  if (!resource) return fail("Ressource nicht gefunden.");
+  const option = (resource.durationOptions ?? settings.durationOptions).find((o) => o.minutes === durationMinutes);
+  if (!option) return fail("Diese Dauer ist für die Ressource nicht eingerichtet.");
+
+  await expireUnpaidOnlineBookings(ctx.tenant.id);
+  const slots = await getSlotsForDay(ctx.tenant.id, resource, settings, date, durationMinutes, { bypassLimits: true });
+  const slot = slots.find((s) => s.time === time);
+  if (!slot) return fail("Diese Zeit liegt ausserhalb der Öffnungszeiten.");
+  if (!slot.available) return fail(`Dieser Termin ist nicht verfügbar (${slot.reason}).`);
+
+  const quote = quotePrice(option, slot.startsAt, settings);
+  const now = new Date();
+  let pricing = quote;
+  let paymentMethod = "NONE";
+  let paymentStatus = "NOT_REQUIRED";
+  let paidAt: Date | null = null;
+  if (payment === "FREE" || quote.totalCents === 0) {
+    pricing = quote.basePriceCents > 0
+      ? { basePriceCents: quote.basePriceCents, discountCents: quote.basePriceCents, discountReason: "Gratis (Verwaltung)", totalCents: 0 }
+      : quote;
+  } else if (payment === "CASH") {
+    paymentMethod = "CASH";
+    paymentStatus = "PAID";
+    paidAt = now;
+  } else {
+    paymentMethod = "INVOICE";
+    paymentStatus = "UNPAID";
+  }
+
+  const booking = await createBookingIfFree({ tenantId: ctx.tenant.id, resource, settings, date, time, durationMinutes, bypassLimits: true }, {
+    tenantId: ctx.tenant.id,
+    resourceId,
+    userId,
+    startsAt: slot.startsAt,
+    endsAt: slot.endsAt,
+    durationMinutes,
+    status: "CONFIRMED",
+    paymentMethod,
+    paymentStatus,
+    basePriceCents: pricing.basePriceCents,
+    discountCents: pricing.discountCents,
+    discountReason: pricing.discountReason,
+    totalCents: pricing.totalCents,
+    currency: settings.currency,
+    note: note ?? null,
+    adminNote: `Erfasst durch ${ctx.user.name}`.slice(0, 191),
+    confirmedAt: now,
+    paidAt,
+  });
+  if (!booking) return fail(SLOT_TAKEN);
+  if (paymentMethod === "INVOICE") await ensureInvoiceForBooking(booking.id);
+
+  revalidatePath("/bookings");
+  revalidatePath("/admin/bookings");
+  redirect(`/bookings/${booking.id}?created=1`);
+}
+
+// ---------------------------------------------------------------------------
 // Admin: Zahlungsanbieter
 // ---------------------------------------------------------------------------
 
 export async function saveProviderConfigAction(_prev: ActionResult | null, formData: FormData): Promise<ActionResult> {
-  const ctx = await requirePermission("tenant.manage");
+  const ctx = await requireBookingsAdmin();
   const provider = String(formData.get("provider") ?? "");
   if (!(providerKeys as readonly string[]).includes(provider)) return fail("Unbekannter Anbieter");
   const fields = PROVIDER_FIELDS[provider as PaymentProviderKey];

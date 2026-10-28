@@ -6,7 +6,7 @@ import type { ProgramView } from "@/modules/scores/queries";
 import { FavoriteButton } from "./favorite-button";
 import { cn } from "@/lib/utils";
 
-export function ProgramCard({ program, href, showHidden }: { program: ProgramView; href?: string; showHidden?: boolean }) {
+export function ProgramCard({ program, href, showHidden, usage }: { program: ProgramView; href?: string; showHidden?: boolean; /** Anzahl Durchgänge im Verein */ usage?: number }) {
   const p = program;
   const body = (
     <Card className={cn("p-4 h-full transition-colors hover:border-ink/30", p.hidden && "opacity-60")}>
@@ -22,6 +22,7 @@ export function ProgramCard({ program, href, showHidden }: { program: ProgramVie
             <Badge tone="outline">{formatDistances(p.totals.distances)}</Badge>
             <Badge tone="outline">{p.totals.shots} Schuss</Badge>
             <Badge tone="outline">{p.stages.length} {p.stages.length === 1 ? "Serie" : "Serien"}</Badge>
+            {usage ? <Badge tone="accent">{usage}× geschossen</Badge> : null}
           </div>
           {p.description ? <p className="mt-2 text-sm text-ink-3 line-clamp-2">{p.description}</p> : null}
         </div>

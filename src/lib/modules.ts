@@ -2,7 +2,7 @@
 // Neue Module: hier eintragen, Routen unter src/app/(app)/<key> anlegen und
 // Server-Logik unter src/modules/<key>.
 
-export type ModuleKey = "scores" | "targets" | "bookings" | "billing";
+export type ModuleKey = "scores" | "targets" | "events" | "bookings" | "billing";
 
 export type ModuleDefinition = {
   key: ModuleKey;
@@ -32,6 +32,14 @@ export const MODULES: ModuleDefinition[] = [
     defaultEnabled: true,
   },
   {
+    key: "events",
+    name: "Anlässe & News",
+    description: "Vereinskalender mit Trainings, Wettkämpfen und Obligatorisch-Terminen, An- und Abmeldung, Mitteilungen an alle.",
+    href: "/events",
+    status: "ready",
+    defaultEnabled: true,
+  },
+  {
     key: "bookings",
     name: "Reservationen",
     description: "Anlagen und Bahnen reservieren, mit Freigabe, Rechnung oder Online-Zahlung (Stripe, Worldline, SumUp).",
@@ -42,9 +50,9 @@ export const MODULES: ModuleDefinition[] = [
   {
     key: "billing",
     name: "Mitgliederbeiträge",
-    description: "Jahresbeiträge, Sammelrechnungen und Mahnwesen. Kommt später.",
+    description: "Beitragskategorien, Jahresrechnung mit QR-Rechnung, Zahlungsübersicht und Erinnerungen.",
     href: "/billing",
-    status: "planned",
+    status: "ready",
     defaultEnabled: false,
   },
 ];

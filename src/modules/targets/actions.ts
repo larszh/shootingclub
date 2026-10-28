@@ -7,19 +7,28 @@ import { db } from "@/lib/db";
 import { requireModule, requirePermission, requireSuperAdmin } from "@/lib/tenant";
 import { deleteStoredFile, saveFile } from "@/lib/storage";
 import { fail, ok, type ActionResult } from "@/lib/action-result";
-import { ALLOWED_UPLOAD_TYPES, MAX_UPLOAD_BYTES, PAPER_SIZES, targetInputSchema, type TargetInput } from "./types";
+import { getTarget } from "./queries";
+import { ALLOWED_UPLOAD_TYPES, MAX_UPLOAD_BYTES, PAPER_SIZES, PARAM_INFO, subjectVariants, targetInputSchema, type ParamKey, type TargetInput } from "./types";
 
 function parseTargetForm(formData: FormData) {
+  const subject = String(formData.get("subject") ?? "");
   const params: Record<string, unknown> = {};
-  for (const k of ["diameterMm", "columns", "rows", "gridMm", "blackFrom"]) {
+  for (const [k, info] of Object.entries(PARAM_INFO) as [ParamKey, (typeof PARAM_INFO)[ParamKey]][]) {
+    if (info.kind === "bool") {
+      // Checkbox sendet "true"/"on", ein verstecktes Feld "false" – fehlt beides, bleibt der Default.
+      const all = formData.getAll(k).map(String);
+      if (all.length) params[k] = all.includes("true") || all.includes("on");
+      continue;
+    }
     const v = formData.get(k);
-    if (v !== null && String(v).trim() !== "") params[k] = v;
+    if (v !== null && String(v).trim() !== "") params[k] = String(v).trim();
   }
-  if (formData.get("numbers") !== null) params.numbers = formData.get("numbers") === "on" || formData.get("numbers") === "true";
+  // Nur Varianten zulassen, die das Sujet kennt
+  if (params.variant !== undefined && !subjectVariants(subject).includes(String(params.variant))) delete params.variant;
   return targetInputSchema.safeParse({
     name: formData.get("name"),
     description: formData.get("description") || undefined,
-    subject: formData.get("subject"),
+    subject,
     paperSizes: PAPER_SIZES.filter((s) => formData.getAll("paperSizes").includes(s)),
     params,
     sharedWithTenant: formData.get("sharedWithTenant") === "on",
@@ -57,61 +66,73 @@ export async function saveTargetAction(_prev: ActionResult | null, formData: For
   const parsed = parseTargetForm(formData);
   if (!parsed.success) {
     const first = parsed.error.issues[0];
-    return fail(first ? `${first.path.join(".")}: ${first.message}` : "Ungültige Eingabe");
+    if (!first) return fail("Ungültige Eingabe");
+    const key = first.path[first.path.length - 1];
+    const label = first.path[0] === "params" && typeof key === "string" && key in PARAM_INFO ? PARAM_INFO[key as ParamKey].label : first.path[0] === "name" ? "Name" : first.path[0] === "paperSizes" ? "Formate" : String(first.path.join("."));
+    return fail(`${label}: ${first.message}`);
   }
   const input = parsed.data;
 
-  const upload = await handleUpload(formData);
-  if (upload && "error" in upload) return fail(upload.error);
-  if (input.subject === "UPLOAD" && !upload && !id) return fail("Bitte eine Datei hochladen.");
-
-  const fileFields = upload ? { filePath: upload.filePath, mimeType: upload.mimeType } : {};
-
+  // Zuerst Berechtigung und Besitz prüfen, erst danach Dateien speichern (keine verwaisten Uploads).
+  let target: { tenantId: string | null; ownerUserId: string | null; sharedWithTenant?: boolean };
+  let existing: { id: string; filePath: string | null } | null = null;
+  let redirectTo = "/targets";
   if (scope === "global") {
-    const user = await requireSuperAdmin();
+    await requireSuperAdmin();
+    target = { tenantId: null, ownerUserId: null, sharedWithTenant: false };
+    redirectTo = "/super/targets";
     if (id) {
       const ex = await db.targetTemplate.findUnique({ where: { id } });
       if (!ex || ex.tenantId !== null || ex.ownerUserId !== null) return fail("Nicht gefunden");
-      if (upload && ex.filePath) await deleteStoredFile(ex.filePath);
-      await db.targetTemplate.update({ where: { id }, data: { ...targetData(input), ...fileFields, sharedWithTenant: false } });
-    } else {
-      await db.targetTemplate.create({ data: { ...targetData(input), ...fileFields, tenantId: null, ownerUserId: null, sharedWithTenant: false } });
+      existing = ex;
     }
-    void user;
-    revalidatePath("/super/targets");
-    revalidatePath("/targets");
-    redirect("/super/targets");
-  }
-
-  if (scope === "tenant") {
+  } else if (scope === "tenant") {
     const ctx = await requirePermission("tenant.targets.manage");
+    target = { tenantId: ctx.tenant.id, ownerUserId: null, sharedWithTenant: false };
     if (id) {
       const ex = await db.targetTemplate.findUnique({ where: { id } });
       if (!ex || ex.tenantId !== ctx.tenant.id || ex.ownerUserId !== null) return fail("Nicht gefunden");
-      if (upload && ex.filePath) await deleteStoredFile(ex.filePath);
-      await db.targetTemplate.update({ where: { id }, data: { ...targetData(input), ...fileFields, sharedWithTenant: false } });
-    } else {
-      await db.targetTemplate.create({ data: { ...targetData(input), ...fileFields, tenantId: ctx.tenant.id, ownerUserId: null, sharedWithTenant: false } });
+      existing = ex;
     }
-    revalidatePath("/targets");
-    redirect("/targets");
+  } else {
+    const ctx = await requireModule("targets");
+    target = { tenantId: ctx.tenant.id, ownerUserId: ctx.user.id };
+    if (id) {
+      const ex = await db.targetTemplate.findUnique({ where: { id } });
+      if (!ex || ex.ownerUserId !== ctx.user.id) return fail("Nicht gefunden");
+      existing = ex;
+      // Beim Bearbeiten im Verein bleiben: sonst verschwindet eine geteilte Scheibe aus dem ursprünglichen Verein.
+      target.tenantId = ex.tenantId;
+    }
   }
 
-  const ctx = await requireModule("targets");
-  if (id) {
-    const ex = await db.targetTemplate.findUnique({ where: { id } });
-    if (!ex || ex.ownerUserId !== ctx.user.id) return fail("Nicht gefunden");
-    if (upload && ex.filePath) await deleteStoredFile(ex.filePath);
-    await db.targetTemplate.update({ where: { id }, data: { ...targetData(input), ...fileFields, tenantId: ctx.tenant.id } });
+  const isUpload = input.subject === "UPLOAD";
+  const upload = isUpload ? await handleUpload(formData) : null;
+  if (upload && "error" in upload) return fail(upload.error);
+  if (isUpload && !upload && !existing?.filePath) return fail("Bitte eine Datei hochladen.");
+
+  // Generierte Sujets haben keine Datei: alte Datei samt Typ entfernen (sonst gilt die Scheibe z.B. weiter als PDF).
+  const fileFields = !isUpload
+    ? { filePath: null, mimeType: null }
+    : upload
+      ? { filePath: upload.filePath, mimeType: upload.mimeType }
+      : {};
+  const data = { ...targetData(input), ...fileFields, ...target };
+
+  if (existing) {
+    await db.targetTemplate.update({ where: { id: existing.id }, data });
+    if ((upload || !isUpload) && existing.filePath) await deleteStoredFile(existing.filePath);
   } else {
-    await db.targetTemplate.create({ data: { ...targetData(input), ...fileFields, tenantId: ctx.tenant.id, ownerUserId: ctx.user.id } });
+    await db.targetTemplate.create({ data });
   }
   revalidatePath("/targets");
-  redirect("/targets");
+  if (scope === "global") revalidatePath("/super/targets");
+  redirect(redirectTo);
 }
 
 export async function setTargetHiddenAction(targetId: string, hidden: boolean): Promise<ActionResult> {
   const ctx = await requirePermission("tenant.targets.manage");
+  if (!(await getTarget(ctx, String(targetId)))) return fail("Nicht gefunden");
   await db.targetTenantSetting.upsert({
     where: { targetId_tenantId: { targetId, tenantId: ctx.tenant.id } },
     create: { targetId, tenantId: ctx.tenant.id, hidden },
@@ -123,6 +144,7 @@ export async function setTargetHiddenAction(targetId: string, hidden: boolean): 
 
 export async function toggleTargetFavoriteAction(targetId: string): Promise<ActionResult<{ favorite: boolean }>> {
   const ctx = await requireModule("targets");
+  if (!(await getTarget(ctx, String(targetId)))) return fail("Nicht gefunden");
   const ex = await db.targetFavorite.findUnique({ where: { userId_targetId: { userId: ctx.user.id, targetId } } });
   if (ex) await db.targetFavorite.delete({ where: { id: ex.id } });
   else await db.targetFavorite.create({ data: { userId: ctx.user.id, targetId } });

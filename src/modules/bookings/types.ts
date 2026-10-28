@@ -55,7 +55,18 @@ export const PAYMENT_STATUS: Record<string, { label: string; tone: "neutral" | "
   FAILED: { label: "Fehlgeschlagen", tone: "accent" },
   REFUNDED: { label: "Erstattet", tone: "outline" },
 };
-export const PAYMENT_METHOD_LABEL: Record<string, string> = { NONE: "Keine Zahlung", INVOICE: "Rechnung", ONLINE: "Online-Zahlung" };
+/**
+ * Zahlungsstatus für die Anzeige. Bei stornierten oder abgelehnten Buchungen ist eine offene
+ * Zahlung hinfällig («Entfällt»); bezahlte und erstattete bleiben sichtbar.
+ */
+export function paymentStatusView(b: { status: string; paymentStatus: string }) {
+  if ((b.status === "CANCELLED" || b.status === "REJECTED") && b.paymentStatus !== "PAID" && b.paymentStatus !== "REFUNDED") {
+    return { label: "Entfällt", tone: "outline" as const, void: true };
+  }
+  const ps = PAYMENT_STATUS[b.paymentStatus] ?? { label: b.paymentStatus, tone: "neutral" as const };
+  return { ...ps, void: false };
+}
+export const PAYMENT_METHOD_LABEL: Record<string, string> = { NONE: "Keine Zahlung", INVOICE: "Rechnung", ONLINE: "Online-Zahlung", CASH: "Bar / vor Ort" };
 
 export const durationOptionSchema = z.object({
   minutes: z.coerce.number().int().min(5).max(24 * 60),
@@ -83,11 +94,6 @@ export const settingsSchema = z.object({
   cancellationHours: z.coerce.number().int().min(0).max(24 * 60),
   invoiceDueDays: z.coerce.number().int().min(1).max(365),
   invoicePrefix: z.string().trim().max(10),
-  payeeName: z.string().trim().max(70).optional(),
-  payeeStreet: z.string().trim().max(70).optional(),
-  payeeZip: z.string().trim().max(16).optional(),
-  payeeCity: z.string().trim().max(35).optional(),
-  iban: z.string().trim().max(40).transform((v) => v.toUpperCase().replace(/\s+/g, "")).optional(),
   invoiceNote: z.string().trim().max(500).optional(),
 });
 export type SettingsInput = z.infer<typeof settingsSchema>;
@@ -116,6 +122,13 @@ export const resourceSchema = z.object({
   isActive: z.boolean().default(true),
 });
 export type ResourceInput = z.infer<typeof resourceSchema>;
+
+/** true für ein echtes Kalenderdatum im Format YYYY-MM-DD (z.B. nicht 2026-13-45 oder 2026-02-30). */
+export function isCalendarDate(s: unknown): s is string {
+  if (typeof s !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(s)) return false;
+  const d = new Date(`${s}T00:00:00Z`);
+  return !Number.isNaN(d.getTime()) && d.toISOString().slice(0, 10) === s;
+}
 
 export const WEEKDAYS = ["So", "Mo", "Di", "Mi", "Do", "Fr", "Sa"];
 

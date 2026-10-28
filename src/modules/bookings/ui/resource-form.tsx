@@ -5,15 +5,15 @@ import { saveResourceAction } from "@/modules/bookings/actions";
 import { RESOURCE_KINDS, type DurationOption } from "@/modules/bookings/types";
 import type { ResourceView } from "@/modules/bookings/queries";
 import { Alert, Card, Field, Input, Select, Textarea } from "@/components/ui";
-import { SubmitButton } from "@/components/ui/form";
+import { SubmitButton, submitKeepingValues } from "@/components/ui/form";
 import { DurationEditor, toRows } from "./settings-form";
 
 export function ResourceForm({ initial, tenantDurations, currency }: { initial?: ResourceView; tenantDurations: DurationOption[]; currency: string }) {
-  const [state, action] = useActionState(saveResourceAction, null);
+  const [state, action, pending] = useActionState(saveResourceAction, null);
   const [own, setOwn] = useState(!!initial?.durationOptions);
   const [durations, setDurations] = useState(toRows(initial?.durationOptions ?? tenantDurations));
   return (
-    <form action={action} className="space-y-5">
+    <form onSubmit={submitKeepingValues(action)} className="space-y-5">
       {initial ? <input type="hidden" name="id" value={initial.id} /> : null}
       <input type="hidden" name="durationsJson" value={JSON.stringify(durations)} />
       <Card className="animate-rise p-4 space-y-4">
@@ -34,7 +34,7 @@ export function ResourceForm({ initial, tenantDurations, currency }: { initial?:
         {own ? <DurationEditor value={durations} onChange={setDurations} currency={currency} /> : null}
       </Card>
       {state && !state.ok ? <Alert>{state.error}</Alert> : null}
-      <SubmitButton size="lg" className="w-full">{initial ? "Speichern" : "Ressource anlegen"}</SubmitButton>
+      <SubmitButton pending={pending} size="lg" className="w-full">{initial ? "Speichern" : "Ressource anlegen"}</SubmitButton>
     </form>
   );
 }

@@ -1,13 +1,19 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 import { notFound } from "next/navigation";
-import { Pencil, Play } from "lucide-react";
+import { Award, LineChart, Pencil, Play } from "lucide-react";
 import { requireModule } from "@/lib/tenant";
 import { Badge, Card, LinkButton, PageHeader, SectionTitle } from "@/components/ui";
 import { getProgram, listMatches } from "@/modules/scores/queries";
+import { getLeaderboard, getProgramProgress, programUsageCounts } from "@/modules/scores/insights";
+import { formatDay } from "@/modules/scores/analytics";
 import { disciplineLabel, formatDistances, positionLabel, SCORING_MODES } from "@/modules/scores/types";
+import { formatScore } from "@/lib/utils";
 import { FavoriteButton } from "@/modules/scores/ui/favorite-button";
 import { ProgramArchiveButton, ProgramHiddenToggle } from "@/modules/scores/ui/admin-controls";
-import { MatchRow } from "../../page";
+import { ProgramCopyButton } from "@/modules/scores/ui/program-tools";
+import { LeaderboardTeaser } from "@/modules/scores/ui/leaderboard";
+import { MatchRow } from "@/modules/scores/ui/match-row";
 
 export const metadata: Metadata = { title: "Programm" };
 
@@ -17,8 +23,14 @@ export default async function ProgramDetailPage({ params }: { params: Promise<{ 
   const p = await getProgram(ctx, id);
   if (!p) notFound();
   const canManage = ctx.can("tenant.programs.manage");
-  const matches = await listMatches(ctx, { programId: id, limit: 5 });
+  const [matches, board, progress, usage] = await Promise.all([
+    listMatches(ctx, { programId: id, limit: 5 }),
+    getLeaderboard(ctx, id, "year"),
+    getProgramProgress(ctx, id),
+    programUsageCounts(ctx.tenant.id),
+  ]);
   const mode = SCORING_MODES.find((m) => m.key === p.scoringMode);
+  const used = usage[p.id] ?? 0;
 
   return (
     <div>
@@ -31,12 +43,40 @@ export default async function ProgramDetailPage({ params }: { params: Promise<{ 
         <Badge tone="outline">{p.totals.shots} Schuss · max. {p.totals.max}</Badge>
         <Badge tone="outline">{mode?.label}</Badge>
         {p.scope === "global" ? <Badge tone="accent">Global</Badge> : <Badge tone="accent">Verein</Badge>}
+        {used ? <Badge tone="outline">{used}× im Verein geschossen</Badge> : null}
         {p.hidden ? <Badge tone="warn">Versteckt</Badge> : null}
         {p.isArchived ? <Badge tone="warn">Archiviert</Badge> : null}
       </div>
 
-      {!p.isArchived ? (
+      {!p.isArchived && ctx.can("match.create") ? (
         <LinkButton href={`/scores/matches/new?programId=${p.id}`} size="lg" className="w-full animate-rise [animation-delay:80ms]"><Play className="h-5 w-5" /> Durchgang starten</LinkButton>
+      ) : null}
+
+      {progress && progress.count > 0 ? (
+        <>
+          <SectionTitle action={<Link href={`/scores/stats?programId=${p.id}`} className="text-xs text-ink-3 hover:text-ink">Verlauf</Link>}>Deine Bestleistung</SectionTitle>
+          <Link href={progress.bestMatchId ? `/scores/matches/${progress.bestMatchId}` : `/scores/stats?programId=${p.id}`} className="press block">
+            <Card className="animate-rise flex items-center gap-3 p-4 hover:border-ink/30">
+              <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-accent-soft text-accent"><Award className="h-5 w-5" /></span>
+              <div className="min-w-0 flex-1">
+                <div className="text-2xl font-semibold tabular-nums leading-tight">
+                  {formatScore(progress.best, progress.decimal)} <span className="text-sm font-normal text-ink-3">von {p.totals.max}</span>
+                </div>
+                <div className="text-xs text-ink-3">
+                  {progress.bestDate ? `am ${formatDay(progress.bestDate)} · ` : ""}Ø {formatScore(progress.avg, progress.decimal)} aus {progress.count} {progress.count === 1 ? "Durchgang" : "Durchgängen"}
+                </div>
+              </div>
+              <LineChart className="h-5 w-5 shrink-0 text-ink-3" aria-hidden />
+            </Card>
+          </Link>
+        </>
+      ) : null}
+
+      {board ? (
+        <>
+          <SectionTitle action={<Link href={`/scores/leaderboard?programId=${p.id}`} className="text-xs text-ink-3 hover:text-ink">Alle Zeiträume</Link>}>Rangliste {board.periodLabel}</SectionTitle>
+          <LeaderboardTeaser board={board} href={`/scores/leaderboard?programId=${p.id}`} />
+        </>
       ) : null}
 
       <SectionTitle>Ablauf</SectionTitle>
@@ -65,13 +105,17 @@ export default async function ProgramDetailPage({ params }: { params: Promise<{ 
             {p.scope === "tenant" ? <LinkButton href={`/scores/programs/${p.id}/edit`} variant="secondary" size="sm"><Pencil className="h-4 w-4" /> Bearbeiten</LinkButton> : null}
             {p.scope === "tenant" ? <ProgramArchiveButton programId={p.id} archived={p.isArchived} /> : null}
           </div>
+          <div className="animate-rise mt-2">
+            <ProgramCopyButton programId={p.id} scope={p.scope} />
+            {p.scope === "global" ? <p className="mt-1 text-xs text-ink-3">Die Kopie gehört deinem Verein und kann angepasst werden. Bisherige Resultate bleiben beim Original.</p> : null}
+          </div>
         </>
       ) : null}
 
       {matches.length ? (
         <>
-          <SectionTitle>Letzte Durchgänge</SectionTitle>
-          <div className="stagger space-y-2.5">{matches.map((m) => <MatchRow key={m.id} m={m} />)}</div>
+          <SectionTitle action={<Link href={`/scores/matches?programId=${p.id}`} className="text-xs text-ink-3 hover:text-ink">Alle</Link>}>Letzte Durchgänge</SectionTitle>
+          <div className="stagger space-y-2.5">{matches.map((m) => <MatchRow key={m.id} m={m} againFor={ctx.can("match.create") ? ctx.user.id : undefined} />)}</div>
         </>
       ) : null}
     </div>

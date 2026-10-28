@@ -21,6 +21,9 @@ export type ActiveTenant = {
   kind: string;
   role: string | null; // null = Super-Admin ohne Mitgliedschaft
   enabledModules: ModuleKey[];
+  logoUrl: string | null;
+  brandColor: string | null;
+  brandColor2: string | null;
 };
 
 export type AppContext = {
@@ -39,13 +42,24 @@ export const getAppContext = cache(async (): Promise<AppContext> => {
   const wanted = jar.get(TENANT_COOKIE)?.value;
 
   let tenant: ActiveTenant | null = null;
-  const membership = user.memberships.find((m) => m.tenantId === wanted) ?? user.memberships[0];
+  // Reihenfolge: gewünschter Tenant mit Mitgliedschaft → gewünschter Tenant als Super-Admin
+  // (ohne Mitgliedschaft) → erste Mitgliedschaft als Rückfall.
+  const wantedMembership = wanted ? user.memberships.find((m) => m.tenantId === wanted) : undefined;
 
-  if (membership) {
-    tenant = { ...membership.tenant, role: membership.role, enabledModules: [] };
+  const toActive = (t: { id: string; slug: string; name: string; kind: string; logoPath: string | null; brandColor: string | null; brandColor2: string | null; updatedAt: Date }, role: string | null): ActiveTenant => ({
+    id: t.id, slug: t.slug, name: t.name, kind: t.kind, role, enabledModules: [],
+    logoUrl: t.logoPath ? `/api/avatars/tenant/${t.id}?v=${t.updatedAt.getTime()}` : null,
+    brandColor: t.brandColor, brandColor2: t.brandColor2,
+  });
+  if (wantedMembership) {
+    tenant = toActive(wantedMembership.tenant, wantedMembership.role);
   } else if (user.isSuperAdmin && wanted) {
-    const t = await db.tenant.findUnique({ where: { id: wanted }, select: { id: true, slug: true, name: true, kind: true } });
-    if (t) tenant = { ...t, role: null, enabledModules: [] };
+    const t = await db.tenant.findUnique({ where: { id: wanted }, select: { id: true, slug: true, name: true, kind: true, logoPath: true, brandColor: true, brandColor2: true, updatedAt: true } });
+    if (t) tenant = toActive(t, null);
+  }
+  if (!tenant && user.memberships[0]) {
+    const fallback = user.memberships[0];
+    tenant = toActive(fallback.tenant, fallback.role);
   }
 
   if (tenant) {

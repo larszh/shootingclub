@@ -1,11 +1,12 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { Users } from "lucide-react";
+import { CalendarDays, CreditCard, Megaphone, Users } from "lucide-react";
 import { requirePermission } from "@/lib/tenant";
 import { MODULES } from "@/lib/modules";
 import { db } from "@/lib/db";
 import { Card, PageHeader, SectionTitle } from "@/components/ui";
-import { JoinCodeCard, ModuleToggle, TenantSettingsForm } from "./forms";
+import { tenantLogoUrl } from "@/components/avatar";
+import { BrandingForm, JoinCodeCard, ModuleToggle, TenantSettingsForm } from "./forms";
 
 export const metadata: Metadata = { title: "Einstellungen" };
 
@@ -23,6 +24,21 @@ export default async function AdminPage() {
       <Link href="/admin/members" className="block press mt-2.5">
         <Card className="p-4 flex items-center gap-3 hover:border-ink/30"><Users className="h-5 w-5 text-ink-2" /><span className="flex-1 font-medium">Mitglieder & Rollen</span><span className="text-sm text-ink-3">{tenant._count.memberships}</span></Card>
       </Link>
+      {ctx.hasModule("events") ? (
+        <Link href="/admin/events" className="block press mt-2.5">
+          <Card className="p-4 flex items-center gap-3 hover:border-ink/30"><Megaphone className="h-5 w-5 text-ink-2" aria-hidden /><span className="flex-1 font-medium">Anlässe & Mitteilungen</span></Card>
+        </Link>
+      ) : null}
+      {ctx.hasModule("bookings") ? (
+        <Link href="/admin/bookings" className="block press mt-2.5">
+          <Card className="p-4 flex items-center gap-3 hover:border-ink/30"><CalendarDays className="h-5 w-5 text-ink-2" aria-hidden /><span className="flex-1 font-medium">Reservationen verwalten</span></Card>
+        </Link>
+      ) : null}
+      {ctx.hasModule("billing") ? (
+        <Link href="/admin/billing" className="block press mt-2.5">
+          <Card className="p-4 flex items-center gap-3 hover:border-ink/30"><CreditCard className="h-5 w-5 text-ink-2" aria-hidden /><span className="flex-1 font-medium">Mitgliederbeiträge verwalten</span></Card>
+        </Link>
+      ) : null}
 
       <SectionTitle>Module</SectionTitle>
       <Card className="animate-rise divide-y divide-line overflow-hidden">
@@ -31,8 +47,11 @@ export default async function AdminPage() {
         ))}
       </Card>
 
+      <SectionTitle>Erscheinungsbild</SectionTitle>
+      <BrandingForm tenantName={tenant.name} logoUrl={tenantLogoUrl(tenant)} brandColor={tenant.brandColor} brandColor2={tenant.brandColor2} />
+
       <SectionTitle>Stammdaten</SectionTitle>
-      <TenantSettingsForm tenant={{ name: tenant.name, kind: tenant.kind, city: tenant.city, canton: tenant.canton }} />
+      <TenantSettingsForm tenant={{ name: tenant.name, kind: tenant.kind, city: tenant.city, canton: tenant.canton, description: tenant.description, website: tenant.website }} />
     </div>
   );
 }

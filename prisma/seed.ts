@@ -4,13 +4,48 @@ import { PrismaClient } from "../src/generated/prisma/client";
 import { PrismaMariaDb } from "@prisma/adapter-mariadb";
 import { PROGRAM_PRESETS } from "../src/modules/scores/presets";
 import { TARGET_PRESETS } from "../src/modules/targets/presets";
+import { seedDemoEvents } from "../src/modules/events/seed";
 
 const u = new URL(process.env.DATABASE_URL ?? "mysql://standchef:standchef@127.0.0.1:3306/standchef");
 const db = new PrismaClient({
   adapter: new PrismaMariaDb({ host: u.hostname, port: Number(u.port || 3306), user: decodeURIComponent(u.username), password: decodeURIComponent(u.password), database: u.pathname.slice(1), connectionLimit: 2 }),
 });
 
+/**
+ * Globale Programme und Scheiben anlegen, die noch fehlen (Abgleich über den Namen).
+ * Idempotent: bestehende Einträge, auch von Admins geänderte, bleiben unverändert.
+ */
+async function seedPresets(createdById: string | null) {
+  let programs = 0;
+  for (const p of PROGRAM_PRESETS) {
+    const exists = await db.program.findFirst({ where: { tenantId: null, name: p.name } });
+    if (exists) continue;
+    await db.program.create({
+      data: { tenantId: null, createdById, name: p.name, description: p.description ?? null, discipline: p.discipline, weaponNote: p.weaponNote ?? null, scoringMode: p.scoringMode, stagesJson: JSON.stringify(p.stages) },
+    });
+    programs++;
+  }
+
+  let targets = 0;
+  for (const t of TARGET_PRESETS) {
+    const exists = await db.targetTemplate.findFirst({ where: { tenantId: null, ownerUserId: null, name: t.name } });
+    if (exists) continue;
+    await db.targetTemplate.create({
+      data: { tenantId: null, ownerUserId: null, name: t.name, description: t.description ?? null, subject: t.subject, paperSizes: t.paperSizes.join(","), paramsJson: JSON.stringify(t.params ?? {}) },
+    });
+    targets++;
+  }
+  console.log(`Vorlagen: ${programs} neue globale Programme, ${targets} neue globale Scheiben.`);
+}
+
 async function main() {
+  // Nur Vorlagen (für Updates, siehe scripts/deploy.sh): legt kein Konto an und braucht keine SEED_ADMIN_*-Variablen.
+  if (process.argv.includes("--presets-only") || process.env.SEED_PRESETS_ONLY === "1") {
+    const superAdmin = await db.user.findFirst({ where: { isSuperAdmin: true }, orderBy: { createdAt: "asc" }, select: { id: true } });
+    await seedPresets(superAdmin?.id ?? null);
+    return;
+  }
+
   const email = (process.env.SEED_ADMIN_EMAIL ?? "admin@example.ch").toLowerCase();
   const password = process.env.SEED_ADMIN_PASSWORD ?? "admin1234";
 
@@ -20,23 +55,7 @@ async function main() {
     create: { email, name: "Super Admin", passwordHash: await bcrypt.hash(password, 10), isSuperAdmin: true },
   });
 
-  // Globale Programme (nur anlegen, wenn Name noch nicht existiert)
-  for (const p of PROGRAM_PRESETS) {
-    const exists = await db.program.findFirst({ where: { tenantId: null, name: p.name } });
-    if (exists) continue;
-    await db.program.create({
-      data: { tenantId: null, createdById: admin.id, name: p.name, description: p.description ?? null, discipline: p.discipline, weaponNote: p.weaponNote ?? null, scoringMode: p.scoringMode, stagesJson: JSON.stringify(p.stages) },
-    });
-  }
-
-  // Globale Scheiben
-  for (const t of TARGET_PRESETS) {
-    const exists = await db.targetTemplate.findFirst({ where: { tenantId: null, ownerUserId: null, name: t.name } });
-    if (exists) continue;
-    await db.targetTemplate.create({
-      data: { tenantId: null, ownerUserId: null, name: t.name, description: t.description ?? null, subject: t.subject, paperSizes: t.paperSizes.join(","), paramsJson: JSON.stringify(t.params ?? {}) },
-    });
-  }
+  await seedPresets(admin.id);
 
   // Demo-Verein mit zwei Mitgliedern (nur wenn SEED_DEMO=1, nie in Produktion)
   if (process.env.SEED_DEMO === "1" && process.env.NODE_ENV !== "production") {
@@ -62,11 +81,6 @@ async function main() {
         lastMinuteDiscountPercent: 20,
         lastMinuteWindowHours: 24,
         minLeadMinutes: 0,
-        payeeName: "Demo Schützengesellschaft",
-        payeeStreet: "Schützenstrasse 1",
-        payeeZip: "8000",
-        payeeCity: "Musterhausen",
-        iban: "CH9300762011623852957",
       },
     });
     if ((await db.resource.count({ where: { tenantId: demo.id } })) === 0) {
@@ -78,6 +92,23 @@ async function main() {
         ],
       });
     }
+    await db.tenantModule.upsert({ where: { tenantId_moduleKey: { tenantId: demo.id, moduleKey: "billing" } }, update: { enabled: true }, create: { tenantId: demo.id, moduleKey: "billing", enabled: true } });
+    await db.billingProfile.upsert({
+      where: { tenantId: demo.id },
+      update: {},
+      create: { tenantId: demo.id, payeeName: "Demo Schützengesellschaft", payeeStreet: "Schützenstrasse 1", payeeZip: "8000", payeeCity: "Musterhausen", iban: "CH9300762011623852957" },
+    });
+    if ((await db.feeCategory.count({ where: { tenantId: demo.id } })) === 0) {
+      const [aktiv, passiv] = await Promise.all([
+        db.feeCategory.create({ data: { tenantId: demo.id, name: "Aktivmitglied", amountCents: 15000, sortOrder: 0 } }),
+        db.feeCategory.create({ data: { tenantId: demo.id, name: "Passivmitglied", amountCents: 5000, sortOrder: 1 } }),
+      ]);
+      await db.feeCategory.create({ data: { tenantId: demo.id, name: "Jungschütze", amountCents: 0, description: "beitragsfrei", sortOrder: 2 } });
+      await db.membership.updateMany({ where: { tenantId: demo.id, userId: anna.id }, data: { feeCategoryId: aktiv.id, memberNumber: "1001" } });
+      await db.membership.updateMany({ where: { tenantId: demo.id, userId: beat.id }, data: { feeCategoryId: passiv.id, memberNumber: "1002" } });
+      await db.user.update({ where: { id: beat.id }, data: { street: "Bahnhofstrasse 12", zip: "8001", city: "Zürich" } });
+    }
+    await seedDemoEvents(db, demo.id, anna.id, [anna.id, beat.id, admin.id]);
     console.log("Demo-Verein: Beitrittscode DEMO42 · anna@example.ch / beat@example.ch (Passwort demo1234)");
   }
 

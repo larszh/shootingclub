@@ -10,7 +10,8 @@ export function quotePrice(option: DurationOption, startsAt: Date, settings: Pri
   let reason: string | null = null;
   if (base > 0 && settings.lastMinuteDiscountPercent > 0) {
     const hoursAhead = (startsAt.getTime() - now.getTime()) / 3_600_000;
-    if (hoursAhead <= settings.lastMinuteWindowHours) {
+    // Nur für kommende Termine: rückwirkend erfasste Buchungen (Verwaltung) sind nicht «spontan».
+    if (hoursAhead >= 0 && hoursAhead <= settings.lastMinuteWindowHours) {
       discount = Math.round((base * settings.lastMinuteDiscountPercent) / 100);
       reason = `Spontan-Rabatt ${settings.lastMinuteDiscountPercent}%`;
     }

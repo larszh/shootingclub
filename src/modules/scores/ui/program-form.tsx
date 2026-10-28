@@ -5,7 +5,7 @@ import { Copy, GripVertical, Plus, Trash2 } from "lucide-react";
 import { saveProgramAction } from "@/modules/scores/actions";
 import { DISCIPLINES, POSITIONS, SCORING_MODES, programTotals, type Stage } from "@/modules/scores/types";
 import { Alert, Button, Card, Field, Input, Select, Textarea } from "@/components/ui";
-import { SubmitButton } from "@/components/ui/form";
+import { SubmitButton, submitKeepingValues } from "@/components/ui/form";
 
 type Props = {
   scope: "tenant" | "global";
@@ -24,10 +24,10 @@ const emptyStage = (i: number, prev?: Stage): Stage => ({
 });
 
 export function ProgramForm({ scope, initial }: Props) {
-  const [state, action] = useActionState(saveProgramAction, null);
+  const [state, action, pending] = useActionState(saveProgramAction, null);
   const [stages, setStages] = useState<Stage[]>(initial?.stages ?? [emptyStage(0)]);
   const [scoringMode, setScoringMode] = useState(initial?.scoringMode ?? "RINGS_INT");
-  const totals = programTotals(stages);
+  const totals = programTotals(stages, scoringMode);
 
   const update = (i: number, patch: Partial<Stage>) => setStages((s) => s.map((st, idx) => (idx === i ? { ...st, ...patch } : st)));
   const remove = (i: number) => setStages((s) => s.filter((_, idx) => idx !== i));
@@ -45,7 +45,7 @@ export function ProgramForm({ scope, initial }: Props) {
   const isHits = scoringMode === "HITS";
 
   return (
-    <form action={action} className="space-y-5">
+    <form onSubmit={submitKeepingValues(action)} className="space-y-5">
       <input type="hidden" name="scope" value={scope} />
       {initial ? <input type="hidden" name="id" value={initial.id} /> : null}
       <input type="hidden" name="stagesJson" value={JSON.stringify(stages.map((s) => ({ ...s, maxPerShot: isHits ? 1 : s.maxPerShot })))} />
@@ -83,8 +83,8 @@ export function ProgramForm({ scope, initial }: Props) {
                 </div>
                 <GripVertical className="h-4 w-4 text-ink-3 hidden" />
                 <Input value={s.name} onChange={(e) => update(i, { name: e.target.value })} className="flex-1 font-medium" placeholder={`Serie ${i + 1}`} />
-                <button type="button" onClick={() => duplicate(i)} className="press h-9 w-9 rounded-full hover:bg-surface-2 text-ink-3 flex items-center justify-center" aria-label="Duplizieren"><Copy className="h-4 w-4" /></button>
-                <button type="button" onClick={() => remove(i)} disabled={stages.length === 1} className="press h-9 w-9 rounded-full hover:bg-accent-soft text-ink-3 hover:text-accent disabled:opacity-30 flex items-center justify-center" aria-label="Entfernen"><Trash2 className="h-4 w-4" /></button>
+                <button type="button" onClick={() => duplicate(i)} className="press h-11 w-11 shrink-0 rounded-full hover:bg-surface-2 text-ink-3 flex items-center justify-center" aria-label="Duplizieren"><Copy className="h-4 w-4" /></button>
+                <button type="button" onClick={() => remove(i)} disabled={stages.length === 1} className="press h-11 w-11 shrink-0 rounded-full hover:bg-accent-soft text-ink-3 hover:text-accent disabled:opacity-30 flex items-center justify-center" aria-label="Entfernen"><Trash2 className="h-4 w-4" /></button>
               </div>
               <div className="grid grid-cols-3 gap-3">
                 <Field label="Distanz (m)"><Input type="number" inputMode="decimal" step="0.5" min={0.5} value={s.distanceM} onChange={(e) => update(i, { distanceM: Number(e.target.value) })} /></Field>
@@ -119,7 +119,7 @@ export function ProgramForm({ scope, initial }: Props) {
 
       {state && !state.ok ? <Alert>{state.error}</Alert> : null}
       <div className="sticky bottom-24 md:bottom-4">
-        <SubmitButton size="lg" className="w-full shadow-lg" pendingText="Speichern…">{initial ? "Änderungen speichern" : "Programm anlegen"}</SubmitButton>
+        <SubmitButton pending={pending} size="lg" className="w-full shadow-lg" pendingText="Speichern…">{initial ? "Änderungen speichern" : "Programm anlegen"}</SubmitButton>
       </div>
     </form>
   );
