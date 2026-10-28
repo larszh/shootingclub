@@ -7,7 +7,7 @@ import { BillingProfileForm } from "@/modules/billing/ui/profile-form";
 export const metadata = { title: "Rechnungsprofil" };
 
 export default async function BillingSettingsPage() {
-  const ctx = await requireBillingAdmin({ orBookings: true });
+  const ctx = await requireBillingAdmin({ orBookings: true, orAmmo: true });
   const profile = await getBillingProfile(ctx.tenant.id, ctx.tenant.name);
   return (
     <div>

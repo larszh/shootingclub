@@ -7,6 +7,8 @@ import {
   ChevronRight,
   Crosshair,
   HelpCircle,
+  MessageCircle,
+  Package,
   Play,
   Printer,
   Receipt,
@@ -18,7 +20,6 @@ import { db } from "@/lib/db";
 import { getAppContext, type AppContext, type ActiveTenant } from "@/lib/tenant";
 import type { ModuleKey } from "@/lib/modules";
 import { ROLE_LABELS, isTenantRole } from "@/lib/permissions";
-import { formatMoney } from "@/lib/money";
 import { formatDateZurich, formatTimeRange } from "@/lib/time";
 import { brandColors, contrastRatio } from "@/lib/brand";
 import { cn, dayGreeting, formatDate, formatScore, plural } from "@/lib/utils";
@@ -36,8 +37,13 @@ import {
 } from "@/components/ui";
 import { listMatches, listPrograms, userStats } from "@/modules/scores/queries";
 import { listMyBookings, partitionBookings } from "@/modules/bookings/queries";
-import { isOverdue } from "@/modules/billing/dates";
+import { nowDate } from "@/modules/billing/dates";
+import { anyPaymentModule, summarizeMyOpenPayments } from "@/modules/billing/overview";
+import { formatTotals } from "@/modules/billing/ui/payment-rows";
 import { AnnouncementsCard, UpcomingEventsCard } from "@/modules/events/ui/dashboard-cards";
+import { listConversations } from "@/modules/chat/queries";
+import { canSeeFolder, loadFolderTree } from "@/modules/files/queries";
+import { FileTypeIcon } from "@/modules/files/ui/file-icon";
 
 type TenantCtx = AppContext & { tenant: ActiveTenant };
 
@@ -77,21 +83,29 @@ async function loadScores(ctx: TenantCtx) {
   };
 }
 
-async function loadOpenInvoices(ctx: TenantCtx) {
-  const rows = await db.feeInvoice.findMany({
-    where: { tenantId: ctx.tenant.id, userId: ctx.user.id, status: "OPEN" },
-    select: { id: true, amountCents: true, currency: true, dueAt: true },
-    orderBy: { dueAt: "asc" },
-    take: 20,
+/** Ungelesene Chats: nur Unterhaltungen mit neuen Nachrichten (stummgeschaltete zählen nicht). */
+async function loadUnreadChats(ctx: TenantCtx) {
+  try {
+    const list = await listConversations(ctx.user.id, ctx.tenant.id);
+    const unread = list.filter((c) => c.unread > 0 && !c.muted);
+    return { total: unread.reduce((a, c) => a + c.unread, 0), conversations: unread.slice(0, 3) };
+  } catch {
+    return { total: 0, conversations: [] };
+  }
+}
+
+/** Die drei neuesten Dateien, die der Benutzer sehen darf (Ordner-Sichtbarkeit wie in der Dateiablage). */
+async function loadNewestFiles(ctx: TenantCtx) {
+  const tree = await loadFolderTree(ctx.tenant.id);
+  const visibleIds = [...tree.values()].filter((n) => canSeeFolder(n, ctx.tenant.role, ctx.user.isSuperAdmin)).map((n) => n.id);
+  const files = await db.storedFile.findMany({
+    // Hauptebene (folderId null) sehen alle Mitglieder, Ordner nur gemäss Mindestrolle.
+    where: { tenantId: ctx.tenant.id, context: "FILES", OR: [{ folderId: null }, { folderId: { in: visibleIds } }] },
+    orderBy: { createdAt: "desc" },
+    take: 3,
+    select: { id: true, name: true, mimeType: true, folderId: true, createdAt: true },
   });
-  const totalCents = rows.reduce((a, r) => a + r.amountCents, 0);
-  return {
-    count: rows.length,
-    totalCents,
-    currency: rows[0]?.currency ?? "CHF",
-    overdue: rows.filter((r) => isOverdue(r.dueAt)).length,
-    nextDue: rows[0]?.dueAt ?? null,
-  };
+  return files.map((f) => ({ ...f, folderName: f.folderId ? (tree.get(f.folderId)?.name ?? null) : null }));
 }
 
 /**
@@ -110,7 +124,7 @@ type SetupItem = { key: string; title: string; text: string; href: string; done:
 async function loadSetupChecklist(ctx: TenantCtx): Promise<SetupItem[]> {
   const tenantId = ctx.tenant.id;
   const bookingsOn = ctx.hasModule("bookings");
-  const billingOn = ctx.hasModule("billing");
+  const billingOn = ctx.hasModule("billing") || ctx.hasModule("ammo"); // Munition braucht das Rechnungsprofil ebenso
   const [members, resources, profile] = await Promise.all([
     db.membership.count({ where: { tenantId } }),
     bookingsOn ? db.resource.count({ where: { tenantId } }) : Promise.resolve(0),
@@ -141,6 +155,7 @@ const QUICK_ACTIONS: QuickAction[] = [
   { module: "targets", href: "/targets", label: "Scheibe drucken", icon: Printer },
   { module: "events", href: "/events", label: "Anlässe", icon: CalendarDays },
   { module: "billing", href: "/billing", label: "Beiträge", icon: Receipt },
+  { module: "ammo", href: "/ammo", label: "Munition bestellen", icon: Package },
 ];
 
 export default async function HomePage({ searchParams }: { searchParams: Promise<{ module?: string; denied?: string }> }) {
@@ -151,13 +166,16 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
 
   const scoresOn = ctx.hasModule("scores");
   const bookingsOn = ctx.hasModule("bookings");
-  const billingOn = ctx.hasModule("billing");
+  const chatOn = ctx.hasModule("chat");
+  const filesOn = ctx.hasModule("files");
   const isAdmin = ctx.can("tenant.manage");
 
-  const [scores, nextBookings, invoices] = await Promise.all([
+  const [scores, nextBookings, invoices, chats, newestFiles] = await Promise.all([
     scoresOn ? loadScores(ctx) : Promise.resolve(null),
     bookingsOn ? listMyBookings(ctx).then((b) => partitionBookings(b).upcoming.slice(0, 2)) : Promise.resolve([]),
-    billingOn ? loadOpenInvoices(ctx) : Promise.resolve(null),
+    anyPaymentModule(ctx) ? summarizeMyOpenPayments(ctx, nowDate()) : Promise.resolve(null),
+    chatOn ? loadUnreadChats(ctx) : Promise.resolve(null),
+    filesOn ? loadNewestFiles(ctx) : Promise.resolve([]),
   ]);
   const checklist = isAdmin ? await loadSetupChecklist(ctx) : [];
 
@@ -243,27 +261,50 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
         </>
       ) : null}
 
-      {/* Offene Beiträge */}
+      {/* Offene Rechnungen (Beiträge, Reservationen, Munition) */}
       {invoices && invoices.count > 0 ? (
         <Link
-          href="/billing"
+          href="/payments"
           className="press mt-4 block rounded-card focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
         >
-          <Card className={cn("animate-rise flex items-center gap-3 p-4 transition-colors hover:border-ink/30", invoices.overdue > 0 && "border-warn/50")}>
-            <span className={cn("flex h-11 w-11 shrink-0 items-center justify-center rounded-full", invoices.overdue > 0 ? "bg-warn/15 text-warn" : "bg-accent-soft text-accent")}>
+          <Card className={cn("animate-rise flex items-center gap-3 p-4 transition-colors hover:border-ink/30", invoices.overdue > 0 && "border-danger/50")}>
+            <span className={cn("flex h-11 w-11 shrink-0 items-center justify-center rounded-full", invoices.overdue > 0 ? "bg-danger/12 text-danger" : "bg-accent-soft text-accent")}>
               <Receipt className="h-5 w-5" />
             </span>
             <div className="min-w-0 flex-1">
               <div className="font-semibold">
-                {plural(invoices.count, "offene Rechnung", "offene Rechnungen")} · {formatMoney(invoices.totalCents, invoices.currency)}
+                {plural(invoices.count, "offene Rechnung", "offene Rechnungen")} · {formatTotals(invoices.totals)}
               </div>
               <div className="text-xs text-ink-3">
                 {invoices.overdue > 0
                   ? `${plural(invoices.overdue, "Rechnung ist", "Rechnungen sind")} überfällig. Mit der QR-Rechnung bezahlst du in deiner Banking-App.`
                   : invoices.nextDue
-                    ? `Zahlbar bis ${formatDateZurich(invoices.nextDue, { weekday: undefined })} – einfach QR-Code scannen.`
+                    ? `Nächste zahlbar bis ${formatDateZurich(invoices.nextDue, { weekday: undefined })} – einfach QR-Code scannen.`
                     : "Einfach QR-Code in der Banking-App scannen."}
               </div>
+            </div>
+            <ArrowRight className="h-4 w-4 shrink-0 text-ink-3" aria-hidden />
+          </Card>
+        </Link>
+      ) : null}
+
+      {/* Ungelesene Chats */}
+      {chats && chats.total > 0 ? (
+        <Link href={chats.conversations.length === 1 ? `/chat/${chats.conversations[0]!.id}` : "/chat"} className="press mt-4 block rounded-card focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent">
+          <Card className="animate-rise flex items-center gap-3 p-4 transition-colors hover:border-ink/30">
+            <span className="relative flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-accent-soft text-accent">
+              <MessageCircle className="h-5 w-5" />
+            </span>
+            <div className="min-w-0 flex-1">
+              <div className="font-semibold">{plural(chats.total, "ungelesene Nachricht", "ungelesene Nachrichten")}</div>
+              <div className="truncate text-xs text-ink-3">
+                {chats.conversations.map((c) => (c.unread > 1 ? `${c.title} (${c.unread})` : c.title)).join(" · ")}
+              </div>
+            </div>
+            <div className="flex shrink-0 -space-x-2" aria-hidden>
+              {chats.conversations.map((c) => (
+                <Avatar key={c.id} name={c.avatarName} src={c.avatarUrl} size={28} tone="soft" className="ring-2 ring-surface" />
+              ))}
             </div>
             <ArrowRight className="h-4 w-4 shrink-0 text-ink-3" aria-hidden />
           </Card>
@@ -414,6 +455,32 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
       ) : null}
 
       {ctx.hasModule("events") ? <UpcomingEventsCard ctx={ctx} /> : null}
+
+      {/* Neueste Dateien */}
+      {filesOn && newestFiles.length ? (
+        <>
+          <SectionTitle action={<Link href="/files" className="text-xs text-ink-3 hover:text-ink">Dateiablage</Link>}>Neue Dateien</SectionTitle>
+          <Card className="animate-rise divide-y divide-line overflow-hidden">
+            {newestFiles.map((f) => (
+              <Link
+                key={f.id}
+                href={f.folderId ? `/files?folder=${encodeURIComponent(f.folderId)}` : "/files"}
+                className="flex min-h-14 items-center gap-3 px-4 py-2.5 transition-colors hover:bg-surface-2 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-accent"
+              >
+                <FileTypeIcon mimeType={f.mimeType} name={f.name} className="h-10 w-10" />
+                <div className="min-w-0 flex-1">
+                  <div className="truncate font-medium">{f.name}</div>
+                  <div className="truncate text-xs text-ink-3">
+                    {formatDateZurich(f.createdAt, { weekday: undefined })}
+                    {f.folderName ? ` · ${f.folderName}` : ""}
+                  </div>
+                </div>
+                <ChevronRight className="h-4 w-4 shrink-0 text-ink-3" aria-hidden />
+              </Link>
+            ))}
+          </Card>
+        </>
+      ) : null}
 
       {/* Nächste Reservation */}
       {bookingsOn ? (

@@ -12,7 +12,7 @@ export const IMPORT_STATUS_LABEL: Record<ImportStatus, { label: string; tone: "o
 };
 
 export type ImportTarget = {
-  kind: "FEE" | "BOOKING";
+  kind: "FEE" | "BOOKING" | "AMMO";
   id: string;
   number: string;
   name: string;

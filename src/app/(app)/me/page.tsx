@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { BookUser, CalendarDays, ChevronRight, CreditCard, LogOut, Settings, Shield, Users, BarChart3 } from "lucide-react";
+import { BookUser, CalendarDays, ChevronRight, CreditCard, FolderOpen, LogOut, Megaphone, MessageCircle, Package, Settings, Shield, Target, Users, BarChart3, Wallet } from "lucide-react";
 import { getAppContext } from "@/lib/tenant";
 import { db } from "@/lib/db";
 import { logoutAction } from "@/modules/core/auth-actions";
@@ -18,6 +18,8 @@ const roleLabel = (r: string) => ROLE_LABELS[r as TenantRole] ?? r;
 export default async function MePage() {
   const ctx = await getAppContext();
   const canManage = ctx.tenant ? ctx.can("tenant.manage") : false;
+  const canManageAmmo = ctx.tenant ? ctx.can("ammo.manage") : false;
+  const paymentsOn = ctx.hasModule("billing") || ctx.hasModule("bookings") || ctx.hasModule("ammo");
 
   const memberships = await db.membership.findMany({
     where: { userId: ctx.user.id },
@@ -51,15 +53,32 @@ export default async function MePage() {
         <>
           <SectionTitle>{ctx.tenant.name}</SectionTitle>
           <Card className="animate-rise divide-y divide-line overflow-hidden">
-            <Row href="/members" icon={<BookUser className="h-4 w-4" />} label="Mitgliederverzeichnis" />
-            {ctx.hasModule("scores") ? <Row href="/scores/stats" icon={<BarChart3 className="h-4 w-4" />} label="Meine Statistik" /> : null}
+            {/* Alle Module, auch die, die mobil nicht in die Tableiste passen */}
+            {ctx.hasModule("chat") ? <Row href="/chat" icon={<MessageCircle className="h-4 w-4" />} label="Chat" /> : null}
+            {ctx.hasModule("events") ? <Row href="/events" icon={<Megaphone className="h-4 w-4" />} label="Anlässe & News" /> : null}
             {ctx.hasModule("bookings") ? <Row href="/bookings" icon={<CalendarDays className="h-4 w-4" />} label="Reservationen" /> : null}
+            {ctx.hasModule("targets") ? <Row href="/targets" icon={<Target className="h-4 w-4" />} label="Zielscheiben drucken" /> : null}
+            {ctx.hasModule("files") ? <Row href="/files" icon={<FolderOpen className="h-4 w-4" />} label="Dateiablage" /> : null}
+            {ctx.hasModule("ammo") ? <Row href="/ammo" icon={<Package className="h-4 w-4" />} label="Munition bestellen" /> : null}
+            {paymentsOn ? <Row href="/payments" icon={<Wallet className="h-4 w-4" />} label="Meine Zahlungen" /> : null}
             {ctx.hasModule("billing") ? <Row href="/billing" icon={<CreditCard className="h-4 w-4" />} label="Meine Beiträge" /> : null}
-            {canManage ? <Row href="/admin" icon={<Settings className="h-4 w-4" />} label="Einstellungen, Logo & Farben" /> : null}
-            {canManage ? <Row href="/admin/members" icon={<Users className="h-4 w-4" />} label="Mitglieder & Rollen" /> : null}
-            {canManage && ctx.hasModule("bookings") ? <Row href="/admin/bookings" icon={<CalendarDays className="h-4 w-4" />} label="Reservationen verwalten" /> : null}
-            {canManage && ctx.hasModule("billing") ? <Row href="/admin/billing" icon={<CreditCard className="h-4 w-4" />} label="Mitgliederbeiträge verwalten" /> : null}
+            {ctx.hasModule("scores") ? <Row href="/scores/stats" icon={<BarChart3 className="h-4 w-4" />} label="Meine Statistik" /> : null}
+            <Row href="/members" icon={<BookUser className="h-4 w-4" />} label="Mitgliederverzeichnis" />
           </Card>
+          {canManage || canManageAmmo ? (
+            <>
+              <SectionTitle>Verwaltung</SectionTitle>
+              <Card className="animate-rise divide-y divide-line overflow-hidden">
+                {canManage ? <Row href="/admin" icon={<Settings className="h-4 w-4" />} label="Einstellungen, Logo & Farben" /> : null}
+                {canManage ? <Row href="/admin/members" icon={<Users className="h-4 w-4" />} label="Mitglieder & Rollen" /> : null}
+                {canManage && paymentsOn ? <Row href="/admin/payments" icon={<Wallet className="h-4 w-4" />} label="Offene Posten" /> : null}
+                {canManage && ctx.hasModule("bookings") ? <Row href="/admin/bookings" icon={<CalendarDays className="h-4 w-4" />} label="Reservationen verwalten" /> : null}
+                {canManage && ctx.hasModule("billing") ? <Row href="/admin/billing" icon={<CreditCard className="h-4 w-4" />} label="Mitgliederbeiträge verwalten" /> : null}
+                {canManage && ctx.hasModule("files") ? <Row href="/admin/files" icon={<FolderOpen className="h-4 w-4" />} label="Dateiablage & Speicherort" /> : null}
+                {canManageAmmo && ctx.hasModule("ammo") ? <Row href="/admin/ammo" icon={<Package className="h-4 w-4" />} label="Munition verwalten" /> : null}
+              </Card>
+            </>
+          ) : null}
         </>
       ) : null}
 

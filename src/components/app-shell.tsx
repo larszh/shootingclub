@@ -2,21 +2,43 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Home, Target, Crosshair, Menu, CalendarDays, CreditCard, Megaphone } from "lucide-react";
+import { Home, Target, Crosshair, Menu, CalendarDays, Megaphone, MessageCircle, FolderOpen, Package, Wallet } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { TenantLogo } from "@/components/logo";
 import { Avatar } from "@/components/avatar";
 import type { ModuleKey } from "@/lib/modules";
+import { ChatUnreadBadge } from "@/modules/chat/ui/chat-unread-badge";
 
-type NavItem = { href: string; label: string; icon: React.ComponentType<{ className?: string }>; module?: ModuleKey };
+type NavItem = {
+  href: string;
+  label: string;
+  icon: React.ComponentType<{ className?: string }>;
+  /** Sichtbar, wenn mindestens eines dieser Module aktiv ist (leer = immer) */
+  modules?: ModuleKey[];
+  /** Weitere Pfade, unter denen der Eintrag als aktiv gilt */
+  alsoActive?: string[];
+};
 
+/**
+ * Reihenfolge = Priorität. Mobil passen nur die ersten vier aktiven Einträge plus «Mehr» in die
+ * Tableiste, darum zuerst, was man am Stand und unterwegs am häufigsten braucht:
+ *   Start → Schiessen (Kernfunktion am Stand) → Chat (täglich, mit Ungelesen-Zähler)
+ *   → Anlässe (Termine, An-/Abmeldung) → Buchen (Reservationen).
+ * Seltener genutzte Bereiche (Scheiben drucken, Dateien, Munition, Zahlungen) folgen danach und
+ * sind mobil unter «Mehr» erreichbar, auf dem Desktop immer in der Seitenleiste.
+ * «Zahlungen» bündelt Beiträge, Reservations- und Munitionsrechnungen und ersetzt den früheren
+ * Eintrag «Beiträge» (der unter «Mehr» weiterhin direkt erreichbar ist).
+ */
 const NAV: NavItem[] = [
   { href: "/", label: "Start", icon: Home },
-  { href: "/scores", label: "Schiessen", icon: Crosshair, module: "scores" },
-  { href: "/targets", label: "Scheiben", icon: Target, module: "targets" },
-  { href: "/events", label: "Anlässe", icon: Megaphone, module: "events" },
-  { href: "/bookings", label: "Buchen", icon: CalendarDays, module: "bookings" },
-  { href: "/billing", label: "Beiträge", icon: CreditCard, module: "billing" },
+  { href: "/scores", label: "Schiessen", icon: Crosshair, modules: ["scores"] },
+  { href: "/chat", label: "Chat", icon: MessageCircle, modules: ["chat"] },
+  { href: "/events", label: "Anlässe", icon: Megaphone, modules: ["events"] },
+  { href: "/bookings", label: "Buchen", icon: CalendarDays, modules: ["bookings"] },
+  { href: "/targets", label: "Scheiben", icon: Target, modules: ["targets"] },
+  { href: "/files", label: "Dateien", icon: FolderOpen, modules: ["files"] },
+  { href: "/ammo", label: "Munition", icon: Package, modules: ["ammo"] },
+  { href: "/payments", label: "Zahlungen", icon: Wallet, modules: ["billing", "bookings", "ammo"], alsoActive: ["/billing"] },
   { href: "/me", label: "Mehr", icon: Menu },
 ];
 
@@ -28,21 +50,28 @@ export function AppShell({
   enabledModules,
   tenant,
   user,
+  chatUnread = null,
 }: {
   children: React.ReactNode;
   enabledModules: ModuleKey[];
   tenant: ShellTenant | null;
   user: ShellUser;
+  /** Ungelesene Chat-Nachrichten beim Laden (null = Chat nicht aktiv) */
+  chatUnread?: number | null;
 }) {
   const pathname = usePathname();
-  const items = NAV.filter((n) => !n.module || enabledModules.includes(n.module));
-  const isActive = (href: string) => (href === "/" ? pathname === "/" : pathname === href || pathname.startsWith(href + "/"));
+  const items = NAV.filter((n) => !n.modules || n.modules.some((m) => enabledModules.includes(m)));
+  const matches = (href: string) => (href === "/" ? pathname === "/" : pathname === href || pathname.startsWith(href + "/"));
+  const isActive = (href: string) => matches(href) || (NAV.find((n) => n.href === href)?.alsoActive ?? []).some(matches);
   // Tableiste: höchstens 5 Einträge, sonst werden die Beschriftungen auf schmalen Geräten abgeschnitten.
-  // Überzählige Module (Buchen, Beiträge) sind unter «Mehr» erreichbar.
+  // Überzählige Module sind unter «Mehr» erreichbar (Liste auf /me und Desktop-Seitenleiste).
   const MAX_TABS = 5;
   const tabs = items.length > MAX_TABS ? [...items.filter((n) => n.href !== "/me").slice(0, MAX_TABS - 1), items.find((n) => n.href === "/me")!] : items;
   const overflowActive = tabs.length < items.length && items.some((n) => !tabs.includes(n) && isActive(n.href));
   const isTabActive = (href: string) => isActive(href) || (href === "/me" && overflowActive);
+  const chatOn = chatUnread !== null && items.some((n) => n.href === "/chat");
+  // Liegt der Chat mobil unter «Mehr», trägt «Mehr» den Zähler, damit nichts übersehen wird.
+  const badgeTab = chatOn ? (tabs.some((n) => n.href === "/chat") ? "/chat" : "/me") : null;
   const title = tenant?.name ?? "Standchef";
 
   return (
@@ -63,7 +92,8 @@ export function AppShell({
             return (
               <Link key={n.href} href={n.href} aria-current={active ? "page" : undefined}
                 className={cn("flex items-center gap-3 rounded-control px-3 h-11 text-[15px] font-medium transition-colors", active ? "bg-accent-soft text-accent" : "text-ink-2 hover:bg-surface-2")}>
-                <n.icon className="h-5 w-5" /> {n.label}
+                <n.icon className="h-5 w-5" /> <span className="flex-1">{n.label}</span>
+                {n.href === "/chat" && chatOn ? <ChatUnreadBadge initial={chatUnread ?? 0} /> : null}
               </Link>
             );
           })}
@@ -100,8 +130,11 @@ export function AppShell({
               const active = isTabActive(n.href);
               return (
                 <Link key={n.href} href={n.href} aria-current={active ? "page" : undefined} className="press flex flex-col items-center gap-0.5 pt-2 pb-1 text-[11px] font-medium min-w-0">
-                  <span className={cn("flex h-8 w-full max-w-14 items-center justify-center rounded-full transition-colors", active ? "bg-accent text-accent-ink" : "text-ink-3")}>
+                  <span className={cn("relative flex h-8 w-full max-w-14 items-center justify-center rounded-full transition-colors", active ? "bg-accent text-accent-ink" : "text-ink-3")}>
                     <n.icon className="h-5 w-5" />
+                    {badgeTab === n.href ? (
+                      <ChatUnreadBadge initial={chatUnread ?? 0} className="absolute -top-1 right-0.5 ring-2 ring-surface" />
+                    ) : null}
                   </span>
                   <span className={cn("truncate max-w-full px-0.5", active ? "text-ink" : "text-ink-3")}>{n.label}</span>
                 </Link>
