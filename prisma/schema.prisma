@@ -298,6 +298,12 @@ model BookingSettings {
   invoiceDueDays            Int     @default(30)
   invoicePrefix             String  @default("R-")
   invoiceNote               String? @db.Text
+  // Preise pro Person (optional). Die Preistabelle steckt in durationOptionsJson:
+  // [{minutes, priceCents, personPrices?: number[] (Index 0 = 1 Person), flatFromPersons?, flatPriceCents?}]
+  personPricing             Boolean @default(false)
+  maxPersons                Int     @default(1)  // Standard-Höchstzahl Personen pro Buchung
+  flatExclusive             Boolean @default(true)  // Pauschalbuchung belegt die ganze Ressource
+  capacityPerPerson         Boolean @default(false) // true: jede Person belegt einen Platz der Kapazität
   updatedAt                 DateTime @updatedAt
 
   tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
@@ -309,7 +315,8 @@ model Resource {
   name                String
   description         String? @db.Text
   kind                String  @default("LANE") // RANGE | LANE | ROOM | OTHER
-  capacity            Int     @default(1) // gleichzeitige Buchungen
+  capacity            Int     @default(1) // gleichzeitige Buchungen bzw. Plätze
+  maxPersons          Int?    // Abweichung von BookingSettings.maxPersons
   durationOptionsJson String? @db.Text // optionale Abweichung von den Tenant-Optionen
   isActive            Boolean @default(true)
   sortOrder           Int     @default(0)
@@ -345,6 +352,9 @@ model Booking {
   startsAt        DateTime
   endsAt          DateTime
   durationMinutes Int
+  persons         Int       @default(1) // Anzahl Personen
+  units           Int       @default(1) // belegte Kapazitätseinheiten (Pauschal exklusiv = Kapazität der Ressource)
+  isFlatRate      Boolean   @default(false) // Pauschalpreis (ganze Ressource)
   status          String    @default("CONFIRMED") // PENDING | CONFIRMED | REJECTED | CANCELLED
   paymentMethod   String    @default("NONE") // NONE | INVOICE | ONLINE
   paymentStatus   String    @default("NOT_REQUIRED") // NOT_REQUIRED | UNPAID | PENDING | PAID | FAILED | REFUNDED
