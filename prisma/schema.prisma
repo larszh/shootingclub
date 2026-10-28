@@ -46,6 +46,12 @@ model User {
   createdEvents    Event[]             @relation("EventCreator")
   eventRsvps       EventRsvp[]
   announcements    Announcement[]      @relation("AnnouncementAuthor")
+  createdFolders   FileFolder[]        @relation("FolderCreator")
+  uploadedFiles    StoredFile[]        @relation("FileUploader")
+  chatMemberships  ChatMember[]
+  chatMessages     ChatMessage[]       @relation("ChatSender")
+  ammoOrders       AmmoOrder[]         @relation("AmmoBuyer")
+  ammoIssued       AmmoOrder[]         @relation("AmmoIssuer")
 }
 
 model Session {
@@ -95,6 +101,13 @@ model Tenant {
   feeInvoices     FeeInvoice[]
   events          Event[]
   announcements   Announcement[]
+  storageConfig   StorageConfig?
+  fileFolders     FileFolder[]
+  storedFiles     StoredFile[]
+  chats           ChatConversation[]
+  ammoSettings    AmmoSettings?
+  ammoProducts    AmmoProduct[]
+  ammoOrders      AmmoOrder[]
 }
 
 model Membership {
@@ -584,4 +597,204 @@ model Announcement {
   author User?  @relation("AnnouncementAuthor", fields: [authorId], references: [id], onDelete: SetNull)
 
   @@index([tenantId, createdAt])
+}
+
+// ---------------------------------------------------------------------------
+// Modul: Dateiablage (lokal, S3-kompatibel oder Nextcloud/WebDAV)
+// ---------------------------------------------------------------------------
+
+model StorageConfig {
+  id             String   @id @default(cuid())
+  tenantId       String   @unique
+  provider       String   @default("LOCAL") // LOCAL | S3 | WEBDAV
+  credentialsEnc String?  @db.Text // AES-256-GCM (src/lib/crypto.ts): S3 endpoint/region/bucket/keys, WebDAV url/user/app password
+  quotaMb        Int?     // optionales Speicherlimit pro Verein
+  maxFileMb      Int      @default(25)
+  updatedAt      DateTime @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+}
+
+model FileFolder {
+  id          String   @id @default(cuid())
+  tenantId    String
+  parentId    String?
+  name        String
+  minRole     String   @default("MEMBER") // wer sieht den Ordner: MEMBER | TRAINER | ADMIN | OWNER
+  createdById String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  tenant    Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  parent    FileFolder?  @relation("FolderTree", fields: [parentId], references: [id], onDelete: Cascade)
+  children  FileFolder[] @relation("FolderTree")
+  createdBy User?        @relation("FolderCreator", fields: [createdById], references: [id], onDelete: SetNull)
+  files     StoredFile[]
+
+  @@index([tenantId, parentId])
+}
+
+model StoredFile {
+  id           String   @id @default(cuid())
+  tenantId     String
+  folderId     String?
+  name         String
+  mimeType     String
+  sizeBytes    Int
+  provider     String   // LOCAL | S3 | WEBDAV – wo die Datei tatsächlich liegt
+  storageKey   String   @db.Text
+  uploadedById String?
+  context      String   @default("FILES") // FILES | CHAT
+  createdAt    DateTime @default(now())
+
+  tenant     Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  folder     FileFolder?   @relation(fields: [folderId], references: [id], onDelete: Cascade)
+  uploadedBy User?         @relation("FileUploader", fields: [uploadedById], references: [id], onDelete: SetNull)
+  messages   ChatMessage[]
+
+  @@index([tenantId, folderId])
+}
+
+// ---------------------------------------------------------------------------
+// Modul: Chat (1:1 und Gruppen, pro Verein)
+// ---------------------------------------------------------------------------
+
+model ChatConversation {
+  id            String    @id @default(cuid())
+  tenantId      String
+  kind          String    // DIRECT | GROUP
+  title         String?
+  directKey     String?   @unique // DIRECT: "<tenantId>:<userIdA>:<userIdB>" sortiert, verhindert Duplikate
+  createdById   String?
+  lastMessageAt DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  tenant   Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  members  ChatMember[]
+  messages ChatMessage[]
+
+  @@index([tenantId, lastMessageAt])
+}
+
+model ChatMember {
+  id             String    @id @default(cuid())
+  conversationId String
+  userId         String
+  role           String    @default("MEMBER") // ADMIN | MEMBER
+  lastReadAt     DateTime?
+  muted          Boolean   @default(false)
+  joinedAt       DateTime  @default(now())
+
+  conversation ChatConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  user         User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([conversationId, userId])
+  @@index([userId])
+}
+
+model ChatMessage {
+  id             String    @id @default(cuid())
+  conversationId String
+  senderId       String?
+  body           String    @db.Text
+  fileId         String?
+  clientId       String?   @unique // idempotentes Senden (auch offline nachgereicht)
+  createdAt      DateTime  @default(now())
+  editedAt       DateTime?
+  deletedAt      DateTime?
+
+  conversation ChatConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  sender       User?            @relation("ChatSender", fields: [senderId], references: [id], onDelete: SetNull)
+  file         StoredFile?      @relation(fields: [fileId], references: [id], onDelete: SetNull)
+
+  @@index([conversationId, createdAt])
+}
+
+// ---------------------------------------------------------------------------
+// Modul: Munition (Verkauf nur auf Rechnung)
+// ---------------------------------------------------------------------------
+
+model AmmoSettings {
+  id              String   @id @default(cuid())
+  tenantId        String   @unique
+  onSiteOnly      Boolean  @default(true)  // Abgabe nur zum sofortigen Verbrauch auf dem Platz
+  requireIdCheck  Boolean  @default(true)  // Ausgabe nur mit bestätigter Berechtigungsprüfung
+  approvalRequired Boolean @default(false) // Bestellungen zuerst freigeben
+  invoicePrefix   String   @default("MU-")
+  invoiceDueDays  Int      @default(30)
+  maxRoundsPerOrder Int?   // optionales Limit pro Bestellung
+  note            String?  @db.Text // Hinweis für Mitglieder (z.B. rechtliche Hinweise)
+  updatedAt       DateTime @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+}
+
+model AmmoProduct {
+  id            String   @id @default(cuid())
+  tenantId      String
+  name          String
+  caliber       String
+  manufacturer  String?
+  description   String?  @db.Text
+  unitLabel     String   @default("Schachtel") // Verkaufseinheit
+  roundsPerUnit Int      @default(50)
+  priceCents    Int      // Preis pro Einheit
+  stockUnits    Int?     // null = Bestand nicht geführt
+  isActive      Boolean  @default(true)
+  sortOrder     Int      @default(0)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  tenant Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  items  AmmoOrderItem[]
+
+  @@index([tenantId])
+}
+
+model AmmoOrder {
+  id            String    @id @default(cuid())
+  tenantId      String
+  userId        String?
+  status        String    @default("ORDERED") // ORDERED | APPROVED | ISSUED | CANCELLED
+  totalCents    Int
+  currency      String    @default("CHF")
+  note          String?
+  idChecked     Boolean   @default(false)
+  issuedAt      DateTime?
+  issuedById    String?
+  invoiceNumber String?
+  reference     String?   // QR-Referenz bei QR-IBAN
+  invoiceIssuedAt DateTime?
+  dueAt         DateTime?
+  paymentStatus String    @default("UNPAID") // UNPAID | PAID | CANCELLED
+  paidAt        DateTime?
+  paymentNote   String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  tenant   Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user     User?           @relation("AmmoBuyer", fields: [userId], references: [id], onDelete: SetNull)
+  issuedBy User?           @relation("AmmoIssuer", fields: [issuedById], references: [id], onDelete: SetNull)
+  items    AmmoOrderItem[]
+
+  @@unique([tenantId, invoiceNumber])
+  @@index([tenantId, status])
+  @@index([userId])
+}
+
+model AmmoOrderItem {
+  id             String  @id @default(cuid())
+  orderId        String
+  productId      String?
+  productName    String
+  caliber        String
+  unitLabel      String
+  roundsPerUnit  Int
+  quantity       Int
+  unitPriceCents Int
+  totalCents     Int
+
+  order   AmmoOrder    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  product AmmoProduct? @relation(fields: [productId], references: [id], onDelete: SetNull)
 }
