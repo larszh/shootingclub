@@ -113,7 +113,7 @@ npx tsx prisma/seed.ts --presets-only   # oder: npm run db:seed:presets
 ### Absicherung
 
 - Die App setzt `X-Frame-Options: SAMEORIGIN` und `Content-Security-Policy: frame-ancestors 'self'` (Schutz gegen Einbetten auf fremden Seiten, `next.config.ts`).
-- Login, Registrierung und Beitrittscodes werden pro IP und pro Konto gedrosselt (In-Memory, `src/lib/auth.ts`). Das passt zur einen PM2-Instanz aus `ecosystem.config.cjs`. Wer mehrere Instanzen betreibt, begrenzt zusätzlich in nginx (CloudPanel → Vhost, `limit_req`). Die IP wird aus `X-Forwarded-For` gelesen; nginx von CloudPanel setzt diesen Header bereits.
+- Login, Registrierung und Beitrittscodes werden pro IP und pro Konto gedrosselt (In-Memory, `src/lib/auth.ts`). Das passt zur einen PM2-Instanz aus `ecosystem.config.cjs`. Wer mehrere Instanzen betreibt, begrenzt zusätzlich in nginx (CloudPanel → Vhost, `limit_req`). Die IP kommt aus `X-Real-IP`, sonst aus dem letzten Eintrag von `X-Forwarded-For` (nginx von CloudPanel setzt beide). `CF-Connecting-IP` zählt nur mit `TRUST_CLOUDFLARE=1`, siehe unten.
 
 ## Hochgeladene Dateien
 

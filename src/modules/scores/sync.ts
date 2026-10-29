@@ -125,8 +125,9 @@ export async function createMatchCore(
   const program = await db.program.findUnique({ where: { id: programId } });
   if (!program || (program.tenantId && program.tenantId !== actor.tenantId) || program.isArchived) return coreFail("Programm nicht verfügbar", "program_unavailable");
 
-  // Nur Mitglieder desselben Tenants als Gegner; Reihenfolge = Index aus dem Client.
-  const memberIds = new Set((await db.membership.findMany({ where: { tenantId: actor.tenantId }, select: { userId: true } })).map((m) => m.userId));
+  // Nur aktuelle Mitglieder desselben Tenants (nicht ausgetreten, Konto nicht gelöscht) als Gegner;
+  // Reihenfolge = Index aus dem Client.
+  const memberIds = new Set((await db.membership.findMany({ where: { tenantId: actor.tenantId, status: { not: "LEFT" }, user: { deletedAt: null } }, select: { userId: true } })).map((m) => m.userId));
   const seen = new Set<string>();
   const rows: Array<{ userId: string | null; guestName: string | null; note: string | null; sortOrder: number }> = [];
   participants.forEach((p, index) => {

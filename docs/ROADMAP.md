@@ -77,5 +77,6 @@ Details im README.
 - **Storage-Adapter** für S3/Cloudflare R2 statt lokalem Dateisystem.
 - **Tests**: Playwright-E2E für die Kernflüsse (Login inkl. 2FA, Durchgang, Druck, Einladung). Unit-Tests (Vitest) bestehen bereits.
 - **Soft-Delete** auch für Durchgänge (Vereine sind erledigt).
+- **Haushaltsrechnungen explizit verknüpfen** (sobald Migrationen wieder möglich sind): Join-Tabelle `FeeInvoiceMember` (`invoiceId`, `membershipId`) oder ein Feld `coveredMembershipIds` an der Beitragsrechnung. Heute wird die Abdeckung aus `householdId`, `createdAt` und der Bezeichnung «(n Mitglieder)» abgeleitet (`householdCoverage` in `src/modules/billing/fee-run-plan.ts`).
 - **Deploy ohne Ausfall**: in ein separates `distDir` bauen und umschalten, damit ein abgebrochener Build nie ein halbes `.next` hinterlässt.
 - **Caching**: Programme und Scheiben pro Tenant mit `unstable_cache`/Tags, Invalidierung über Actions.

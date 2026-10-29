@@ -5,6 +5,7 @@ import { appUrl } from "@/lib/mail";
 import { INVITE_DAYS, mailInvitation, mailSetPassword } from "@/lib/mail/platform-mails";
 import { isTenantRole } from "@/lib/permissions";
 import { todayZurich } from "@/lib/time";
+import { profileManagedByTenant } from "@/modules/members/ownership";
 
 /**
  * Einladungen in einen Verein und «Passwort festlegen» für importierte Mitglieder.
@@ -124,6 +125,9 @@ export const SET_PASSWORD_DAYS = 14;
 export async function sendSetPasswordMail(userId: string, tenantId?: string | null): Promise<void> {
   const user = await db.user.findUnique({ where: { id: userId }, select: { id: true, email: true, name: true, locale: true, deletedAt: true } });
   if (!user || user.deletedAt) return;
+  // Schutz zusätzlich zu den Aufrufern: Ein Verein verschickt Zugangslinks nur für Konten, die er allein
+  // verwaltet (kein eigenes Passwort, keine Mitgliedschaft in einem weiteren Verein).
+  if (tenantId && !(await profileManagedByTenant(userId, tenantId))) return;
   const token = generateOpaqueToken();
   await db.$transaction([
     db.authToken.updateMany({ where: { userId, kind: "INVITE", usedAt: null }, data: { usedAt: new Date() } }),

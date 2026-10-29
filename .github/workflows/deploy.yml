@@ -98,6 +98,7 @@ jobs:
           JOBS_DISABLED: ${{ vars.JOBS_DISABLED }}
           CHAT_POLL_MS: ${{ vars.CHAT_POLL_MS }}
           DB_POOL: ${{ vars.DB_POOL }}
+          TRUST_CLOUDFLARE: ${{ vars.TRUST_CLOUDFLARE }}
           BACKUP_DIR: ${{ vars.BACKUP_DIR }}
           BACKUP_KEEP: ${{ vars.BACKUP_KEEP }}
           ALLOW_NO_BACKUP: ${{ vars.ALLOW_NO_BACKUP }}
@@ -115,7 +116,7 @@ jobs:
             echo "PORT=$PORT"
             echo "UPLOAD_DIR=\"$UPLOAD_DIR\""
             # Optionale Werte nur schreiben, wenn gesetzt. Keine Zeilenumbrüche/Anführungszeichen zulassen.
-            for v in SMTP_HOST SMTP_PORT SMTP_SECURE SMTP_USER SMTP_PASS MAIL_FROM VAPID_PUBLIC_KEY VAPID_PRIVATE_KEY VAPID_SUBJECT JOBS_DISABLED CHAT_POLL_MS DB_POOL BACKUP_DIR BACKUP_KEEP ALLOW_NO_BACKUP; do
+            for v in SMTP_HOST SMTP_PORT SMTP_SECURE SMTP_USER SMTP_PASS MAIL_FROM VAPID_PUBLIC_KEY VAPID_PRIVATE_KEY VAPID_SUBJECT JOBS_DISABLED CHAT_POLL_MS DB_POOL TRUST_CLOUDFLARE BACKUP_DIR BACKUP_KEEP ALLOW_NO_BACKUP; do
               val="${!v:-}"
               [ -n "$val" ] || continue
               case "$val" in *$'\n'*|*'"'*) echo "$v enthält ungültige Zeichen (Zeilenumbruch oder \")" >&2; exit 1 ;; esac
