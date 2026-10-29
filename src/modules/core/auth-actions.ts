@@ -25,9 +25,10 @@ import {
 import { fail, ok, type ActionResult } from "@/lib/action-result";
 import { safeNextPath } from "@/lib/utils";
 import { todayZurich } from "@/lib/time";
+import { getTenantLocale } from "@/lib/i18n";
 import { setActiveTenantCookie } from "@/lib/tenant";
 import { audit } from "@/lib/audit";
-import { RESET_MINUTES, mailPasswordReset } from "@/lib/mail/platform-mails";
+import { RESET_MINUTES, mailPasswordReset, mailSecurityNotice } from "@/lib/mail/platform-mails";
 import { acceptInvitationForUser, findInvitation, findValidAuthToken } from "@/modules/core/invitations";
 import { verifySecondFactor } from "@/modules/core/two-factor";
 
@@ -73,6 +74,14 @@ export async function registerAction(_prev: ActionResult | null, formData: FormD
     tenantId = t.id;
   }
 
+  // Registrierung aus einer Einladung: bei passender E-Mail tritt die Person direkt bei (unten).
+  const inviteToken = String(formData.get("invite") ?? "");
+  const inv = inviteToken ? await findInvitation(inviteToken) : null;
+  const inviteMatches = !!inv && inv.state === "open" && inv.email === email;
+  // Neue Konten übernehmen die Sprache des Vereins, dem sie beitreten (keine eigene Wahl bei der Registrierung).
+  const joinTenantId = tenantId ?? (inviteMatches ? inv!.tenantId : null);
+  const locale = joinTenantId ? await getTenantLocale(joinTenantId) : undefined;
+
   const userCount = await db.user.count();
   const user = await db.user.create({
     data: {
@@ -80,6 +89,7 @@ export async function registerAction(_prev: ActionResult | null, formData: FormD
       email,
       passwordHash: await hashPassword(password),
       passwordSetAt: new Date(),
+      locale,
       // Allererster Benutzer wird automatisch Super-Admin (Bootstrap ohne Seed).
       isSuperAdmin: userCount === 0,
       memberships: tenantId ? { create: { tenantId, role: "MEMBER", status: "ACTIVE", joinedAt: new Date(`${todayZurich()}T00:00:00Z`) } } : undefined,
@@ -87,11 +97,8 @@ export async function registerAction(_prev: ActionResult | null, formData: FormD
   });
   await createSession(user.id);
 
-  // Registrierung aus einer Einladung: bei passender E-Mail direkt beitreten.
-  const inviteToken = String(formData.get("invite") ?? "");
   if (inviteToken) {
-    const inv = await findInvitation(inviteToken);
-    if (inv && inv.state === "open" && inv.email === email) {
+    if (inv && inviteMatches) {
       const accepted = await acceptInvitationForUser(inv.id, user.id);
       if (accepted) {
         await setActiveTenantCookie(accepted.tenantId);
@@ -127,10 +134,8 @@ export async function loginAction(_prev: ActionResult | null, formData: FormData
     if (user && !user.deletedAt && peekThrottle(acctKey, THROTTLE.loginAccount.limit)) {
       await audit({ actorId: user.id, actorName: user.name, action: "auth.login.locked", entity: "User", entityId: user.id, detail: "Zu viele Fehlversuche, Konto 15 Minuten gesperrt" });
     }
-    // Importierte Konten haben noch keinen Passwort-Hash; ältere Konten (bcrypt-Hash ohne passwordSetAt) nicht betroffen.
-    if (user && !user.deletedAt && !user.passwordSetAt && !user.passwordHash?.startsWith("$2")) {
-      return fail("Für dieses Konto ist noch kein Passwort gesetzt. Bitte Passwort über den Link in der Einladung setzen oder ‹Passwort vergessen› nutzen.");
-    }
+    // Immer dieselbe Meldung (keine Auskunft, ob ein Konto ohne Passwort existiert);
+    // der Hinweis für importierte Konten steht fix auf der Login-Seite.
     return fail("E-Mail oder Passwort stimmt nicht.");
   }
   resetThrottle(acctKey);
@@ -166,7 +171,10 @@ export async function verifyTwoFactorLoginAction(_prev: ActionResult | null, for
     if (peekThrottle(key, THROTTLE.twoFactor.limit)) {
       await audit({ actorId: user.id, actorName: user.name, action: "auth.2fa.locked", entity: "User", entityId: user.id, detail: "Zu viele falsche Codes" });
     }
-    return fail("Der Code stimmt nicht. Bitte den aktuellen Code aus der App eingeben.", { code: "Falscher Code" });
+    // Meldung nach Form der Eingabe: 6 Ziffern = Code aus der App, sonst Wiederherstellungscode.
+    return /^\d{6}$/.test(code.replace(/\s/g, ""))
+      ? fail("Der Code stimmt nicht. Bitte den aktuellen Code aus der App eingeben.", { code: "Falscher Code" })
+      : fail("Dieser Wiederherstellungscode ist ungültig oder wurde bereits verwendet.", { code: "Ungültiger Code" });
   }
   resetThrottle(key);
   if (result === "recovery") {
@@ -248,6 +256,8 @@ async function setPasswordWithToken(kinds: string[], formData: FormData): Promis
     entity: "User",
     entityId: row.userId,
   });
+  // Beim Zurücksetzen (nicht beim ersten Setzen über die Einladung) zur Sicherheit benachrichtigen.
+  if (row.kind === "RESET") await mailSecurityNotice(row.user, "passwordChanged").catch(() => null);
   if (row.user.totpEnabledAt) {
     await setPendingTwoFactor(row.userId, "/");
     redirect("/login/2fa");

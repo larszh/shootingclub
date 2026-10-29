@@ -12,6 +12,7 @@ import { Spinner, SubmitButton, submitKeepingValues } from "@/components/ui/form
 import { Switch } from "@/components/ui/controls";
 import { toast } from "@/lib/ui-feedback";
 import { cn } from "@/lib/utils";
+import { LOCALES, LOCALE_LABELS } from "@/lib/i18n/locales";
 
 /** Zwischenablage mit Fallback (http, fehlende Berechtigung). */
 async function writeClipboard(text: string): Promise<boolean> {
@@ -97,7 +98,7 @@ export function ModuleToggle({ moduleKey, name, description, enabled, planned }:
   );
 }
 
-export function TenantSettingsForm({ tenant }: { tenant: { name: string; kind: string; city: string | null; canton: string | null; description: string | null; website: string | null } }) {
+export function TenantSettingsForm({ tenant }: { tenant: { name: string; kind: string; city: string | null; canton: string | null; description: string | null; website: string | null; defaultLocale: string; replyToEmail: string | null } }) {
   const [state, action, pending] = useActionState(updateTenantAction, null);
   return (
     <Card className="animate-rise p-4">
@@ -119,6 +120,14 @@ export function TenantSettingsForm({ tenant }: { tenant: { name: string; kind: s
         </Field>
         <Field label="Webseite" hint="z.B. www.sv-beispiel.ch" error={state && !state.ok ? state.fieldErrors?.website : undefined}>
           <Input name="website" defaultValue={tenant.website ?? ""} inputMode="url" autoComplete="url" placeholder="www.verein.ch" />
+        </Field>
+        <Field label="Vereinssprache" hint="Sprache für Rechnungen, QR-Einzahlungsscheine, Druckseiten und Mails an Mitglieder ohne eigene Spracheinstellung." error={state && !state.ok ? state.fieldErrors?.defaultLocale : undefined}>
+          <Select name="defaultLocale" defaultValue={LOCALES.includes(tenant.defaultLocale as (typeof LOCALES)[number]) ? tenant.defaultLocale : "de"}>
+            {LOCALES.map((l) => <option key={l} value={l}>{LOCALE_LABELS[l]}</option>)}
+          </Select>
+        </Field>
+        <Field label="Antwortadresse für E-Mails" hint="Antworten auf Mails des Vereins gehen an diese Adresse, z.B. vorstand@sv-beispiel.ch. Leer lassen, wenn keine Antworten erwünscht sind." error={state && !state.ok ? state.fieldErrors?.replyToEmail : undefined}>
+          <Input name="replyToEmail" type="email" defaultValue={tenant.replyToEmail ?? ""} inputMode="email" autoComplete="email" placeholder="vorstand@verein.ch" />
         </Field>
         {state && !state.ok ? <Alert>{state.error}</Alert> : state?.ok && state.message ? <Alert tone="ok">{state.message}</Alert> : null}
         <SubmitButton variant="secondary" pending={pending}>Speichern</SubmitButton>

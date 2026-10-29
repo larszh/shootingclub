@@ -4,12 +4,8 @@ on:
   push:
     branches: [main]
   pull_request:
+  # Manuell: unter «Use workflow from» den Branch wählen. Geprüft und deployt wird genau dessen Commit.
   workflow_dispatch:
-    inputs:
-      branch:
-        description: "Branch, der auf den Server soll"
-        required: false
-        default: ""
 
 concurrency:
   group: deploy-${{ github.ref }}
@@ -49,7 +45,10 @@ jobs:
       name: production
       url: ${{ vars.APP_URL }}
     env:
-      DEPLOY_BRANCH: ${{ inputs.branch || vars.DEPLOY_BRANCH || github.ref_name }}
+      # Deployt wird genau der Commit, den der check-Job geprüft hat (github.sha), auf seinem Branch.
+      # Kein abweichender Branch per Eingabe oder Variable: das wäre ungeprüfter Code.
+      DEPLOY_BRANCH: ${{ github.ref_name }}
+      DEPLOY_SHA: ${{ github.sha }}
     steps:
       - name: SSH einrichten
         env:
@@ -133,7 +132,9 @@ jobs:
         run: |
           set -euo pipefail
           test -n "$APP_DIR" || { echo "Variable APP_DIR fehlt"; exit 1; }
-          ssh deploy "cd '$APP_DIR' && DEPLOY_BRANCH='$DEPLOY_BRANCH' bash scripts/deploy.sh"
+          case "$DEPLOY_SHA" in ''|*[!0-9a-f]*) echo "Ungültiger Commit: $DEPLOY_SHA"; exit 1 ;; esac
+          case "$DEPLOY_BRANCH" in ''|*[!A-Za-z0-9._/-]*) echo "Ungültiger Branch-Name: $DEPLOY_BRANCH"; exit 1 ;; esac
+          ssh deploy "cd '$APP_DIR' && DEPLOY_BRANCH='$DEPLOY_BRANCH' DEPLOY_SHA='$DEPLOY_SHA' bash scripts/deploy.sh"
 
       - name: Aufräumen
         if: always()

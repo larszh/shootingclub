@@ -4,7 +4,7 @@ import { ChevronRight, Download, Landmark, Printer } from "lucide-react";
 import { requireBillingAdmin } from "@/modules/billing/guard";
 import { Badge, Card, PageHeader, SectionTitle } from "@/components/ui";
 import { AdminBillingTabs } from "@/modules/billing/ui/admin-tabs";
-import { currentYear, feeStats, listMembersForBilling, listRuns } from "@/modules/billing/queries";
+import { currentYear, feeRunPreview, feeStats, listRuns } from "@/modules/billing/queries";
 import { getBillingProfile } from "@/modules/billing/profile";
 import { RunForm } from "@/modules/billing/ui/run-form";
 import { YearSelect } from "@/modules/billing/ui/year-select";
@@ -18,9 +18,10 @@ export default async function AdminBillingPage({ searchParams }: { searchParams:
   const sp = await searchParams;
   const rawYear = Number(sp.year);
   const year = Number.isInteger(rawYear) && rawYear >= 2000 && rawYear <= 2100 ? rawYear : currentYear();
-  const [stats, runs, members, profile] = await Promise.all([feeStats(ctx.tenant.id, year), listRuns(ctx.tenant.id), listMembersForBilling(ctx.tenant.id, year), getBillingProfile(ctx.tenant.id, ctx.tenant.name)]);
+  const [stats, runs, preview, profile] = await Promise.all([feeStats(ctx.tenant.id, year), listRuns(ctx.tenant.id), feeRunPreview(ctx.tenant.id, year), getBillingProfile(ctx.tenant.id, ctx.tenant.name)]);
   const run = runs.find((r) => r.year === year);
-  const eligible = members.filter((m) => !m.invoice && (m.effectiveCents ?? 0) > 0).length;
+  // Gleiche Planung wie der Lauf selbst: ohne Ausgetretene und ohne Mitglieder in einer Haushaltsrechnung
+  const eligible = preview.members;
   const last = runs[0];
   const years = [...new Set([currentYear() + 1, currentYear(), currentYear() - 1, ...runs.map((r) => r.year)])].sort((a, b) => b - a);
 
@@ -54,7 +55,7 @@ export default async function AdminBillingPage({ searchParams }: { searchParams:
         </Link>
       ) : null}
       {eligible > 0 || !run ? (
-        <div className="mt-2.5"><RunForm year={year} defaults={{ title: run?.title ?? `Mitgliederbeitrag ${year}`, invoicePrefix: run?.invoicePrefix ?? last?.invoicePrefix ?? "MB-", dueDays: run?.dueDays ?? last?.dueDays ?? 30, note: run?.note ?? last?.note ?? null }} eligible={eligible} alreadyInvoiced={members.filter((m) => m.invoice).length} /></div>
+        <div className="mt-2.5"><RunForm year={year} defaults={{ title: run?.title ?? `Mitgliederbeitrag ${year}`, invoicePrefix: run?.invoicePrefix ?? last?.invoicePrefix ?? "MB-", dueDays: run?.dueDays ?? last?.dueDays ?? 30, note: run?.note ?? last?.note ?? null }} eligible={eligible} invoices={{ combined: preview.invoicesCombined, separate: preview.invoicesSeparate }} alreadyInvoiced={preview.alreadyInvoiced} /></div>
       ) : (
         <p className="mt-2 text-xs text-ink-3">Alle Mitglieder mit Beitrag haben eine Rechnung für {year}. Neue Mitglieder erhalten ihre Rechnung unter «Mitglieder».</p>
       )}

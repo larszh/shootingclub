@@ -21,10 +21,12 @@ type Values = {
   guardianName: string; guardianEmail: string; guardianPhone: string; adminNote: string; workHoursExempt: boolean;
 };
 
-export function MemberForm({ membershipId, values, today, emailEditable, categories, households }: {
+export function MemberForm({ membershipId, values, today, profileEditable, emailEditable, categories, households }: {
   membershipId: string;
   values: Values;
   today: string;
+  /** false: Konto mit eigenem Passwort oder auch in einem anderen Verein – Personendaten pflegt die Person selbst */
+  profileEditable: boolean;
   emailEditable: boolean;
   categories: Array<{ id: string; label: string }>;
   households: Array<{ id: string; name: string }>;
@@ -35,24 +37,27 @@ export function MemberForm({ membershipId, values, today, emailEditable, categor
   const [exempt, setExempt] = useState(values.workHoursExempt);
   const minor = isMinor(birthDate || null, today);
   const fe = state && !state.ok ? state.fieldErrors ?? {} : {};
+  const ro = !profileEditable;
+  const roClass = ro ? "bg-surface-2" : undefined;
 
   return (
     <Card className="animate-rise p-4">
       <form onSubmit={submitKeepingValues(action)} className="space-y-5">
         <fieldset className="space-y-3">
           <legend className="mb-2 text-sm font-semibold">Person</legend>
-          <Field label="Name" error={fe.name}><Input name="name" defaultValue={values.name} required maxLength={191} /></Field>
+          {ro ? <p className="text-xs text-ink-3">Diese Angaben pflegt die Person selbst in ihrem Profil (eigenes Konto oder auch in einem anderen Verein).</p> : null}
+          <Field label="Name" error={fe.name}><Input name="name" defaultValue={values.name} required maxLength={191} readOnly={ro} className={roClass} /></Field>
           <div className="grid gap-3 sm:grid-cols-2">
-            <Field label="E-Mail" error={fe.email} hint={emailEditable ? "Leer lassen, wenn keine E-Mail bekannt ist" : "Ändert die Person selbst in ihrem Profil"}>
+            <Field label="E-Mail" error={fe.email} hint={emailEditable ? "Leer lassen, wenn keine E-Mail bekannt ist" : ro ? undefined : "Ändert die Person selbst in ihrem Profil"}>
               <Input name="email" type="email" defaultValue={values.email} readOnly={!emailEditable} className={emailEditable ? undefined : "bg-surface-2"} autoComplete="off" />
             </Field>
-            <Field label="Telefon" error={fe.phone}><Input name="phone" type="tel" defaultValue={values.phone} inputMode="tel" maxLength={40} /></Field>
+            <Field label="Telefon" error={fe.phone}><Input name="phone" type="tel" defaultValue={values.phone} inputMode="tel" maxLength={40} readOnly={ro} className={roClass} /></Field>
           </div>
-          <Field label="Geburtsdatum" error={fe.birthDate}><Input name="birthDate" type="date" value={birthDate} onChange={(e) => setBirthDate(e.target.value)} max={today} min="1900-01-01" /></Field>
-          <Field label="Strasse und Nr." error={fe.street}><Input name="street" defaultValue={values.street} maxLength={80} /></Field>
+          <Field label="Geburtsdatum" error={fe.birthDate}><Input name="birthDate" type="date" value={birthDate} onChange={(e) => setBirthDate(e.target.value)} max={today} min="1900-01-01" readOnly={ro} className={roClass} /></Field>
+          <Field label="Strasse und Nr." error={fe.street}><Input name="street" defaultValue={values.street} maxLength={80} readOnly={ro} className={roClass} /></Field>
           <div className="grid grid-cols-[110px_1fr] gap-3">
-            <Field label="PLZ" error={fe.zip}><Input name="zip" defaultValue={values.zip} inputMode="numeric" maxLength={12} /></Field>
-            <Field label="Ort" error={fe.city}><Input name="city" defaultValue={values.city} maxLength={80} /></Field>
+            <Field label="PLZ" error={fe.zip}><Input name="zip" defaultValue={values.zip} inputMode="numeric" maxLength={12} readOnly={ro} className={roClass} /></Field>
+            <Field label="Ort" error={fe.city}><Input name="city" defaultValue={values.city} maxLength={80} readOnly={ro} className={roClass} /></Field>
           </div>
         </fieldset>
 
@@ -158,8 +163,11 @@ const ACCESS_TEXT: Record<AccessState, { title: string; text: string }> = {
   noemail: { title: "Ohne E-Mail", text: "Kann sich nicht anmelden, wird aber in Listen und Rechnungen geführt. Für Zugang eine E-Mail eintragen." },
 };
 
-export function AccessCard({ membershipId, access, hasTwoFactor }: { membershipId: string; access: AccessState; hasTwoFactor: boolean }) {
-  const t = ACCESS_TEXT[access];
+export function AccessCard({ membershipId, access, hasTwoFactor, canSendMail }: { membershipId: string; access: AccessState; hasTwoFactor: boolean; canSendMail: boolean }) {
+  // Konto gehört auch zu einem anderen Verein: Zugang holt sich die Person selbst
+  const t = !canSendMail && (access === "none" || access === "invited")
+    ? { title: ACCESS_TEXT[access].title, text: "Das Konto gehört auch zu einem anderen Verein. Die Person setzt ihr Passwort selbst über «Passwort vergessen» auf der Anmeldeseite." }
+    : ACCESS_TEXT[access];
   return (
     <Card className="animate-rise flex flex-wrap items-center gap-3 p-4">
       <KeyRound className="h-5 w-5 shrink-0 text-ink-2" aria-hidden />
@@ -167,7 +175,7 @@ export function AccessCard({ membershipId, access, hasTwoFactor }: { membershipI
         <div className="font-medium">{t.title}{access === "password" && hasTwoFactor ? " · Zwei-Faktor aktiv" : ""}</div>
         <div className="text-xs text-ink-3">{t.text}</div>
       </div>
-      {access === "none" || access === "invited" ? (
+      {canSendMail && (access === "none" || access === "invited") ? (
         <ActionButton variant="secondary" size="sm" className="h-11" action={() => sendAccessMailAction(membershipId)} pendingText="Wird gesendet…">
           <Mail className="h-4 w-4" /> {access === "invited" ? "Erneut senden" : "Zugangsmail senden"}
         </ActionButton>

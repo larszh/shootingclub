@@ -87,7 +87,7 @@ export default async function AdminPage() {
       <BrandingForm tenantName={tenant.name} logoUrl={tenantLogoUrl(tenant)} brandColor={tenant.brandColor} brandColor2={tenant.brandColor2} />
 
       <SectionTitle>Stammdaten</SectionTitle>
-      <TenantSettingsForm tenant={{ name: tenant.name, kind: tenant.kind, city: tenant.city, canton: tenant.canton, description: tenant.description, website: tenant.website }} />
+      <TenantSettingsForm tenant={{ name: tenant.name, kind: tenant.kind, city: tenant.city, canton: tenant.canton, description: tenant.description, website: tenant.website, defaultLocale: tenant.defaultLocale, replyToEmail: tenant.replyToEmail }} />
     </div>
   );
 }

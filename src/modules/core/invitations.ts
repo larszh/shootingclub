@@ -137,7 +137,7 @@ export async function findValidAuthToken(token: string, kinds: string[]) {
   if (!token || token.length > 100) return null;
   const row = await db.authToken.findUnique({
     where: { tokenHash: hashOpaqueToken(token) },
-    include: { user: { select: { id: true, email: true, name: true, deletedAt: true, passwordSetAt: true, totpEnabledAt: true } } },
+    include: { user: { select: { id: true, email: true, name: true, locale: true, deletedAt: true, passwordSetAt: true, totpEnabledAt: true } } },
   });
   if (!row || !kinds.includes(row.kind) || row.usedAt || row.expiresAt < new Date() || row.user.deletedAt) return null;
   return row;

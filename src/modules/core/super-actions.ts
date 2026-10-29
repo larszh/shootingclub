@@ -68,7 +68,13 @@ export async function restoreTenant(tenantId: string): Promise<ActionResult> {
   const t = await db.tenant.findUnique({ where: { id: id.data }, select: { id: true, slug: true, name: true, deletedAt: true } });
   if (!t) return fail("Verein nicht gefunden – vermutlich bereits endgültig gelöscht.");
   if (!t.deletedAt) return ok(undefined, "Der Verein ist aktiv.");
-  await db.tenant.update({ where: { id: t.id }, data: { deletedAt: null, purgeAfter: null } });
+  // Nur innerhalb der Frist: ist purgeAfter erreicht, kann der Löschjob bereits laufen
+  // (gleiche Bedingung wie in purgeTenantNow). Bedingtes Update statt Lesen-dann-Schreiben.
+  const restored = await db.tenant.updateMany({
+    where: { id: t.id, deletedAt: { not: null }, OR: [{ purgeAfter: null }, { purgeAfter: { gt: new Date() } }] },
+    data: { deletedAt: null, purgeAfter: null },
+  });
+  if (restored.count === 0) return fail("Die Frist ist abgelaufen, der Verein wird endgültig gelöscht und kann nicht mehr wiederhergestellt werden.");
   await audit({ tenantId: t.id, actorId: me.id, actorName: me.name, action: "tenant.delete.restore", entity: "Tenant", entityId: t.id, detail: `${t.name} (${t.slug})` });
   revalidatePath("/super/tenants");
   revalidatePath("/", "layout");

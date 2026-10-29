@@ -4,12 +4,13 @@ import { randomBytes } from "node:crypto";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { db } from "@/lib/db";
+import { getTenantLocale } from "@/lib/i18n";
 import { throttle } from "@/lib/auth";
 import { requirePermission } from "@/lib/tenant";
 import { fail, ok, type ActionResult } from "@/lib/action-result";
 import { audit } from "@/lib/audit";
 import { todayZurich } from "@/lib/time";
-import { sendSetPasswordMail } from "@/modules/core/invitations";
+import { createInvitation, sendSetPasswordMail } from "@/modules/core/invitations";
 import {
   IMPORT_FIELDS,
   IMPORT_MAX_BYTES,
@@ -25,12 +26,14 @@ import {
   suggestMapping,
   type CsvEncoding,
   type Delimiter,
+  type DuplicateReason,
   type ImportDecision,
   type ImportField,
   type ImportPresetId,
   type ImportRecord,
   type MappedRow,
 } from "./import";
+import { profilesManagedByTenant } from "./ownership";
 import { isXlsx, readXlsxBytes } from "./xlsx";
 import { dateOnly, isPlaceholderEmail, placeholderEmail, toDbDate } from "./types";
 
@@ -84,10 +87,27 @@ export async function suggestMappingAction(headers: string[], preset: string): P
 
 // --- 2. Prüfen ---------------------------------------------------------------------
 
+/*
+ * Die Tabelle kommt als EIN JSON-String (rowsJson), nicht als string[][]: React begrenzt verschachtelte
+ * Arrays in Server-Action-Argumenten auf rund 1 Mio. Einträge/Zeichen. Grössere Dateien (ab ca. 1 MB)
+ * scheiterten sonst trotz erlaubter 2 MB erst bei «Weiter zur Vorschau».
+ */
 const tableSchema = z.object({
-  rows: z.array(z.array(z.string().max(5000)).max(200)).min(1, "Keine Zeilen").max(IMPORT_MAX_ROWS),
+  rows: z.array(z.array(z.string().max(5000)).max(200)).min(1, "Keine Zeilen").max(IMPORT_MAX_ROWS, `Höchstens ${IMPORT_MAX_ROWS} Zeilen pro Import`),
   mapping: z.array(z.enum(IMPORT_FIELDS)).max(200),
 });
+
+/** Grenze für den JSON-String (2 MB Datei → je nach Sonderzeichen etwas mehr als JSON). */
+const MAX_ROWS_JSON = IMPORT_MAX_BYTES * 3;
+
+function parseRowsJson(rowsJson: unknown): unknown {
+  if (typeof rowsJson !== "string" || rowsJson.length > MAX_ROWS_JSON) return null;
+  try {
+    return JSON.parse(rowsJson);
+  } catch {
+    return null;
+  }
+}
 
 export type PreviewRow = {
   line: number;
@@ -97,9 +117,14 @@ export type PreviewRow = {
   errors: string[];
   warnings: string[];
   /** Bestehendes Mitglied im Verein */
-  duplicate: { name: string; reason: "email" | "nameBirth" } | null;
-  /** Konto existiert (anderer Verein): wird verknüpft, Personendaten bleiben unverändert */
-  linksAccount: boolean;
+  duplicate: { name: string; reason: DuplicateReason } | null;
+  /**
+   * Zur E-Mail gibt es schon ein Konto (anderer Verein): Es wird nicht verknüpft, sondern erhält eine
+   * Einladung. Mitglied wird die Person erst, wenn sie die Einladung selbst annimmt.
+   */
+  existingAccount: boolean;
+  /** Wird bei «Neu erfassen» angeschrieben (Zugangsmail bzw. Einladung) – ausgetretene nicht. */
+  willInvite: boolean;
   decision: ImportDecision;
 };
 
@@ -113,11 +138,11 @@ type Analysis = {
 async function analyze(tenantId: string, rows: string[][], mapping: ImportField[]): Promise<Analysis> {
   const mapped = mapRows(rows, mapping, todayZurich());
   const [members, cats] = await Promise.all([
-    db.membership.findMany({ where: { tenantId }, select: { id: true, userId: true, user: { select: { name: true, email: true, birthDate: true } } } }),
+    db.membership.findMany({ where: { tenantId }, select: { id: true, userId: true, memberNumber: true, user: { select: { name: true, email: true, birthDate: true } } } }),
     db.feeCategory.findMany({ where: { tenantId }, select: { id: true, name: true } }),
   ]);
-  const { byEmail, byNameBirth } = indexExisting(members.map((m) => ({ membershipId: m.id, userId: m.userId, name: m.user.name, email: m.user.email, birthDate: dateOnly(m.user.birthDate) })));
-  const dups = mapped.map((r) => findDuplicate(r.record, byEmail, byNameBirth));
+  const index = indexExisting(members.map((m) => ({ membershipId: m.id, userId: m.userId, name: m.user.name, email: m.user.email, birthDate: dateOnly(m.user.birthDate), memberNumber: m.memberNumber })));
+  const dups = mapped.map((r) => findDuplicate(r.record, index));
 
   // Konten aus anderen Vereinen mit derselben E-Mail (E-Mail ist plattformweit eindeutig)
   const emails = [...new Set(mapped.map((r, i) => (!dups[i] && r.record.email ? r.record.email : null)).filter((e): e is string => !!e))];
@@ -134,13 +159,14 @@ async function analyze(tenantId: string, rows: string[][], mapping: ImportField[
     }
     const acc = !dups[i] && r.record.email ? accounts.get(r.record.email) : undefined;
     if (acc?.deletedAt) r.errors.push("Zu dieser E-Mail gibt es ein gelöschtes Konto – ohne E-Mail erfassen oder andere Adresse verwenden");
+    else if (acc && r.record.status === "LEFT") r.errors.push("Ausgetreten und hat ein Konto aus einem anderen Verein – wird nicht übernommen");
   });
   return { mapped, dups, accounts, categories };
 }
 
-export async function analyzeImportAction(input: { rows: string[][]; mapping: string[] }): Promise<ActionResult<{ rows: PreviewRow[] }>> {
+export async function analyzeImportAction(input: { rowsJson: string; mapping: string[] }): Promise<ActionResult<{ rows: PreviewRow[] }>> {
   const ctx = await requirePermission("members.manage");
-  const parsed = tableSchema.safeParse(input);
+  const parsed = tableSchema.safeParse({ rows: parseRowsJson(input?.rowsJson), mapping: input?.mapping });
   if (!parsed.success) return fail(parsed.error.issues[0]?.message ?? "Ungültige Daten");
   const { rows, mapping } = parsed.data;
   if (!mapping.some((f) => f === "name" || f === "firstName" || f === "lastName")) return fail("Bitte mindestens eine Spalte als Name, Vorname oder Nachname zuordnen.");
@@ -149,6 +175,7 @@ export async function analyzeImportAction(input: { rows: string[][]; mapping: st
     rows: a.mapped.map((r, i) => {
       const dup = a.dups[i] ?? null;
       const info = [r.record.memberNumber ? `Nr. ${r.record.memberNumber}` : null, r.record.city, r.record.birthDate ? r.record.birthDate.split("-").reverse().join(".") : null].filter(Boolean).join(" · ");
+      const existingAccount = !dup && !!r.record.email && a.accounts.has(r.record.email);
       return {
         line: r.line,
         name: r.record.name || "(ohne Name)",
@@ -157,7 +184,8 @@ export async function analyzeImportAction(input: { rows: string[][]; mapping: st
         errors: r.errors,
         warnings: r.warnings,
         duplicate: dup ? { name: dup.name, reason: dup.reason } : null,
-        linksAccount: !dup && !!r.record.email && a.accounts.has(r.record.email),
+        existingAccount,
+        willInvite: !dup && !!r.record.email && (r.record.status ?? "ACTIVE") !== "LEFT",
         decision: defaultDecision(r, dup),
       };
     }),
@@ -172,7 +200,11 @@ const commitSchema = tableSchema.extend({
   fileName: z.string().max(200).optional(),
 });
 
-export type ImportSummary = { created: number; linked: number; updated: number; skipped: number; failed: number; invited: number; failedLines: number[] };
+/**
+ * accountInvites: Zeilen mit bestehendem Konto (anderer Verein) – sie erhalten eine Einladung statt
+ * einer direkten Verknüpfung. invited: verschickte Mails (Zugangsmails und Einladungen).
+ */
+export type ImportSummary = { created: number; accountInvites: number; updated: number; skipped: number; failed: number; invited: number; failedLines: number[] };
 
 function newUserId() {
   // cuid-ähnlich: Buchstabe + Zeitanteil + Zufall (für Platzhalter-E-Mail und ID identisch)
@@ -200,9 +232,9 @@ function userFields(r: ImportRecord) {
   return defined({ phone: r.phone, street: r.street, zip: r.zip, city: r.city, birthDate: toDbDate(r.birthDate) });
 }
 
-export async function commitImportAction(input: { rows: string[][]; mapping: string[]; decisions: string[]; sendInvites: boolean; fileName?: string }): Promise<ActionResult<ImportSummary>> {
+export async function commitImportAction(input: { rowsJson: string; mapping: string[]; decisions: string[]; sendInvites: boolean; fileName?: string }): Promise<ActionResult<ImportSummary>> {
   const ctx = await requirePermission("members.manage");
-  const parsed = commitSchema.safeParse(input);
+  const parsed = commitSchema.safeParse({ ...input, rows: parseRowsJson(input?.rowsJson) });
   if (!parsed.success) return fail(parsed.error.issues[0]?.message ?? "Ungültige Daten");
   const { rows, mapping, decisions, sendInvites } = parsed.data;
   if (decisions.length !== rows.length) return fail("Die Auswahl passt nicht zu den Zeilen. Bitte die Vorschau neu laden.");
@@ -213,14 +245,19 @@ export async function commitImportAction(input: { rows: string[][]; mapping: str
   const a = await analyze(ctx.tenant.id, rows, mapping);
   const tenantId = ctx.tenant.id;
   const today = toDbDate(todayZurich());
-  const summary: ImportSummary = { created: 0, linked: 0, updated: 0, skipped: 0, failed: 0, invited: 0, failedLines: [] };
+  const summary: ImportSummary = { created: 0, accountInvites: 0, updated: 0, skipped: 0, failed: 0, invited: 0, failedLines: [] };
   const toInvite: string[] = [];
+  const toInviteAccounts = new Map<string, string>(); // E-Mail → Name aus der Datei
   const createdEmails = new Set<string>();
+  // Personendaten bestehender Mitglieder nur bei Konten überschreiben, die dieser Verein allein verwaltet.
+  const ownProfiles = await profilesManagedByTenant(a.dups.filter((d) => !!d).map((d) => d!.userId), tenantId);
+  // Neue Konten erhalten die Sprache des Vereins (Mails «Passwort festlegen», Oberfläche).
+  const locale = await getTenantLocale(tenantId);
 
   const work = a.mapped.map((row, i) => ({ row, dup: a.dups[i] ?? null, decision: decisions[i]! }));
   for (let start = 0; start < work.length; start += BATCH) {
     const batch = work.slice(start, start + BATCH);
-    const batchStats = { created: 0, linked: 0, updated: 0, skipped: 0 };
+    const batchStats = { created: 0, updated: 0, skipped: 0 };
     const batchInvites: string[] = [];
     try {
       await db.$transaction(async (tx) => {
@@ -233,12 +270,14 @@ export async function commitImportAction(input: { rows: string[][]; mapping: str
           const categoryId = r.category ? a.categories.get(normalizeHeader(r.category)) ?? null : null;
 
           if (dup && decision === "update") {
-            await tx.user.update({ where: { id: dup.userId }, data: userFields(r) });
-            // Platzhalter-Adresse durch echte E-Mail ersetzen (nur Konten ohne Passwort)
-            if (r.email) {
-              const u = await tx.user.findUnique({ where: { id: dup.userId }, select: { email: true, passwordSetAt: true } });
-              if (u && isPlaceholderEmail(u.email) && !u.passwordSetAt && !(await tx.user.findUnique({ where: { email: r.email }, select: { id: true } }))) {
-                await tx.user.update({ where: { id: dup.userId }, data: { email: r.email } });
+            if (ownProfiles.has(dup.userId)) {
+              await tx.user.update({ where: { id: dup.userId }, data: userFields(r) });
+              // Platzhalter-Adresse durch echte E-Mail ersetzen (nur allein verwaltete Konten ohne Passwort)
+              if (r.email) {
+                const u = await tx.user.findUnique({ where: { id: dup.userId }, select: { email: true, passwordSetAt: true } });
+                if (u && isPlaceholderEmail(u.email) && !u.passwordSetAt && !(await tx.user.findUnique({ where: { email: r.email }, select: { id: true } }))) {
+                  await tx.user.update({ where: { id: dup.userId }, data: { email: r.email } });
+                }
               }
             }
             await tx.membership.update({ where: { id: dup.membershipId }, data: memberFields(r, categoryId) });
@@ -247,24 +286,22 @@ export async function commitImportAction(input: { rows: string[][]; mapping: str
           }
 
           // Neu (oder trotz Dublette bewusst neu erfassen: nur ohne gleiche E-Mail möglich)
-          if (r.email && createdEmails.has(r.email)) {
+          if (r.email && (createdEmails.has(r.email) || toInviteAccounts.has(r.email))) {
             batchStats.skipped++;
             continue;
           }
           const existingUser = r.email ? await tx.user.findUnique({ where: { email: r.email }, select: { id: true, deletedAt: true } }) : null;
           if (existingUser) {
-            if (existingUser.deletedAt) {
-              batchStats.skipped++;
-              continue;
-            }
-            const already = await tx.membership.findUnique({ where: { userId_tenantId: { userId: existingUser.id, tenantId } }, select: { id: true } });
+            const already = existingUser.deletedAt ? null : await tx.membership.findUnique({ where: { userId_tenantId: { userId: existingUser.id, tenantId } }, select: { id: true } });
             if (already) {
               await tx.membership.update({ where: { id: already.id }, data: memberFields(r, categoryId) });
               batchStats.updated++;
+            } else if (existingUser.deletedAt || (r.status ?? "ACTIVE") === "LEFT") {
+              batchStats.skipped++;
             } else {
-              // Konto aus einem anderen Verein: nur Mitgliedschaft anlegen, Personendaten bleiben unverändert.
-              await tx.membership.create({ data: { userId: existingUser.id, tenantId, role: "MEMBER", status: r.status ?? "ACTIVE", joinedAt: today, ...memberFields(r, categoryId) } });
-              batchStats.linked++;
+              // Konto aus einem anderen Verein: nie direkt verknüpfen. Die Person erhält eine Einladung
+              // und tritt erst bei, wenn sie diese selbst annimmt (nach der Transaktion).
+              toInviteAccounts.set(r.email!, r.name);
             }
             continue;
           }
@@ -276,19 +313,21 @@ export async function commitImportAction(input: { rows: string[][]; mapping: str
               name: r.name,
               passwordHash: "", // kein Login möglich, bis ein Passwort gesetzt ist
               passwordSetAt: null,
+              locale,
               ...userFields(r),
             },
           });
-          await tx.membership.create({ data: { userId: id, tenantId, role: "MEMBER", status: r.status ?? "ACTIVE", ...memberFields(r, categoryId), ...(r.joinedAt ? {} : { joinedAt: today }) } });
+          // Eintritt unbekannt: bei Aktiven das Importdatum, bei Ausgetretenen leer lassen.
+          const left = (r.status ?? "ACTIVE") === "LEFT";
+          await tx.membership.create({ data: { userId: id, tenantId, role: "MEMBER", status: r.status ?? "ACTIVE", ...memberFields(r, categoryId), ...(r.joinedAt || left ? {} : { joinedAt: today }) } });
           if (r.email) {
             createdEmails.add(r.email);
-            if ((r.status ?? "ACTIVE") !== "LEFT") batchInvites.push(id);
+            if (!left) batchInvites.push(id);
           }
           batchStats.created++;
         }
       }, { maxWait: 15_000, timeout: 120_000 });
       summary.created += batchStats.created;
-      summary.linked += batchStats.linked;
       summary.updated += batchStats.updated;
       summary.skipped += batchStats.skipped;
       toInvite.push(...batchInvites);
@@ -296,6 +335,8 @@ export async function commitImportAction(input: { rows: string[][]; mapping: str
       console.error("Mitglieder-Import: Block fehlgeschlagen", (e as Error).message);
       summary.failed += batch.length;
       summary.failedLines.push(...batch.map((b) => b.row.line));
+      // Einladungen aus dem fehlgeschlagenen Block nicht verschicken
+      for (const b of batch) if (b.row.record.email) toInviteAccounts.delete(b.row.record.email);
     }
   }
 
@@ -309,10 +350,22 @@ export async function commitImportAction(input: { rows: string[][]; mapping: str
       }
     }
   }
+  // Bestehende Konten: Einladung (immer angelegt, Mail nur mit «Einladungsmail senden»; sonst unter
+  // «Einladen» erneut senden oder den Link weitergeben).
+  for (const [email, name] of toInviteAccounts) {
+    try {
+      await createInvitation({ tenantId, email, name, role: "MEMBER", invitedById: ctx.user.id, sendMail: sendInvites });
+      summary.accountInvites++;
+      if (sendInvites) summary.invited++;
+    } catch (e) {
+      summary.failed++;
+      console.error("Einladung nach Import fehlgeschlagen:", (e as Error).message);
+    }
+  }
 
   await audit({
     tenantId, actorId: ctx.user.id, actorName: ctx.user.name, action: "members.import", entity: "Membership",
-    detail: `${parsed.data.fileName ? `${parsed.data.fileName}: ` : ""}${summary.created} neu, ${summary.linked} verknüpft, ${summary.updated} aktualisiert, ${summary.skipped} übersprungen, ${summary.failed} fehlgeschlagen, ${summary.invited} Einladungen`,
+    detail: `${parsed.data.fileName ? `${parsed.data.fileName}: ` : ""}${summary.created} neu, ${summary.accountInvites} bestehende Konten eingeladen, ${summary.updated} aktualisiert, ${summary.skipped} übersprungen, ${summary.failed} fehlgeschlagen, ${summary.invited} Mails`,
   });
   revalidatePath("/admin/members", "layout");
   revalidatePath("/members");

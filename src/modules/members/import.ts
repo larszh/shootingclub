@@ -369,6 +369,8 @@ export function mapRows(rows: string[][], mapping: ImportField[], today: string)
   const col = (field: ImportField) => mapping.indexOf(field);
   const idx = Object.fromEntries(IMPORT_FIELDS.map((f) => [f, col(f)])) as Record<ImportField, number>;
   const seenEmails = new Map<string, number>();
+  const seenNumbers = new Map<string, number>();
+  const seenNamesOnly = new Map<string, number>();
 
   return rows.map((r, i) => {
     const line = i + 2;
@@ -439,6 +441,20 @@ export function mapRows(rows: string[][], mapping: ImportField[], today: string)
     }
     if (leftAt && leftAt <= today && !status) status = "LEFT";
 
+    // Gleiche Person mehrfach in der Datei: gleiche Mitgliedernummer (Fehler) oder gleicher Name
+    // ohne E-Mail und Geburtsdatum (Hinweis)
+    const memberNumber = get("memberNumber") || null;
+    if (memberNumber) {
+      const prev = seenNumbers.get(numberKey(memberNumber));
+      if (prev) errors.push(`Mitgliedernummer doppelt in der Datei (auch Zeile ${prev})`);
+      else seenNumbers.set(numberKey(memberNumber), line);
+    }
+    if (name && !email && !birthDate) {
+      const prev = seenNamesOnly.get(nameKey(name));
+      if (prev) warnings.push(`Gleicher Name wie Zeile ${prev} (ohne E-Mail und Geburtsdatum) – bitte prüfen`);
+      else seenNamesOnly.set(nameKey(name), line);
+    }
+
     const record: ImportRecord = {
       name,
       email,
@@ -449,7 +465,7 @@ export function mapRows(rows: string[][], mapping: ImportField[], today: string)
       birthDate,
       joinedAt,
       leftAt,
-      memberNumber: get("memberNumber") || null,
+      memberNumber,
       licenseNumber: get("licenseNumber") || null,
       status,
       category: get("category") || null,
@@ -467,6 +483,11 @@ export function mapRows(rows: string[][], mapping: ImportField[], today: string)
 }
 
 /** Für die Dublettensuche: Name ohne Akzente, Gross/Klein und Mehrfach-Leerzeichen, Wortreihenfolge egal. */
+/** Für den Abgleich der Mitgliedernummer: ohne Leerzeichen am Rand, Gross/Klein egal. */
+function numberKey(n: string) {
+  return n.trim().toLowerCase();
+}
+
 export function nameKey(name: string) {
   return normalizeHeaderWords(name).sort().join(" ");
 }
@@ -476,19 +497,38 @@ function normalizeHeaderWords(s: string) {
 
 export type ImportDecision = "create" | "update" | "skip";
 
-export type ExistingMember = { membershipId: string; userId: string; name: string; email: string; birthDate: string | null };
+export type ExistingMember = { membershipId: string; userId: string; name: string; email: string; birthDate: string | null; memberNumber?: string | null };
 
-export type DuplicateMatch = { membershipId: string; userId: string; name: string; reason: "email" | "nameBirth" };
+/** email = gleiche E-Mail, memberNumber = gleiche Mitgliedernummer, nameBirth = Name + Geburtsdatum, name = nur gleicher Name (unsicher) */
+export type DuplicateReason = "email" | "memberNumber" | "nameBirth" | "name";
 
-/** Dublette im Verein: gleiche E-Mail oder gleicher Name + Geburtsdatum. */
-export function findDuplicate(record: ImportRecord, byEmail: Map<string, ExistingMember>, byNameBirth: Map<string, ExistingMember>): DuplicateMatch | null {
+export type DuplicateMatch = { membershipId: string; userId: string; name: string; reason: DuplicateReason };
+
+export type ExistingIndex = ReturnType<typeof indexExisting>;
+
+/**
+ * Dublette im Verein: gleiche E-Mail, gleiche Mitgliedernummer oder gleicher Name + Geburtsdatum.
+ * Zeilen ohne E-Mail und ohne Geburtsdatum werden zusätzlich (unsicher) über den Namen erkannt,
+ * damit ein erneuter Import derselben Datei keine Doppelten anlegt.
+ */
+export function findDuplicate(record: ImportRecord, index: ExistingIndex): DuplicateMatch | null {
+  const hit = (m: ExistingMember, reason: DuplicateReason): DuplicateMatch => ({ membershipId: m.membershipId, userId: m.userId, name: m.name, reason });
   if (record.email) {
-    const m = byEmail.get(record.email);
-    if (m) return { membershipId: m.membershipId, userId: m.userId, name: m.name, reason: "email" };
+    const m = index.byEmail.get(record.email);
+    if (m) return hit(m, "email");
+  }
+  if (record.memberNumber) {
+    const m = index.byMemberNumber.get(numberKey(record.memberNumber));
+    if (m) return hit(m, "memberNumber");
   }
   if (record.birthDate && record.name) {
-    const m = byNameBirth.get(`${nameKey(record.name)}|${record.birthDate}`);
-    if (m) return { membershipId: m.membershipId, userId: m.userId, name: m.name, reason: "nameBirth" };
+    const m = index.byNameBirth.get(`${nameKey(record.name)}|${record.birthDate}`);
+    if (m) return hit(m, "nameBirth");
+  }
+  if (!record.email && !record.birthDate && record.name) {
+    // Andere Mitgliedernummer = andere Person
+    const m = index.byName.get(nameKey(record.name))?.find((x) => !(record.memberNumber && x.memberNumber && numberKey(x.memberNumber) !== numberKey(record.memberNumber)));
+    if (m) return hit(m, "name");
   }
   return null;
 }
@@ -496,14 +536,21 @@ export function findDuplicate(record: ImportRecord, byEmail: Map<string, Existin
 export function indexExisting(members: ExistingMember[]) {
   const byEmail = new Map<string, ExistingMember>();
   const byNameBirth = new Map<string, ExistingMember>();
+  const byMemberNumber = new Map<string, ExistingMember>();
+  const byName = new Map<string, ExistingMember[]>();
   for (const m of members) {
     byEmail.set(m.email.toLowerCase(), m);
     if (m.birthDate) byNameBirth.set(`${nameKey(m.name)}|${m.birthDate}`, m);
+    if (m.memberNumber?.trim() && !byMemberNumber.has(numberKey(m.memberNumber))) byMemberNumber.set(numberKey(m.memberNumber), m);
+    const k = nameKey(m.name);
+    if (k) byName.set(k, [...(byName.get(k) ?? []), m]);
   }
-  return { byEmail, byNameBirth };
+  return { byEmail, byNameBirth, byMemberNumber, byName };
 }
 
 export function defaultDecision(row: MappedRow, dup: DuplicateMatch | null): ImportDecision {
   if (row.errors.length) return "skip";
-  return dup ? "update" : "create";
+  if (!dup) return "create";
+  // Nur der Name stimmt überein: im Zweifel nichts verändern
+  return dup.reason === "name" ? "skip" : "update";
 }

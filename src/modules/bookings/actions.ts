@@ -47,21 +47,21 @@ async function notifyBooking(bookingId: string, notice: BookingNotice, actor: { 
       tenantId: b.tenantId,
       userIds: admins,
       topic: "bookings",
-      title: "Neue Buchungsanfrage",
-      body: `${name} möchte ${resource} am ${date} buchen.`,
+      title: "Neue Reservationsanfrage",
+      body: `${name} möchte ${resource} am ${date} reservieren.`,
       url: "/admin/bookings",
       tag: `booking:${b.id}`,
-      i18n: { title: "notify.booking.pending.title", body: "notify.booking.pending.body", vars: { name, resource, date } },
+      i18n: { title: "notify.booking.pending.title", body: "notify.booking.pending.body", vars: { name, resource, date }, localeVars: (locale) => ({ date: formatDateTime(b.startsAt, locale) }) },
       dedupeKey: `booking-pending:${b.id}`,
     });
     return;
   }
   if (!b.userId || b.userId === actor.id) return;
   const de: Record<Exclude<BookingNotice, "pending">, [string, string]> = {
-    confirmed: ["Buchung bestätigt", `Deine Buchung «${resource}» am ${date} ist bestätigt.`],
-    rejected: ["Buchung abgelehnt", `Deine Buchung «${resource}» am ${date} wurde leider abgelehnt.`],
-    cancelled: ["Buchung storniert", `${actor.name} hat die Buchung «${resource}» am ${date} storniert.`],
-    created: ["Neue Buchung für dich", `Für dich wurde «${resource}» am ${date} gebucht.`],
+    confirmed: ["Reservation bestätigt", `Deine Reservation «${resource}» am ${date} ist bestätigt.`],
+    rejected: ["Reservation abgelehnt", `Deine Reservation «${resource}» am ${date} wurde leider abgelehnt.`],
+    cancelled: ["Reservation storniert", `${actor.name} hat die Reservation «${resource}» am ${date} storniert.`],
+    created: ["Neue Reservation für dich", `Für dich wurde «${resource}» am ${date} reserviert.`],
   };
   await notify({
     tenantId: b.tenantId,
@@ -71,7 +71,7 @@ async function notifyBooking(bookingId: string, notice: BookingNotice, actor: { 
     body: de[notice][1],
     url: `/bookings/${b.id}`,
     tag: `booking:${b.id}`,
-    i18n: { title: `notify.booking.${notice}.title`, body: `notify.booking.${notice}.body`, vars: { name: actor.name, resource, date } },
+    i18n: { title: `notify.booking.${notice}.title`, body: `notify.booking.${notice}.body`, vars: { name: actor.name, resource, date }, localeVars: (locale) => ({ date: formatDateTime(b.startsAt, locale) }) },
     dedupeKey: `booking-${notice}:${b.id}`,
   });
 }
@@ -543,8 +543,8 @@ export async function adminCreateBookingAction(_prev: ActionResult | null, formD
   if (!parsed.success) return fail("Bitte Mitglied, Ressource, Datum, Zeit, Dauer und Anzahl Personen wählen.");
   const { userId, resourceId, date, time, durationMinutes, persons, payment, note } = parsed.data;
 
-  const membership = await db.membership.findUnique({ where: { userId_tenantId: { userId, tenantId: ctx.tenant.id } }, select: { id: true } });
-  if (!membership) return fail("Diese Person ist nicht Mitglied des Vereins.");
+  const membership = await db.membership.findFirst({ where: { userId, tenantId: ctx.tenant.id, status: { not: "LEFT" }, user: { deletedAt: null } }, select: { id: true } });
+  if (!membership) return fail("Mitglied nicht gefunden oder ausgetreten.");
   const [settings, resource] = await Promise.all([getBookingSettings(ctx.tenant.id), getResource(ctx.tenant.id, resourceId)]);
   if (!resource) return fail("Ressource nicht gefunden.");
   const option = (resource.durationOptions ?? settings.durationOptions).find((o) => o.minutes === durationMinutes);

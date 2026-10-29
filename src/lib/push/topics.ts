@@ -24,7 +24,7 @@ export const TOPIC_INFO: Record<NotifyTopic, { label: string; hint: string }> = 
   chat: { label: "Chat-Nachrichten", hint: "Neue Nachrichten, wenn du die App nicht offen hast." },
   announcements: { label: "Mitteilungen", hint: "Neue Mitteilungen des Vorstands." },
   events: { label: "Anlässe", hint: "Absagen und Änderungen bei Anlässen, für die du angemeldet bist." },
-  bookings: { label: "Buchungen", hint: "Bestätigungen, Absagen und neue Anfragen." },
+  bookings: { label: "Reservationen", hint: "Bestätigungen, Absagen und neue Anfragen." },
   invoices: { label: "Rechnungen", hint: "Neue Rechnungen, z.B. den Jahresbeitrag." },
   shifts: { label: "Helfereinsätze", hint: "Einteilungen und Änderungen bei Helfereinsätzen." },
   reminders: { label: "Erinnerungen", hint: "Zahlungserinnerungen und Termine." },

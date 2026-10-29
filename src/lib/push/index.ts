@@ -26,6 +26,8 @@ export type PushPayload = {
   url?: string;
   /** Gruppierung: gleiche tag ersetzt die vorherige Benachrichtigung (z.B. chat:<id>). */
   tag?: string;
+  /** BCP-47-Sprache des Textes (z.B. fr-CH), damit Screenreader richtig aussprechen. Standard im Service Worker: de-CH. */
+  lang?: string;
 };
 
 export type PushOptions = {
@@ -114,6 +116,7 @@ function buildPayload(p: PushPayload): string {
     body: truncateText(p.body || "", 300),
     url: safeAppPath(p.url),
     tag: p.tag ? p.tag.slice(0, 100) : undefined,
+    lang: p.lang && /^[a-z]{2}(-[A-Z]{2})?$/.test(p.lang) ? p.lang : undefined,
   });
 }
 

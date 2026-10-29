@@ -9,3 +9,10 @@ out
 /storage/uploads/*
 !/storage/uploads/.gitkeep
 tsconfig.tsbuildinfo
+# Vorherige/fehlgeschlagene Builds von scripts/deploy.sh auf dem Server
+/.next.prev
+/.next.failed
+/node_modules.prev
+/node_modules.failed
+/src/generated.prev
+/src/generated.failed

@@ -194,6 +194,11 @@ async function loadMatchForActor(actor: ScoreActor, ref: { matchId?: string; mat
  * Berechnet Total und Nuller der Teilnehmer eines Durchgangs aus den gespeicherten Serien neu
  * (eine Abfrage für alle Teilnehmer, geschrieben wird nur bei Änderungen). Mit participantId
  * nur für diesen Teilnehmer. Wird nach jedem Speichern einer Serie und beim Abschliessen aufgerufen.
+ *
+ * Geschrieben wird nur unter Zeilensperre (SELECT … FOR UPDATE auf den Teilnehmer) mit frisch
+ * gelesenen Serien: zwei gleichzeitige Speicherungen verschiedener Serien können sonst ein
+ * veraltetes Total ablegen (Lost Update). Die Sperre serialisiert die Neuberechnungen; die
+ * zuletzt laufende liest alle zuvor gespeicherten Serien.
  */
 export async function recomputeMatchTotals(matchId: string, participantId?: string): Promise<number> {
   const parts = await db.matchParticipant.findMany({
@@ -202,10 +207,21 @@ export async function recomputeMatchTotals(matchId: string, participantId?: stri
   });
   let updated = 0;
   for (const p of parts) {
-    const next = participantTotals(p.results);
-    if (!totalsChanged(p, next)) continue;
-    await db.matchParticipant.update({ where: { id: p.id }, data: next });
-    updated += 1;
+    // Unveränderte Teilnehmer ohne Sperre überspringen; eine parallele Speicherung berechnet selbst neu.
+    if (!totalsChanged(p, participantTotals(p.results))) continue;
+    const wrote = await db.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT id FROM \`MatchParticipant\` WHERE id = ${p.id} FOR UPDATE`;
+      const fresh = await tx.matchParticipant.findUnique({
+        where: { id: p.id },
+        select: { total: true, zeros: true, results: { select: { shotsJson: true, total: true } } },
+      });
+      if (!fresh) return false;
+      const next = participantTotals(fresh.results);
+      if (!totalsChanged(fresh, next)) return false;
+      await tx.matchParticipant.update({ where: { id: p.id }, data: next });
+      return true;
+    });
+    if (wrote) updated += 1;
   }
   return updated;
 }

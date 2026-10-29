@@ -73,6 +73,8 @@ export async function changePasswordSecureAction(_prev: ActionResult | null, for
     return fail("Das aktuelle Passwort stimmt nicht.", { current: "Stimmt nicht" });
   }
   await db.user.update({ where: { id: user.id }, data: { passwordHash: await hashPassword(parsed.data.next), passwordSetAt: new Date() } });
+  // Offene Links (Passwort vergessen / Einladung) entwerten, sonst überschreiben sie das neue Passwort.
+  await db.authToken.updateMany({ where: { userId: user.id, kind: { in: ["RESET", "INVITE"] }, usedAt: null }, data: { usedAt: new Date() } });
   const loggedOut = await destroyOtherSessions(user.id);
   resetThrottle(limitKey(user.id));
   await audit({ actorId: user.id, actorName: user.name, action: "auth.password.change", entity: "User", entityId: user.id });
@@ -111,7 +113,8 @@ export async function confirmTwoFactorAction(ticket: string, code: string): Prom
   const codes = await enableTwoFactor(user.id, secret);
   await audit({ actorId: user.id, actorName: user.name, action: "auth.2fa.enable", entity: "User", entityId: user.id });
   await mailSecurityNotice(user, "twofaOn").catch(() => null);
-  revalidatePath("/me/security");
+  // Kein revalidatePath: Die Seite würde sonst sofort auf «aktiv» umschalten, bevor die
+  // Wiederherstellungscodes angezeigt wurden. Der Client lädt nach «Gesichert, fertig» neu.
   return ok({ codes });
 }
 

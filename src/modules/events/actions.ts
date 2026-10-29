@@ -142,7 +142,12 @@ async function notifyEventCancellation(tenantId: string, eventId: string, cancel
     body: cancelled ? `Der Anlass vom ${date} findet nicht statt.` : `Der Anlass vom ${date} findet wie geplant statt.`,
     url: `/events/${ev.id}`,
     tag: `event:${ev.id}`,
-    i18n: { title: `notify.event.${key}.title`, body: `notify.event.${key}.body`, vars: { title: ev.title, date } },
+    i18n: {
+      title: `notify.event.${key}.title`,
+      body: `notify.event.${key}.body`,
+      vars: { title: ev.title, date },
+      localeVars: (locale) => ({ date: ev.allDay ? formatDate(ev.startsAt, locale) : formatDateTime(ev.startsAt, locale) }),
+    },
   });
 }
 

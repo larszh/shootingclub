@@ -8,10 +8,17 @@ import { Switch } from "@/components/ui/controls";
 import { Spinner } from "@/components/ui/form";
 import { isNavigationError, toast } from "@/lib/ui-feedback";
 import { cn } from "@/lib/utils";
-import { IMPORT_MAX_ROWS, suggestMapping, type ImportDecision, type ImportField, type ImportPresetId } from "@/modules/members/import";
+import { IMPORT_MAX_ROWS, suggestMapping, type DuplicateReason, type ImportDecision, type ImportField, type ImportPresetId } from "@/modules/members/import";
 import { analyzeImportAction, commitImportAction, parseImportFileAction, type ImportSummary, type ParsedImport, type PreviewRow } from "@/modules/members/import-actions";
 
 type Step = "upload" | "map" | "preview" | "done";
+
+const DUPLICATE_REASON: Record<DuplicateReason, string> = {
+  email: "gleiche E-Mail",
+  memberNumber: "gleiche Mitgliedernummer",
+  nameBirth: "Name + Geburtsdatum",
+  name: "gleicher Name – bitte prüfen",
+};
 const SHOW_STEP = 100;
 
 const STEPS: Array<{ id: Step; label: string }> = [
@@ -66,7 +73,7 @@ export function ImportWizard({ fields, presets, categoryNames }: {
 
   const analyze = () => guard(async () => {
     if (!parsed) return;
-    const res = await analyzeImportAction({ rows: parsed.rows, mapping });
+    const res = await analyzeImportAction({ rowsJson: JSON.stringify(parsed.rows), mapping });
     if (!res.ok) {
       setError(res.error);
       return;
@@ -78,7 +85,7 @@ export function ImportWizard({ fields, presets, categoryNames }: {
 
   const commit = () => guard(async () => {
     if (!parsed) return;
-    const res = await commitImportAction({ rows: parsed.rows, mapping, decisions, sendInvites, fileName: parsed.fileName });
+    const res = await commitImportAction({ rowsJson: JSON.stringify(parsed.rows), mapping, decisions, sendInvites, fileName: parsed.fileName });
     if (!res.ok) {
       setError(res.error);
       return;
@@ -266,13 +273,16 @@ function PreviewStep({ rows, decisions, onDecisions, sendInvites, onSendInvites,
   const [filter, setFilter] = useState<PreviewFilter>("all");
   const [shown, setShown] = useState(SHOW_STEP);
   const counts = useMemo(() => {
-    const c = { create: 0, update: 0, skip: 0, errors: 0, warnings: 0, duplicates: 0, withEmail: 0 };
+    const c = { create: 0, update: 0, skip: 0, errors: 0, warnings: 0, duplicates: 0, withEmail: 0, accounts: 0 };
     rows.forEach((r, i) => {
       c[decisions[i]!]++;
       if (r.errors.length) c.errors++;
       if (r.warnings.length) c.warnings++;
       if (r.duplicate) c.duplicates++;
-      if (decisions[i] === "create" && r.email && !r.linksAccount) c.withEmail++;
+      if (decisions[i] === "create" && r.willInvite) {
+        if (r.existingAccount) c.accounts++;
+        else c.withEmail++;
+      }
     });
     return c;
   }, [rows, decisions]);
@@ -326,8 +336,8 @@ function PreviewStep({ rows, decisions, onDecisions, sendInvites, onSendInvites,
                 <span className="truncate font-medium">{r.name}</span>
               </div>
               <div className="truncate text-xs text-ink-3">{[r.email ?? "ohne E-Mail", r.info].filter(Boolean).join(" · ")}</div>
-              {r.duplicate ? <div className="mt-1"><Badge tone="accent">Bereits erfasst: {r.duplicate.name} ({r.duplicate.reason === "email" ? "gleiche E-Mail" : "Name + Geburtsdatum"})</Badge></div> : null}
-              {r.linksAccount ? <div className="mt-1"><Badge tone="outline">Hat schon ein Konto – wird nur verknüpft</Badge></div> : null}
+              {r.duplicate ? <div className="mt-1"><Badge tone="accent">Bereits erfasst: {r.duplicate.name} ({DUPLICATE_REASON[r.duplicate.reason]})</Badge></div> : null}
+              {r.existingAccount ? <div className="mt-1"><Badge tone="outline">Hat schon ein Konto – erhält eine Einladung</Badge></div> : null}
               {r.errors.map((e, k) => <p key={`e${k}`} className="mt-1 text-xs text-danger">{e}</p>)}
               {r.warnings.map((w, k) => <p key={`w${k}`} className="mt-1 text-xs text-warn">{w}</p>)}
             </div>
@@ -353,7 +363,7 @@ function PreviewStep({ rows, decisions, onDecisions, sendInvites, onSendInvites,
       <Card className="p-4">
         <Switch
           label="Einladungsmail senden"
-          description={`Neue Mitglieder mit E-Mail (${counts.withEmail}) erhalten einen Link, um ein Passwort festzulegen. Geht auch später über die Mitgliederliste.`}
+          description={`Neue Mitglieder mit E-Mail (${counts.withEmail}) erhalten einen Link, um ein Passwort festzulegen. Geht auch später über die Mitgliederliste.${counts.accounts ? ` Personen mit bestehendem Konto (${counts.accounts}) werden eingeladen und sind Mitglied, sobald sie annehmen.` : ""}`}
           checked={sendInvites}
           onChange={onSendInvites}
         />
@@ -376,10 +386,15 @@ function DoneStep({ summary, onRestart }: { summary: ImportSummary; onRestart: (
         <CheckCircle2 className="mx-auto h-10 w-10 text-ok" />
         <h2 className="mt-2 text-lg font-semibold">Import abgeschlossen</h2>
         <p className="mt-1 text-sm text-ink-3">
-          {summary.created} neu, {summary.linked ? `${summary.linked} verknüpft, ` : ""}{summary.updated} aktualisiert, {summary.skipped} übersprungen
-          {summary.invited ? ` · ${summary.invited} Einladungen verschickt` : ""}
+          {summary.created} neu, {summary.updated} aktualisiert, {summary.skipped} übersprungen
+          {summary.invited ? ` · ${summary.invited} Mails verschickt` : ""}
         </p>
       </Card>
+      {summary.accountInvites ? (
+        <Alert tone="ok">
+          {summary.accountInvites} {summary.accountInvites === 1 ? "Person hat" : "Personen haben"} schon ein Konto (z.B. aus einem anderen Verein) und {summary.accountInvites === 1 ? "wurde" : "wurden"} eingeladen. Sie {summary.accountInvites === 1 ? "erscheint" : "erscheinen"} in der Mitgliederliste, sobald {summary.accountInvites === 1 ? "sie die Einladung annimmt" : "sie die Einladung annehmen"}. <Link href="/admin/members/invitations" className="underline">Offene Einladungen</Link>
+        </Alert>
+      ) : null}
       {summary.failed ? (
         <Alert>
           {summary.failed} Zeilen konnten nicht übernommen werden (Zeilen {summary.failedLines.slice(0, 20).join(", ")}{summary.failedLines.length > 20 ? " …" : ""}). Bitte prüfen und erneut importieren – bereits übernommene Zeilen werden dann als «bereits erfasst» erkannt.

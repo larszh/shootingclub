@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { db } from "@/lib/db";
-import { THROTTLE, throttle } from "@/lib/auth";
+import { THROTTLE, clientIp, throttle } from "@/lib/auth";
 import { requirePermission } from "@/lib/tenant";
 import { ROLE_LABELS, isTenantRole, type TenantRole } from "@/lib/permissions";
 import { fail, ok, type ActionResult } from "@/lib/action-result";
@@ -13,6 +13,7 @@ import { todayZurich } from "@/lib/time";
 import { toCsv } from "@/modules/billing/csv";
 import { removeUserFromTenantChats } from "@/modules/chat/service";
 import { createInvitation, sendSetPasswordMail } from "@/modules/core/invitations";
+import { profileManagedByTenant, profilesManagedByTenant } from "./ownership";
 import { listMemberIds } from "./queries";
 import {
   MEMBER_STATUSES,
@@ -117,11 +118,24 @@ export async function updateMemberAction(membershipId: string, _prev: ActionResu
   }
   if (m.role === "OWNER" && !canTouchOwner(ctx) && m.status !== v.status) return fail("Nur Inhaber können den Status von Inhabern ändern.");
 
-  // E-Mail: nur bei Konten ohne eigenes Passwort änderbar (sonst ändert das Konto die Person selbst).
+  // Personendaten gehören der Person. Der Verein ändert sie nur, wenn er das Konto allein verwaltet
+  // (kein eigenes Passwort, in keinem weiteren Verein aktiv) – sonst könnte ein beliebiger Verein
+  // Daten oder Login-Adresse eines fremden Kontos überschreiben. Sonst bleiben die bisherigen Werte.
+  const ownsProfile = ctx.user.isSuperAdmin || (await profileManagedByTenant(m.userId, ctx.tenant.id));
+  const p = ownsProfile ? v : { ...v, name: m.user.name, phone: m.user.phone, birthDate: dateOnly(m.user.birthDate), street: m.user.street, zip: m.user.zip, city: m.user.city };
+
+  // E-Mail (= Login): nur bei Konten ohne eigenes Passwort, die dieser Verein allein verwaltet.
   let email = m.user.email;
-  const managed = !m.user.passwordSetAt;
+  const emailEditable = ownsProfile && !m.user.passwordSetAt && !m.user.deletedAt;
   if (v.email !== (isPlaceholderEmail(m.user.email) ? "" : m.user.email)) {
-    if (!managed) return fail("Die E-Mail ändert die Person selbst in ihrem Profil (sie hat bereits ein Passwort).", { email: "Nicht änderbar" });
+    if (!emailEditable) {
+      return fail(
+        m.user.passwordSetAt
+          ? "Die E-Mail ändert die Person selbst in ihrem Profil (sie hat bereits ein Passwort)."
+          : "Die E-Mail ist nicht änderbar: Das Konto gehört auch zu einem anderen Verein. Die Person ändert sie selbst in ihrem Profil.",
+        { email: "Nicht änderbar" },
+      );
+    }
     if (!v.email) email = placeholderEmail(m.user.id);
     else {
       if (!isValidEmail(v.email)) return fail("Ungültige E-Mail-Adresse.", { email: "Ungültig" });
@@ -153,7 +167,7 @@ export async function updateMemberAction(membershipId: string, _prev: ActionResu
   // Wieder eingetreten: vergangenes Austrittsdatum entfernen (geplanter Austritt in der Zukunft bleibt).
   if (v.status !== "LEFT" && m.status === "LEFT" && leftAt && leftAt <= today) leftAt = null;
 
-  const userData = { name: v.name, email, phone: v.phone, birthDate: toDbDate(v.birthDate), street: v.street, zip: v.zip, city: v.city };
+  const userData = { name: p.name, email, phone: p.phone, birthDate: toDbDate(p.birthDate), street: p.street, zip: p.zip, city: p.city };
   const memberData = {
     memberNumber: v.memberNumber, licenseNumber: v.licenseNumber, status: v.status, joinedAt: toDbDate(v.joinedAt), leftAt: toDbDate(leftAt),
     feeCategoryId: v.feeCategoryId, feeAmountOverrideCents: override, householdId: v.householdId,
@@ -162,11 +176,11 @@ export async function updateMemberAction(membershipId: string, _prev: ActionResu
 
   // Geänderte Felder fürs Protokoll (nur Feldnamen, Status mit Werten – keine Personendaten im Log).
   const changed: string[] = [];
-  if (m.user.name !== v.name) changed.push(FIELD_NAMES.name!);
+  if (m.user.name !== p.name) changed.push(FIELD_NAMES.name!);
   if (m.user.email !== email) changed.push(FIELD_NAMES.email!);
-  if (m.user.phone !== v.phone) changed.push(FIELD_NAMES.phone!);
-  if (dateOnly(m.user.birthDate) !== v.birthDate) changed.push(FIELD_NAMES.birthDate!);
-  if (m.user.street !== v.street || m.user.zip !== v.zip || m.user.city !== v.city) changed.push(FIELD_NAMES.address!);
+  if (m.user.phone !== p.phone) changed.push(FIELD_NAMES.phone!);
+  if (dateOnly(m.user.birthDate) !== p.birthDate) changed.push(FIELD_NAMES.birthDate!);
+  if (m.user.street !== p.street || m.user.zip !== p.zip || m.user.city !== p.city) changed.push(FIELD_NAMES.address!);
   if (m.memberNumber !== v.memberNumber) changed.push(FIELD_NAMES.memberNumber!);
   if (m.licenseNumber !== v.licenseNumber) changed.push(FIELD_NAMES.licenseNumber!);
   if (m.status !== v.status) changed.push(`Status ${statusLabel(m.status)} → ${statusLabel(v.status)}`);
@@ -180,10 +194,20 @@ export async function updateMemberAction(membershipId: string, _prev: ActionResu
   if (m.workHoursExempt !== v.workHoursExempt) changed.push(FIELD_NAMES.workHoursExempt!);
   if (!changed.length) return ok(undefined, "Keine Änderungen.");
 
+  const emailChanged = m.user.email !== email;
   try {
     await db.$transaction([
-      db.user.update({ where: { id: m.userId }, data: userData }),
+      // Nur bei eigenen Konten schreiben; sonst bleibt die Person unangetastet.
+      ...(ownsProfile ? [db.user.update({ where: { id: m.userId }, data: userData })] : []),
       db.membership.update({ where: { id: m.id }, data: memberData }),
+      // Neue Adresse: an die alte Adresse verschickte Links (Passwort festlegen/zurücksetzen) und
+      // allfällige Sitzungen werden ungültig.
+      ...(emailChanged
+        ? [
+            db.authToken.updateMany({ where: { userId: m.userId, kind: { in: ["INVITE", "RESET"] }, usedAt: null }, data: { usedAt: new Date() } }),
+            db.session.deleteMany({ where: { userId: m.userId } }),
+          ]
+        : []),
     ]);
   } catch (e) {
     if ((e as { code?: string }).code === "P2002") return fail("Diese E-Mail gehört bereits zu einem anderen Konto.", { email: "Bereits vergeben" });
@@ -192,7 +216,7 @@ export async function updateMemberAction(membershipId: string, _prev: ActionResu
   if (v.status === "LEFT" && m.status !== "LEFT") await dropChats(m.userId, ctx.tenant.id);
   await fixHouseholdPayer(m.householdId);
 
-  await audit({ ...actor(ctx), action: "member.update", entity: "Membership", entityId: m.id, detail: `${v.name}: ${changed.join(", ")}` });
+  await audit({ ...actor(ctx), action: "member.update", entity: "Membership", entityId: m.id, detail: `${p.name}: ${changed.join(", ")}` });
   revalidateMembers();
   return ok(undefined, "Gespeichert.");
 }
@@ -217,7 +241,31 @@ async function fixHouseholdPayer(householdId: string | null) {
 // --- Sammelaktionen ----------------------------------------------------------------
 
 async function membershipsIn(tenantId: string, ids: string[]) {
-  return db.membership.findMany({ where: { tenantId, id: { in: ids } }, select: { id: true, userId: true, role: true, status: true } });
+  return db.membership.findMany({ where: { tenantId, id: { in: ids } }, select: { id: true, userId: true, role: true, status: true, user: { select: { name: true } } } });
+}
+
+/**
+ * Ein Protokolleintrag pro betroffener Mitgliedschaft (mit entityId), damit Sammelaktionen auch in
+ * den «Änderungen» des einzelnen Mitglieds erscheinen. Wirft nie (wie audit()).
+ */
+async function auditEach(ctx: Ctx, action: string, entries: Array<{ id: string; detail: string }>) {
+  if (!entries.length) return;
+  let ip: string | null = null;
+  try {
+    const v = await clientIp();
+    ip = v === "unknown" ? null : v.slice(0, 64);
+  } catch {
+    // ausserhalb eines Requests
+  }
+  try {
+    await db.auditLog.createMany({
+      data: entries.map((e) => ({
+        tenantId: ctx.tenant.id, actorId: ctx.user.id, actorName: ctx.user.name.slice(0, 191), action, entity: "Membership", entityId: e.id, detail: e.detail.slice(0, 2000), ip,
+      })),
+    });
+  } catch (err) {
+    console.error("[audit] Einträge fehlgeschlagen:", action, err instanceof Error ? err.message : err);
+  }
 }
 
 export async function bulkSetStatusAction(ids: string[], status: string): Promise<ActionResult<{ count: number }>> {
@@ -233,7 +281,10 @@ export async function bulkSetStatusAction(ids: string[], status: string): Promis
     if (blocked) skipped++;
     return !blocked;
   });
-  if (!targets.length) return ok({ count: 0 }, skipped ? "Keine Änderung: Inhaber und du selbst können nicht als ausgetreten markiert werden." : "Keine Änderung.");
+  if (!targets.length) {
+    if (!skipped) return ok({ count: 0 }, "Keine Änderung.");
+    return fail(status === "LEFT" ? "Inhaber und du selbst können nicht als ausgetreten markiert werden." : "Nur Inhaber können den Status von Inhabern ändern.");
+  }
   const today = toDbDate(todayZurich());
   const targetIds = targets.map((m) => m.id);
   if (status === "LEFT") {
@@ -245,7 +296,7 @@ export async function bulkSetStatusAction(ids: string[], status: string): Promis
     await db.membership.updateMany({ where: { id: { in: targetIds }, tenantId: ctx.tenant.id, status: "LEFT", leftAt: { lte: today! } }, data: { leftAt: null } });
     await db.membership.updateMany({ where: { id: { in: targetIds }, tenantId: ctx.tenant.id }, data: { status } });
   }
-  await audit({ ...actor(ctx), action: "member.bulk.status", entity: "Membership", detail: `${targets.length} Mitglieder → ${STATUS_LABELS[status as MemberStatus]}${skipped ? ` (${skipped} übersprungen)` : ""}` });
+  await auditEach(ctx, "member.status", targets.map((m) => ({ id: m.id, detail: `${m.user.name}: Status ${statusLabel(m.status)} → ${statusLabel(status)}` })));
   revalidateMembers();
   return ok({ count: targets.length }, `${targets.length} ${targets.length === 1 ? "Mitglied" : "Mitglieder"} auf «${STATUS_LABELS[status as MemberStatus]}» gesetzt${skipped ? `, ${skipped} übersprungen` : ""}.`);
 }
@@ -260,8 +311,14 @@ export async function bulkSetCategoryAction(ids: string[], categoryId: string | 
     if (!c) return fail("Kategorie nicht gefunden");
     name = c.name;
   }
+  const before = await db.membership.findMany({
+    where: { tenantId: ctx.tenant.id, id: { in: parsed.data } },
+    select: { id: true, feeCategoryId: true, feeCategory: { select: { name: true } }, user: { select: { name: true } } },
+  });
   const res = await db.membership.updateMany({ where: { tenantId: ctx.tenant.id, id: { in: parsed.data } }, data: { feeCategoryId: categoryId } });
-  await audit({ ...actor(ctx), action: "member.bulk.category", entity: "Membership", detail: `${res.count} Mitglieder → Kategorie «${name}»` });
+  await auditEach(ctx, "member.category", before
+    .filter((m) => m.feeCategoryId !== categoryId)
+    .map((m) => ({ id: m.id, detail: `${m.user.name}: Beitragskategorie «${m.feeCategory?.name ?? "keine"}» → «${name}»` })));
   revalidateMembers();
   return ok({ count: res.count }, `Kategorie für ${res.count} ${res.count === 1 ? "Mitglied" : "Mitglieder"} gesetzt.`);
 }
@@ -280,10 +337,13 @@ export async function bulkSendAccessMailAction(ids: string[]): Promise<ActionRes
     where: { tenantId: ctx.tenant.id, id: { in: parsed.data } },
     select: { status: true, user: { select: { id: true, email: true, passwordSetAt: true, deletedAt: true } } },
   });
+  // Nur Konten, die dieser Verein allein verwaltet: Konten aus weiteren Vereinen holen sich den
+  // Zugang selbst («Passwort vergessen» an ihre eigene Adresse).
+  const own = await profilesManagedByTenant(rows.map((m) => m.user.id), ctx.tenant.id);
   let sent = 0;
   let failed = 0;
   for (const m of rows) {
-    if (m.status === "LEFT" || m.user.passwordSetAt || m.user.deletedAt || isPlaceholderEmail(m.user.email)) continue;
+    if (m.status === "LEFT" || m.user.passwordSetAt || m.user.deletedAt || isPlaceholderEmail(m.user.email) || !own.has(m.user.id)) continue;
     try {
       await sendSetPasswordMail(m.user.id, ctx.tenant.id);
       sent++;
@@ -296,15 +356,17 @@ export async function bulkSendAccessMailAction(ids: string[]): Promise<ActionRes
   await audit({ ...actor(ctx), action: "member.access.mail", entity: "Membership", detail: `${sent} Zugangsmails, ${skipped} übersprungen${failed ? `, ${failed} fehlgeschlagen` : ""}` });
   revalidateMembers();
   const msg = sent
-    ? `${sent} ${sent === 1 ? "Mail" : "Mails"} mit Link zum Passwort-Setzen verschickt.${skipped ? ` ${skipped} übersprungen (hat schon Zugang, keine E-Mail oder ausgetreten).` : ""}`
-    : "Keine Mail verschickt: Alle Ausgewählten haben bereits Zugang, keine E-Mail oder sind ausgetreten.";
+    ? `${sent} ${sent === 1 ? "Mail" : "Mails"} mit Link zum Passwort-Setzen verschickt.${skipped ? ` ${skipped} übersprungen (hat schon Zugang, keine E-Mail, ausgetreten oder Konto auch in einem anderen Verein).` : ""}`
+    : "Keine Mail verschickt: Alle Ausgewählten haben bereits Zugang, keine E-Mail, sind ausgetreten oder haben ein Konto, das auch zu einem anderen Verein gehört.";
   return ok({ sent, skipped }, msg);
 }
 
 export async function sendAccessMailAction(membershipId: string): Promise<ActionResult> {
   const res = await bulkSendAccessMailAction([membershipId]);
   if (!res.ok) return res;
-  return res.data?.sent ? ok(undefined, "Mail mit Link zum Passwort-Setzen verschickt.") : fail("Keine Mail nötig: hat bereits Zugang, keine E-Mail oder ist ausgetreten.");
+  return res.data?.sent
+    ? ok(undefined, "Mail mit Link zum Passwort-Setzen verschickt.")
+    : fail("Keine Mail verschickt: hat bereits Zugang, keine E-Mail, ist ausgetreten oder das Konto gehört auch zu einem anderen Verein (dann «Passwort vergessen» auf der Anmeldeseite).");
 }
 
 /** Alle Treffer der aktuellen Filter (Query-String der Liste) – für «alle auswählen». */
@@ -426,13 +488,18 @@ export async function createHouseholdAction(_prev: ActionResult<{ id: string }> 
   const parsed = householdName.safeParse(formData.get("name") ?? "");
   if (!parsed.success) return fail(parsed.error.issues[0]?.message ?? "Ungültiger Name", { name: parsed.error.issues[0]?.message ?? "" });
   const memberIds = formData.getAll("memberId").map(String).filter(Boolean).slice(0, 20);
-  const members = memberIds.length ? await db.membership.findMany({ where: { tenantId: ctx.tenant.id, id: { in: memberIds } }, select: { id: true, userId: true, householdId: true } }) : [];
+  const found = memberIds.length ? await db.membership.findMany({ where: { tenantId: ctx.tenant.id, id: { in: memberIds } }, select: { id: true, userId: true, householdId: true, user: { select: { name: true } } } }) : [];
+  // Reihenfolge der Auswahl beibehalten: die zuerst gewählte Person zahlt (wie im Formular angezeigt).
+  const members = memberIds.map((id) => found.find((m) => m.id === id)).filter((m): m is (typeof found)[number] => !!m);
   const h = await db.household.create({ data: { tenantId: ctx.tenant.id, name: parsed.data, payerUserId: members[0]?.userId ?? null } });
   if (members.length) {
     await db.membership.updateMany({ where: { tenantId: ctx.tenant.id, id: { in: members.map((m) => m.id) } }, data: { householdId: h.id } });
     for (const old of new Set(members.map((m) => m.householdId).filter((x): x is string => !!x))) await fixHouseholdPayer(old);
   }
-  await audit({ ...actor(ctx), action: "household.create", entity: "Household", entityId: h.id, detail: `${parsed.data} (${members.length} Mitglieder)` });
+  await audit({
+    ...actor(ctx), action: "household.create", entity: "Household", entityId: h.id,
+    detail: `${parsed.data} (${members.length} Mitglieder${members.length ? `: ${members.map((m) => m.user.name).join(", ")}; zahlt: ${members[0]!.user.name}` : ""})`,
+  });
   revalidateMembers();
   return ok({ id: h.id }, `Haushalt «${parsed.data}» angelegt.`);
 }
@@ -461,36 +528,36 @@ export async function deleteHouseholdAction(id: string): Promise<ActionResult> {
 export async function addToHouseholdAction(householdId: string, membershipId: string): Promise<ActionResult> {
   const ctx = await requirePermission("members.manage");
   const [h, m] = await Promise.all([
-    db.household.findFirst({ where: { id: householdId, tenantId: ctx.tenant.id }, select: { id: true, payerUserId: true } }),
-    db.membership.findFirst({ where: { id: membershipId, tenantId: ctx.tenant.id }, select: { id: true, userId: true, householdId: true } }),
+    db.household.findFirst({ where: { id: householdId, tenantId: ctx.tenant.id }, select: { id: true, name: true, payerUserId: true } }),
+    db.membership.findFirst({ where: { id: membershipId, tenantId: ctx.tenant.id }, select: { id: true, userId: true, householdId: true, user: { select: { name: true } } } }),
   ]);
   if (!h || !m) return fail("Nicht gefunden.");
   if (m.householdId === h.id) return ok();
   await db.membership.update({ where: { id: m.id }, data: { householdId: h.id } });
   if (!h.payerUserId) await db.household.update({ where: { id: h.id }, data: { payerUserId: m.userId } });
   await fixHouseholdPayer(m.householdId);
-  await audit({ ...actor(ctx), action: "household.member.add", entity: "Household", entityId: h.id, detail: `Mitgliedschaft ${m.id}` });
+  await audit({ ...actor(ctx), action: "household.member.add", entity: "Household", entityId: h.id, detail: `${m.user.name} → Haushalt «${h.name}»` });
   revalidateMembers();
   return ok(undefined, "Hinzugefügt.");
 }
 
 export async function removeFromHouseholdAction(membershipId: string): Promise<ActionResult> {
   const ctx = await requirePermission("members.manage");
-  const m = await db.membership.findFirst({ where: { id: membershipId, tenantId: ctx.tenant.id }, select: { id: true, householdId: true } });
+  const m = await db.membership.findFirst({ where: { id: membershipId, tenantId: ctx.tenant.id }, select: { id: true, householdId: true, user: { select: { name: true } }, household: { select: { name: true } } } });
   if (!m?.householdId) return fail("Nicht gefunden.");
   await db.membership.update({ where: { id: m.id }, data: { householdId: null } });
   await fixHouseholdPayer(m.householdId);
-  await audit({ ...actor(ctx), action: "household.member.remove", entity: "Household", entityId: m.householdId, detail: `Mitgliedschaft ${m.id}` });
+  await audit({ ...actor(ctx), action: "household.member.remove", entity: "Household", entityId: m.householdId, detail: `${m.user.name} aus Haushalt «${m.household?.name ?? "?"}» entfernt` });
   revalidateMembers();
   return ok(undefined, "Entfernt.");
 }
 
 export async function setHouseholdPayerAction(householdId: string, userId: string): Promise<ActionResult> {
   const ctx = await requirePermission("members.manage");
-  const m = await db.membership.findFirst({ where: { tenantId: ctx.tenant.id, householdId, userId }, select: { id: true } });
+  const m = await db.membership.findFirst({ where: { tenantId: ctx.tenant.id, householdId, userId }, select: { id: true, user: { select: { name: true } }, household: { select: { name: true } } } });
   if (!m) return fail("Die zahlende Person muss zum Haushalt gehören.");
   await db.household.update({ where: { id: householdId }, data: { payerUserId: userId } });
-  await audit({ ...actor(ctx), action: "household.payer", entity: "Household", entityId: householdId });
+  await audit({ ...actor(ctx), action: "household.payer", entity: "Household", entityId: householdId, detail: `Haushalt «${m.household?.name ?? "?"}»: zahlt neu ${m.user.name}` });
   revalidateMembers();
   return ok(undefined, "Zahler gesetzt.");
 }

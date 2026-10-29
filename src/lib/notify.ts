@@ -1,7 +1,7 @@
 import "server-only";
 import { db } from "@/lib/db";
 import { appUrl, enqueueMail, renderMail } from "@/lib/mail";
-import { getT, normalizeLocale, type Locale } from "@/lib/i18n";
+import { INTL_LOCALE, getT, normalizeLocale, type Locale } from "@/lib/i18n";
 import { sendPush, truncateText } from "@/lib/push";
 import { resolvePreference, type NotifyTopic, type PreferenceRow } from "@/lib/push/topics";
 
@@ -21,7 +21,16 @@ export type NotifyInput = {
   emailSubject?: string;
   // --- optionale Erweiterungen ---
   /** Übersetzungsschlüssel: Texte werden pro Empfänger in seiner Sprache aufgebaut. */
-  i18n?: { title: string; /** ohne Angabe: `body` unverändert (z.B. Text einer Mitteilung) */ body?: string; emailSubject?: string; emailBody?: string; vars?: Record<string, string | number> };
+  i18n?: {
+    title: string;
+    /** ohne Angabe: `body` unverändert (z.B. Text einer Mitteilung) */
+    body?: string;
+    emailSubject?: string;
+    emailBody?: string;
+    vars?: Record<string, string | number>;
+    /** Sprachabhängige Platzhalter (Datum, Betrag) – überschreiben gleichnamige `vars`. */
+    localeVars?: (locale: Locale) => Record<string, string | number>;
+  };
   /** Abweichender E-Mail-Text (z.B. Chat: ohne Nachrichteninhalt). */
   emailBody?: string;
   /** Gruppierung auf dem Gerät, z.B. chat:<conversationId> */
@@ -65,7 +74,7 @@ async function loadRecipients(tenantId: string | null, userIds: string[]): Promi
 function textsFor(n: NotifyInput, locale: Locale) {
   if (!n.i18n) return { title: n.title, body: n.body, subject: n.emailSubject ?? n.title, emailBody: n.emailBody ?? n.body };
   const t = getT(locale);
-  const vars = n.i18n.vars;
+  const vars = n.i18n.localeVars ? { ...n.i18n.vars, ...n.i18n.localeVars(locale) } : n.i18n.vars;
   const title = t(n.i18n.title, vars);
   const body = n.i18n.body ? t(n.i18n.body, vars) : n.body;
   return {
@@ -115,7 +124,7 @@ export async function notify(n: NotifyInput): Promise<void> {
       }
       for (const [locale, ids] of byLocale) {
         const tx = textsFor(n, locale);
-        await sendPush(ids, { title: tx.title, body: tx.body, url: n.url, tag: n.tag }, { urgency: n.urgency ?? (n.topic === "chat" ? "high" : "normal") });
+        await sendPush(ids, { title: tx.title, body: tx.body, url: n.url, tag: n.tag, lang: INTL_LOCALE[locale] }, { urgency: n.urgency ?? (n.topic === "chat" ? "high" : "normal") });
       }
     }
 

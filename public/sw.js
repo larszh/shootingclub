@@ -12,7 +12,7 @@
  * src/lib/offline/idb.ts übereinstimmen.
  */
 
-const VERSION = "2026-10-29.1";
+const VERSION = "2026-10-29.2";
 const DATA_VERSION = "v1"; // nur erhöhen, wenn sich das Format gecachter Seiten ändert
 
 const PRECACHE = `sc-precache-${VERSION}`;
@@ -539,7 +539,8 @@ self.addEventListener("push", (event) => {
     icon: PUSH_ICON,
     badge: PUSH_BADGE,
     data: { url: safePushUrl(data.url) },
-    lang: "de-CH",
+    // Sprache des Textes (pro Empfängersprache vom Server gesetzt), sonst Schweizerdeutsch
+    lang: typeof data.lang === "string" && /^[a-z]{2}(-[A-Z]{2})?$/.test(data.lang) ? data.lang : "de-CH",
   };
   if (typeof data.tag === "string" && data.tag) {
     options.tag = data.tag;

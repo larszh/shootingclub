@@ -9,6 +9,7 @@ import { Badge, Card, PageHeader, SectionTitle, StatCard } from "@/components/ui
 import { ROLE_LABELS, type TenantRole } from "@/lib/permissions";
 import { formatMoney } from "@/lib/money";
 import { formatDateTimeZurich, formatDateZurich, todayZurich } from "@/lib/time";
+import { profileManagedByTenant } from "@/modules/members/ownership";
 import { getMemberDetail } from "@/modules/members/queries";
 import { dateOnly, displayEmail, formatIsoDate, isMinor, statusLabel, statusTone } from "@/modules/members/types";
 import { AccessCard, DangerZone, MemberForm, RoleCard } from "./member-form";
@@ -29,11 +30,14 @@ export default async function MemberDetailPage({ params }: { params: Promise<{ i
   const isSelf = u.id === ctx.user.id;
   const canSetOwner = ctx.user.isSuperAdmin || ctx.tenant.role === "OWNER";
 
-  const [categories, households, auditRows] = await Promise.all([
+  const [categories, households, auditRows, managedHere] = await Promise.all([
     canManage ? db.feeCategory.findMany({ where: { tenantId: ctx.tenant.id }, orderBy: [{ sortOrder: "asc" }, { name: "asc" }], select: { id: true, name: true, amountCents: true, isActive: true } }) : Promise.resolve([]),
     canManage ? db.household.findMany({ where: { tenantId: ctx.tenant.id }, orderBy: { name: "asc" }, select: { id: true, name: true } }) : Promise.resolve([]),
     ctx.can("audit.view") ? db.auditLog.findMany({ where: { tenantId: ctx.tenant.id, entityId: m.id }, orderBy: { createdAt: "desc" }, take: 8, select: { id: true, action: true, actorName: true, detail: true, createdAt: true } }) : Promise.resolve([]),
+    canManage ? profileManagedByTenant(u.id, ctx.tenant.id) : Promise.resolve(false),
   ]);
+  // Personendaten gehören der Person: nur bei Konten, die dieser Verein allein verwaltet, hier änderbar.
+  const profileEditable = ctx.user.isSuperAdmin || managedHere;
   const openCount = openInvoices.fees + openInvoices.bookings + openInvoices.ammo;
   const email = displayEmail(u.email);
 
@@ -68,7 +72,8 @@ export default async function MemberDetailPage({ params }: { params: Promise<{ i
           <MemberForm
             membershipId={m.id}
             today={today}
-            emailEditable={!u.passwordSetAt}
+            profileEditable={profileEditable}
+            emailEditable={profileEditable && !u.passwordSetAt && !u.deletedAt}
             categories={categories.map((c) => ({ id: c.id, label: `${c.name} (${formatMoney(c.amountCents)})${c.isActive ? "" : " – inaktiv"}` }))}
             households={households}
             values={{
@@ -98,7 +103,7 @@ export default async function MemberDetailPage({ params }: { params: Promise<{ i
           <SectionTitle>Rolle & Zugang</SectionTitle>
           <div className="space-y-2.5">
             <RoleCard membershipId={m.id} name={u.name} role={m.role} locked={isSelf && !ctx.user.isSuperAdmin} canSetOwner={canSetOwner} />
-            <AccessCard membershipId={m.id} access={access} hasTwoFactor={!!u.totpEnabledAt} />
+            <AccessCard membershipId={m.id} access={access} hasTwoFactor={!!u.totpEnabledAt} canSendMail={managedHere} />
           </div>
         </>
       ) : (

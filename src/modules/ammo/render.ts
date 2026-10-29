@@ -1,13 +1,10 @@
 import "server-only";
 import { db } from "@/lib/db";
-import { formatMoney } from "@/lib/money";
 import { renderQrBillSvg } from "@/lib/qr-bill";
-import { getT, getTenantLocale } from "@/lib/i18n";
-import { formatDateZurich } from "@/lib/time";
+import { INTL_LOCALE, formatDate, formatMoneyLocale, getT, getTenantLocale } from "@/lib/i18n";
 import { getBillingProfile, profileToCreditor } from "@/modules/billing/profile";
 import type { InvoiceDocumentProps } from "@/components/invoice-document";
 import { ensureAmmoReference, getAmmoSettings } from "./service";
-import { formatRounds, invoiceTitle } from "./types";
 
 type OrderForInvoice = {
   id: string; tenantId: string; userId: string | null; invoiceNumber: string | null; reference: string | null;
@@ -25,20 +22,23 @@ export async function buildAmmoInvoiceDocument(order: OrderForInvoice, tenantNam
     order.userId ? db.user.findUnique({ where: { id: order.userId }, select: { name: true, email: true, street: true, zip: true, city: true } }) : null,
     order.userId ? db.membership.findUnique({ where: { userId_tenantId: { userId: order.userId, tenantId: order.tenantId } }, select: { memberNumber: true } }) : null,
   ]);
+  const t = getT(locale);
+  const nf = new Intl.NumberFormat(INTL_LOCALE[locale]);
+  const roundsLabel = (count: number) => t("invoice.ammoRounds", { count: nf.format(count) });
   const creditor = profileToCreditor(profile, tenantName);
   const status = order.paymentStatus === "PAID" ? "PAID" : order.paymentStatus === "CANCELLED" ? "CANCELLED" : "OPEN";
   const number = order.invoiceNumber ?? "–";
   const reference = status === "OPEN" && profile.qrIban ? await ensureAmmoReference(order, profile.iban) : order.reference;
-  const debtor = { name: user?.name ?? "Mitglied", email: user?.email ?? null, street: user?.street ?? null, zip: user?.zip ?? null, city: user?.city ?? null };
+  const debtor = { name: user?.name ?? t("invoice.member"), email: user?.email ?? null, street: user?.street ?? null, zip: user?.zip ?? null, city: user?.city ?? null };
   const qrSvg = status === "OPEN"
-    ? await renderQrBillSvg({ amountCents: order.totalCents, currency: order.currency, creditor, debtor, message: invoiceTitle(order.invoiceNumber), reference: profile.qrIban ? reference : null, locale })
+    ? await renderQrBillSvg({ amountCents: order.totalCents, currency: order.currency, creditor, debtor, message: order.invoiceNumber ? t("invoice.ammoTitle", { number: order.invoiceNumber }).trim() : t("invoice.ammo"), reference: profile.qrIban ? reference : null, locale })
     : null;
   const rounds = order.items.reduce((a, i) => a + i.quantity * i.roundsPerUnit, 0);
   const issuedAt = order.invoiceIssuedAt ?? order.issuedAt ?? order.createdAt;
 
   return {
     locale,
-    title: getT(locale)("invoice.title"),
+    title: t("invoice.title"),
     number,
     issuedAt,
     dueAt: order.dueAt ?? issuedAt,
@@ -46,14 +46,14 @@ export async function buildAmmoInvoiceDocument(order: OrderForInvoice, tenantNam
     currency: order.currency,
     payee: creditor,
     debtor: { ...debtor, memberNumber: membership?.memberNumber ?? null },
-    intro: `Munitionsbezug vom ${formatDateZurich(order.issuedAt ?? issuedAt, { weekday: undefined })} · total ${formatRounds(rounds)}.`,
+    intro: t("invoice.ammoIntro", { date: formatDate(order.issuedAt ?? issuedAt, locale), rounds: roundsLabel(rounds) }),
     lines: order.items.map((i) => ({
-      label: `${i.productName} · Kaliber ${i.caliber}`,
-      sublabel: `Menge ${i.quantity} ${i.unitLabel} à ${formatMoney(i.unitPriceCents, order.currency)} (${formatRounds(i.quantity * i.roundsPerUnit)})`,
+      label: t("invoice.ammoLine", { product: i.productName, caliber: i.caliber }),
+      sublabel: t("invoice.ammoQuantity", { quantity: i.quantity, unit: i.unitLabel, price: formatMoneyLocale(i.unitPriceCents, locale, order.currency), rounds: roundsLabel(i.quantity * i.roundsPerUnit) }),
       amountCents: i.totalCents,
     })),
     totalCents: order.totalCents,
-    note: settings.onSiteOnly ? "Abgabe zum sofortigen Verbrauch auf dem Schiessplatz." : null,
+    note: settings.onSiteOnly ? t("invoice.ammoOnSite") : null,
     reference: profile.qrIban ? reference : null,
     qrSvg,
   };

@@ -8,7 +8,7 @@ import { ROLE_LABELS, type TenantRole } from "@/lib/permissions";
 import { formatDateZurich } from "@/lib/time";
 import { listOpenInvitations } from "@/modules/members/queries";
 import { MembersNav } from "../nav";
-import { AddExistingForm, InvitationRow, InviteForm } from "./forms";
+import { InvitationRow, InviteForm } from "./forms";
 
 export const metadata: Metadata = { title: "Mitglieder einladen" };
 
@@ -33,7 +33,7 @@ export default async function InvitationsPage() {
       <SectionTitle>Einladung senden</SectionTitle>
       <InviteForm canInviteAdmin={ctx.can("tenant.manage")} />
       <p className="mt-2 px-1 text-xs text-ink-3">
-        Die Person erhält eine Mail mit einem Link (14 Tage gültig). Ohne Konto registriert sie sich, mit Konto meldet sie sich an – danach ist sie Mitglied.
+        Die Person erhält eine Mail mit einem Link (14 Tage gültig). Ohne Konto registriert sie sich, mit Konto (z.B. aus einem anderen Verein) meldet sie sich an – sobald sie die Einladung annimmt, ist sie Mitglied.
         {ctx.can("tenant.manage") ? <> Alternativ: Beitrittscode <strong className="font-mono">{tenant.joinCode}</strong> (<Link href="/admin" className="underline">Einstellungen</Link>).</> : null}
       </p>
 
@@ -55,9 +55,6 @@ export default async function InvitationsPage() {
       ) : (
         <EmptyState icon={<MailOpen className="h-5 w-5" />} title="Keine offenen Einladungen" text="Angenommene Einladungen erscheinen direkt in der Mitgliederliste." />
       )}
-
-      <SectionTitle>Bestehendes Konto direkt hinzufügen</SectionTitle>
-      <AddExistingForm />
     </div>
   );
 }

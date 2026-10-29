@@ -2,6 +2,7 @@
  * Mitgliederverwaltung: gemeinsame Typen, Beschriftungen und reine Hilfsfunktionen
  * (ohne Server-Abhängigkeiten, auch in Client-Komponenten nutzbar).
  */
+import { getT } from "@/lib/i18n/core";
 
 export const MEMBER_STATUSES = ["ACTIVE", "PASSIVE", "HONORARY", "JUNIOR", "SUPPORTER", "LEFT"] as const;
 export type MemberStatus = (typeof MEMBER_STATUSES)[number];
@@ -160,8 +161,9 @@ export function filtersToQuery(f: Partial<MemberFilters>) {
   return s ? `?${s}` : "";
 }
 
-/** «Familie Muster (3 Mitglieder)» – Bezeichnung der Haushaltsrechnung. */
-export function householdInvoiceLabel(name: string, count: number) {
-  return `${name} (${count} Mitglieder)`.slice(0, 191);
+/** «Familie Muster (3 Mitglieder)» – Bezeichnung der Haushaltsrechnung in der Sprache des Vereins. */
+export function householdInvoiceLabel(name: string, count: number, locale?: string | null) {
+  return getT(locale)("members.household.invoice", { name, count }).slice(0, 191);
 }
-export const HOUSEHOLD_INVOICE_RE = /\(\d+ Mitglieder\)$/;
+/** Erkennt Haushaltsrechnungen sprachunabhängig (Bezeichnung aus members.household.invoice in de/fr/it). */
+export const HOUSEHOLD_INVOICE_RE = /\(\d+ (Mitglieder|membres|membri)\)$/;

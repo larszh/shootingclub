@@ -178,9 +178,42 @@ describe("Dubletten", () => {
   const rec = (name: string, email: string | null, birthDate: string | null) => mapRows([[name, email ?? "", birthDate ?? ""]], ["name", "email", "birthDate"], TODAY)[0]!;
 
   it("findet gleiche E-Mail oder Name + Geburtsdatum", () => {
-    expect(findDuplicate(rec("Irgendwer", "hans@example.ch", null).record, existing.byEmail, existing.byNameBirth)).toMatchObject({ membershipId: "m1", reason: "email" });
-    expect(findDuplicate(rec("Müller Eva", null, "01.05.1990").record, existing.byEmail, existing.byNameBirth)).toMatchObject({ membershipId: "m2", reason: "nameBirth" });
-    expect(findDuplicate(rec("Eva Müller", null, "02.05.1990").record, existing.byEmail, existing.byNameBirth)).toBeNull();
+    expect(findDuplicate(rec("Irgendwer", "hans@example.ch", null).record, existing)).toMatchObject({ membershipId: "m1", reason: "email" });
+    expect(findDuplicate(rec("Müller Eva", null, "01.05.1990").record, existing)).toMatchObject({ membershipId: "m2", reason: "nameBirth" });
+    expect(findDuplicate(rec("Eva Müller", null, "02.05.1990").record, existing)).toBeNull();
+  });
+
+  it("erkennt erneut importierte Zeilen ohne E-Mail und Geburtsdatum (Mitgliedernummer, sonst Name)", () => {
+    const idx = indexExisting([
+      { membershipId: "m3", userId: "u3", name: "Hans Gröbli", email: "noemail+a@standchef.invalid", birthDate: null, memberNumber: "M244753" },
+      { membershipId: "m4", userId: "u4", name: "Otto Ohnemail", email: "noemail+b@standchef.invalid", birthDate: null, memberNumber: null },
+      { membershipId: "m5", userId: "u5", name: "Peter Andere", email: "noemail+c@standchef.invalid", birthDate: null, memberNumber: "A1" },
+    ]);
+    const row = (name: string, email: string, birth: string, nr: string) => mapRows([[name, email, birth, nr]], ["name", "email", "birthDate", "memberNumber"], TODAY)[0]!;
+    // ungültige E-Mail und ungültiges Datum fallen weg – die Mitgliedernummer trifft trotzdem
+    const a = row("Hans Gröbli", "not-an-email", "31.02.1990", " m244753 ");
+    expect(findDuplicate(a.record, idx)).toMatchObject({ membershipId: "m3", reason: "memberNumber" });
+    expect(defaultDecision(a, findDuplicate(a.record, idx))).toBe("update");
+    const b = row("Ohnemail Otto", "", "", "M244756");
+    expect(findDuplicate(b.record, idx)).toMatchObject({ membershipId: "m4", reason: "name" });
+    expect(defaultDecision(b, findDuplicate(b.record, idx))).toBe("skip");
+    // gleicher Name, aber andere Mitgliedernummer: andere Person
+    expect(findDuplicate(row("Peter Andere", "", "", "A2").record, idx)).toBeNull();
+    // mit Geburtsdatum kein unsicherer Namensabgleich
+    expect(findDuplicate(row("Otto Ohnemail", "", "01.01.1970", "").record, idx)).toBeNull();
+  });
+
+  it("erkennt dieselbe Person mehrfach in einer Datei", () => {
+    const [a, b, c, d] = mapRows([
+      ["Hans Gröbli", "M1"],
+      ["Gröbli Hans", "m1"],
+      ["Otto Ohnemail", ""],
+      ["Otto Ohnemail", ""],
+    ], ["name", "memberNumber"], TODAY);
+    expect(a!.errors).toEqual([]);
+    expect(b!.errors[0]).toMatch(/Mitgliedernummer doppelt.*Zeile 2/);
+    expect(c!.warnings).toEqual([]);
+    expect(d!.warnings.join(" ")).toMatch(/Gleicher Name wie Zeile 4/);
   });
 
   it("schlägt eine Aktion vor", () => {

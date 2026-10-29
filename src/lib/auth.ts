@@ -121,16 +121,24 @@ type ThrottleBucket = { count: number; resetAt: number };
 const throttleStore: Map<string, ThrottleBucket> =
   ((globalThis as { __standchefThrottle?: Map<string, ThrottleBucket> }).__standchefThrottle ??= new Map());
 
+function trustCloudflare() {
+  const v = process.env.TRUST_CLOUDFLARE?.trim().toLowerCase();
+  return v === "1" || v === "true";
+}
+
 /** IP des Aufrufers (hinter nginx/CloudPanel aus X-Forwarded-For bzw. X-Real-IP). */
 export async function clientIp(): Promise<string> {
   const h = await headers();
   // Reihenfolge nach Vertrauenswürdigkeit hinter CloudPanel (nginx) und optional Cloudflare:
-  // 1. CF-Connecting-IP: von Cloudflare gesetzt, echte Besucher-IP.
+  // 1. CF-Connecting-IP: nur mit TRUST_CLOUDFLARE=1. Ohne Cloudflare davor kann jeder Client
+  //    diesen Header selbst senden (nginx reicht ihn durch) und so die IP-Drosselung umgehen.
   // 2. X-Real-IP: von nginx aus $remote_addr gesetzt, vom Client nicht fälschbar (ohne Cloudflare).
   // 3. Letzter Eintrag von X-Forwarded-For: vom nächsten Proxy angehängt. Der erste Eintrag
   //    kann vom Client frei gewählt werden und wird deshalb nie verwendet.
-  const cf = h.get("cf-connecting-ip")?.trim();
-  if (cf) return cf;
+  if (trustCloudflare()) {
+    const cf = h.get("cf-connecting-ip")?.trim();
+    if (cf) return cf;
+  }
   const real = h.get("x-real-ip")?.trim();
   if (real) return real;
   const fwd = h.get("x-forwarded-for");

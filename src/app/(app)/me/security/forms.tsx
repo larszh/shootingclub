@@ -81,25 +81,28 @@ function RecoveryCodes({ codes, onDone }: { codes: string[]; onDone: () => void 
 }
 
 export function TwoFactorCard({ enabled, recoveryLeft }: { enabled: boolean; recoveryLeft: number }) {
-  return enabled ? <TwoFactorEnabled recoveryLeft={recoveryLeft} /> : <TwoFactorSetup />;
-}
-
-function TwoFactorSetup() {
   const router = useRouter();
-  const [enroll, setEnroll] = useState<EnrollmentData | null>(null);
+  // Neue Codes oberhalb des Umschalters halten: Ein Neuladen der Seite (enabled wird true)
+  // darf sie nicht verwerfen, bevor sie gesichert wurden.
   const [codes, setCodes] = useState<string[] | null>(null);
-  const [code, setCode] = useState("");
-  const [error, setError] = useState<string | null>(null);
-  const [pending, start] = useTransition();
-
+  const [, startDone] = useTransition();
   if (codes) {
     return (
       <Card className="animate-rise p-4">
         <p className="mb-3 font-semibold text-ok">Zwei-Faktor-Anmeldung ist aktiv.</p>
-        <RecoveryCodes codes={codes} onDone={() => { setCodes(null); router.refresh(); }} />
+        {/* Neu laden und Codes ausblenden in einem Übergang, damit nicht kurz das Einrichten-Formular erscheint. */}
+        <RecoveryCodes codes={codes} onDone={() => startDone(() => { router.refresh(); setCodes(null); })} />
       </Card>
     );
   }
+  return enabled ? <TwoFactorEnabled recoveryLeft={recoveryLeft} /> : <TwoFactorSetup onEnabled={setCodes} />;
+}
+
+function TwoFactorSetup({ onEnabled }: { onEnabled: (codes: string[]) => void }) {
+  const [enroll, setEnroll] = useState<EnrollmentData | null>(null);
+  const [code, setCode] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [pending, start] = useTransition();
 
   if (!enroll) {
     return (
@@ -156,7 +159,7 @@ function TwoFactorSetup() {
                 setError(null);
                 const res = await confirmTwoFactorAction(enroll.ticket, code);
                 if (res.ok && res.data) {
-                  setCodes(res.data.codes);
+                  onEnabled(res.data.codes);
                   toast.success("Zwei-Faktor-Anmeldung aktiviert");
                 } else if (!res.ok) setError(res.error);
               });
@@ -269,6 +272,9 @@ export function SessionsCard({ sessions }: { sessions: Array<{ id: string; curre
   const [pending, start] = useTransition();
   const [busyId, setBusyId] = useState<string | null>(null);
   const others = sessions.filter((s) => !s.current).length;
+  // Nur die anderen Geräte durchnummerieren, ältestes zuerst: Die Nummern bleiben stabil,
+  // wenn sich ein neues Gerät anmeldet (Liste ist neueste zuerst sortiert).
+  const otherNo = new Map(sessions.filter((s) => !s.current).map((s, i, arr) => [s.id, arr.length - i]));
 
   function terminate(id: string) {
     setBusyId(id);
@@ -293,18 +299,18 @@ export function SessionsCard({ sessions }: { sessions: Array<{ id: string; curre
   return (
     <>
       <Card className="animate-rise divide-y divide-line overflow-hidden">
-        {sessions.map((s, i) => (
+        {sessions.map((s) => (
           <div key={s.id} className="flex items-center gap-3 px-4 py-3">
             <Smartphone className="h-5 w-5 shrink-0 text-ink-3" aria-hidden />
             <div className="min-w-0 flex-1">
               <p className="flex items-center gap-2 font-medium">
-                {s.current ? "Dieses Gerät" : `Anderes Gerät ${i + 1}`}
+                {s.current ? "Dieses Gerät" : `Anderes Gerät ${otherNo.get(s.id)}`}
                 {s.current ? <Badge tone="ok">Aktuell</Badge> : null}
               </p>
               <p className="text-xs text-ink-3">Angemeldet seit {s.since} · gültig bis {s.until}</p>
             </div>
             {!s.current ? (
-              <Button type="button" variant="secondary" size="sm" className="h-11" disabled={pending} onClick={() => terminate(s.id)} aria-label="Dieses Gerät abmelden">
+              <Button type="button" variant="secondary" size="sm" className="h-11" disabled={pending} onClick={() => terminate(s.id)} aria-label={`Anderes Gerät ${otherNo.get(s.id)} abmelden (angemeldet seit ${s.since})`}>
                 {busyId === s.id ? <Spinner /> : <LogOut className="h-4 w-4" aria-hidden />} Abmelden
               </Button>
             ) : null}

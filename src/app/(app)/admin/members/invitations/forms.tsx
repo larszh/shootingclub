@@ -9,7 +9,6 @@ import { confirmDialog, toast } from "@/lib/ui-feedback";
 import { ROLE_LABELS, TENANT_ROLES } from "@/lib/permissions";
 import { cn } from "@/lib/utils";
 import { inviteMemberAction, resendInvitationAction, revokeInvitationAction } from "@/modules/members/actions";
-import { addMemberByEmailAction } from "@/modules/core/tenant-actions";
 
 export function InviteForm({ canInviteAdmin }: { canInviteAdmin: boolean }) {
   const [state, action, pending] = useActionState(inviteMemberAction, null);
@@ -80,26 +79,5 @@ export function InvitationRow({ id, email, name, role, meta, expired }: { id: st
         <Trash2 className="h-4 w-4" />
       </button>
     </div>
-  );
-}
-
-export function AddExistingForm() {
-  const [state, action, pending] = useActionState(addMemberByEmailAction, null);
-  return (
-    <Card className="animate-rise p-4">
-      <form onSubmit={submitKeepingValues(action)} className="space-y-3">
-        <p className="text-sm text-ink-3">Für Personen, die schon ein Standchef-Konto haben (z.B. aus einem anderen Verein). Sie werden ohne Mail sofort Mitglied.</p>
-        <div className="grid grid-cols-[1fr_130px] gap-3">
-          <Field label="E-Mail des Kontos"><Input name="email" type="email" required placeholder="name@beispiel.ch" /></Field>
-          <Field label="Rolle">
-            <Select name="role" defaultValue="MEMBER">
-              {TENANT_ROLES.filter((r) => r !== "OWNER").map((r) => <option key={r} value={r}>{ROLE_LABELS[r]}</option>)}
-            </Select>
-          </Field>
-        </div>
-        {state && !state.ok ? <Alert>{state.error}</Alert> : state?.ok && state.message ? <Alert tone="ok">{state.message}</Alert> : null}
-        <SubmitButton variant="secondary" pending={pending}>Hinzufügen</SubmitButton>
-      </form>
-    </Card>
   );
 }

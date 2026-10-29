@@ -13,6 +13,7 @@ import { randomCode, slugify } from "@/lib/utils";
 import { todayZurich } from "@/lib/time";
 import { removeUserFromTenantChats } from "@/modules/chat/service";
 import { audit } from "@/lib/audit";
+import { LOCALES, LOCALE_LABELS, type Locale } from "@/lib/i18n/locales";
 
 const TENANT_KINDS = ["CLUB", "RANGE", "PRIVATE"] as const;
 
@@ -140,22 +141,8 @@ export async function removeMemberAction(membershipId: string): Promise<ActionRe
   return ok(undefined, `${m.user.name} entfernt.`);
 }
 
-export async function addMemberByEmailAction(_prev: ActionResult | null, formData: FormData): Promise<ActionResult> {
-  const ctx = await requirePermission("members.manage");
-  const email = String(formData.get("email") ?? "").trim().toLowerCase().slice(0, 191);
-  const role = String(formData.get("role") ?? "MEMBER");
-  if (!isTenantRole(role) || role === "OWNER") return fail("Ungültige Rolle");
-  const user = await db.user.findUnique({ where: { email } });
-  if (!user || user.deletedAt) return fail("Kein Konto mit dieser E-Mail. Stattdessen «Mitglied einladen» verwenden.");
-  // Bestehende Mitgliedschaften (inkl. Inhaber) nicht über diesen Weg ändern;
-  // Rollenwechsel laufen über updateMemberRoleAction mit den Inhaber-Prüfungen.
-  const existing = await db.membership.findUnique({ where: { userId_tenantId: { userId: user.id, tenantId: ctx.tenant.id } } });
-  if (existing) return fail(existing.status === "LEFT" ? "War schon Mitglied (ausgetreten) – Status in der Mitgliederliste ändern." : "Bereits Mitglied – Rolle unter Mitglieder ändern.");
-  const created = await db.membership.create({ data: { userId: user.id, tenantId: ctx.tenant.id, role, status: "ACTIVE", joinedAt: new Date(`${todayZurich()}T00:00:00Z`) } });
-  await audit({ tenantId: ctx.tenant.id, actorId: ctx.user.id, actorName: ctx.user.name, action: "member.add", entity: "Membership", entityId: created.id, detail: `${user.name} als ${ROLE_LABELS[role]}` });
-  revalidatePath("/admin/members", "layout");
-  return ok(undefined, `${user.name} hinzugefügt.`);
-}
+// Bestehende Konten (z.B. aus einem anderen Verein) werden nie direkt verknüpft: Sie erhalten eine
+// Einladung (inviteMemberAction) und treten erst bei, wenn die Person sie selbst annimmt.
 
 export async function regenerateJoinCodeAction(): Promise<ActionResult> {
   const ctx = await requirePermission("tenant.manage");
@@ -193,6 +180,8 @@ function normalizeWebsite(raw: string): string | null | false {
 
 const updateTenantSchema = createTenantSchema.extend({
   description: z.string().trim().max(2000, "Beschreibung zu lang (max. 2000 Zeichen)").optional(),
+  defaultLocale: z.enum(LOCALES as readonly [Locale, ...Locale[]], { message: "Ungültige Vereinssprache" }).optional(),
+  replyToEmail: z.string().trim().toLowerCase().max(190).email("Ungültige E-Mail-Adresse").optional(),
 });
 export async function updateTenantAction(_prev: ActionResult | null, formData: FormData): Promise<ActionResult> {
   const ctx = await requirePermission("tenant.manage");
@@ -202,15 +191,33 @@ export async function updateTenantAction(_prev: ActionResult | null, formData: F
     city: formData.get("city") || undefined,
     canton: formData.get("canton") || undefined,
     description: formData.get("description") || undefined,
+    defaultLocale: formData.get("defaultLocale") || undefined,
+    replyToEmail: formData.get("replyToEmail") || undefined,
   });
-  if (!parsed.success) return fail(parsed.error.issues[0]?.message ?? "Ungültige Eingabe");
+  if (!parsed.success) {
+    const issue = parsed.error.issues[0];
+    const field = issue?.path[0];
+    const msg = issue?.message ?? "Ungültige Eingabe";
+    return fail(msg, field === "replyToEmail" || field === "defaultLocale" ? { [field]: msg } : undefined);
+  }
   const website = normalizeWebsite(String(formData.get("website") ?? ""));
   if (website === false) return fail("Ungültige Webseite, z.B. «www.sv-beispiel.ch».", { website: "Ungültige Adresse" });
-  const { description, ...rest } = parsed.data;
+  const { description, defaultLocale, replyToEmail, ...rest } = parsed.data;
+  const before = await db.tenant.findUnique({ where: { id: ctx.tenant.id }, select: { defaultLocale: true, replyToEmail: true } });
+  // Fehlt ein Feld im Formular (ältere Clients), bleibt der bisherige Wert.
+  const nextLocale = defaultLocale ?? before?.defaultLocale ?? "de";
+  const nextReplyTo = formData.has("replyToEmail") ? replyToEmail || null : before?.replyToEmail ?? null;
   await db.tenant.update({
     where: { id: ctx.tenant.id },
-    data: { ...rest, city: rest.city ?? null, canton: rest.canton ?? null, description: description || null, website },
+    data: { ...rest, city: rest.city ?? null, canton: rest.canton ?? null, description: description || null, website, defaultLocale: nextLocale, replyToEmail: nextReplyTo },
   });
+  const label = (l: string | null | undefined) => (l && l in LOCALE_LABELS ? LOCALE_LABELS[l as keyof typeof LOCALE_LABELS] : l ?? "–");
+  if (before && before.defaultLocale !== nextLocale) {
+    await audit({ tenantId: ctx.tenant.id, actorId: ctx.user.id, actorName: ctx.user.name, action: "tenant.locale.change", entity: "Tenant", entityId: ctx.tenant.id, detail: `Vereinssprache ${label(before.defaultLocale)} → ${label(nextLocale)}` });
+  }
+  if (before && (before.replyToEmail ?? null) !== nextReplyTo) {
+    await audit({ tenantId: ctx.tenant.id, actorId: ctx.user.id, actorName: ctx.user.name, action: "tenant.replyto.change", entity: "Tenant", entityId: ctx.tenant.id, detail: nextReplyTo ? `Antwortadresse: ${nextReplyTo}` : "Antwortadresse entfernt" });
+  }
   revalidatePath("/", "layout");
   return ok(undefined, "Gespeichert.");
 }

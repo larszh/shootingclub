@@ -15,6 +15,8 @@ type Member = {
   membershipId: string; name: string; email: string; avatarUrl?: string | null; address: string | null; memberNumber: string | null;
   category: { id: string; name: string; amountCents: number } | null; overrideCents: number | null; effectiveCents: number | null;
   invoice: { id: string; number: string; status: string; amountCents: number } | null;
+  /** In der Haushaltsrechnung eines anderen Haushaltsmitglieds enthalten */
+  coveredBy?: { number: string | null } | null;
 };
 type Cat = { id: string; name: string; amountCents: number };
 
@@ -53,8 +55,10 @@ function Row({ m, categories, currency, year }: { m: Member; categories: Cat[]; 
         <div className="text-right shrink-0">
           {m.invoice ? (
             <Link href={`/billing/invoices/${m.invoice.id}/print`} target="_blank" className="block"><Badge tone={st!.tone}>{m.invoice.number} · {st!.label}</Badge></Link>
+          ) : m.coveredBy ? (
+            <Badge tone="outline">In Haushaltsrechnung{m.coveredBy.number ? ` ${m.coveredBy.number}` : ""}</Badge>
           ) : m.effectiveCents && m.effectiveCents > 0 ? (
-            <button type="button" disabled={pending} onClick={invoice} className="press inline-flex items-center gap-1 h-8 px-2.5 rounded-control border border-line text-xs font-medium"><FilePlus className="h-3.5 w-3.5" /> Rechnung {year}</button>
+            <button type="button" disabled={pending} onClick={invoice} className="press inline-flex items-center gap-1 h-11 px-3 rounded-control border border-line text-xs font-medium"><FilePlus className="h-3.5 w-3.5" /> Rechnung {year}</button>
           ) : (
             <span className="text-xs text-ink-3">kein Beitrag</span>
           )}

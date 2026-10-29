@@ -91,13 +91,16 @@ bash scripts/deploy.sh
 
 Das Script arbeitet in dieser Reihenfolge:
 
-1. Code holen (`git fetch` + harter Reset auf `origin/<branch>`), `npm ci`, `prisma generate`
-2. **Build** (ohne Datenbank; scheitert früh, bevor etwas an der DB geändert wird)
+1. Code holen (`git fetch`, Stand `origin/<branch>` bzw. `DEPLOY_SHA`) in ein **separates Release-Verzeichnis** (`git worktree`, Standard `.<projektordner>-release` neben dem Projektordner, änderbar mit `RELEASE_DIR`), dort `npm ci` und `prisma generate`
+2. **Build** im Release-Verzeichnis (ohne Datenbank; scheitert früh, bevor etwas an der DB geändert wird)
 3. **Datenbank-Backup** (gzip, siehe «Backups und Wiederherstellung»)
 4. `prisma migrate deploy`, neue globale Programme und Scheiben
-5. `pm2 reload` und **Healthcheck** auf `/api/health`
+5. **Umschalten**: Projektordner auf den neuen Commit setzen, `.next`, `node_modules` und `src/generated` aus dem Release-Verzeichnis hineinschieben (`mv`, Sekundenbruchteile); der bisherige Stand bleibt als `.next.prev`, `node_modules.prev`, `src/generated.prev` liegen
+6. `pm2 reload` und **Healthcheck** auf `/api/health`
 
-Schlägt ein Schritt nach dem Backup fehl, gibt das Script den passenden Wiederherstellungsbefehl aus.
+Bis zum Umschalten läuft die bisherige Instanz unverändert weiter: `npm ci` und Build laufen nicht unter dem laufenden Prozess, ein fehlgeschlagener Build oder eine fehlgeschlagene Migration lässt Code, `.next` und `node_modules` der laufenden Instanz unangetastet. Schlagen Reload oder Healthcheck nach dem Umschalten fehl, schaltet das Script automatisch auf den vorherigen Commit und Build zurück (der fehlgeschlagene liegt dann in `.next.failed`). Die Datenbank bleibt dabei auf dem migrierten Stand; ist das ein Problem, das Backup einspielen (siehe unten). Das Script gibt in jedem Fehlerfall den Code-Stand und den Wiederherstellungsbefehl für das Backup aus.
+
+Platzbedarf: Release-Verzeichnis während des Builds plus ein vorheriger Stand (`*.prev`), zusammen etwa das Dreifache von `node_modules` + `.next`. Release-Verzeichnis und Projektordner müssen auf demselben Dateisystem liegen.
 
 Neue globale Vorlagen (Programme, Scheiben) kommen über den Seed. Für Updates gibt es dafür einen eigenen Modus, der nur fehlende Vorlagen anlegt, kein Konto anfasst und keine `SEED_ADMIN_*`-Variablen braucht:
 
@@ -178,6 +181,7 @@ location /api/chat/stream {
   proxy_set_header X-Real-IP $remote_addr;
   proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
   proxy_set_header X-Forwarded-Proto $scheme;
+  proxy_set_header CF-Connecting-IP "";
   proxy_set_header Connection "";
   proxy_buffering off;
   proxy_cache off;
@@ -190,6 +194,7 @@ location /api/chat/stream {
 `{{app_port}}` ist der Platzhalter der CloudPanel-Vorlage für den App-Port; steht im bestehenden `location /` eine feste Zahl (z.B. `3000`), dieselbe verwenden. Danach **Save** – CloudPanel prüft und lädt nginx neu.
 
 Hinweise:
+- `proxy_set_header CF-Connecting-IP "";` entfernt einen vom Client selbst mitgeschickten `CF-Connecting-IP`-Header, damit er nicht bis zur App durchgereicht wird (siehe «Schutz vor Durchprobieren»). Dieselbe Zeile auch im bestehenden `location /`-Block ergänzen. Hinter Cloudflare (`TRUST_CLOUDFLARE=1`) diese Zeile weglassen, sonst geht der echte Wert von Cloudflare verloren.
 - Ohne `proxy_buffering off` kommen Nachrichten erst verzögert oder gar nicht an; die App fällt dann nach zwei Fehlversuchen auf Abfragen alle paar Sekunden zurück («degraded»), funktioniert also weiter, nur langsamer.
 - Läuft die Domain über **Cloudflare**, funktioniert SSE ebenfalls (Proxy-Modus). Der Server schickt alle 25 s ein Lebenszeichen und schliesst jede Verbindung nach 30 Minuten; der Browser verbindet automatisch neu.
 - Neue Nachrichten werden innerhalb des Node-Prozesses sofort verteilt. Bei mehreren PM2-Instanzen gleicht zusätzlich eine Datenbankabfrage alle 5 s ab; die Standardkonfiguration (`instances: 1`) braucht nichts davon.
@@ -267,14 +272,21 @@ Jeder Job belegt eine Sperrzeile (Tabelle `JobLock`); eine zweite Instanz führt
 
 `scripts/deploy.sh` sichert die Datenbank **vor jeder Migration** mit `mariadb-dump`/`mysqldump` (`--single-transaction`, gzip) nach `BACKUP_DIR` (Standard `~/backups/standchef`, Rechte 700/600) und behält die neuesten `BACKUP_KEEP` Dateien (Standard 14). Das Passwort wird über die Umgebung übergeben, nie auf der Befehlszeile. Fehlt das Dump-Programm, bricht der Deploy ab (`apt install mariadb-client`), ausser `ALLOW_NO_BACKUP=1` ist gesetzt. Die drei Werte können in `.env` oder in der Shell stehen.
 
-Wiederherstellen:
+Der Commit im Dateinamen ist der Code-Stand, der **vor** dem Deploy lief und zu diesem Datenbankstand passt (nicht der neu deployte).
+
+Wiederherstellen: Die Datenbank zuerst leeren und neu anlegen. Der Dump löscht nur die Tabellen, die er selbst enthält; Tabellen, die eine (teilweise) eingespielte Migration neu angelegt hat, blieben sonst stehen, und das nächste `prisma migrate deploy` scheitert mit «already exists» (MariaDB kann DDL nicht zurückrollen).
 
 ```bash
 npx pm2 stop standchef
+mysql -h 127.0.0.1 -u standchef -p -e 'DROP DATABASE standchef; CREATE DATABASE standchef CHARACTER SET utf8mb4;'
 gunzip -c ~/backups/standchef/standchef-standchef-<zeit>-<commit>.sql.gz | mysql -h 127.0.0.1 -u standchef -p standchef
-git checkout <commit-des-backups>   # passender Code-Stand, dann npm ci && npm run build
+# Passender Code-Stand = <commit> aus dem Dateinamen. Hat deploy.sh bereits automatisch
+# zurückgeschaltet, läuft dieser Stand schon (git log -1). Sonst:
+git checkout -B main <commit> && npm ci && npx prisma generate && npm run build
 npx pm2 start standchef
 ```
+
+Darf der Datenbankbenutzer keine Datenbank anlegen, die Datenbank in CloudPanel (**Databases**) löschen und mit demselben Namen und Benutzer neu anlegen.
 
 Zusätzlich empfohlen: tägliche Backups in CloudPanel (**Databases → Backups** bzw. **Admin Area → Backups**, auch extern z.B. auf S3) und `storage/uploads` mitsichern. Ein Backup gilt erst als Backup, wenn die Wiederherstellung einmal geprobt wurde.
 
@@ -291,9 +303,9 @@ Zusätzlich empfohlen: tägliche Backups in CloudPanel (**Databases → Backups*
 
 ## Datenschutz (revDSG)
 
-- **Mehr → Datenschutz** (`/me/privacy`): Mitglieder laden alle eigenen Daten als ZIP herunter und können ihr Konto löschen. Das Konto wird pseudonymisiert; Rechnungen, Buchungen und Resultate bleiben für die Buchhaltung und Ranglisten erhalten. Alleinige Inhaber eines Vereins müssen zuerst eine andere Person zum Inhaber machen.
+- **Mehr → Datenschutz** (`/me/privacy`): Mitglieder laden alle eigenen Daten als ZIP herunter und können ihr Konto löschen. Das Konto wird pseudonymisiert; Rechnungen, Buchungen und Resultate bleiben für die Buchhaltung und Ranglisten erhalten. Künftige, noch nicht bezahlte Buchungen werden dabei storniert (offene Rechnung → storniert), noch nicht versandte Mails an die alte Adresse verworfen. Alleinige Inhaber eines Vereins müssen zuerst eine andere Person zum Inhaber machen.
 - **Protokoll** (`/admin/audit`, Berechtigung `audit.view`): Rollenwechsel, Löschungen, Importe, Exporte und Einstellungen pro Verein, mit CSV-Export. Inhaber laden dort das **Vereinsarchiv** (ZIP mit CSVs) herunter. Super-Admins sehen alle Vereine unter `/super/audit`.
-- **Vereine löschen** (`/super/tenants`): Löschung mit Eingabe des Kürzels, der Verein ist sofort für Mitglieder gesperrt und wird nach 30 Tagen endgültig gelöscht (Job `tenant.purge`); bis dahin «Wiederherstellen».
+- **Vereine löschen** (`/super/tenants`): Löschung mit Eingabe des Kürzels, der Verein ist sofort für Mitglieder gesperrt und wird nach 30 Tagen endgültig gelöscht (Job `tenant.purge`); bis zum Ablauf der Frist «Wiederherstellen» (danach nicht mehr, der Löschjob kann bereits laufen).
 - Ausgetretene Mitglieder (Status «ausgetreten») behalten ihre Daten im Verein, haben aber keinen Zugang mehr.
 
 ## Tests
@@ -338,7 +350,7 @@ CloudPanel behandelt Node.js-Sites gleichwertig zu PHP-Sites (eigener Site-Benut
 
 ## Automatisches Deployment mit GitHub Actions
 
-Der Workflow `.github/workflows/deploy.yml` prüft jeden Push und jeden Pull Request (Typecheck, Lint, Tests, Build). Bei einem Push auf `main` oder manuell über **Actions → CI & Deploy → Run workflow** verbindet er sich per SSH mit dem Server und führt `scripts/deploy.sh` aus (Code holen, `npm ci`, Migrationen, Build, PM2-Reload, Healthcheck). Schlägt der Healthcheck fehl, wird der Lauf rot.
+Der Workflow `.github/workflows/deploy.yml` prüft jeden Push und jeden Pull Request (Typecheck, Lint, Tests, Build). Bei einem Push auf `main` oder manuell über **Actions → CI & Deploy → Run workflow** verbindet er sich per SSH mit dem Server und führt `scripts/deploy.sh` aus (Code holen, `npm ci`, Build, Backup, Migrationen, Umschalten, PM2-Reload, Healthcheck). Deployt wird genau der Commit, den der Job «Typecheck, Lint, Build» geprüft hat (`DEPLOY_SHA=${{ github.sha }}` auf dem Branch des Laufs), nicht der Branch-Kopf zum Zeitpunkt der SSH-Verbindung. Schlägt der Healthcheck fehl, wird der Lauf rot und der Server läuft wieder auf dem vorherigen Stand.
 
 ### 1. SSH-Schlüssel für GitHub erzeugen (lokal, einmalig)
 
@@ -383,7 +395,6 @@ GitHub → Repository → **Settings → Environments → New environment** → 
 | `APP_URL` | `https://standchef.ch` | Öffentliche URL (Link im Deployment, Rücksprung der Zahlungsanbieter) |
 | `PORT` | `3000` | muss dem App Port der CloudPanel-Site entsprechen |
 | `SSH_PORT` | `22` | falls abweichend |
-| `DEPLOY_BRANCH` | `main` | welcher Branch auf den Server kommt |
 | `MANAGE_ENV` | `true` oder leer | `true`: GitHub schreibt bei jedem Deploy die `.env` aus den Secrets. Leer: die `.env` auf dem Server bleibt unangetastet |
 | `UPLOAD_DIR` | `./storage/uploads` | optional |
 | `SMTP_HOST`, `SMTP_PORT`, `SMTP_SECURE`, `SMTP_USER`, `MAIL_FROM` | `mail.infomaniak.com`, `587`, `false`, `noreply@standchef.ch`, `Standchef <noreply@standchef.ch>` | optional, Mailversand |
@@ -397,17 +408,19 @@ Empfehlung: `MANAGE_ENV=true` setzen, sobald alle Werte in GitHub stehen. Dann i
 
 ### 5. Erster Lauf
 
-- Manuell: **Actions → CI & Deploy → Run workflow**, optional einen Branch angeben.
+- Manuell: **Actions → CI & Deploy → Run workflow**. Unter «Use workflow from» den Branch wählen; geprüft und deployt wird dessen aktueller Commit. Mit «Deployment branches: main» im Environment sind nur Läufe von `main` erlaubt.
 - Danach automatisch bei jedem Merge auf `main`.
 
 ### Hinweise
 
-- `scripts/deploy.sh` setzt den Server hart auf den Stand von `origin/<branch>` zurück. Nicht versionierte Dateien (`.env`, `storage/uploads`, `node_modules`) bleiben erhalten, Änderungen an versionierten Dateien auf dem Server gehen verloren. Auf dem Server also nichts im Code ändern.
+- `scripts/deploy.sh` setzt den Server hart auf den deployten Commit von `origin/<branch>` zurück. Nicht versionierte Dateien (`.env`, `storage/uploads`) bleiben erhalten, `node_modules` und `.next` werden durch die im Release-Verzeichnis gebauten ersetzt, Änderungen an versionierten Dateien auf dem Server gehen verloren. Auf dem Server also nichts im Code ändern.
 - Node wird aus nvm geladen, falls die SSH-Sitzung `~/.bashrc` nicht einliest.
 - Fehler stehen im Actions-Log, Laufzeitfehler mit `npx pm2 logs standchef`.
 
 ## Schutz vor Durchprobieren (Login, Beitrittscodes)
 
-Login, Registrierung und Beitrittscodes werden pro IP und pro Konto gebremst (10 Fehlversuche pro Konto bzw. 30 pro IP in 15 Minuten). Die Besucher-IP wird in dieser Reihenfolge ermittelt: `CF-Connecting-IP` (Cloudflare), `X-Real-IP` (von nginx gesetzt), letzter Eintrag von `X-Forwarded-For`. CloudPanel setzt `X-Real-IP` in der Node.js-Vorlage standardmässig. Läuft die Domain über Cloudflare, wird automatisch dessen Header verwendet, sonst würden sich alle Besucher die IP eines Cloudflare-Knotens teilen.
+Login, Registrierung und Beitrittscodes werden pro IP und pro Konto gebremst (10 Fehlversuche pro Konto bzw. 30 pro IP in 15 Minuten). Die Besucher-IP kommt aus `X-Real-IP` (von nginx aus der Verbindungsadresse gesetzt), sonst aus dem letzten Eintrag von `X-Forwarded-For`. CloudPanel setzt `X-Real-IP` in der Node.js-Vorlage standardmässig.
+
+`CF-Connecting-IP` wird nur verwendet, wenn in `.env` `TRUST_CLOUDFLARE=1` gesetzt ist. Das nur setzen, wenn die Domain über Cloudflare (Proxy-Modus) läuft **und** der Server Verbindungen ausschliesslich aus den IP-Bereichen von Cloudflare annimmt (Firewall, oder in nginx `allow`/`deny` mit den Bereichen von https://www.cloudflare.com/ips/). Ist der Server auch direkt erreichbar, kann jeder Client den Header fälschen und so die IP-Drosselung umgehen. Ohne `TRUST_CLOUDFLARE` teilen sich hinter Cloudflare alle Besucher die IP eines Cloudflare-Knotens; die Drosselung pro Konto greift trotzdem.
 
 Der Zähler liegt im Arbeitsspeicher des Node-Prozesses und wird bei einem Neustart zurückgesetzt. Für eine einzelne Instanz unter PM2 ist das ausreichend.

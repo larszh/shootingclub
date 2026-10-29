@@ -176,6 +176,7 @@ export async function soleOwnerTenants(userId: string): Promise<Array<{ id: stri
 /**
  * Löscht ein Konto durch Pseudonymisierung. Rechnungen, Buchungen und Resultate bleiben
  * (Aufbewahrungspflicht 10 Jahre, OR 958f) und verweisen auf das pseudonymisierte Konto.
+ * Künftige, unbezahlte Buchungen werden storniert, wartende Mails an die alte Adresse verworfen.
  * Prüfungen (Passwort, einziger Inhaber) macht der Aufrufer.
  */
 export async function pseudonymizeUser(userId: string): Promise<{ email: string; name: string; locale: string; avatarPath: string | null } | null> {
@@ -184,8 +185,26 @@ export async function pseudonymizeUser(userId: string): Promise<{ email: string;
   const now = new Date();
   const today = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
   const randomHash = await hashPassword(randomBytes(32).toString("base64url"));
+  // Künftige, nicht bezahlte Buchungen werden storniert (wie cancelBookingAction): das Konto kann
+  // sich nicht mehr anmelden, nicht stornieren und ist nicht mehr erreichbar. Die Datensätze und
+  // Rechnungen bleiben erhalten (Rechnung → CANCELLED); bezahlte Buchungen klärt der Verein (Rückerstattung).
+  const futureBookings = await db.booking.findMany({
+    where: { userId, startsAt: { gt: now }, status: { in: ["PENDING", "CONFIRMED"] }, paymentStatus: { notIn: ["PAID", "REFUNDED"] } },
+    select: { id: true, adminNote: true },
+  });
+  const futureBookingIds = futureBookings.map((b) => b.id);
+  const cancelNote = "Automatisch storniert: Konto gelöscht.";
 
   await db.$transaction([
+    ...futureBookings.map((b) =>
+      db.booking.updateMany({
+        where: { id: b.id, status: { in: ["PENDING", "CONFIRMED"] }, paymentStatus: { notIn: ["PAID", "REFUNDED"] } },
+        data: { status: "CANCELLED", cancelledAt: now, paymentStatus: "NOT_REQUIRED", adminNote: [b.adminNote, cancelNote].filter(Boolean).join(" ").slice(-191) },
+      }),
+    ),
+    db.invoice.updateMany({ where: { bookingId: { in: futureBookingIds }, status: "OPEN" }, data: { status: "CANCELLED" } }),
+    // Noch nicht versandte Mails an die bisherige Adresse entfallen (die Löschbestätigung wird danach eingereiht).
+    db.mailMessage.updateMany({ where: { toEmail: user.email, status: "QUEUED" }, data: { status: "SKIPPED", lastError: "Konto gelöscht" } }),
     db.session.deleteMany({ where: { userId } }),
     db.pushSubscription.deleteMany({ where: { userId } }),
     db.authToken.deleteMany({ where: { userId } }),

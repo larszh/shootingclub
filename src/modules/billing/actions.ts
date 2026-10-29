@@ -13,7 +13,8 @@ import { ensureReference, tenantQrIban } from "./reference";
 import { isQrIban } from "@/lib/qr-reference";
 import { todayZurich, zurichParts } from "@/lib/time";
 import { dueDateInDays } from "./dates";
-import { feeInvoicesToCreate } from "./fee-run";
+import { feeInvoicesToCreate, householdInvoiceCovering } from "./fee-run";
+import { audit } from "@/lib/audit";
 import { notify } from "@/lib/notify";
 import { formatDate, formatMoneyLocale } from "@/lib/i18n/core";
 
@@ -34,6 +35,8 @@ async function notifyFeeInvoices(rows: InvoiceNoticeRow[], kind: "issued" | "rem
     const date = formatDate(inv.dueAt, "de");
     const title = `${inv.categoryName} ${inv.year}`;
     const vars = { title, number: inv.number, amount, date, club: tenantName };
+    // Betrag und Datum in der Sprache des Empfängers
+    const localeVars = (locale: string) => ({ amount: formatMoneyLocale(inv.amountCents, locale, inv.currency), date: formatDate(inv.dueAt, locale) });
     await notify({
       tenantId: inv.tenantId,
       userIds: [inv.userId],
@@ -49,6 +52,7 @@ async function notifyFeeInvoices(rows: InvoiceNoticeRow[], kind: "issued" | "rem
         body: `notify.invoice.${kind}.body`,
         emailSubject: `notify.invoice.${kind}.subject`,
         vars,
+        localeVars,
       },
       dedupeKey: kind === "issued" ? `fee-invoice:${inv.id}` : `fee-reminder:${inv.id}:${today}`,
     });
@@ -239,6 +243,10 @@ export async function createRunAction(_prev: ActionResult | null, formData: Form
   // «Haushalte zusammenfassen» (Standard an): eine Rechnung pro Haushalt an den Zahler.
   const combineHouseholds = formData.get("combineHouseholds") !== "off";
   const created = (await createInvoicesLocked(ctx.tenant.id, { ...run, dueAt }, (tx) => feeInvoicesToCreate(tx, ctx.tenant.id, r.year, combineHouseholds))).length;
+  await audit({
+    tenantId: ctx.tenant.id, actorId: ctx.user.id, actorName: ctx.user.name, action: "billing.run", entity: "FeeRun", entityId: run.id,
+    detail: `${r.title} ${r.year}: ${created} ${created === 1 ? "Rechnung" : "Rechnungen"} erstellt${combineHouseholds ? " (Haushalte zusammengefasst)" : ""}`,
+  });
   revalidate();
   redirect(`/admin/billing/runs/${run.id}?created=${created}`);
 }
@@ -249,6 +257,9 @@ export async function createSingleInvoiceAction(membershipId: string, year: numb
   const m = await db.membership.findUnique({ where: { id: membershipId }, include: { user: true, feeCategory: true, feeInvoices: { where: { year, status: { not: "CANCELLED" } } } } });
   if (!m || m.tenantId !== ctx.tenant.id) return fail("Nicht gefunden");
   if (m.feeInvoices.length) return fail("Für dieses Jahr existiert bereits eine Rechnung.");
+  // Mitglied ist schon in der Haushaltsrechnung eines anderen Haushaltsmitglieds enthalten.
+  const covered = await householdInvoiceCovering(db, ctx.tenant.id, m.id, year);
+  if (covered) return fail(covered.number ? `Bereits in der Haushaltsrechnung ${covered.number} enthalten.` : "Bereits in einer Haushaltsrechnung enthalten.");
   const amount = m.feeAmountOverrideCents ?? m.feeCategory?.amountCents ?? null;
   if (amount === null || amount <= 0) return fail("Kein Beitrag definiert (Kategorie oder individueller Betrag).");
   const profile = await db.billingProfile.findUnique({ where: { tenantId: ctx.tenant.id } });
@@ -267,9 +278,13 @@ export async function createSingleInvoiceAction(membershipId: string, year: numb
   const created = await createInvoicesLocked(ctx.tenant.id, { ...run, dueAt }, async (tx) => {
     // Innerhalb der Sperre nochmals prüfen, ob inzwischen eine Rechnung entstanden ist.
     const exists = await tx.feeInvoice.count({ where: { membershipId: m.id, year, status: { not: "CANCELLED" } } });
-    return exists ? [] : [snapshot];
+    return exists || (await householdInvoiceCovering(tx, ctx.tenant.id, m.id, year)) ? [] : [snapshot];
   });
   if (!created.length) return fail("Für dieses Jahr existiert bereits eine Rechnung.");
+  await audit({
+    tenantId: ctx.tenant.id, actorId: ctx.user.id, actorName: ctx.user.name, action: "billing.invoice.create", entity: "Membership", entityId: m.id,
+    detail: `${m.user.name}: Rechnung ${created[0]!.number} (${snapshot.categoryName} ${year})`,
+  });
   revalidate();
   return ok(undefined, "Rechnung erstellt.");
 }

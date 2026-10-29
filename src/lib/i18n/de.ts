@@ -25,15 +25,24 @@ const de: Record<string, string> = {
   "invoice.annualFee": "Jahresbeitrag",
   "invoice.annualFeeYear": "Jahresbeitrag {year}",
   "invoice.reminder": "Zahlungserinnerung",
-  "invoice.booking": "Buchung",
+  "invoice.booking": "Reservation",
+  "invoice.bookingLine": "Reservation {resource}",
+  "invoice.guest": "Gast",
+  "invoice.member": "Mitglied",
   "invoice.ammo": "Munition",
+  "invoice.ammoTitle": "Munition {number}",
+  "invoice.ammoIntro": "Munitionsbezug vom {date} · total {rounds}.",
+  "invoice.ammoLine": "{product} · Kaliber {caliber}",
+  "invoice.ammoQuantity": "Menge {quantity} {unit} à {price} ({rounds})",
+  "invoice.ammoRounds": "{count} Schuss",
+  "invoice.ammoOnSite": "Abgabe zum sofortigen Verbrauch auf dem Schiessplatz.",
   "invoice.discount": "Rabatt",
   "invoice.reminderIntro": "Für die Rechnung {number} haben wir bisher keinen Zahlungseingang festgestellt. Bitte begleichen Sie den Betrag innert 14 Tagen. Falls sich die Zahlung mit diesem Schreiben kreuzt, betrachten Sie es als gegenstandslos.",
 
   // Benachrichtigungen: Themen
   "notify.topic.chat": "Chat-Nachrichten",
   "notify.topic.announcements": "Mitteilungen",
-  "notify.topic.bookings": "Buchungen",
+  "notify.topic.bookings": "Reservationen",
   "notify.topic.invoices": "Rechnungen",
   "notify.topic.shifts": "Helfereinsätze",
   "notify.topic.events": "Anlässe",
@@ -42,8 +51,8 @@ const de: Record<string, string> = {
 
   // Benachrichtigungen: E-Mail-Rahmen
   "notify.mail.open": "In Standchef öffnen",
-  "notify.mail.footer": "Du erhältst diese E-Mail, weil du bei {club} Mitglied bist. Benachrichtigungen kannst du unter «Mein Konto → Benachrichtigungen» anpassen.",
-  "notify.mail.footerNoClub": "Benachrichtigungen kannst du unter «Mein Konto → Benachrichtigungen» anpassen.",
+  "notify.mail.footer": "Du erhältst diese E-Mail, weil du bei {club} Mitglied bist. Benachrichtigungen kannst du in der App unter «Mehr → Benachrichtigungen & Sprache» anpassen.",
+  "notify.mail.footerNoClub": "Benachrichtigungen kannst du in der App unter «Mehr → Benachrichtigungen & Sprache» anpassen.",
 
   // Testbenachrichtigung
   "notify.test.title": "Testbenachrichtigung",
@@ -64,17 +73,17 @@ const de: Record<string, string> = {
   "notify.event.restored.title": "Findet doch statt: {title}",
   "notify.event.restored.body": "Der Anlass vom {date} findet wie geplant statt.",
 
-  // Buchungen
-  "notify.booking.pending.title": "Neue Buchungsanfrage",
-  "notify.booking.pending.body": "{name} möchte {resource} am {date} buchen.",
-  "notify.booking.confirmed.title": "Buchung bestätigt",
-  "notify.booking.confirmed.body": "Deine Buchung «{resource}» am {date} ist bestätigt.",
-  "notify.booking.rejected.title": "Buchung abgelehnt",
-  "notify.booking.rejected.body": "Deine Buchung «{resource}» am {date} wurde leider abgelehnt.",
-  "notify.booking.created.title": "Neue Buchung für dich",
-  "notify.booking.created.body": "Für dich wurde «{resource}» am {date} gebucht.",
-  "notify.booking.cancelled.title": "Buchung storniert",
-  "notify.booking.cancelled.body": "{name} hat die Buchung «{resource}» am {date} storniert.",
+  // Reservationen
+  "notify.booking.pending.title": "Neue Reservationsanfrage",
+  "notify.booking.pending.body": "{name} möchte {resource} am {date} reservieren.",
+  "notify.booking.confirmed.title": "Reservation bestätigt",
+  "notify.booking.confirmed.body": "Deine Reservation «{resource}» am {date} ist bestätigt.",
+  "notify.booking.rejected.title": "Reservation abgelehnt",
+  "notify.booking.rejected.body": "Deine Reservation «{resource}» am {date} wurde leider abgelehnt.",
+  "notify.booking.created.title": "Neue Reservation für dich",
+  "notify.booking.created.body": "Für dich wurde «{resource}» am {date} reserviert.",
+  "notify.booking.cancelled.title": "Reservation storniert",
+  "notify.booking.cancelled.body": "{name} hat die Reservation «{resource}» am {date} storniert.",
 
   // Rechnungen
   "notify.invoice.issued.title": "Neue Rechnung: {title}",

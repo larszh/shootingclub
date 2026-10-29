@@ -29,6 +29,17 @@ describe("i18n core", () => {
     expect(keys.filter((k) => !(k in itDict))).toEqual([]);
   });
 
+  it("fr-Benachrichtigungen duzen durchgehend, Mail-Fusszeile nennt den echten Menüpfad", () => {
+    const notifyFr = Object.entries(fr).filter(([k]) => k.startsWith("notify."));
+    expect(notifyFr.filter(([, v]) => /\b(vous|votre|vos)\b/i.test(v)).map(([k]) => k)).toEqual([]);
+    for (const dict of [de, fr, itDict]) {
+      expect(dict["notify.mail.footerNoClub"]).toContain("Benachrichtigungen & Sprache");
+      expect(dict["notify.mail.footerNoClub"]).not.toMatch(/Mein Konto|Mon compte|Il mio account/);
+    }
+    // Französische Guillemets mit geschütztem Leerzeichen
+    expect(Object.values(fr).filter((v) => /«[^\u00A0]|[^\u00A0]»/.test(v))).toEqual([]);
+  });
+
   it("liest verschiedene Exportformen von Zusatz-Wörterbüchern", () => {
     expect(pickExtra({ default: { de: { a: "x" } } })).toEqual({ de: { a: "x" } });
     expect(pickExtra({ de: { a: "x" }, fr: {} })).toEqual({ de: { a: "x" }, fr: {} });

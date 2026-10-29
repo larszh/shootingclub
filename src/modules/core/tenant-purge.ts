@@ -69,9 +69,25 @@ async function purgeTenantStorage(tenantId: string): Promise<{ files: number; fa
   return { files: files.length, failed };
 }
 
-/** Löscht einen Verein endgültig (Dateien, Logo, danach DB mit Cascade). */
-export async function purgeTenantNow(tenantId: string): Promise<boolean> {
-  const t = await db.tenant.findUnique({ where: { id: tenantId }, select: { id: true, slug: true, name: true, logoPath: true } });
+/**
+ * Bedingung «Frist abgelaufen»: nur solche Vereine dürfen endgültig gelöscht werden.
+ * restoreTenant verweigert die Wiederherstellung ab demselben Zeitpunkt, damit ein laufender
+ * Löschvorgang nicht mit einer Wiederherstellung kollidiert.
+ */
+function purgeDueWhere(now: Date) {
+  return { deletedAt: { not: null }, purgeAfter: { lte: now } };
+}
+
+/**
+ * Löscht einen Verein endgültig (Dateien, Logo, danach DB mit Cascade) – aber nur, wenn er
+ * weiterhin zur Löschung vorgemerkt und die Frist abgelaufen ist. Die Bedingung wird vor dem
+ * Löschen der Dateien und beim abschliessenden Löschen der Zeile (bedingtes deleteMany) erneut geprüft.
+ */
+export async function purgeTenantNow(tenantId: string, now: Date = new Date()): Promise<boolean> {
+  const t = await db.tenant.findFirst({
+    where: { id: tenantId, ...purgeDueWhere(now) },
+    select: { id: true, slug: true, name: true, logoPath: true },
+  });
   if (!t) return false;
   const storage = await purgeTenantStorage(t.id);
   if (t.logoPath) {
@@ -81,7 +97,11 @@ export async function purgeTenantNow(tenantId: string): Promise<boolean> {
       console.warn(`[tenant-purge] Logo von ${t.id} nicht gelöscht:`, e instanceof Error ? e.message : e);
     }
   }
-  await db.tenant.delete({ where: { id: t.id } });
+  const deleted = await db.tenant.deleteMany({ where: { id: t.id, ...purgeDueWhere(now) } });
+  if (deleted.count === 0) {
+    console.warn(`[tenant-purge] Verein ${t.id} wurde während der Löschung wiederhergestellt – DB-Daten bleiben.`);
+    return false;
+  }
   await audit({
     tenantId: t.id,
     actorName: "System",
@@ -99,14 +119,14 @@ export async function purgeTenantNow(tenantId: string): Promise<boolean> {
  */
 export async function purgeDeletedTenants(now: Date = new Date()): Promise<number> {
   const due = await db.tenant.findMany({
-    where: { deletedAt: { not: null }, purgeAfter: { lt: now } },
+    where: purgeDueWhere(now),
     select: { id: true },
     take: 50,
   });
   let count = 0;
   for (const t of due) {
     try {
-      if (await purgeTenantNow(t.id)) count++;
+      if (await purgeTenantNow(t.id, now)) count++;
     } catch (e) {
       console.error(`[tenant-purge] Verein ${t.id} konnte nicht gelöscht werden:`, e instanceof Error ? e.message : e);
     }

@@ -35,6 +35,9 @@ export default async function LoginPage({ searchParams }: { searchParams: Promis
       <p className="mt-3 text-center text-sm">
         <Link href="/forgot-password" className="inline-flex min-h-11 items-center px-2 text-ink-2 underline underline-offset-4 hover:text-ink">Passwort vergessen?</Link>
       </p>
+      <p className="mt-1 text-center text-xs text-ink-3">
+        Vom Verein eingetragen und noch nie angemeldet? Setze dein Passwort über den Link in der Einladung oder über «Passwort vergessen?».
+      </p>
       <p className="mt-3 text-center text-sm text-ink-3">
         Noch kein Konto?{" "}
         <Link href={registerHref} className="font-medium text-ink underline underline-offset-4">Registrieren</Link>

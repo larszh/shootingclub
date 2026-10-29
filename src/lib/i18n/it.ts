@@ -24,7 +24,16 @@ const it: Record<string, string> = {
   "invoice.annualFeeYear": "Quota sociale {year}",
   "invoice.reminder": "Sollecito di pagamento",
   "invoice.booking": "Prenotazione",
+  "invoice.bookingLine": "Prenotazione {resource}",
+  "invoice.guest": "Ospite",
+  "invoice.member": "Socio",
   "invoice.ammo": "Munizioni",
+  "invoice.ammoTitle": "Munizioni {number}",
+  "invoice.ammoIntro": "Acquisto di munizioni del {date} · totale {rounds}.",
+  "invoice.ammoLine": "{product} · calibro {caliber}",
+  "invoice.ammoQuantity": "Quantità {quantity} {unit} a {price} ({rounds})",
+  "invoice.ammoRounds": "{count} colpi",
+  "invoice.ammoOnSite": "Consegna per il consumo immediato al poligono di tiro.",
   "invoice.discount": "Sconto",
   "invoice.reminderIntro": "Per la fattura {number} non abbiamo ancora registrato alcun pagamento. Vi preghiamo di saldare l'importo entro 14 giorni. Se il pagamento si è incrociato con questo scritto, consideratelo nullo.",
 
@@ -38,8 +47,8 @@ const it: Record<string, string> = {
   "notify.topic.system": "Account e sicurezza",
 
   "notify.mail.open": "Apri in Standchef",
-  "notify.mail.footer": "Ricevi questa e-mail perché sei socio di {club}. Puoi modificare le notifiche in «Il mio account → Notifiche».",
-  "notify.mail.footerNoClub": "Puoi modificare le notifiche in «Il mio account → Notifiche».",
+  "notify.mail.footer": "Ricevi questa e-mail perché sei socio di {club}. Puoi modificare le notifiche nell'app alla voce «Mehr → Benachrichtigungen & Sprache».",
+  "notify.mail.footerNoClub": "Puoi modificare le notifiche nell'app alla voce «Mehr → Benachrichtigungen & Sprache».",
 
   "notify.test.title": "Notifica di prova",
   "notify.test.body": "Funziona! Ecco come appaiono le notifiche di Standchef.",
@@ -69,7 +78,7 @@ const it: Record<string, string> = {
   "notify.booking.cancelled.body": "{name} ha annullato la prenotazione «{resource}» del {date}.",
 
   "notify.invoice.issued.title": "Nuova fattura: {title}",
-  "notify.invoice.issued.body": "Fattura {number} di {amount}, pagabile entro il {date}. Tutti i dettagli e la polizza di versamento QR si trovano in Standchef alla voce «Pagamenti».",
+  "notify.invoice.issued.body": "Fattura {number} di {amount}, pagabile entro il {date}. Tutti i dettagli e la polizza di versamento QR si trovano in Standchef alla voce «Zahlungen».",
   "notify.invoice.issued.subject": "{club}: fattura {number}",
   "notify.invoice.reminder.title": "Sollecito di pagamento",
   "notify.invoice.reminder.body": "La fattura {number} di {amount} risulta ancora aperta (scaduta dal {date}). Se hai già pagato, non tenere conto di questo messaggio.",

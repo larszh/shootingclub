@@ -190,17 +190,17 @@ export function TopicsCard({ prefs, email }: { prefs: PreferenceMatrix; email: s
           const info = TOPIC_INFO[topic];
           const locked = LOCKED_EMAIL_TOPICS.has(topic);
           return (
-            <div key={topic} className="p-4">
-              <p className="font-medium">{info.label}</p>
+            <div key={topic} className="p-4" role="group" aria-labelledby={`topic-${topic}`}>
+              <p id={`topic-${topic}`} className="font-medium">{info.label}</p>
               <p className="text-sm text-ink-3">{info.hint}</p>
               <div className="mt-3 grid grid-cols-2 gap-3">
                 <Switch
-                  label={<span className="inline-flex items-center gap-1.5 text-sm"><Bell className="h-4 w-4 text-ink-3" aria-hidden /> Push</span>}
+                  label={<span className="inline-flex items-center gap-1.5 text-sm"><Bell className="h-4 w-4 text-ink-3" aria-hidden /> Push<span className="sr-only">: {info.label}</span></span>}
                   checked={values[topic].push}
                   onChange={(v) => change(topic, "push", v)}
                 />
                 <Switch
-                  label={<span className="inline-flex items-center gap-1.5 text-sm"><Mail className="h-4 w-4 text-ink-3" aria-hidden /> E-Mail</span>}
+                  label={<span className="inline-flex items-center gap-1.5 text-sm"><Mail className="h-4 w-4 text-ink-3" aria-hidden /> E-Mail<span className="sr-only">: {info.label}</span></span>}
                   checked={locked ? true : values[topic].email}
                   disabled={locked}
                   onChange={(v) => change(topic, "email", v)}

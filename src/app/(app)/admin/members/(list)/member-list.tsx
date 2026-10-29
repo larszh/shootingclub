@@ -67,6 +67,7 @@ export function MemberList({ rows, total, query, canManage, categories }: {
   }
 
   const ids = [...selected];
+  const clearSelection = () => setSelected(new Set());
   const selectAll = () => run(() => selectAllMatchingAction(query), (d) => d && setSelected(new Set(d.ids)));
 
   const exportCsv = () => run(() => exportMembersCsvAction(ids), (d) => {
@@ -84,11 +85,13 @@ export function MemberList({ rows, total, query, canManage, categories }: {
   const setStatus = async (status: string) => {
     if (!status) return;
     if (status === "LEFT" && !(await confirmDialog({ title: `${ids.length} als ausgetreten markieren?`, message: "Sie verlieren den Zugang zum Verein. Daten und Rechnungen bleiben erhalten.", tone: "danger", confirmLabel: "Ausgetreten" }))) return;
-    run(() => bulkSetStatusAction(ids, status));
+    // Danach Auswahl leeren: Geänderte fallen je nach Filter aus der Liste und dürfen nicht
+    // unsichtbar ausgewählt bleiben.
+    run(() => bulkSetStatusAction(ids, status), clearSelection);
   };
   const setCategory = (value: string) => {
     if (!value) return;
-    run(() => bulkSetCategoryAction(ids, value === "none" ? null : value));
+    run(() => bulkSetCategoryAction(ids, value === "none" ? null : value), clearSelection);
   };
   const sendMails = async () => {
     if (!(await confirmDialog({ title: "Zugangsmail senden?", message: `Ausgewählte Mitglieder ohne Passwort erhalten einen Link, mit dem sie ein Passwort festlegen (14 Tage gültig). Wer schon Zugang hat, wird übersprungen.`, confirmLabel: "Senden" }))) return;
