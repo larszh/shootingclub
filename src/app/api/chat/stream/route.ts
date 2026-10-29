@@ -3,13 +3,22 @@ import { db } from "@/lib/db";
 import { getCurrentUser } from "@/lib/auth";
 import { activeTenantId, json } from "@/modules/chat/api";
 import { subscribeChat, type ChatBusEvent } from "@/modules/chat/bus";
+import { markOnline } from "@/lib/push/presence";
 import { POLL_OVERLAP_MS, isChatEnabled, isTenantMember, listChangedMessages } from "@/modules/chat/service";
 import type { ChatMessageDTO, ChatStreamEvent } from "@/modules/chat/types";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
-const POLL_MS = 5_000;
+/**
+ * Sicherheitsnetz-Polling (Standard 30 s, über CHAT_POLL_MS einstellbar, mind. 2 s).
+ * Bei einer einzelnen PM2-Instanz liefert der In-Process-Bus alle Ereignisse sofort;
+ * das Polling fängt nur Verpasstes ab (z.B. nach einem Neustart oder bei mehreren Instanzen).
+ */
+const POLL_MS = (() => {
+  const v = Number(process.env.CHAT_POLL_MS);
+  return Number.isFinite(v) && v >= 2_000 ? Math.min(v, 10 * 60_000) : 30_000;
+})();
 const HEARTBEAT_MS = 25_000;
 /** Danach schliesst der Server; der Browser verbindet neu (prüft dabei die Sitzung erneut). */
 const MAX_LIFETIME_MS = 30 * 60_000;
@@ -17,8 +26,8 @@ const MAX_REMEMBERED = 1000;
 
 /**
  * Server-Sent Events für den Chat des aktiven Vereins.
- * Quellen: In-Process-Bus (sofort) und DB-Polling alle 5 s (für mehrere Instanzen bzw.
- * verpasste Ereignisse). Doppelte Ereignisse werden pro Verbindung unterdrückt.
+ * Quellen: In-Process-Bus (sofort) und DB-Polling alle CHAT_POLL_MS (Standard 30 s, für
+ * mehrere Instanzen bzw. verpasste Ereignisse). Doppelte Ereignisse werden pro Verbindung unterdrückt.
  * Es werden nur Ereignisse aus Unterhaltungen weitergeleitet, in denen der Benutzer
  * Mitglied ist, und nur solange er dem Verein angehört.
  */
@@ -38,6 +47,8 @@ export async function GET(req: NextRequest) {
       let closed = false;
       const timers: Array<ReturnType<typeof setInterval>> = [];
       let unsubscribe: () => void = () => {};
+      // Online-Präsenz: solange der Stream offen ist, keine Chat-Pushes an diesen Benutzer.
+      let leaveOnline: () => void = () => {};
       const timeouts: Array<ReturnType<typeof setTimeout>> = [];
 
       const close = () => {
@@ -46,6 +57,7 @@ export async function GET(req: NextRequest) {
         for (const t of timers) clearInterval(t);
         for (const t of timeouts) clearTimeout(t);
         unsubscribe();
+        leaveOnline();
         req.signal.removeEventListener("abort", close);
         try {
           controller.close();
@@ -108,9 +120,12 @@ export async function GET(req: NextRequest) {
 
       try {
         if (!(await refresh())) return;
-      } catch {
+      } catch (e) {
+        console.warn("[chat/stream] Start fehlgeschlagen:", e instanceof Error ? e.message : e);
         return close();
       }
+      if (closed) return;
+      leaveOnline = markOnline(userId);
       let lastPoll = new Date();
 
       write(`retry: 3000\n\n`);
@@ -138,7 +153,7 @@ export async function GET(req: NextRequest) {
             .then((stillOk) => {
               if (stillOk && (wasMember || convs.has(ev.conversationId))) send({ type: "conversation", conversationId: ev.conversationId });
             })
-            .catch(() => undefined)
+            .catch((e) => console.warn("[chat/stream] Mitgliedschaften nicht aktualisiert:", e instanceof Error ? e.message : e))
             .finally(() => {
               if (pendingRefresh === p) pendingRefresh = null;
             });
@@ -168,8 +183,9 @@ export async function GET(req: NextRequest) {
               select: { conversationId: true, userId: true, lastReadAt: true },
             });
             for (const r of reads) if (r.lastReadAt) forwardRead(r.conversationId, r.userId, r.lastReadAt.toISOString());
-          } catch {
+          } catch (e) {
             // Datenbank kurz nicht erreichbar: beim nächsten Durchlauf erneut versuchen.
+            console.warn("[chat/stream] Polling fehlgeschlagen:", e instanceof Error ? e.message : e);
           } finally {
             polling = false;
           }

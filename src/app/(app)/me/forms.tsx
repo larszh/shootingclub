@@ -1,10 +1,10 @@
 "use client";
 
-import { useActionState, useEffect, useRef, useState, useTransition } from "react";
+import { useActionState, useState, useTransition } from "react";
 import Link from "next/link";
-import { Check, CloudOff, Eye, EyeOff, HelpCircle, Monitor, Moon, Plus, Sun } from "lucide-react";
-import { switchTenantAction, updateProfileAction } from "@/modules/core/tenant-actions";
-import { changePasswordAction, removeAvatarAction, setThemePrefAction, uploadAvatarAction } from "@/modules/core/profile-actions";
+import { Check, CloudOff, HelpCircle, Monitor, Moon, Plus, Sun } from "lucide-react";
+import { switchTenantAction } from "@/modules/core/tenant-actions";
+import { removeAvatarAction, setThemePrefAction, updateProfileAction, uploadAvatarAction } from "@/modules/core/profile-actions";
 import { ImageUploader } from "@/components/image-uploader";
 import { TenantLogo } from "@/components/logo";
 import { Alert, Card, Field, Input } from "@/components/ui";
@@ -51,16 +51,23 @@ export function TenantSwitcher({ activeId, tenants }: { activeId: string | null;
   );
 }
 
-export function ProfileForm({ name, address }: { name: string; address: { street: string | null; zip: string | null; city: string | null } }) {
+export type ProfileValues = { name: string; phone: string | null; birthDate: string | null; street: string | null; zip: string | null; city: string | null };
+
+export function ProfileForm({ profile, today }: { profile: ProfileValues; today: string }) {
   const [state, action, pending] = useActionState(updateProfileAction, null);
+  const fe = state && !state.ok ? state.fieldErrors ?? {} : {};
   return (
     <Card className="animate-rise p-4">
       <form onSubmit={submitKeepingValues(action)} className="space-y-3">
-        <Field label="Anzeigename"><Input name="name" defaultValue={name} required /></Field>
-        <Field label="Strasse und Nr." hint="Für Rechnungen (Mitgliederbeitrag, Reservationen)"><Input name="street" defaultValue={address.street ?? ""} autoComplete="street-address" /></Field>
+        <Field label="Anzeigename" error={fe.name}><Input name="name" defaultValue={profile.name} required autoComplete="name" /></Field>
+        <div className="grid gap-3 sm:grid-cols-2">
+          <Field label="Telefon" hint="Sieht nur der Vorstand" error={fe.phone}><Input name="phone" type="tel" defaultValue={profile.phone ?? ""} autoComplete="tel" inputMode="tel" placeholder="079 123 45 67" /></Field>
+          <Field label="Geburtsdatum" hint="Für Alterskategorien (z.B. U21, Veteranen)" error={fe.birthDate}><Input name="birthDate" type="date" defaultValue={profile.birthDate ?? ""} max={today} min="1900-01-01" autoComplete="bday" /></Field>
+        </div>
+        <Field label="Strasse und Nr." hint="Für Rechnungen (Mitgliederbeitrag, Reservationen)" error={fe.street}><Input name="street" defaultValue={profile.street ?? ""} autoComplete="street-address" /></Field>
         <div className="grid grid-cols-[110px_1fr] gap-3">
-          <Field label="PLZ"><Input name="zip" defaultValue={address.zip ?? ""} autoComplete="postal-code" inputMode="numeric" /></Field>
-          <Field label="Ort"><Input name="city" defaultValue={address.city ?? ""} autoComplete="address-level2" /></Field>
+          <Field label="PLZ" error={fe.zip}><Input name="zip" defaultValue={profile.zip ?? ""} autoComplete="postal-code" inputMode="numeric" /></Field>
+          <Field label="Ort" error={fe.city}><Input name="city" defaultValue={profile.city ?? ""} autoComplete="address-level2" /></Field>
         </div>
         {state && !state.ok ? <Alert>{state.error}</Alert> : state?.ok && state.message ? <Alert tone="ok">{state.message}</Alert> : null}
         <SubmitButton variant="secondary" pending={pending}>Speichern</SubmitButton>
@@ -126,43 +133,6 @@ export function ThemePicker({ value }: { value: string }) {
         «System» folgt der Einstellung deines Geräts.
       </p>
       {error ? <div className="mt-2"><Alert>{error}</Alert></div> : null}
-    </Card>
-  );
-}
-
-function PasswordInput({ name, autoComplete, error }: { name: string; autoComplete: string; error?: string }) {
-  const [show, setShow] = useState(false);
-  return (
-    <div>
-      <div className="relative">
-        <Input name={name} type={show ? "text" : "password"} autoComplete={autoComplete} required minLength={name === "current" ? 1 : 8} className="pr-12" aria-invalid={!!error} />
-        <button type="button" onClick={() => setShow((s) => !s)} className="absolute inset-y-0 right-0 flex w-11 items-center justify-center text-ink-3 hover:text-ink" aria-label={show ? "Passwort verbergen" : "Passwort anzeigen"}>
-          {show ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-        </button>
-      </div>
-      {error ? <p className="mt-1 text-sm text-danger">{error}</p> : null}
-    </div>
-  );
-}
-
-export function PasswordForm() {
-  const [state, action, pending] = useActionState(changePasswordAction, null);
-  const formRef = useRef<HTMLFormElement>(null);
-  // Nach erfolgreichem Ändern Passwortfelder leeren; bei Fehlern bleiben die Eingaben erhalten.
-  useEffect(() => {
-    if (state?.ok) formRef.current?.reset();
-  }, [state]);
-  const fe = state && !state.ok ? state.fieldErrors ?? {} : {};
-  return (
-    <Card className="animate-rise p-4">
-      <form ref={formRef} onSubmit={submitKeepingValues(action)} className="space-y-3">
-        <Field label="Aktuelles Passwort"><PasswordInput name="current" autoComplete="current-password" error={fe.current} /></Field>
-        <Field label="Neues Passwort" hint="Mindestens 8 Zeichen"><PasswordInput name="next" autoComplete="new-password" error={fe.next} /></Field>
-        <Field label="Neues Passwort bestätigen"><PasswordInput name="confirm" autoComplete="new-password" error={fe.confirm} /></Field>
-        {state && !state.ok ? <Alert>{state.error}</Alert> : state?.ok && state.message ? <Alert tone="ok">{state.message}</Alert> : null}
-        <SubmitButton variant="secondary" pending={pending} pendingText="Wird geändert…">Passwort ändern</SubmitButton>
-        <p className="text-xs text-ink-3">Nach dem Ändern werden alle anderen Geräte abgemeldet.</p>
-      </form>
     </Card>
   );
 }

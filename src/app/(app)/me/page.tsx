@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { BookUser, CalendarDays, ChevronRight, CreditCard, FolderOpen, LogOut, Megaphone, MessageCircle, Package, Settings, Shield, Target, Users, BarChart3, Wallet } from "lucide-react";
+import { Bell, BookUser, CalendarDays, ChevronRight, CreditCard, FileUp, FolderOpen, History, Home, KeyRound, LogOut, Mail, Megaphone, MessageCircle, Package, Server, Settings, Shield, ShieldCheck, Target, Users, BarChart3, Wallet } from "lucide-react";
 import { getAppContext } from "@/lib/tenant";
 import { db } from "@/lib/db";
 import { logoutAction } from "@/modules/core/auth-actions";
@@ -9,7 +9,9 @@ import { Avatar, tenantLogoUrl } from "@/components/avatar";
 import { TenantLogo } from "@/components/logo";
 import { ROLE_LABELS, type TenantRole } from "@/lib/permissions";
 import { formatDate } from "@/lib/utils";
-import { AvatarCard, PasswordForm, ProfileForm, TenantSwitcher, ThemePicker } from "./forms";
+import { todayZurich } from "@/lib/time";
+import { dateOnly, formatIsoDate, statusLabel } from "@/modules/members/types";
+import { AvatarCard, ProfileForm, TenantSwitcher, ThemePicker } from "./forms";
 
 export const metadata: Metadata = { title: "Mehr" };
 
@@ -19,16 +21,22 @@ export default async function MePage() {
   const ctx = await getAppContext();
   const canManage = ctx.tenant ? ctx.can("tenant.manage") : false;
   const canManageAmmo = ctx.tenant ? ctx.can("ammo.manage") : false;
+  const canViewMembers = ctx.tenant ? ctx.can("members.view") : false;
+  const canManageMembers = ctx.tenant ? ctx.can("members.manage") : false;
+  const canAudit = ctx.tenant ? ctx.can("audit.view") : false;
   const paymentsOn = ctx.hasModule("billing") || ctx.hasModule("bookings") || ctx.hasModule("ammo");
 
+  const profile = await db.user.findUniqueOrThrow({ where: { id: ctx.user.id }, select: { phone: true, birthDate: true } });
   const memberships = await db.membership.findMany({
     where: { userId: ctx.user.id },
     select: {
       id: true,
       role: true,
+      status: true,
       memberNumber: true,
       createdAt: true,
-      tenant: { select: { id: true, name: true, kind: true, city: true, logoPath: true, updatedAt: true, _count: { select: { memberships: true } } } },
+      joinedAt: true,
+      tenant: { select: { id: true, name: true, kind: true, city: true, logoPath: true, updatedAt: true, _count: { select: { memberships: { where: { status: { not: "LEFT" } } } } } } },
     },
     orderBy: { createdAt: "asc" },
   });
@@ -65,17 +73,21 @@ export default async function MePage() {
             {ctx.hasModule("scores") ? <Row href="/scores/stats" icon={<BarChart3 className="h-4 w-4" />} label="Meine Statistik" /> : null}
             <Row href="/members" icon={<BookUser className="h-4 w-4" />} label="Mitgliederverzeichnis" />
           </Card>
-          {canManage || canManageAmmo ? (
+          {canManage || canManageAmmo || canViewMembers || canAudit ? (
             <>
               <SectionTitle>Verwaltung</SectionTitle>
               <Card className="animate-rise divide-y divide-line overflow-hidden">
                 {canManage ? <Row href="/admin" icon={<Settings className="h-4 w-4" />} label="Einstellungen, Logo & Farben" /> : null}
-                {canManage ? <Row href="/admin/members" icon={<Users className="h-4 w-4" />} label="Mitglieder & Rollen" /> : null}
+                {canViewMembers ? <Row href="/admin/members" icon={<Users className="h-4 w-4" />} label="Mitglieder & Rollen" /> : null}
+                {canManageMembers ? <Row href="/admin/members/invitations" icon={<Mail className="h-4 w-4" />} label="Mitglieder einladen" /> : null}
+                {canManageMembers ? <Row href="/admin/members/import" icon={<FileUp className="h-4 w-4" />} label="Mitglieder importieren" /> : null}
+                {canManageMembers ? <Row href="/admin/members/households" icon={<Home className="h-4 w-4" />} label="Haushalte" /> : null}
                 {canManage && paymentsOn ? <Row href="/admin/payments" icon={<Wallet className="h-4 w-4" />} label="Offene Posten" /> : null}
                 {canManage && ctx.hasModule("bookings") ? <Row href="/admin/bookings" icon={<CalendarDays className="h-4 w-4" />} label="Reservationen verwalten" /> : null}
                 {canManage && ctx.hasModule("billing") ? <Row href="/admin/billing" icon={<CreditCard className="h-4 w-4" />} label="Mitgliederbeiträge verwalten" /> : null}
                 {canManage && ctx.hasModule("files") ? <Row href="/admin/files" icon={<FolderOpen className="h-4 w-4" />} label="Dateiablage & Speicherort" /> : null}
                 {canManageAmmo && ctx.hasModule("ammo") ? <Row href="/admin/ammo" icon={<Package className="h-4 w-4" />} label="Munition verwalten" /> : null}
+                {canAudit ? <Row href="/admin/audit" icon={<History className="h-4 w-4" />} label="Protokoll" /> : null}
               </Card>
             </>
           ) : null}
@@ -87,21 +99,29 @@ export default async function MePage() {
           <SectionTitle>Super-Admin</SectionTitle>
           <Card className="animate-rise divide-y divide-line overflow-hidden">
             <Row href="/super" icon={<Shield className="h-4 w-4" />} label="Globale Verwaltung" />
+            <Row href="/super/system" icon={<Server className="h-4 w-4" />} label="System" />
           </Card>
         </>
       ) : null}
+
+      <SectionTitle>Konto</SectionTitle>
+      <Card className="animate-rise divide-y divide-line overflow-hidden">
+        <Row href="/me/security" icon={<ShieldCheck className="h-4 w-4" />} label="Sicherheit" hint="Passwort, Zwei-Faktor, Geräte" />
+        <Row href="/me/notifications" icon={<Bell className="h-4 w-4" />} label="Benachrichtigungen & Sprache" />
+        <Row href="/me/privacy" icon={<KeyRound className="h-4 w-4" />} label="Datenschutz" hint="Daten herunterladen, Konto löschen" />
+      </Card>
 
       <SectionTitle>Profilbild</SectionTitle>
       <AvatarCard name={ctx.user.name} avatarUrl={ctx.user.avatarUrl} />
 
       <SectionTitle>Profil</SectionTitle>
-      <ProfileForm name={ctx.user.name} address={{ street: ctx.user.street, zip: ctx.user.zip, city: ctx.user.city }} />
+      <ProfileForm
+        today={todayZurich()}
+        profile={{ name: ctx.user.name, phone: profile.phone, birthDate: dateOnly(profile.birthDate), street: ctx.user.street, zip: ctx.user.zip, city: ctx.user.city }}
+      />
 
       <SectionTitle>Darstellung</SectionTitle>
       <ThemePicker value={ctx.user.themePref} />
-
-      <SectionTitle>Passwort ändern</SectionTitle>
-      <PasswordForm />
 
       <SectionTitle>Meine Daten</SectionTitle>
       <Card className="animate-rise overflow-hidden">
@@ -109,6 +129,8 @@ export default async function MePage() {
           <DataRow label="Name" value={ctx.user.name} />
           <DataRow label="E-Mail" value={ctx.user.email} />
           <DataRow label="Adresse" value={[ctx.user.street, [ctx.user.zip, ctx.user.city].filter(Boolean).join(" ")].filter(Boolean).join(", ") || "–"} />
+          <DataRow label="Telefon" value={profile.phone || "–"} />
+          <DataRow label="Geburtsdatum" value={formatIsoDate(dateOnly(profile.birthDate))} />
         </dl>
       </Card>
       {memberships.length ? (
@@ -119,13 +141,13 @@ export default async function MePage() {
               <div className="min-w-0 flex-1">
                 <div className="font-medium truncate">{m.tenant.name}</div>
                 <div className="text-xs text-ink-3 truncate">
-                  Mitglied seit {formatDate(m.createdAt)}
+                  {m.status === "LEFT" ? "Ausgetreten" : `Mitglied seit ${formatDate(m.joinedAt ?? m.createdAt)}`}
                   {m.memberNumber ? ` · Nr. ${m.memberNumber}` : ""}
                   {m.tenant.city ? ` · ${m.tenant.city}` : ""}
                   {` · ${m.tenant._count.memberships} Mitglieder`}
                 </div>
               </div>
-              <Badge tone={m.role === "OWNER" || m.role === "ADMIN" ? "accent" : "neutral"}>{roleLabel(m.role)}</Badge>
+              {m.status === "LEFT" ? <Badge tone="outline">{statusLabel(m.status)}</Badge> : <Badge tone={m.role === "OWNER" || m.role === "ADMIN" ? "accent" : "neutral"}>{roleLabel(m.role)}</Badge>}
             </div>
           ))}
         </Card>
@@ -152,11 +174,14 @@ function DataRow({ label, value }: { label: string; value: string }) {
   );
 }
 
-function Row({ href, icon, label }: { href: string; icon: React.ReactNode; label: string }) {
+function Row({ href, icon, label, hint }: { href: string; icon: React.ReactNode; label: string; hint?: string }) {
   return (
-    <Link href={href} className="flex items-center gap-3 px-4 h-13 hover:bg-surface-2 transition-colors">
+    <Link href={href} className="flex min-h-13 items-center gap-3 px-4 py-2 hover:bg-surface-2 transition-colors">
       <span className="text-ink-2">{icon}</span>
-      <span className="flex-1 font-medium">{label}</span>
+      <span className="min-w-0 flex-1">
+        <span className="block font-medium">{label}</span>
+        {hint ? <span className="block text-xs text-ink-3">{hint}</span> : null}
+      </span>
       <ChevronRight className="h-4 w-4 text-ink-3" />
     </Link>
   );

@@ -1,18 +1,21 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { Search, Users, X } from "lucide-react";
+import { Phone, Search, Users, X } from "lucide-react";
 import { Avatar } from "@/components/avatar";
 import { Badge, Card, EmptyState, Input } from "@/components/ui";
 import { ROLE_LABELS, TENANT_ROLES, type TenantRole } from "@/lib/permissions";
 import { cn } from "@/lib/utils";
+import { statusLabel } from "@/modules/members/types";
 
 export type DirectoryMember = {
   id: string;
   userId: string;
   name: string;
-  email: string | null; // nur für Admins
+  email: string | null; // nur mit members.view
+  phone: string | null; // nur mit members.view
   role: string;
+  status: string;
   avatarUrl: string | null;
   since: string; // bereits formatiert, z.B. «März 2024»
   isSelf: boolean;
@@ -34,7 +37,7 @@ export function MemberDirectory({ members }: { members: DirectoryMember[] }) {
 
   const filtered = useMemo(() => {
     const q = normalize(query.trim());
-    return members.filter((m) => (!role || m.role === role) && (!q || normalize(m.name).includes(q) || (m.email ? normalize(m.email).includes(q) : false)));
+    return members.filter((m) => (!role || m.role === role) && (!q || normalize(m.name).includes(q) || (m.email ? normalize(m.email).includes(q) : false) || (m.phone ? m.phone.replace(/\s/g, "").includes(q.replace(/\s/g, "")) : false)));
   }, [members, query, role]);
 
   return (
@@ -68,10 +71,13 @@ export function MemberDirectory({ members }: { members: DirectoryMember[] }) {
                     {m.email ? (
                       <a href={`mailto:${m.email}`} className="hover:underline">{m.email}</a>
                     ) : (
-                      <>dabei seit {m.since}</>
+                      <>dabei seit {m.since}{m.status !== "ACTIVE" ? ` · ${statusLabel(m.status)}` : ""}</>
                     )}
                   </div>
                 </div>
+                {m.phone ? (
+                  <a href={`tel:${m.phone.replace(/[^\d+]/g, "")}`} className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-ink-3 hover:bg-surface-2 hover:text-ink" aria-label={`${m.name} anrufen`}><Phone className="h-4 w-4" /></a>
+                ) : null}
                 <Badge tone={m.role === "OWNER" || m.role === "ADMIN" ? "accent" : m.role === "TRAINER" ? "ok" : "neutral"}>{ROLE_LABELS[m.role as TenantRole] ?? m.role}</Badge>
               </div>
             ))}

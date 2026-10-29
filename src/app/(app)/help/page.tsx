@@ -162,7 +162,35 @@ const ENTRIES: FaqEntry[] = [
     "Wie ändere ich Profilbild, Darstellung oder Passwort?",
     "Profilbild Foto Avatar dunkel hell Darstellung Dark Mode Passwort Adresse Profil",
     <>
-      <p>Unter <Link href="/me">Mehr</Link> findest du dein Profil: Foto hochladen, Name und Adresse (für QR-Rechnungen), Darstellung (System, Hell, Dunkel) und Passwort.</p>
+      <p>Unter <Link href="/me">Mehr</Link> findest du dein Profil: Foto hochladen, Name, Telefon und Adresse (für QR-Rechnungen) und Darstellung (System, Hell, Dunkel). Passwort, Zwei-Faktor-Anmeldung und angemeldete Geräte findest du unter <Link href="/me/security">Sicherheit</Link>.</p>
+    </>,
+  ),
+  entry(
+    "benachrichtigungen",
+    "member",
+    "Wie schalte ich Benachrichtigungen ein oder aus? Wie wechsle ich die Sprache?",
+    "Benachrichtigung Push Mitteilung E-Mail Mail Sprache Französisch Italienisch langue lingua iPhone Home-Bildschirm",
+    <>
+      <p>Unter <Link href="/me/notifications">Mehr → Benachrichtigungen &amp; Sprache</Link> wählst du die Sprache (Deutsch, Französisch, Italienisch) und pro Thema, ob du eine Push-Mitteilung und/oder eine E-Mail erhältst. Push schaltest du dort pro Gerät ein. Auf iPhone und iPad geht das erst, wenn Standchef über «Teilen → Zum Home-Bildschirm» installiert ist.</p>
+    </>,
+  ),
+  entry(
+    "zwei-faktor",
+    "member",
+    "Wie schütze ich mein Konto mit Zwei-Faktor-Anmeldung?",
+    "Zwei-Faktor 2FA TOTP Authenticator Code Sicherheit Wiederherstellungscode Passwort vergessen",
+    <>
+      <p>Unter <Link href="/me/security">Mehr → Sicherheit</Link> «Zwei-Faktor einschalten» wählen, den QR-Code mit einer Authenticator-App scannen (z.B. Aegis, Google oder Microsoft Authenticator) und den 6-stelligen Code eingeben. Die Wiederherstellungscodes gut aufbewahren: Sie helfen, wenn das Handy verloren geht. Für Admins und Inhaber sehr empfohlen.</p>
+      <p>Passwort vergessen? Auf der Anmeldeseite «Passwort vergessen?» wählen, du erhältst einen Link per E-Mail.</p>
+    </>,
+  ),
+  entry(
+    "datenschutz",
+    "member",
+    "Wie lade ich meine Daten herunter oder lösche mein Konto?",
+    "Datenschutz DSG revDSG Export Daten herunterladen Konto löschen Account löschen Austritt",
+    <>
+      <p>Unter <Link href="/me/privacy">Mehr → Datenschutz</Link> lädst du alle deine Daten als ZIP herunter oder löschst dein Konto. Rechnungen, Buchungen und Resultate bleiben für den Verein erhalten, aber ohne deinen Namen (pseudonymisiert).</p>
     </>,
   ),
   entry(

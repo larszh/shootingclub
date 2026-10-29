@@ -2,6 +2,7 @@ import "server-only";
 import { db } from "@/lib/db";
 import { formatMoney } from "@/lib/money";
 import { renderQrBillSvg } from "@/lib/qr-bill";
+import { getT, getTenantLocale } from "@/lib/i18n";
 import { formatDateZurich } from "@/lib/time";
 import { getBillingProfile, profileToCreditor } from "@/modules/billing/profile";
 import type { InvoiceDocumentProps } from "@/components/invoice-document";
@@ -17,7 +18,8 @@ type OrderForInvoice = {
 
 /** Druckdaten einer Munitionsrechnung inkl. QR-Zahlteil (nur solange unbezahlt). */
 export async function buildAmmoInvoiceDocument(order: OrderForInvoice, tenantName: string): Promise<InvoiceDocumentProps> {
-  const [profile, settings, user, membership] = await Promise.all([
+  const [locale, profile, settings, user, membership] = await Promise.all([
+    getTenantLocale(order.tenantId),
     getBillingProfile(order.tenantId, tenantName),
     getAmmoSettings(order.tenantId),
     order.userId ? db.user.findUnique({ where: { id: order.userId }, select: { name: true, email: true, street: true, zip: true, city: true } }) : null,
@@ -29,13 +31,14 @@ export async function buildAmmoInvoiceDocument(order: OrderForInvoice, tenantNam
   const reference = status === "OPEN" && profile.qrIban ? await ensureAmmoReference(order, profile.iban) : order.reference;
   const debtor = { name: user?.name ?? "Mitglied", email: user?.email ?? null, street: user?.street ?? null, zip: user?.zip ?? null, city: user?.city ?? null };
   const qrSvg = status === "OPEN"
-    ? await renderQrBillSvg({ amountCents: order.totalCents, currency: order.currency, creditor, debtor, message: invoiceTitle(order.invoiceNumber), reference: profile.qrIban ? reference : null })
+    ? await renderQrBillSvg({ amountCents: order.totalCents, currency: order.currency, creditor, debtor, message: invoiceTitle(order.invoiceNumber), reference: profile.qrIban ? reference : null, locale })
     : null;
   const rounds = order.items.reduce((a, i) => a + i.quantity * i.roundsPerUnit, 0);
   const issuedAt = order.invoiceIssuedAt ?? order.issuedAt ?? order.createdAt;
 
   return {
-    title: "Rechnung",
+    locale,
+    title: getT(locale)("invoice.title"),
     number,
     issuedAt,
     dueAt: order.dueAt ?? issuedAt,

@@ -24,6 +24,8 @@ export type ActiveTenant = {
   logoUrl: string | null;
   brandColor: string | null;
   brandColor2: string | null;
+  /** Nur bei Super-Admins gesetzt, die einen Verein mit geplanter Löschung geöffnet haben. */
+  deletedAt?: Date | null;
 };
 
 export type AppContext = {
@@ -37,6 +39,8 @@ export type AppContext = {
 export const getAppContext = cache(async (): Promise<AppContext> => {
   const user = await getCurrentUser();
   if (!user) redirect("/login");
+  // user.memberships enthält nur Mitgliedschaften mit Zugang (nicht LEFT, Verein nicht gelöscht),
+  // siehe getCurrentUser in src/lib/auth.ts.
 
   const jar = await cookies();
   const wanted = jar.get(TENANT_COOKIE)?.value;
@@ -54,8 +58,9 @@ export const getAppContext = cache(async (): Promise<AppContext> => {
   if (wantedMembership) {
     tenant = toActive(wantedMembership.tenant, wantedMembership.role);
   } else if (user.isSuperAdmin && wanted) {
-    const t = await db.tenant.findUnique({ where: { id: wanted }, select: { id: true, slug: true, name: true, kind: true, logoPath: true, brandColor: true, brandColor2: true, updatedAt: true } });
-    if (t) tenant = toActive(t, null);
+    // Super-Admins dürfen auch Vereine mit geplanter Löschung öffnen (Kontrolle vor dem Wiederherstellen).
+    const t = await db.tenant.findUnique({ where: { id: wanted }, select: { id: true, slug: true, name: true, kind: true, logoPath: true, brandColor: true, brandColor2: true, updatedAt: true, deletedAt: true } });
+    if (t) tenant = { ...toActive(t, null), deletedAt: t.deletedAt };
   }
   if (!tenant && user.memberships[0]) {
     const fallback = user.memberships[0];

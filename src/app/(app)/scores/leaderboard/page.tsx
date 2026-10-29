@@ -68,6 +68,7 @@ export default async function LeaderboardPage({ searchParams }: { searchParams: 
                 <div className="text-sm text-ink-3">
                   Dein Bestes: {formatScore(board.me.total, board.decimal)} von {board.program.max}
                   {board.me.rank > 1 ? ` · ${formatScore(board.entries[0]!.total - board.me.total, board.decimal)} hinter Rang 1` : " · Spitze!"}
+                  {board.me.zeros ? ` · ${board.me.zeros} Nuller` : ""}
                 </div>
               </div>
             ) : (

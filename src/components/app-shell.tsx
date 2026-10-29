@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Home, Target, Crosshair, Menu, CalendarDays, Megaphone, MessageCircle, FolderOpen, Package, Wallet } from "lucide-react";
+import { Home, Target, Crosshair, Menu, CalendarDays, Megaphone, MessageCircle, FolderOpen, Package, Wallet, Settings, Users, FileUp, House, History, Server } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { TenantLogo } from "@/components/logo";
 import { Avatar } from "@/components/avatar";
@@ -39,10 +39,33 @@ const NAV: NavItem[] = [
   { href: "/files", label: "Dateien", icon: FolderOpen, modules: ["files"] },
   { href: "/ammo", label: "Munition", icon: Package, modules: ["ammo"] },
   { href: "/payments", label: "Zahlungen", icon: Wallet, modules: ["billing", "bookings", "ammo"], alsoActive: ["/billing"] },
-  { href: "/me", label: "Mehr", icon: Menu },
+  // Verwaltung und Verzeichnis liegen mobil unter «Mehr» (Tableiste bleibt bei 5 Einträgen).
+  { href: "/me", label: "Mehr", icon: Menu, alsoActive: ["/admin", "/members", "/super", "/help"] },
 ];
 
 export type ShellTenant = { id: string; name: string; logoUrl: string | null };
+/** Welche Verwaltungslinks die Desktop-Seitenleiste zeigt (aus den Berechtigungen im Layout). */
+export type ShellAdmin = {
+  settings?: boolean; // tenant.manage
+  members?: boolean; // members.view
+  membersManage?: boolean; // members.manage: Import, Haushalte
+  audit?: boolean; // audit.view
+  system?: boolean; // Super-Admin
+};
+
+function adminLinks(a: ShellAdmin | null | undefined): NavItem[] {
+  if (!a) return [];
+  const out: NavItem[] = [];
+  if (a.settings) out.push({ href: "/admin", label: "Einstellungen", icon: Settings });
+  if (a.members) out.push({ href: "/admin/members", label: "Mitglieder", icon: Users });
+  if (a.membersManage) {
+    out.push({ href: "/admin/members/import", label: "Import", icon: FileUp });
+    out.push({ href: "/admin/members/households", label: "Haushalte", icon: House });
+  }
+  if (a.audit) out.push({ href: "/admin/audit", label: "Protokoll", icon: History });
+  if (a.system) out.push({ href: "/super/system", label: "System", icon: Server });
+  return out;
+}
 export type ShellUser = { name: string; email: string; avatarUrl: string | null };
 
 export function AppShell({
@@ -51,6 +74,7 @@ export function AppShell({
   tenant,
   user,
   chatUnread = null,
+  admin = null,
 }: {
   children: React.ReactNode;
   enabledModules: ModuleKey[];
@@ -58,6 +82,8 @@ export function AppShell({
   user: ShellUser;
   /** Ungelesene Chat-Nachrichten beim Laden (null = Chat nicht aktiv) */
   chatUnread?: number | null;
+  /** Verwaltungslinks für die Desktop-Seitenleiste (mobil unter «Mehr» → /me) */
+  admin?: ShellAdmin | null;
 }) {
   const pathname = usePathname();
   const items = NAV.filter((n) => !n.modules || n.modules.some((m) => enabledModules.includes(m)));
@@ -73,6 +99,9 @@ export function AppShell({
   // Liegt der Chat mobil unter «Mehr», trägt «Mehr» den Zähler, damit nichts übersehen wird.
   const badgeTab = chatOn ? (tabs.some((n) => n.href === "/chat") ? "/chat" : "/me") : null;
   const title = tenant?.name ?? "Standchef";
+  const admins = adminLinks(admin);
+  // Für die Verwaltung: längster passender Link ist aktiv (/admin/members/import nicht zusätzlich /admin)
+  const activeAdmin = admins.filter((n) => matches(n.href)).sort((a, b) => b.href.length - a.href.length)[0]?.href;
 
   return (
     <div className="min-h-dvh md:flex">
@@ -88,7 +117,7 @@ export function AppShell({
         <div className="mx-5 mb-3 h-0.5 rounded-full brand-gradient opacity-80" aria-hidden />
         <nav className="flex-1 px-3 space-y-0.5 overflow-y-auto" aria-label="Hauptnavigation">
           {items.map((n) => {
-            const active = isActive(n.href);
+            const active = isActive(n.href) && !(n.href === "/me" && activeAdmin);
             return (
               <Link key={n.href} href={n.href} aria-current={active ? "page" : undefined}
                 className={cn("flex items-center gap-3 rounded-control px-3 h-11 text-[15px] font-medium transition-colors", active ? "bg-accent-soft text-accent" : "text-ink-2 hover:bg-surface-2")}>
@@ -97,6 +126,20 @@ export function AppShell({
               </Link>
             );
           })}
+          {admins.length ? (
+            <>
+              <div className="px-3 pb-1 pt-5 text-[11px] font-semibold uppercase tracking-wider text-ink-3">Verwaltung</div>
+              {admins.map((n) => {
+                const active = activeAdmin === n.href;
+                return (
+                  <Link key={n.href} href={n.href} aria-current={active ? "page" : undefined}
+                    className={cn("flex items-center gap-3 rounded-control px-3 h-11 text-[15px] font-medium transition-colors", active ? "bg-accent-soft text-accent" : "text-ink-2 hover:bg-surface-2")}>
+                    <n.icon className="h-5 w-5" /> <span className="flex-1">{n.label}</span>
+                  </Link>
+                );
+              })}
+            </>
+          ) : null}
         </nav>
         <Link href="/me" className={cn("m-3 flex items-center gap-3 rounded-control px-3 py-2.5 transition-colors", isActive("/me") ? "bg-surface-2" : "hover:bg-surface-2")}>
           <Avatar name={user.name} src={user.avatarUrl} size={36} />

@@ -5,13 +5,14 @@
  * - Stale-while-revalidate: /api/avatars/**, /api/files/**, /api/targets/**
  * - Network-first mit Cache-Fallback: Seiten (HTML) und React-Server-Component-Anfragen
  * - Nie gecacht: POST, Server Actions (Header Next-Action), /api/sync, /api/payments/**, Login/Registrierung
- * - Beim Abmelden werden alle benutzerbezogenen Caches gelöscht.
+ * - Beim Abmelden werden alle benutzerbezogenen Caches gelöscht (und das Push-Abo des Geräts beendet).
+ * - Web Push: Benachrichtigungen anzeigen, Klick öffnet die App (nur gleiche Herkunft).
  *
  * Bei Änderungen an dieser Datei VERSION erhöhen. Name/Version der IndexedDB müssen mit
  * src/lib/offline/idb.ts übereinstimmen.
  */
 
-const VERSION = "2026-10-28.2";
+const VERSION = "2026-10-29.1";
 const DATA_VERSION = "v1"; // nur erhöhen, wenn sich das Format gecachter Seiten ändert
 
 const PRECACHE = `sc-precache-${VERSION}`;
@@ -506,3 +507,111 @@ async function swFlush() {
     db.close();
   }
 }
+
+// ---------------------------------------------------------------------------
+// Web Push
+// ---------------------------------------------------------------------------
+
+const PUSH_ICON = "/icons/icon-192.png";
+const PUSH_BADGE = "/icons/icon-192.png";
+
+/** Nur Pfade derselben App öffnen (keine fremden Adressen aus Push-Daten). */
+function safePushUrl(raw) {
+  try {
+    const url = new URL(typeof raw === "string" && raw ? raw : "/", self.location.origin);
+    if (url.origin !== self.location.origin) return "/";
+    return url.pathname + url.search + url.hash;
+  } catch (e) {
+    return "/";
+  }
+}
+
+self.addEventListener("push", (event) => {
+  let data = {};
+  try {
+    data = event.data ? event.data.json() : {};
+  } catch (e) {
+    data = { body: event.data ? event.data.text() : "" };
+  }
+  const title = typeof data.title === "string" && data.title ? data.title : "Standchef";
+  const options = {
+    body: typeof data.body === "string" ? data.body : "",
+    icon: PUSH_ICON,
+    badge: PUSH_BADGE,
+    data: { url: safePushUrl(data.url) },
+    lang: "de-CH",
+  };
+  if (typeof data.tag === "string" && data.tag) {
+    options.tag = data.tag;
+    // Gleiche Gruppe (z.B. derselbe Chat): ersetzen, aber erneut melden
+    options.renotify = true;
+  }
+  event.waitUntil(self.registration.showNotification(title, options));
+});
+
+self.addEventListener("notificationclick", (event) => {
+  event.notification.close();
+  const target = safePushUrl(event.notification.data && event.notification.data.url);
+  event.waitUntil(
+    (async () => {
+      const all = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
+      const same = all.filter((c) => {
+        try {
+          return new URL(c.url).origin === self.location.origin;
+        } catch (e) {
+          return false;
+        }
+      });
+      // Bevorzugt ein Fenster, das die Seite schon zeigt, sonst irgendein App-Fenster
+      const exact = same.find((c) => new URL(c.url).pathname === target.split(/[?#]/)[0]);
+      const client = exact || same[0];
+      if (client) {
+        await client.focus();
+        if (!exact && "navigate" in client) {
+          try {
+            await client.navigate(target);
+          } catch (e) {
+            await self.clients.openWindow(target);
+          }
+        }
+        return;
+      }
+      await self.clients.openWindow(target);
+    })(),
+  );
+});
+
+// Push-Dienst hat das Abo erneuert: neues Abo beim Server hinterlegen.
+self.addEventListener("pushsubscriptionchange", (event) => {
+  event.waitUntil(
+    (async () => {
+      try {
+        const old = event.oldSubscription;
+        const key = old && old.options ? old.options.applicationServerKey : null;
+        const sub = event.newSubscription || (key ? await self.registration.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: key }) : null);
+        if (!sub) return;
+        await fetch("/api/push/subscribe", {
+          method: "POST",
+          credentials: "same-origin",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(sub.toJSON()),
+        });
+      } catch (e) {
+        /* nächster Besuch der Einstellungen meldet das Gerät neu an */
+      }
+    })(),
+  );
+});
+
+// Abmelden (gemeinsam genutzte Geräte): Push-Abo dieses Geräts beenden, damit keine
+// Benachrichtigungen des vorherigen Kontos mehr erscheinen. Ergänzt den Nachrichten-Handler oben.
+self.addEventListener("message", (event) => {
+  const data = event.data || {};
+  if (data.type !== "CLEAR_USER_CACHES") return;
+  event.waitUntil(
+    self.registration.pushManager
+      .getSubscription()
+      .then((s) => (s ? s.unsubscribe() : false))
+      .catch(() => false),
+  );
+});

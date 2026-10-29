@@ -1,12 +1,14 @@
 "use client";
 
-import { useActionState } from "react";
+import { useActionState, useState } from "react";
 import { createRunAction } from "@/modules/billing/actions";
 import { Alert, Card, Field, Input, Textarea } from "@/components/ui";
 import { SubmitButton, submitKeepingValues } from "@/components/ui/form";
+import { Switch } from "@/components/ui/controls";
 
 export function RunForm({ year, defaults, eligible, alreadyInvoiced }: { year: number; defaults: { title: string; invoicePrefix: string; dueDays: number; note: string | null }; eligible: number; alreadyInvoiced: number }) {
   const [state, action, pending] = useActionState(createRunAction, null);
+  const [combine, setCombine] = useState(true);
   return (
     <Card className="animate-rise p-4">
       <form onSubmit={submitKeepingValues(action)} className="space-y-3">
@@ -21,8 +23,10 @@ export function RunForm({ year, defaults, eligible, alreadyInvoiced }: { year: n
           <Field label="Zahlungsfrist (Tage)"><Input name="dueDays" type="number" inputMode="numeric" min={1} defaultValue={defaults.dueDays} /></Field>
         </div>
         <Field label="Hinweistext (optional)"><Textarea name="note" defaultValue={defaults.note ?? ""} className="min-h-16" placeholder="z.B. Vielen Dank für deine Treue. Der Beitrag umfasst den Verbandsbeitrag." /></Field>
+        <Switch label="Haushalte zusammenfassen" description="Mitglieder eines Haushalts erhalten eine gemeinsame Rechnung an die zahlende Person." checked={combine} onChange={setCombine} />
+        <input type="hidden" name="combineHouseholds" value={combine ? "on" : "off"} />
         {state && !state.ok ? <Alert>{state.error}</Alert> : null}
-        <SubmitButton pending={pending} disabled={eligible === 0} pendingText="Rechnungen werden erstellt…">{eligible === 0 ? "Keine offenen Mitglieder" : `${eligible} Rechnungen erstellen`}</SubmitButton>
+        <SubmitButton pending={pending} disabled={eligible === 0} pendingText="Rechnungen werden erstellt…">{eligible === 0 ? "Keine offenen Mitglieder" : combine ? "Rechnungen erstellen" : `${eligible} Rechnungen erstellen`}</SubmitButton>
       </form>
     </Card>
   );

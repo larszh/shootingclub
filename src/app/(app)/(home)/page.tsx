@@ -44,6 +44,8 @@ import { AnnouncementsCard, UpcomingEventsCard } from "@/modules/events/ui/dashb
 import { listConversations } from "@/modules/chat/queries";
 import { canSeeFolder, loadFolderTree } from "@/modules/files/queries";
 import { FileTypeIcon } from "@/modules/files/ui/file-icon";
+import { PushPrompt } from "@/components/pwa/push-prompt";
+import { TwoFactorHint } from "../me/security/hint";
 
 type TenantCtx = AppContext & { tenant: ActiveTenant };
 
@@ -215,6 +217,9 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
           <Alert tone="warn">Dafür fehlt dir die Berechtigung. Frag bei Bedarf deinen Vereinsadmin.</Alert>
         </div>
       ) : null}
+
+      <PushPrompt className="mb-4" />
+      <TwoFactorHint className="mb-4" />
 
       {/* Schnellaktionen */}
       {actions.length ? (

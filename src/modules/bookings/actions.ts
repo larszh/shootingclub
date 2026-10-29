@@ -15,6 +15,8 @@ import { maxPersonsFor, planRequest, quotePrice } from "./pricing";
 import { isCalendarDate, PERSONS_LIMIT, PROVIDER_FIELDS, providerKeys, resourceSchema, settingsSchema, type DurationOption, type PaymentProviderKey } from "./types";
 import { ensureInvoiceForBooking } from "./invoice";
 import { startOnlinePayment } from "./payment-flow";
+import { notify, tenantUserIdsWithRole } from "@/lib/notify";
+import { formatDateTime } from "@/lib/i18n/core";
 
 /** Verwaltungsrecht und aktives Modul «bookings» verlangen. */
 async function requireBookingsAdmin() {
@@ -23,6 +25,56 @@ async function requireBookingsAdmin() {
   return ctx;
 }
 
+
+// ---------------------------------------------------------------------------
+// Benachrichtigungen (nie blockierend: Fehler werden in notify() abgefangen)
+// ---------------------------------------------------------------------------
+
+type BookingNotice = "pending" | "confirmed" | "rejected" | "cancelled" | "created";
+
+async function notifyBooking(bookingId: string, notice: BookingNotice, actor: { id: string; name: string }) {
+  const b = await db.booking.findUnique({
+    where: { id: bookingId },
+    select: { id: true, tenantId: true, userId: true, startsAt: true, resource: { select: { name: true } }, user: { select: { name: true } } },
+  });
+  if (!b) return;
+  const date = formatDateTime(b.startsAt, "de");
+  const resource = b.resource.name;
+  if (notice === "pending") {
+    const admins = (await tenantUserIdsWithRole(b.tenantId, ["OWNER", "ADMIN"])).filter((id) => id !== actor.id);
+    const name = b.user?.name ?? actor.name;
+    await notify({
+      tenantId: b.tenantId,
+      userIds: admins,
+      topic: "bookings",
+      title: "Neue Buchungsanfrage",
+      body: `${name} möchte ${resource} am ${date} buchen.`,
+      url: "/admin/bookings",
+      tag: `booking:${b.id}`,
+      i18n: { title: "notify.booking.pending.title", body: "notify.booking.pending.body", vars: { name, resource, date } },
+      dedupeKey: `booking-pending:${b.id}`,
+    });
+    return;
+  }
+  if (!b.userId || b.userId === actor.id) return;
+  const de: Record<Exclude<BookingNotice, "pending">, [string, string]> = {
+    confirmed: ["Buchung bestätigt", `Deine Buchung «${resource}» am ${date} ist bestätigt.`],
+    rejected: ["Buchung abgelehnt", `Deine Buchung «${resource}» am ${date} wurde leider abgelehnt.`],
+    cancelled: ["Buchung storniert", `${actor.name} hat die Buchung «${resource}» am ${date} storniert.`],
+    created: ["Neue Buchung für dich", `Für dich wurde «${resource}» am ${date} gebucht.`],
+  };
+  await notify({
+    tenantId: b.tenantId,
+    userIds: [b.userId],
+    topic: "bookings",
+    title: de[notice][0],
+    body: de[notice][1],
+    url: `/bookings/${b.id}`,
+    tag: `booking:${b.id}`,
+    i18n: { title: `notify.booking.${notice}.title`, body: `notify.booking.${notice}.body`, vars: { name: actor.name, resource, date } },
+    dedupeKey: `booking-${notice}:${b.id}`,
+  });
+}
 
 // ---------------------------------------------------------------------------
 // Mitglieder
@@ -128,6 +180,7 @@ export async function createBookingAction(_prev: ActionResult | null, formData: 
   if (!booking) return fail(SLOT_TAKEN);
 
   if (status === "CONFIRMED" && paymentMethod === "INVOICE") await ensureInvoiceForBooking(booking.id);
+  if (status === "PENDING") void notifyBooking(booking.id, "pending", ctx.user).catch(() => undefined);
 
   revalidatePath("/bookings");
   if (status === "CONFIRMED" && paymentMethod === "ONLINE") redirect(`/bookings/${booking.id}/pay`);
@@ -153,6 +206,8 @@ export async function cancelBookingAction(bookingId: string): Promise<ActionResu
     db.booking.update({ where: { id: bookingId }, data: { status: "CANCELLED", cancelledAt: new Date(), paymentStatus, adminNote: refundNote ? [b.adminNote, refundNote].filter(Boolean).join(" ").slice(-191) : b.adminNote } }),
     db.invoice.updateMany({ where: { bookingId, status: "OPEN" }, data: { status: "CANCELLED" } }),
   ]);
+  // Storniert die Verwaltung eine fremde Buchung, wird das Mitglied informiert
+  if (b.userId && b.userId !== ctx.user.id) void notifyBooking(bookingId, "cancelled", ctx.user).catch(() => undefined);
   revalidatePath("/bookings");
   revalidatePath("/admin/bookings");
   return ok(undefined, "Buchung storniert.");
@@ -423,6 +478,7 @@ export async function decideBookingAction(bookingId: string, decision: "APPROVE"
   const res = await db.booking.updateMany({ where: { id: bookingId, tenantId: ctx.tenant.id, status: "PENDING" }, data });
   if (res.count === 0) return fail("Buchung wartet nicht auf Freigabe.");
   if (decision === "APPROVE" && b.paymentMethod === "INVOICE") await ensureInvoiceForBooking(bookingId);
+  void notifyBooking(bookingId, decision === "APPROVE" ? "confirmed" : "rejected", ctx.user).catch(() => undefined);
   revalidatePath("/bookings");
   revalidatePath("/admin/bookings");
   return ok(undefined, decision === "APPROVE" ? "Buchung freigegeben." : "Buchung abgelehnt.");
@@ -547,6 +603,7 @@ export async function adminCreateBookingAction(_prev: ActionResult | null, formD
   });
   if (!booking) return fail(SLOT_TAKEN);
   if (paymentMethod === "INVOICE") await ensureInvoiceForBooking(booking.id);
+  void notifyBooking(booking.id, "created", ctx.user).catch(() => undefined);
 
   revalidatePath("/bookings");
   revalidatePath("/admin/bookings");

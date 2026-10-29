@@ -1,0 +1,52 @@
+"use client";
+
+import { useActionState, useState } from "react";
+import { AlertCircle, KeyRound } from "lucide-react";
+import { cancelTwoFactorLoginAction, verifyTwoFactorLoginAction } from "@/modules/core/auth-actions";
+import { Alert, Card, Field, Input } from "@/components/ui";
+import { SubmitButton, submitKeepingValues } from "@/components/ui/form";
+
+export function TwoFactorForm() {
+  const [state, action, pending] = useActionState(verifyTwoFactorLoginAction, null);
+  const [recovery, setRecovery] = useState(false);
+  const failed = state && !state.ok;
+
+  return (
+    <Card className="p-5">
+      <form onSubmit={submitKeepingValues(action)} className="space-y-4">
+        {recovery ? (
+          <Field label="Wiederherstellungscode" hint="Einer der 8 Codes, die du beim Einrichten gespeichert hast (z.B. abcde-fghjk). Jeder Code funktioniert nur einmal.">
+            <Input key="recovery" name="code" autoComplete="off" autoCapitalize="none" autoCorrect="off" spellCheck={false} required autoFocus placeholder="xxxxx-xxxxx" className="font-mono tracking-wider" aria-invalid={failed || undefined} maxLength={20} />
+          </Field>
+        ) : (
+          <Field label="Code aus der App">
+            <Input
+              key="totp"
+              name="code"
+              inputMode="numeric"
+              autoComplete="one-time-code"
+              pattern="[0-9 ]*"
+              maxLength={7}
+              required
+              autoFocus
+              placeholder="123456"
+              className="text-center font-mono text-2xl tracking-[0.4em]"
+              aria-invalid={failed || undefined}
+            />
+          </Field>
+        )}
+        {failed ? <Alert icon={<AlertCircle className="h-4 w-4" />}>{state.error}</Alert> : null}
+        <SubmitButton className="w-full" size="lg" pending={pending} pendingText="Prüfen…">Anmelden</SubmitButton>
+      </form>
+      <div className="mt-3 flex flex-col items-center gap-1 text-sm">
+        <button type="button" onClick={() => setRecovery((v) => !v)} className="inline-flex min-h-11 items-center gap-1.5 px-2 text-ink-2 underline underline-offset-4 hover:text-ink">
+          <KeyRound className="h-4 w-4" aria-hidden />
+          {recovery ? "Code aus der App verwenden" : "Kein Zugriff auf die App? Wiederherstellungscode"}
+        </button>
+        <form action={cancelTwoFactorLoginAction}>
+          <button type="submit" className="inline-flex min-h-11 items-center px-2 text-ink-3 hover:text-ink">Abbrechen</button>
+        </form>
+      </div>
+    </Card>
+  );
+}

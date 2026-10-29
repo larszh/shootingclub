@@ -1,4 +1,6 @@
 import type { Viewport } from "next";
+import Link from "next/link";
+import { Alert } from "@/components/ui";
 import { getAppContext } from "@/lib/tenant";
 import { AppShell } from "@/components/app-shell";
 import { BrandTheme } from "@/components/brand-theme";
@@ -45,7 +47,22 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         tenant={ctx.tenant ? { id: ctx.tenant.id, name: ctx.tenant.name, logoUrl: ctx.tenant.logoUrl } : null}
         user={{ name: ctx.user.name, email: ctx.user.email, avatarUrl: ctx.user.avatarUrl }}
         chatUnread={chatUnread}
+        admin={{
+          settings: ctx.can("tenant.manage"),
+          members: ctx.can("members.view"),
+          membersManage: ctx.can("members.manage"),
+          audit: ctx.can("audit.view"),
+          system: ctx.user.isSuperAdmin,
+        }}
       >
+        {ctx.tenant?.deletedAt ? (
+          <div className="mb-4">
+            <Alert tone="error">
+              Dieser Verein ist zur Löschung vorgemerkt (endgültig nach 30 Tagen). Wiederherstellen unter{" "}
+              <Link href="/super/tenants?show=deleted" className="font-semibold underline underline-offset-2">Tenants</Link>.
+            </Alert>
+          </div>
+        ) : null}
         {children}
       </AppShell>
     </>

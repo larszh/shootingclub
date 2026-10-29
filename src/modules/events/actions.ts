@@ -9,6 +9,8 @@ import { fail, ok, type ActionResult } from "@/lib/action-result";
 import { addDays, todayZurich, zurichToUtc } from "@/lib/time";
 import { announcementSchema, computeTimes, daysBetween, eventFormSchema, recurrenceDates, rsvpSchema, type EventTimes } from "./types";
 import { getBaseUrl, tenantFeedPath, userFeedPath } from "./queries";
+import { notify } from "@/lib/notify";
+import { formatDate, formatDateTime } from "@/lib/i18n/core";
 
 function revalidateEvents(eventId?: string) {
   revalidatePath("/events");
@@ -117,7 +119,31 @@ export async function setEventCancelledAction(eventId: string, cancelled: boolea
   const res = await db.event.updateMany({ where: { id: String(eventId), tenantId: ctx.tenant.id }, data: { isCancelled: !!cancelled } });
   if (res.count === 0) return fail("Anlass nicht gefunden.");
   revalidateEvents(eventId);
+  // Angemeldete (Ja/Vielleicht) informieren – nie blockierend
+  void notifyEventCancellation(ctx.tenant.id, String(eventId), !!cancelled, ctx.user.id).catch(() => undefined);
   return ok(undefined, cancelled ? "Anlass abgesagt." : "Anlass findet wieder statt.");
+}
+
+async function notifyEventCancellation(tenantId: string, eventId: string, cancelled: boolean, actorId: string) {
+  const ev = await db.event.findFirst({
+    where: { id: eventId, tenantId },
+    select: { id: true, title: true, startsAt: true, allDay: true, rsvps: { where: { status: { in: ["YES", "MAYBE"] } }, select: { userId: true } } },
+  });
+  if (!ev || ev.startsAt.getTime() < Date.now() - 86_400_000) return;
+  const userIds = ev.rsvps.map((r) => r.userId).filter((id) => id !== actorId);
+  if (!userIds.length) return;
+  const date = ev.allDay ? formatDate(ev.startsAt, "de") : formatDateTime(ev.startsAt, "de");
+  const key = cancelled ? "cancelled" : "restored";
+  await notify({
+    tenantId,
+    userIds,
+    topic: "events",
+    title: cancelled ? `Abgesagt: ${ev.title}` : `Findet doch statt: ${ev.title}`,
+    body: cancelled ? `Der Anlass vom ${date} findet nicht statt.` : `Der Anlass vom ${date} findet wie geplant statt.`,
+    url: `/events/${ev.id}`,
+    tag: `event:${ev.id}`,
+    i18n: { title: `notify.event.${key}.title`, body: `notify.event.${key}.body`, vars: { title: ev.title, date } },
+  });
 }
 
 export async function deleteEventAction(eventId: string): Promise<ActionResult> {
@@ -213,10 +239,28 @@ export async function saveAnnouncementAction(_prev: ActionResult | null, formDat
     const res = await db.announcement.updateMany({ where: { id, tenantId: ctx.tenant.id }, data: { title, body, pinned, expiresAt } });
     if (res.count === 0) return fail("Mitteilung nicht gefunden.");
   } else {
-    await db.announcement.create({ data: { tenantId: ctx.tenant.id, authorId: ctx.user.id, title, body, pinned, expiresAt } });
+    const created = await db.announcement.create({ data: { tenantId: ctx.tenant.id, authorId: ctx.user.id, title, body, pinned, expiresAt }, select: { id: true } });
+    // Neue Mitteilung an alle Mitglieder (ausser Verfasser) – nie blockierend
+    void notifyAnnouncement(ctx.tenant.id, ctx.user.id, created.id, title, body).catch(() => undefined);
   }
   revalidateEvents();
   redirect("/admin/events/announcements?saved=1");
+}
+
+async function notifyAnnouncement(tenantId: string, authorId: string, announcementId: string, title: string, body: string) {
+  const members = await db.membership.findMany({ where: { tenantId, status: { not: "LEFT" }, NOT: { userId: authorId } }, select: { userId: true } });
+  if (!members.length) return;
+  await notify({
+    tenantId,
+    userIds: members.map((m) => m.userId),
+    topic: "announcements",
+    title: `Mitteilung: ${title}`,
+    body: body.slice(0, 2000),
+    url: "/events",
+    tag: `announcement:${announcementId}`,
+    i18n: { title: "notify.announcement.title", vars: { title } },
+    dedupeKey: `announcement:${announcementId}`,
+  });
 }
 
 export async function toggleAnnouncementPinAction(id: string): Promise<ActionResult> {

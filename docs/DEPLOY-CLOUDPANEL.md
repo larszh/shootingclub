@@ -44,7 +44,24 @@ SEED_ADMIN_EMAIL="du@verein.ch"
 SEED_ADMIN_PASSWORD="<sicheres passwort>"
 ```
 
-`APP_URL` muss stimmen: Zahlungsanbieter leiten nach der Zahlung dorthin zurück, und der Stripe-Webhook-Endpoint wird daraus gebildet. Die Serverzeit spielt keine Rolle, alle Buchungszeiten werden in Europe/Zurich berechnet.
+Optional, aber für den Betrieb empfohlen (Details in den Abschnitten unten):
+
+```
+# E-Mail (Einladungen, Passwort-Reset, Rechnungen, Benachrichtigungen)
+SMTP_HOST="mail.infomaniak.com"
+SMTP_PORT=587
+SMTP_USER="noreply@standchef.ch"
+SMTP_PASS="<passwort>"
+MAIL_FROM="Standchef <noreply@standchef.ch>"
+# Web Push (npx web-push generate-vapid-keys)
+VAPID_PUBLIC_KEY="<public key>"
+VAPID_PRIVATE_KEY="<private key>"
+VAPID_SUBJECT="mailto:info@standchef.ch"
+```
+
+Alle Variablen mit Erklärung stehen in `.env.example`.
+
+`APP_URL` muss stimmen: Links in E-Mails (Einladung, Passwort-Reset) zeigen dorthin, Zahlungsanbieter leiten nach der Zahlung dorthin zurück, und der Stripe-Webhook-Endpoint wird daraus gebildet. Die Serverzeit spielt keine Rolle, alle Buchungszeiten werden in Europe/Zurich berechnet.
 
 ## 4. Erstinstallation
 
@@ -63,7 +80,7 @@ pm2 ist als Projektabhängigkeit dabei, darum `npx pm2`. Alternativ als root `np
 
 Danach ist die App unter der Domain erreichbar. Mit `SEED_ADMIN_EMAIL`/`SEED_ADMIN_PASSWORD` anmelden, unter **Mehr → Globale Verwaltung** den ersten Verein anlegen oder über **Loslegen** beitreten.
 
-Das Seed-Passwort nach dem ersten Login ändern (Profil) und `SEED_ADMIN_PASSWORD` aus `.env` entfernen.
+Das Seed-Passwort nach dem ersten Login ändern (**Mehr → Sicherheit**), dort gleich die Zwei-Faktor-Anmeldung einschalten und `SEED_ADMIN_PASSWORD` aus `.env` entfernen.
 
 ## 5. Updates einspielen
 
@@ -72,7 +89,15 @@ cd ~/htdocs/<domain>
 bash scripts/deploy.sh
 ```
 
-Das Script zieht den Code, installiert Abhängigkeiten, spielt neue Migrationen ein, ergänzt neue globale Programme und Scheiben, baut und startet PM2 neu.
+Das Script arbeitet in dieser Reihenfolge:
+
+1. Code holen (`git fetch` + harter Reset auf `origin/<branch>`), `npm ci`, `prisma generate`
+2. **Build** (ohne Datenbank; scheitert früh, bevor etwas an der DB geändert wird)
+3. **Datenbank-Backup** (gzip, siehe «Backups und Wiederherstellung»)
+4. `prisma migrate deploy`, neue globale Programme und Scheiben
+5. `pm2 reload` und **Healthcheck** auf `/api/health`
+
+Schlägt ein Schritt nach dem Backup fehl, gibt das Script den passenden Wiederherstellungsbefehl aus.
 
 Neue globale Vorlagen (Programme, Scheiben) kommen über den Seed. Für Updates gibt es dafür einen eigenen Modus, der nur fehlende Vorlagen anlegt, kein Konto anfasst und keine `SEED_ADMIN_*`-Variablen braucht:
 
@@ -187,6 +212,100 @@ Jeder Verein richtet seinen Anbieter selbst unter **Mehr → Reservationen verwa
 
 Die Zugangsdaten werden mit einem aus `AUTH_SECRET` abgeleiteten Schlüssel verschlüsselt. **`AUTH_SECRET` nach der Einrichtung nicht mehr ändern**, sonst müssen alle Vereine ihre Anbieter und Speicher-Zugangsdaten (Dateiablage) neu eintragen.
 
+## E-Mail-Versand (SMTP)
+
+Standchef verschickt Einladungen, Passwort-Links, Sicherheitshinweise, Rechnungs- und Erinnerungsmails sowie Benachrichtigungen. Mails landen zuerst in einer Warteschlange (Tabelle `MailMessage`); der Job `mail.send` verschickt sie alle 30 Sekunden, höchstens 200 pro Lauf, mit Wiederholung (2, 4, 8, 16 Minuten) und nach 5 Fehlversuchen Status «fehlgeschlagen». Ohne `SMTP_HOST` werden Mails als «übersprungen» markiert (die App läuft trotzdem).
+
+Beispiele für `.env`:
+
+| Anbieter | `SMTP_HOST` | `SMTP_PORT` | `SMTP_USER` / `SMTP_PASS` |
+|---|---|---|---|
+| Infomaniak (Mail Service) | `mail.infomaniak.com` | `587` | Adresse / Passwort der Mailbox |
+| Hostpoint | `asmtp.mail.hostpoint.ch` | `587` | Adresse / Passwort der Mailbox |
+| Mailgun (EU) | `smtp.eu.mailgun.org` | `587` | SMTP-Benutzer der Domain / SMTP-Passwort |
+| Postmark | `smtp.postmarkapp.com` | `587` | Server-API-Token / gleicher Token |
+
+Für Port 465 (implizites TLS) zusätzlich `SMTP_SECURE=true`. `MAIL_FROM` muss eine Adresse der Domain sein, für die der Anbieter senden darf, z.B. `Standchef <noreply@standchef.ch>`. Antworten gehen an die im Verein hinterlegte Antwortadresse (Vereinseinstellungen), sonst an den Absender.
+
+**Zustellbarkeit (wichtig):** Ohne SPF und DKIM landen Mails im Spam oder werden abgewiesen.
+
+- **SPF**: TXT-Record auf der Absenderdomain, z.B. `v=spf1 include:spf.infomaniak.ch ~all` (Wert laut Anbieter; nur **ein** SPF-Record pro Domain, mehrere `include:` darin kombinieren).
+- **DKIM**: den vom Anbieter erzeugten Schlüssel als TXT/CNAME eintragen und im Anbieter aktivieren.
+- **DMARC**: mindestens `_dmarc.standchef.ch TXT "v=DMARC1; p=none; rua=mailto:dmarc@standchef.ch"`, später `p=quarantine`.
+
+Kontrolle unter **Mehr → System** (`/super/system`, nur Super-Admins): SMTP-Status, Warteschlange, Jobs, die letzten fehlgeschlagenen Mails mit «Erneut senden» und **«Testmail an mich»**. Platzhalter-Adressen importierter Mitglieder ohne E-Mail (`…@standchef.invalid`) werden nie verschickt.
+
+## Push-Benachrichtigungen (Web Push)
+
+Push braucht ein VAPID-Schlüsselpaar. Einmalig erzeugen (lokal oder auf dem Server):
+
+```bash
+npx web-push generate-vapid-keys
+```
+
+Die beiden Werte als `VAPID_PUBLIC_KEY` und `VAPID_PRIVATE_KEY` in `.env` eintragen, dazu `VAPID_SUBJECT="mailto:info@standchef.ch"`, dann `npx pm2 reload standchef`. Ohne Schlüssel wird Push still übersprungen; E-Mail-Benachrichtigungen funktionieren trotzdem.
+
+- Den privaten Schlüssel **nicht wechseln**: sonst sind alle gespeicherten Geräte ungültig und alle müssen Push neu einschalten.
+- Mitglieder schalten Push unter **Mehr → Benachrichtigungen & Sprache** ein (auf iPhone/iPad erst nach «Zum Home-Bildschirm», ab iOS 16.4). Dort wählen sie pro Thema Push und E-Mail sowie die Sprache (DE/FR/IT).
+- Push funktioniert nur über HTTPS (Let's Encrypt in CloudPanel).
+
+## Hintergrund-Jobs
+
+Der Job-Runner startet mit dem Node-Prozess (`src/instrumentation.ts`) und führt aus:
+
+| Job | Intervall | Aufgabe |
+|---|---|---|
+| `mail.send` | 30 s | Mail-Warteschlange verschicken |
+| `cleanup` | stündlich | abgelaufene Sitzungen, Tokens, Einladungen und alte Mails löschen |
+| `reminders` | stündlich | Erinnerungen der Module (Hooks in `src/lib/jobs/registry.ts`) |
+| `tenant.purge` | täglich | Vereine 30 Tage nach der Löschung endgültig entfernen (inkl. Dateien) |
+| `scores.backfill` | täglich | gespeicherte Totale älterer Durchgänge nachtragen |
+
+Jeder Job belegt eine Sperrzeile (Tabelle `JobLock`); eine zweite Instanz führt einen Job darum nie gleichzeitig aus. Trotzdem ist der Betrieb auf **eine PM2-Instanz** ausgelegt (`ecosystem.config.cjs`, `instances: 1`): Drosselung, Chat-Live-Bus, Online-Status und TOTP-Wiederholschutz liegen im Arbeitsspeicher. Mit `JOBS_DISABLED=1` lässt sich der Runner abschalten (z.B. auf einer Zusatzinstanz). Status und «Jetzt ausführen» unter `/super/system`.
+
+## Backups und Wiederherstellung
+
+`scripts/deploy.sh` sichert die Datenbank **vor jeder Migration** mit `mariadb-dump`/`mysqldump` (`--single-transaction`, gzip) nach `BACKUP_DIR` (Standard `~/backups/standchef`, Rechte 700/600) und behält die neuesten `BACKUP_KEEP` Dateien (Standard 14). Das Passwort wird über die Umgebung übergeben, nie auf der Befehlszeile. Fehlt das Dump-Programm, bricht der Deploy ab (`apt install mariadb-client`), ausser `ALLOW_NO_BACKUP=1` ist gesetzt. Die drei Werte können in `.env` oder in der Shell stehen.
+
+Wiederherstellen:
+
+```bash
+npx pm2 stop standchef
+gunzip -c ~/backups/standchef/standchef-standchef-<zeit>-<commit>.sql.gz | mysql -h 127.0.0.1 -u standchef -p standchef
+git checkout <commit-des-backups>   # passender Code-Stand, dann npm ci && npm run build
+npx pm2 start standchef
+```
+
+Zusätzlich empfohlen: tägliche Backups in CloudPanel (**Databases → Backups** bzw. **Admin Area → Backups**, auch extern z.B. auf S3) und `storage/uploads` mitsichern. Ein Backup gilt erst als Backup, wenn die Wiederherstellung einmal geprobt wurde.
+
+## Healthcheck
+
+`GET /api/health` antwortet ohne Login mit `{"ok":true,"db":true,"time":"…"}` (HTTP 200) oder HTTP 503, wenn die Datenbank nicht innert 3 Sekunden antwortet. `deploy.sh` prüft ihn nach jedem Reload. Für ein externes Monitoring (UptimeRobot, Better Stack, Uptime Kuma) diese URL alle 1–5 Minuten abfragen und auf `"ok":true` prüfen.
+
+## Sicherheit: Zwei-Faktor-Anmeldung und Passwörter
+
+- **2FA (TOTP)** unter **Mehr → Sicherheit** (`/me/security`): QR-Code mit jeder Authenticator-App (Aegis, Google/Microsoft Authenticator, 1Password, Bitwarden). Dazu 8 Wiederherstellungscodes. Admins und Inhaber ohne 2FA sehen auf der Startseite und unter Einstellungen einen Hinweis. Das TOTP-Geheimnis ist mit einem aus `AUTH_SECRET` abgeleiteten Schlüssel verschlüsselt.
+- **Passwort vergessen** über `/forgot-password` (Link 60 Minuten gültig, beendet alle Sitzungen). Braucht SMTP.
+- **Importierte Mitglieder** erhalten einen Link zum Passwort-Setzen (14 Tage gültig).
+- Hat jemand den Zugang zu Authenticator **und** Wiederherstellungscodes verloren, kann ein Super-Admin 2FA nicht einfach abschalten; die Person setzt ihr Passwort zurück und wendet sich an den Support (manuell in der DB: `UPDATE User SET totpSecretEnc=NULL, totpEnabledAt=NULL WHERE email=…`).
+
+## Datenschutz (revDSG)
+
+- **Mehr → Datenschutz** (`/me/privacy`): Mitglieder laden alle eigenen Daten als ZIP herunter und können ihr Konto löschen. Das Konto wird pseudonymisiert; Rechnungen, Buchungen und Resultate bleiben für die Buchhaltung und Ranglisten erhalten. Alleinige Inhaber eines Vereins müssen zuerst eine andere Person zum Inhaber machen.
+- **Protokoll** (`/admin/audit`, Berechtigung `audit.view`): Rollenwechsel, Löschungen, Importe, Exporte und Einstellungen pro Verein, mit CSV-Export. Inhaber laden dort das **Vereinsarchiv** (ZIP mit CSVs) herunter. Super-Admins sehen alle Vereine unter `/super/audit`.
+- **Vereine löschen** (`/super/tenants`): Löschung mit Eingabe des Kürzels, der Verein ist sofort für Mitglieder gesperrt und wird nach 30 Tagen endgültig gelöscht (Job `tenant.purge`); bis dahin «Wiederherstellen».
+- Ausgetretene Mitglieder (Status «ausgetreten») behalten ihre Daten im Verein, haben aber keinen Zugang mehr.
+
+## Tests
+
+```bash
+npm test               # Vitest: reine Funktionen (Geld, Zeit, QR-Referenz, camt, Punkte, TOTP, Mail-Layout, i18n, Import …)
+npx tsc --noEmit       # Typecheck
+npx eslint .           # Lint
+```
+
+Die GitHub-Action führt alle drei plus `npm run build` bei jedem Push und Pull Request aus.
+
 ## Betrieb
 
 | Aufgabe | Befehl |
@@ -196,6 +315,9 @@ Die Zugangsdaten werden mit einem aus `AUTH_SECRET` abgeleiteten Schlüssel vers
 | Neustart | `npx pm2 reload standchef` |
 | DB-Konsole | `mysql -u standchef -p standchef` |
 | Prisma Studio (nur lokal/SSH-Tunnel) | `npx prisma studio` |
+| Healthcheck | `curl -s https://standchef.ch/api/health` |
+| Mail-Warteschlange und Jobs | `/super/system` im Browser |
+| Backups | `ls -lt ~/backups/standchef` |
 
 ## Lokale Entwicklung
 
@@ -216,7 +338,7 @@ CloudPanel behandelt Node.js-Sites gleichwertig zu PHP-Sites (eigener Site-Benut
 
 ## Automatisches Deployment mit GitHub Actions
 
-Der Workflow `.github/workflows/deploy.yml` prüft jeden Push und jeden Pull Request (Typecheck, Lint, Build). Bei einem Push auf `main` oder manuell über **Actions → CI & Deploy → Run workflow** verbindet er sich per SSH mit dem Server und führt `scripts/deploy.sh` aus (Code holen, `npm ci`, Migrationen, Build, PM2-Reload, Healthcheck). Schlägt der Healthcheck fehl, wird der Lauf rot.
+Der Workflow `.github/workflows/deploy.yml` prüft jeden Push und jeden Pull Request (Typecheck, Lint, Tests, Build). Bei einem Push auf `main` oder manuell über **Actions → CI & Deploy → Run workflow** verbindet er sich per SSH mit dem Server und führt `scripts/deploy.sh` aus (Code holen, `npm ci`, Migrationen, Build, PM2-Reload, Healthcheck). Schlägt der Healthcheck fehl, wird der Lauf rot.
 
 ### 1. SSH-Schlüssel für GitHub erzeugen (lokal, einmalig)
 
@@ -249,6 +371,8 @@ GitHub → Repository → **Settings → Environments → New environment** → 
 | `SSH_KNOWN_HOSTS` | Ausgabe von `ssh-keyscan` |
 | `DATABASE_URL` | nur bei `MANAGE_ENV=true`: `mysql://user:pass@127.0.0.1:3306/standchef` |
 | `AUTH_SECRET` | nur bei `MANAGE_ENV=true`: **identisch** mit dem bisherigen Wert, sonst werden alle Sitzungen ungültig und gespeicherte Zahlungsanbieter-Daten unlesbar |
+| `SMTP_PASS` | optional (nur bei `MANAGE_ENV=true`): Passwort/Token des SMTP-Kontos |
+| `VAPID_PRIVATE_KEY` | optional (nur bei `MANAGE_ENV=true`): privater Web-Push-Schlüssel, nie wechseln |
 | `EXTRA_ENV` | optional, weitere Zeilen für `.env` (z.B. `SEED_ADMIN_EMAIL=…`) |
 
 ### 4. Variablen (im Environment `production`)
@@ -262,6 +386,12 @@ GitHub → Repository → **Settings → Environments → New environment** → 
 | `DEPLOY_BRANCH` | `main` | welcher Branch auf den Server kommt |
 | `MANAGE_ENV` | `true` oder leer | `true`: GitHub schreibt bei jedem Deploy die `.env` aus den Secrets. Leer: die `.env` auf dem Server bleibt unangetastet |
 | `UPLOAD_DIR` | `./storage/uploads` | optional |
+| `SMTP_HOST`, `SMTP_PORT`, `SMTP_SECURE`, `SMTP_USER`, `MAIL_FROM` | `mail.infomaniak.com`, `587`, `false`, `noreply@standchef.ch`, `Standchef <noreply@standchef.ch>` | optional, Mailversand |
+| `VAPID_PUBLIC_KEY`, `VAPID_SUBJECT` | `B…`, `mailto:info@standchef.ch` | optional, Web Push |
+| `JOBS_DISABLED`, `CHAT_POLL_MS`, `DB_POOL` | leer, `30000`, `10` | optional, Betrieb |
+| `BACKUP_DIR`, `BACKUP_KEEP`, `ALLOW_NO_BACKUP` | `~/backups/standchef`, `14`, leer | optional, Backups beim Deploy |
+
+Leere optionale Werte werden nicht in die `.env` geschrieben. Werte dürfen keine Zeilenumbrüche und keine doppelten Anführungszeichen enthalten.
 
 Empfehlung: `MANAGE_ENV=true` setzen, sobald alle Werte in GitHub stehen. Dann ist GitHub die einzige Quelle für Konfiguration, und die `.env` auf dem Server wird nicht mehr von Hand bearbeitet.
 

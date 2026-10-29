@@ -4,7 +4,8 @@ import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { db } from "@/lib/db";
-import { destroyOtherSessions, getCurrentUser, hashPassword, verifyPassword } from "@/lib/auth";
+import { getCurrentUser } from "@/lib/auth";
+import { todayZurich } from "@/lib/time";
 import { readImageFromForm, storeAvatarImage } from "@/lib/image-upload";
 import { deleteStoredFile } from "@/lib/storage";
 import { fail, ok, type ActionResult } from "@/lib/action-result";
@@ -55,37 +56,44 @@ export async function setThemePrefAction(theme: string): Promise<ActionResult> {
   return ok();
 }
 
-const passwordSchema = z
-  .object({
-    current: z.string().min(1, "Bitte aktuelles Passwort eingeben"),
-    next: z.string().min(8, "Mindestens 8 Zeichen").max(200, "Zu lang"),
-    confirm: z.string(),
-  })
-  .refine((v) => v.next === v.confirm, { message: "Die Passwörter stimmen nicht überein", path: ["confirm"] })
-  .refine((v) => v.next !== v.current, { message: "Das neue Passwort muss sich vom alten unterscheiden", path: ["next"] });
+const profileSchema = z.object({
+  name: z.string().trim().min(2, "Name: mindestens 2 Zeichen").max(191, "Name zu lang"),
+  phone: z.string().trim().max(40, "Telefon: höchstens 40 Zeichen").regex(/^[+\d\s()/.-]*$/, "Telefon: nur Ziffern, Leerzeichen und + ( ) / . -"),
+  birthDate: z.string().trim().refine((v) => !v || /^\d{4}-\d{2}-\d{2}$/.test(v), "Ungültiges Datum"),
+  street: z.string().trim().max(80, "Strasse zu lang"),
+  zip: z.string().trim().max(12, "PLZ zu lang"),
+  city: z.string().trim().max(80, "Ort zu lang"),
+});
 
-export async function changePasswordAction(_prev: ActionResult | null, formData: FormData): Promise<ActionResult> {
+/** Eigenes Profil: Name, Telefon, Geburtsdatum, Adresse. */
+export async function updateProfileAction(_prev: ActionResult | null, formData: FormData): Promise<ActionResult> {
   const user = await requireUser();
-  const parsed = passwordSchema.safeParse({
-    current: formData.get("current") ?? "",
-    next: formData.get("next") ?? "",
-    confirm: formData.get("confirm") ?? "",
+  const parsed = profileSchema.safeParse({
+    name: formData.get("name") ?? "",
+    phone: formData.get("phone") ?? "",
+    birthDate: formData.get("birthDate") ?? "",
+    street: formData.get("street") ?? "",
+    zip: formData.get("zip") ?? "",
+    city: formData.get("city") ?? "",
   });
   if (!parsed.success) {
     const fe: Record<string, string> = {};
     for (const i of parsed.error.issues) fe[String(i.path[0])] ??= i.message;
     return fail(parsed.error.issues[0]?.message ?? "Bitte Eingaben prüfen.", fe);
   }
-  const row = await db.user.findUnique({ where: { id: user.id }, select: { passwordHash: true } });
-  if (!row || !(await verifyPassword(parsed.data.current, row.passwordHash))) {
-    return fail("Das aktuelle Passwort stimmt nicht.", { current: "Stimmt nicht" });
+  const v = parsed.data;
+  let birthDate: Date | null = null;
+  if (v.birthDate) {
+    birthDate = new Date(`${v.birthDate}T00:00:00Z`);
+    const today = todayZurich();
+    if (Number.isNaN(birthDate.getTime()) || birthDate.toISOString().slice(0, 10) !== v.birthDate || v.birthDate > today || v.birthDate < "1900-01-01") {
+      return fail("Bitte ein gültiges Geburtsdatum eingeben.", { birthDate: "Ungültiges Datum" });
+    }
   }
-  await db.user.update({ where: { id: user.id }, data: { passwordHash: await hashPassword(parsed.data.next) } });
-  const loggedOut = await destroyOtherSessions(user.id);
-  return ok(
-    undefined,
-    loggedOut > 0
-      ? `Passwort geändert. ${loggedOut === 1 ? "Ein anderes Gerät wurde" : `${loggedOut} andere Geräte wurden`} abgemeldet.`
-      : "Passwort geändert.",
-  );
+  await db.user.update({
+    where: { id: user.id },
+    data: { name: v.name, phone: v.phone || null, birthDate, street: v.street || null, zip: v.zip || null, city: v.city || null },
+  });
+  revalidatePath("/", "layout");
+  return ok(undefined, "Gespeichert.");
 }

@@ -144,7 +144,7 @@ export async function buildAttendanceCsv(user: { id: string; isSuperAdmin: boole
   if (!(await isEventsModuleEnabled(event.tenantId))) return null;
 
   const [members, rsvps] = await Promise.all([
-    db.membership.findMany({ where: { tenantId: event.tenantId }, select: { userId: true, memberNumber: true, user: { select: { name: true, email: true } } } }),
+    db.membership.findMany({ where: { tenantId: event.tenantId, status: { not: "LEFT" } }, select: { userId: true, memberNumber: true, user: { select: { name: true, email: true } } } }),
     db.eventRsvp.findMany({ where: { eventId: event.id }, select: { userId: true, status: true, guests: true, note: true, updatedAt: true, user: { select: { name: true, email: true } } } }),
   ]);
   const byUser = new Map(rsvps.map((r) => [r.userId, r]));

@@ -13,9 +13,52 @@ import { ensureReference, tenantQrIban } from "./reference";
 import { isQrIban } from "@/lib/qr-reference";
 import { todayZurich, zurichParts } from "@/lib/time";
 import { dueDateInDays } from "./dates";
+import { feeInvoicesToCreate } from "./fee-run";
+import { notify } from "@/lib/notify";
+import { formatDate, formatMoneyLocale } from "@/lib/i18n/core";
 
 
 const revalidate = () => { revalidatePath("/admin/billing"); revalidatePath("/billing"); revalidatePath("/admin/bookings"); };
+
+// --- Benachrichtigungen (nie blockierend) -------------------------------------
+
+type InvoiceNoticeRow = { id: string; tenantId: string; userId: string | null; number: string; categoryName: string; year: number; amountCents: number; currency: string; dueAt: Date };
+
+/** Neue Beitragsrechnungen: Push + E-Mail (Thema «invoices») mit Link auf /payments. */
+async function notifyFeeInvoices(rows: InvoiceNoticeRow[], kind: "issued" | "reminder") {
+  const tenantName = rows.length ? (await db.tenant.findUnique({ where: { id: rows[0]!.tenantId }, select: { name: true } }))?.name ?? "" : "";
+  const today = todayZurich();
+  for (const inv of rows) {
+    if (!inv.userId) continue;
+    const amount = formatMoneyLocale(inv.amountCents, "de", inv.currency);
+    const date = formatDate(inv.dueAt, "de");
+    const title = `${inv.categoryName} ${inv.year}`;
+    const vars = { title, number: inv.number, amount, date, club: tenantName };
+    await notify({
+      tenantId: inv.tenantId,
+      userIds: [inv.userId],
+      topic: kind === "issued" ? "invoices" : "reminders",
+      title: kind === "issued" ? `Neue Rechnung: ${title}` : "Zahlungserinnerung",
+      body: kind === "issued"
+        ? `Rechnung ${inv.number} über ${amount}, zahlbar bis ${date}.`
+        : `Die Rechnung ${inv.number} über ${amount} ist noch offen (fällig seit ${date}).`,
+      url: "/payments",
+      tag: `invoice:${inv.id}`,
+      i18n: {
+        title: `notify.invoice.${kind}.title`,
+        body: `notify.invoice.${kind}.body`,
+        emailSubject: `notify.invoice.${kind}.subject`,
+        vars,
+      },
+      dedupeKey: kind === "issued" ? `fee-invoice:${inv.id}` : `fee-reminder:${inv.id}:${today}`,
+    });
+  }
+}
+
+function notifyFeeInvoicesInBackground(rows: InvoiceNoticeRow[], kind: "issued" | "reminder") {
+  if (!rows.length) return;
+  void notifyFeeInvoices(rows, kind).catch((e) => console.error("Rechnungs-Benachrichtigung fehlgeschlagen:", (e as Error).message));
+}
 
 // --- Rechnungsprofil --------------------------------------------------------
 
@@ -124,7 +167,7 @@ async function createInvoiceFor(tx: Tx, tenantId: string, run: { id: string; yea
       return await tx.feeInvoice.create({
         data: {
           tenantId, runId: run.id, membershipId: m.id, userId: m.userId, categoryId: m.categoryId, year: run.year, number,
-          memberName: m.name, memberEmail: m.email, memberAddress: m.address, categoryName: m.categoryName, amountCents: m.amountCents,
+          memberName: m.name, memberEmail: m.email || null, memberAddress: m.address, categoryName: m.categoryName, amountCents: m.amountCents,
           currency: billing.currency, dueAt: run.dueAt,
         },
       });
@@ -153,31 +196,13 @@ async function createInvoicesLocked(tenantId: string, run: { id: string; year: n
   }, { maxWait: 15_000, timeout: 120_000 });
   // Bei QR-IBAN direkt eine eindeutige QR-Referenz vergeben (nach dem Commit).
   if (billing.qrIban) for (const inv of created) await ensureReference("FEE", inv, billing.qrIban);
+  notifyFeeInvoicesInBackground(created, "issued");
   return created;
 }
 
 async function billingDefaults(tenantId: string) {
   const [profile, qrIban] = await Promise.all([db.billingProfile.findUnique({ where: { tenantId }, select: { currency: true } }), tenantQrIban(tenantId)]);
   return { currency: profile?.currency ?? "CHF", qrIban };
-}
-
-async function membersToInvoice(tx: Tx, tenantId: string, year: number): Promise<MemberSnapshot[]> {
-  const members = await tx.membership.findMany({
-    where: { tenantId },
-    include: { user: true, feeCategory: true, feeInvoices: { where: { year, status: { not: "CANCELLED" } }, select: { id: true } } },
-  });
-  const out: MemberSnapshot[] = [];
-  for (const m of members) {
-    if (m.feeInvoices.length) continue;
-    const amount = m.feeAmountOverrideCents ?? m.feeCategory?.amountCents ?? null;
-    if (amount === null || amount <= 0) continue;
-    out.push({
-      id: m.id, userId: m.userId, name: m.user.name, email: m.user.email,
-      address: [m.user.street, [m.user.zip, m.user.city].filter(Boolean).join(" ")].filter(Boolean).join("\n") || null,
-      categoryId: m.feeCategoryId, categoryName: m.feeCategory?.name ?? "Mitgliederbeitrag", amountCents: amount,
-    });
-  }
-  return out;
 }
 
 /** Upsert des Jahreslaufs; legen zwei Anfragen ihn gleichzeitig an, gewinnt eine und die andere aktualisiert. */
@@ -211,7 +236,9 @@ export async function createRunAction(_prev: ActionResult | null, formData: Form
     create: { tenantId: ctx.tenant.id, year: r.year, title: r.title, dueAt, invoicePrefix: r.invoicePrefix, dueDays: r.dueDays, note: r.note ?? null },
     update: { title: r.title, invoicePrefix: r.invoicePrefix, dueDays: r.dueDays, note: r.note ?? null },
   });
-  const created = (await createInvoicesLocked(ctx.tenant.id, { ...run, dueAt }, (tx) => membersToInvoice(tx, ctx.tenant.id, r.year))).length;
+  // «Haushalte zusammenfassen» (Standard an): eine Rechnung pro Haushalt an den Zahler.
+  const combineHouseholds = formData.get("combineHouseholds") !== "off";
+  const created = (await createInvoicesLocked(ctx.tenant.id, { ...run, dueAt }, (tx) => feeInvoicesToCreate(tx, ctx.tenant.id, r.year, combineHouseholds))).length;
   revalidate();
   redirect(`/admin/billing/runs/${run.id}?created=${created}`);
 }
@@ -273,7 +300,11 @@ export async function markRemindedAction(ids: string[]): Promise<ActionResult> {
   const ctx = await requireBillingAdmin();
   const parsed = idsSchema.safeParse(ids);
   if (!parsed.success) return fail("Ungültige Auswahl");
-  const list = await db.feeInvoice.findMany({ where: { id: { in: parsed.data }, tenantId: ctx.tenant.id, status: "OPEN" }, select: { id: true, paymentNote: true, remindedAt: true } });
+  const list = await db.feeInvoice.findMany({
+    where: { id: { in: parsed.data }, tenantId: ctx.tenant.id, status: "OPEN" },
+    select: { id: true, paymentNote: true, remindedAt: true, tenantId: true, userId: true, number: true, categoryName: true, year: true, amountCents: true, currency: true, dueAt: true },
+  });
+  const reminded: typeof list = [];
   const today = todayZurich();
   const now = new Date();
   let changed = 0;
@@ -281,8 +312,11 @@ export async function markRemindedAction(ids: string[]): Promise<ActionResult> {
     if (inv.remindedAt && zurichParts(inv.remindedAt).dateStr === today) continue;
     const count = reminderCount(inv.paymentNote, inv.remindedAt) + 1;
     await db.feeInvoice.update({ where: { id: inv.id }, data: { remindedAt: now, paymentNote: withReminderCount(inv.paymentNote, count) } });
+    reminded.push(inv);
     changed++;
   }
+  // Mitglied erhält die Erinnerung per Push/E-Mail (Thema «reminders»)
+  notifyFeeInvoicesInBackground(reminded, "reminder");
   revalidate();
   return ok(undefined, changed ? `${changed} ${changed === 1 ? "Rechnung" : "Rechnungen"} als gemahnt markiert.` : "Heute bereits gemahnt.");
 }

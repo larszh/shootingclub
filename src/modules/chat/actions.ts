@@ -49,7 +49,7 @@ async function groupAccess(ctx: Ctx, conversationId: string, needAdmin: boolean)
 async function filterTenantMembers(tenantId: string, userIds: string[]) {
   const unique = [...new Set(userIds)].filter((id) => typeof id === "string" && id.length > 0 && id.length <= 64);
   if (!unique.length) return [];
-  const rows = await db.membership.findMany({ where: { tenantId, userId: { in: unique } }, select: { userId: true } });
+  const rows = await db.membership.findMany({ where: { tenantId, userId: { in: unique }, status: { not: "LEFT" } }, select: { userId: true } });
   return rows.map((r) => r.userId);
 }
 
@@ -121,7 +121,7 @@ export async function createGroupAction(_prev: ActionResult<{ id: string }> | nu
 
   let memberIds: string[];
   if (input.club) {
-    const all = await db.membership.findMany({ where: { tenantId: ctx.tenant.id }, select: { userId: true } });
+    const all = await db.membership.findMany({ where: { tenantId: ctx.tenant.id, status: { not: "LEFT" } }, select: { userId: true } });
     memberIds = all.map((m) => m.userId);
   } else {
     memberIds = await filterTenantMembers(ctx.tenant.id, input.members);

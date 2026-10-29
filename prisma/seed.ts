@@ -55,7 +55,7 @@ async function main() {
   const admin = await db.user.upsert({
     where: { email },
     update: { isSuperAdmin: true },
-    create: { email, name: "Super Admin", passwordHash: await bcrypt.hash(password, 10), isSuperAdmin: true },
+    create: { email, name: "Super Admin", passwordHash: await bcrypt.hash(password, 10), passwordSetAt: new Date(), isSuperAdmin: true },
   });
 
   await seedPresets(admin.id);
@@ -68,8 +68,8 @@ async function main() {
       create: { slug: "demo-schuetzen", name: "Demo Schützengesellschaft", kind: "CLUB", city: "Musterhausen", canton: "ZH", joinCode: "DEMO42" },
     });
     const pw = await bcrypt.hash("demo1234", 10);
-    const anna = await db.user.upsert({ where: { email: "anna@example.ch" }, update: {}, create: { email: "anna@example.ch", name: "Anna Muster", passwordHash: pw } });
-    const beat = await db.user.upsert({ where: { email: "beat@example.ch" }, update: {}, create: { email: "beat@example.ch", name: "Beat Beispiel", passwordHash: pw } });
+    const anna = await db.user.upsert({ where: { email: "anna@example.ch" }, update: {}, create: { email: "anna@example.ch", name: "Anna Muster", passwordHash: pw, passwordSetAt: new Date() } });
+    const beat = await db.user.upsert({ where: { email: "beat@example.ch" }, update: {}, create: { email: "beat@example.ch", name: "Beat Beispiel", passwordHash: pw, passwordSetAt: new Date() } });
     for (const [u, role] of [[anna, "ADMIN"], [beat, "MEMBER"], [admin, "OWNER"]] as const) {
       await db.membership.upsert({ where: { userId_tenantId: { userId: u.id, tenantId: demo.id } }, update: {}, create: { userId: u.id, tenantId: demo.id, role } });
     }
