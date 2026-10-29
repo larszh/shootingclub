@@ -2,7 +2,7 @@ import "dotenv/config";
 import bcrypt from "bcryptjs";
 import { PrismaClient } from "../src/generated/prisma/client";
 import { PrismaMariaDb } from "@prisma/adapter-mariadb";
-import { PROGRAM_PRESETS } from "../src/modules/scores/presets";
+import { PROGRAM_PRESETS, presetNames, presetOfficialUpdate } from "../src/modules/scores/presets";
 import { TARGET_PRESETS } from "../src/modules/targets/presets";
 import { seedDemoEvents } from "../src/modules/events/seed";
 import { seedDemoFiles } from "../src/modules/files/seed";
@@ -15,19 +15,33 @@ const db = new PrismaClient({
 });
 
 /**
- * Globale Programme und Scheiben anlegen, die noch fehlen (Abgleich über den Namen).
- * Idempotent: bestehende Einträge, auch von Admins geänderte, bleiben unverändert.
+ * Globale Programme und Scheiben anlegen, die noch fehlen (Abgleich über den Namen bzw. frühere Namen).
+ * Idempotent: bestehende Einträge, auch von Admins geänderte, bleiben unverändert. Einzige Ausnahme:
+ * Vorlagen mit amtlicher Art (Obligatorisch, Feldschiessen) setzen Art und Grenzwerte bei bestehenden
+ * globalen Programmen, solange diese noch keine amtliche Art haben (siehe presetOfficialUpdate).
  */
 async function seedPresets(createdById: string | null) {
   let programs = 0;
+  let updated = 0;
   for (const p of PROGRAM_PRESETS) {
-    const exists = await db.program.findFirst({ where: { tenantId: null, name: p.name } });
-    if (exists) continue;
+    const exists = await db.program.findFirst({ where: { tenantId: null, name: { in: presetNames(p) } }, orderBy: { createdAt: "asc" } });
+    if (exists) {
+      const patch = presetOfficialUpdate(exists, p);
+      if (patch) {
+        await db.program.update({ where: { id: exists.id }, data: patch });
+        updated++;
+      }
+      continue;
+    }
     await db.program.create({
-      data: { tenantId: null, createdById, name: p.name, description: p.description ?? null, discipline: p.discipline, weaponNote: p.weaponNote ?? null, scoringMode: p.scoringMode, stagesJson: JSON.stringify(p.stages) },
+      data: {
+        tenantId: null, createdById, name: p.name, description: p.description ?? null, discipline: p.discipline, weaponNote: p.weaponNote ?? null, scoringMode: p.scoringMode, stagesJson: JSON.stringify(p.stages),
+        officialKind: p.officialKind ?? null, passMinScore: p.passMinScore ?? null, passMaxZeros: p.passMaxZeros ?? null,
+      },
     });
     programs++;
   }
+  if (updated) console.log(`Vorlagen: ${updated} globale Programme als amtlich markiert.`);
 
   let targets = 0;
   for (const t of TARGET_PRESETS) {

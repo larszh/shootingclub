@@ -1,4 +1,10 @@
-import { DEFAULT_ZONES, type ProgramInput, type Stage, type Zone } from "./types";
+import { DEFAULT_ZONES, OFFICIAL_RULES_HINT, type OfficialKind, type ProgramInput, type Stage, type Zone } from "./types";
+
+/**
+ * Vorlage für ein globales Programm. `key` ist ein stabiler Schlüssel für Updates per Seed
+ * (Abgleich über den Namen bzw. frühere Namen in `aliases`), auch wenn die Bezeichnung ändert.
+ */
+export type ProgramPreset = ProgramInput & { key?: string; aliases?: string[] };
 
 // ---------------------------------------------------------------------------
 // Zonen für taktische Programme (Wertung «ZONES»). Jede Zone hat einen eigenen Punktwert.
@@ -49,7 +55,7 @@ function ringSeries(n: number, base: Omit<Stage, "name">, prefix = "Serie", offs
  * Globale Standardprogramme. Werden beim Seed als globale Programme (tenantId = null)
  * angelegt. Tenants können sie verstecken, Super-Admins bearbeiten.
  */
-export const PROGRAM_PRESETS: ProgramInput[] = [
+export const PROGRAM_PRESETS: ProgramPreset[] = [
   {
     name: "Pistole 25 m – Präzision",
     description: "Klassisches Präzisionsprogramm auf 25 m. 6 Serien à 5 Schuss, Ringe 1–10.",
@@ -109,9 +115,13 @@ export const PROGRAM_PRESETS: ProgramInput[] = [
     })),
   },
   {
+    key: "op-300",
     name: "Gewehr 300 m – Obligatorisch",
-    description: "Bundesprogramm 300 m: 5 Einzelschüsse, 2 Serien à 2 Schuss, 1 Serie à 3 Schuss, 1 Serie à 6 Schuss.",
+    description: `Bundesprogramm 300 m: 5 Einzelschüsse, 2 Serien à 2 Schuss, 1 Serie à 3 Schuss, 1 Serie à 6 Schuss. Bestehensgrenze vorbelegt (42 Punkte, höchstens 3 Nuller). ${OFFICIAL_RULES_HINT}`,
     discipline: "RIFLE",
+    officialKind: "OP",
+    passMinScore: 42,
+    passMaxZeros: 3,
     weaponNote: "Ordonnanzwaffe",
     scoringMode: "RINGS_INT",
     stages: [
@@ -123,9 +133,13 @@ export const PROGRAM_PRESETS: ProgramInput[] = [
     ],
   },
   {
+    key: "op-25-pistol",
     name: "Pistole 25 m – Obligatorisch",
-    description: "Bundesprogramm Pistole 25 m: 5 Einzelschüsse, 2 Serien à 5 Schuss, 1 Serie à 5 Schuss (Schnellfeuer).",
+    description: "Bundesprogramm Pistole 25 m: 5 Einzelschüsse, 2 Serien à 5 Schuss, 1 Serie à 5 Schuss (Schnellfeuer). Bestehensgrenze bitte im Verein gemäss den aktuellen Vorgaben eintragen.",
     discipline: "PISTOL",
+    officialKind: "OP",
+    passMinScore: null,
+    passMaxZeros: null,
     weaponNote: "Ordonnanzpistole",
     scoringMode: "RINGS_INT",
     stages: [
@@ -165,6 +179,8 @@ export const PROGRAM_PRESETS: ProgramInput[] = [
   // auf das jeweils gültige Reglement. Für Wettkämpfe immer das aktuelle Reglement beachten.
   // ---------------------------------------------------------------------------
   {
+    key: "fs-300",
+    officialKind: "FS",
     name: "Feldschiessen 300 m (nachempfunden)",
     description: "An das Feldschiessen angelehnt: 18 Schuss liegend auf 300 m in drei Teilen (Einzelfeuer, Serie, Schnellfeuer). Massgebend ist das aktuelle Reglement.",
     discipline: "RIFLE",
@@ -177,6 +193,8 @@ export const PROGRAM_PRESETS: ProgramInput[] = [
     ],
   },
   {
+    key: "fs-25-pistol",
+    officialKind: "FS",
     name: "Feldschiessen Pistole 25 m (nachempfunden)",
     description: "An das Feldschiessen Pistole angelehnt: 18 Schuss auf 25 m, Einzelfeuer und zwei Serien mit Zeitlimit. Massgebend ist das aktuelle Reglement.",
     discipline: "PISTOL",
@@ -562,6 +580,36 @@ export const PROGRAM_PRESETS: ProgramInput[] = [
       zoneStage({ name: "Abschluss", distanceM: 5, shots: 4, timeLimitSec: 6, position: "STANDING", targetName: "Shoot/No-Shoot 6 Figuren" }, SHOOT_NO_SHOOT_ZONES),
     ],
   },
+  // -------------------------------------------------------------------------
+  // Armbrust (Vorschläge – Anschlag kniend/stehend wird nicht abgebildet)
+  // -------------------------------------------------------------------------
+  {
+    key: "crossbow-10-30",
+    name: "Armbrust 10 m – 30 Schuss",
+    description: "Armbrust 10 m: 3 Serien à 10 Schuss, Ringe 0–10. Anschlag (kniend/stehend) wird nicht separat erfasst. Vorschlag, bitte Reglement prüfen.",
+    discipline: "CROSSBOW",
+    weaponNote: "Armbrust 10 m",
+    scoringMode: "RINGS_INT",
+    stages: ringSeries(3, { distanceM: 10, shots: 10, maxPerShot: 10, targetName: "Armbrustscheibe 10 m" }),
+  },
+  {
+    key: "crossbow-30-30",
+    name: "Armbrust 30 m – 30 Schuss",
+    description: "Armbrust 30 m: 3 Serien à 10 Schuss, Ringe 0–10. Anschlag (kniend/stehend) wird nicht separat erfasst. Vorschlag, bitte Reglement prüfen.",
+    discipline: "CROSSBOW",
+    weaponNote: "Armbrust 30 m",
+    scoringMode: "RINGS_INT",
+    stages: ringSeries(3, { distanceM: 30, shots: 10, maxPerShot: 10, targetName: "Armbrustscheibe 30 m" }),
+  },
+  {
+    key: "crossbow-10-probe-20",
+    name: "Armbrust 10 m – Probe + 20",
+    description: "Allgemeines Armbrust-Programm: Probeschüsse vorgängig (ohne Erfassung), danach 2 Serien à 10 Schuss. Vorschlag, bitte Reglement prüfen.",
+    discipline: "CROSSBOW",
+    weaponNote: "Armbrust",
+    scoringMode: "RINGS_INT",
+    stages: ringSeries(2, { distanceM: 10, shots: 10, maxPerShot: 10, targetName: "Armbrustscheibe 10 m", note: "Probeschüsse vorher, nicht erfassen" }),
+  },
   {
     name: "Freies Training – 10 Schuss",
     description: "Schnelle Serie ohne Vorgaben. Distanz beim Start anpassen.",
@@ -570,3 +618,28 @@ export const PROGRAM_PRESETS: ProgramInput[] = [
     stages: [{ name: "Serie", distanceM: 10, shots: 10, maxPerShot: 10 }],
   },
 ];
+
+// ---------------------------------------------------------------------------
+// Abgleich mit bestehenden globalen Programmen (Seed --presets-only)
+// ---------------------------------------------------------------------------
+
+/** Namen, unter denen eine Vorlage in der DB gesucht wird (aktueller Name zuerst). */
+export function presetNames(p: ProgramPreset): string[] {
+  return [p.name, ...(p.aliases ?? [])];
+}
+
+type ExistingProgram = { officialKind: string | null; passMinScore: number | null; passMaxZeros: number | null };
+
+/**
+ * Änderungen an einem bestehenden globalen Programm aufgrund der Vorlage, oder null wenn nichts zu tun ist.
+ * Idempotent und schonend: amtliche Art und Grenzwerte werden nur gesetzt, solange das Programm
+ * noch keine amtliche Art hat. Spätere Anpassungen durch Super-Admins bleiben erhalten.
+ */
+export function presetOfficialUpdate(existing: ExistingProgram, preset: ProgramPreset): { officialKind: OfficialKind; passMinScore: number | null; passMaxZeros: number | null } | null {
+  if (!preset.officialKind || existing.officialKind) return null;
+  return {
+    officialKind: preset.officialKind,
+    passMinScore: existing.passMinScore ?? preset.passMinScore ?? null,
+    passMaxZeros: existing.passMaxZeros ?? preset.passMaxZeros ?? null,
+  };
+}

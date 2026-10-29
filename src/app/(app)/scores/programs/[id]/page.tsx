@@ -7,7 +7,7 @@ import { Badge, Card, LinkButton, PageHeader, SectionTitle } from "@/components/
 import { getProgram, listMatches } from "@/modules/scores/queries";
 import { getLeaderboard, getProgramProgress, programUsageCounts } from "@/modules/scores/insights";
 import { formatDay } from "@/modules/scores/analytics";
-import { disciplineLabel, formatDistances, maxShotValue, positionLabel, SCORING_MODES, stageZones } from "@/modules/scores/types";
+import { disciplineLabel, formatDistances, maxShotValue, officialKindLabel, OFFICIAL_RULES_HINT, positionLabel, SCORING_MODES, stageZones } from "@/modules/scores/types";
 import { formatScore } from "@/lib/utils";
 import { FavoriteButton } from "@/modules/scores/ui/favorite-button";
 import { ProgramArchiveButton, ProgramHiddenToggle } from "@/modules/scores/ui/admin-controls";
@@ -49,7 +49,16 @@ export default async function ProgramDetailPage({ params }: { params: Promise<{ 
         {used ? <Badge tone="outline">{used}× im Verein geschossen</Badge> : null}
         {p.hidden ? <Badge tone="warn">Versteckt</Badge> : null}
         {p.isArchived ? <Badge tone="warn">Archiviert</Badge> : null}
+        {p.officialKind ? <Badge tone="accent">Amtlich: {officialKindLabel(p.officialKind)}</Badge> : null}
       </div>
+      {p.officialKind ? (
+        <p className="animate-rise -mt-2 mb-4 text-xs text-ink-3">
+          {p.passMinScore !== null || p.passMaxZeros !== null
+            ? `Bestanden bei ${[p.passMinScore !== null ? `mind. ${p.passMinScore} Punkten` : null, p.passMaxZeros !== null ? `höchstens ${p.passMaxZeros} Nullern` : null].filter(Boolean).join(" und ")}. `
+            : "Keine Bestehensregel hinterlegt. "}
+          {OFFICIAL_RULES_HINT}
+        </p>
+      ) : null}
 
       {!p.isArchived && ctx.can("match.create") ? (
         <LinkButton href={`/scores/matches/new?programId=${p.id}`} size="lg" className="w-full animate-rise [animation-delay:80ms]"><Play className="h-5 w-5" /> Durchgang starten</LinkButton>

@@ -4,7 +4,7 @@ import { Plus } from "lucide-react";
 import { requireSuperAdmin } from "@/lib/tenant";
 import { Badge, Card, LinkButton, PageHeader } from "@/components/ui";
 import { listGlobalPrograms } from "@/modules/scores/queries";
-import { disciplineLabel, formatDistances } from "@/modules/scores/types";
+import { disciplineLabel, formatDistances, officialKindLabel } from "@/modules/scores/types";
 import { ProgramArchiveButton } from "@/modules/scores/ui/admin-controls";
 
 export const metadata: Metadata = { title: "Globale Programme" };
@@ -22,6 +22,7 @@ export default async function SuperProgramsPage() {
               <Link href={`/super/programs/${p.id}/edit`} className="font-medium hover:underline">{p.name}</Link>
               <div className="text-xs text-ink-3">{disciplineLabel(p.discipline)} · {formatDistances(p.totals.distances)} · {p.totals.shots} Schuss{p.isArchived ? " · archiviert" : ""}</div>
             </div>
+            {p.officialKind ? <Badge tone="accent">{officialKindLabel(p.officialKind)}</Badge> : null}
             {p.isArchived ? <Badge tone="warn">Archiv</Badge> : null}
             <ProgramArchiveButton programId={p.id} archived={p.isArchived} />
           </div>

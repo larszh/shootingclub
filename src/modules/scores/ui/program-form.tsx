@@ -3,7 +3,7 @@
 import { useActionState, useState } from "react";
 import { Copy, GripVertical, Plus, Trash2 } from "lucide-react";
 import { saveProgramAction } from "@/modules/scores/actions";
-import { DEFAULT_ZONES, DISCIPLINES, POSITIONS, SCORING_MODES, programTotals, stageZones, type Stage } from "@/modules/scores/types";
+import { DEFAULT_ZONES, DISCIPLINES, OFFICIAL_KINDS, OFFICIAL_RULES_HINT, POSITIONS, SCORING_MODES, programTotals, stageZones, type Stage } from "@/modules/scores/types";
 import { Alert, Button, Card, Field, Input, Select, Textarea } from "@/components/ui";
 import { Switch } from "@/components/ui/controls";
 import { SubmitButton, submitKeepingValues } from "@/components/ui/form";
@@ -12,7 +12,7 @@ import { draftError, fromDrafts, toDrafts, ZoneEditor, type ZoneDraft } from "./
 
 type Props = {
   scope: "tenant" | "global";
-  initial?: { id: string; name: string; description: string | null; discipline: string; weaponNote: string | null; scoringMode: string; stages: Stage[] };
+  initial?: { id: string; name: string; description: string | null; discipline: string; weaponNote: string | null; scoringMode: string; stages: Stage[]; officialKind?: string | null; passMinScore?: number | null; passMaxZeros?: number | null };
   /** Anzahl offener Durchgänge mit diesem Programm (Hinweis beim Bearbeiten). */
   openMatches?: number;
 };
@@ -51,6 +51,7 @@ export function ProgramForm({ scope, initial, openMatches = 0 }: Props) {
   const [stages, setStages] = useState<FormStage[]>(init.stages);
   const [programZones, setProgramZones] = useState<ZoneDraft[]>(init.programZones);
   const [scoringMode, setScoringMode] = useState(initial?.scoringMode ?? "RINGS_INT");
+  const [officialKind, setOfficialKind] = useState(initial?.officialKind ?? "");
   /** Speichern wurde wegen ungültiger Zonen blockiert: ab dann den aktuellen Zonenfehler unten anzeigen. */
   const [zoneSubmitBlocked, setZoneSubmitBlocked] = useState(false);
 
@@ -139,6 +140,32 @@ export function ProgramForm({ scope, initial, openMatches = 0 }: Props) {
         {mode ? <p className="-mt-2 text-xs text-ink-3">{mode.hint}</p> : null}
         <Field label="Waffe genauer (optional)"><Input name="weaponNote" defaultValue={initial?.weaponNote ?? ""} placeholder="z.B. Sportpistole .22, Ordonnanz" /></Field>
         <Field label="Beschreibung (optional)"><Textarea name="description" defaultValue={initial?.description ?? ""} placeholder="Ablauf, Regeln, Hinweise" /></Field>
+      </Card>
+
+      <Card className="animate-rise p-4 space-y-4">
+        <div>
+          <h2 className="font-semibold">Amtliches Programm</h2>
+          <p className="text-xs text-ink-3">Für Bundesübungen (Obligatorisch, Feldschiessen) und Qualifikationen: Resultate können vom Schützenmeister amtlich bestätigt werden.</p>
+        </div>
+        <Field label="Art">
+          <Select name="officialKind" value={officialKind} onChange={(e) => setOfficialKind(e.target.value)}>
+            <option value="">Kein amtliches Programm</option>
+            {OFFICIAL_KINDS.map((k) => <option key={k.key} value={k.key}>{k.label}</option>)}
+          </Select>
+        </Field>
+        {officialKind ? (
+          <>
+            <div className="grid grid-cols-2 gap-3">
+              <Field label="Bestanden ab (Punkte)" hint="leer = keine Mindestpunktzahl">
+                <Input name="passMinScore" type="number" inputMode="decimal" step="0.1" min={0} defaultValue={initial?.passMinScore ?? ""} placeholder="–" />
+              </Field>
+              <Field label="Höchstens Nuller" hint="leer = keine Regel">
+                <Input name="passMaxZeros" type="number" inputMode="numeric" min={0} defaultValue={initial?.passMaxZeros ?? ""} placeholder="–" />
+              </Field>
+            </div>
+            <Alert tone="info">{OFFICIAL_RULES_HINT} Sind beide Felder leer, wird kein «bestanden» berechnet (z.B. Feldschiessen).</Alert>
+          </>
+        ) : null}
       </Card>
 
       {isZones ? (

@@ -44,7 +44,7 @@ function tap() {
  *
  * `storageKey`: "s:<matchId>" für Server-Durchgänge, "c:<clientId>" für offline erstellte.
  */
-export function ScoreEntry({ match, storageKey, tenantId, userId, persistView = true, onStatusChange }: { match: ScoreMatch; storageKey: string; tenantId: string; userId: string; /** Serveransicht in IndexedDB ablegen (false, wenn die Ansicht selbst aus IndexedDB stammt) */ persistView?: boolean; /** Meldet Statuswechsel (z.B. für die Kopfzeile der Offline-Ansicht) */ onStatusChange?: (status: string) => void }) {
+export function ScoreEntry({ match, storageKey, tenantId, userId, persistView = true, onStatusChange, lockedParticipantIds }: { match: ScoreMatch; storageKey: string; tenantId: string; userId: string; /** Serveransicht in IndexedDB ablegen (false, wenn die Ansicht selbst aus IndexedDB stammt) */ persistView?: boolean; /** Meldet Statuswechsel (z.B. für die Kopfzeile der Offline-Ansicht) */ onStatusChange?: (status: string) => void; /** Amtlich bestätigte Teilnehmer, deren Schüsse hier nicht geändert werden dürfen */ lockedParticipantIds?: string[] }) {
   const router = useRouter();
   const { online } = useSyncStatus();
   const decimal = match.program.scoringMode === "RINGS_DECIMAL";
@@ -90,6 +90,8 @@ export function ScoreEntry({ match, storageKey, tenantId, userId, persistView = 
   /** Abgegebene Schüsse (ohne Strafen) einer Serie eines Teilnehmers */
   const firedIn = (pid: string, i: number) => firedShots(stages[i]!, shots[pid]?.[i] ?? [], mode);
   const participant = match.participants.find((p) => p.id === activeP)!;
+  /** Aktiver Teilnehmer ist amtlich bestätigt: Eingabe gesperrt */
+  const locked = !!lockedParticipantIds?.includes(activeP);
   const ctx = useMemo(() => ({ storageKey, view: match, tenantId, userId }), [storageKey, match, tenantId, userId]);
 
   // Lokalen Stand laden (z.B. Seite aus dem Offline-Cache oder ungesicherte Eingaben nach Neuladen)
@@ -223,7 +225,7 @@ export function ScoreEntry({ match, storageKey, tenantId, userId, persistView = 
   };
 
   const addShot = (v: number) => {
-    if (finished) return;
+    if (finished || locked) return;
     if (stagePenalties.has(v)) {
       if (currentPenalties.length >= MAX_STAGE_PENALTIES) return;
       setCurrent([...current, v]);
@@ -238,7 +240,7 @@ export function ScoreEntry({ match, storageKey, tenantId, userId, persistView = 
     }
   };
   const undo = () => {
-    if (finished) return;
+    if (finished || locked) return;
     if (decimal && decimalBuffer) return setDecimalBuffer("");
     if (current.length === 0) return;
     setCurrent(current.slice(0, -1));
@@ -425,7 +427,7 @@ export function ScoreEntry({ match, storageKey, tenantId, userId, persistView = 
       </div>
 
       {/* Zeitnehmung */}
-      {!finished ? <StageTimer key={`${activeS}-${stage.timeLimitSec ?? 0}`} timeLimitSec={stage.timeLimitSec} /> : null}
+      {!finished && !locked ? <StageTimer key={`${activeS}-${stage.timeLimitSec ?? 0}`} timeLimitSec={stage.timeLimitSec} /> : null}
 
       {/* Schüsse */}
       <Card className="animate-rise [animation-delay:120ms] p-4">
@@ -482,7 +484,10 @@ export function ScoreEntry({ match, storageKey, tenantId, userId, persistView = 
       </Card>
 
       {/* Eingabe */}
-      {!finished ? (
+      {!finished && locked ? (
+        <Alert tone="info" title="Amtlich bestätigt">Das Resultat von {participant.name} ist amtlich bestätigt und kann hier nicht mehr geändert werden. Korrekturen nur durch den Schützenmeister nach «Bestätigung aufheben».</Alert>
+      ) : null}
+      {!finished && !locked ? (
         <div className="animate-rise [animation-delay:180ms]">
           {zonesMode ? (
             <div className="grid grid-cols-2 gap-2">

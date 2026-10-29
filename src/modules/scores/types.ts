@@ -6,6 +6,7 @@ export const DISCIPLINES = [
   { key: "AIR_PISTOL", label: "Luftpistole" },
   { key: "AIR_RIFLE", label: "Luftgewehr" },
   { key: "SHOTGUN", label: "Flinte" },
+  { key: "CROSSBOW", label: "Armbrust" },
   { key: "TACTICAL", label: "Taktik/Behörden" },
   { key: "OTHER", label: "Andere" },
 ] as const;
@@ -14,6 +15,26 @@ export const disciplineKeys = DISCIPLINES.map((d) => d.key) as [Discipline, ...D
 export function disciplineLabel(key: string) {
   return DISCIPLINES.find((d) => d.key === key)?.label ?? key;
 }
+
+// ---------------------------------------------------------------------------
+// Amtliche Programme (Bundesübungen, Qualifikation)
+// ---------------------------------------------------------------------------
+
+export const OFFICIAL_KINDS = [
+  { key: "OP", label: "Obligatorisch", short: "OP" },
+  { key: "FS", label: "Feldschiessen", short: "FS" },
+  { key: "QUAL", label: "Qualifikation", short: "Qual." },
+] as const;
+export type OfficialKind = (typeof OFFICIAL_KINDS)[number]["key"];
+export const officialKindKeys = OFFICIAL_KINDS.map((k) => k.key) as [OfficialKind, ...OfficialKind[]];
+export function isOfficialKind(k: string | null | undefined): k is OfficialKind {
+  return !!k && (officialKindKeys as readonly string[]).includes(k);
+}
+export function officialKindLabel(k: string | null | undefined) {
+  return OFFICIAL_KINDS.find((o) => o.key === k)?.label ?? "";
+}
+/** Hinweis bei konfigurierbaren Werten aus Reglementen (keine Gewähr). */
+export const OFFICIAL_RULES_HINT = "Werte bitte mit den aktuellen Vorgaben (VBS/SSV/Kanton) prüfen.";
 
 export const SCORING_MODES = [
   { key: "RINGS_INT", label: "Ringe (ganze Zahlen)", short: "Ringe", hint: "0 bis Maximalring, z.B. 0–10" },
@@ -180,6 +201,12 @@ export const programInputSchema = z
     weaponNote: z.string().trim().max(120).optional(),
     scoringMode: z.enum(scoringModeKeys),
     stages: z.array(stageSchema).min(1, "Mindestens eine Serie").max(30),
+    /** Amtliches Programm (Bundesübung/Qualifikation); fehlt = normales Programm */
+    officialKind: z.enum(officialKindKeys).nullish(),
+    /** Bestehensgrenze: Mindestpunktzahl (leer = keine Regel) */
+    passMinScore: z.coerce.number().min(0, "Mindestpunkte ab 0").max(100000).nullish(),
+    /** Bestehensgrenze: höchstens so viele Nuller (leer = keine Regel) */
+    passMaxZeros: z.coerce.number().int("Nuller als ganze Zahl").min(0, "Nuller ab 0").max(1000).nullish(),
   })
   .transform((p) => ({ ...p, stages: normalizeStages(p.stages, p.scoringMode) }));
 export type ProgramInput = z.infer<typeof programInputSchema>;
