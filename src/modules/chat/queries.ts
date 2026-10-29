@@ -119,7 +119,7 @@ export type PickerMember = { id: string; name: string; avatarUrl: string | null 
 /** Mitglieder des Vereins für die Auswahl (ohne den Benutzer selbst). */
 export async function listTenantMembersForPicker(tenantId: string, excludeUserId?: string): Promise<PickerMember[]> {
   const rows = await db.membership.findMany({
-    where: { tenantId, ...(excludeUserId ? { userId: { not: excludeUserId } } : {}) },
+    where: { tenantId, status: { not: "LEFT" }, ...(excludeUserId ? { userId: { not: excludeUserId } } : {}) },
     select: { user: { select: { id: true, name: true, avatarPath: true, updatedAt: true } } },
   });
   return rows
@@ -162,7 +162,7 @@ export async function getConversationDetail(userId: string, tenantId: string, co
       select: { userId: true, role: true, lastReadAt: true, joinedAt: true, user: { select: { id: true, name: true, avatarPath: true, updatedAt: true } } },
       orderBy: { joinedAt: "asc" },
     }),
-    db.membership.findMany({ where: { tenantId }, select: { userId: true } }),
+    db.membership.findMany({ where: { tenantId, status: { not: "LEFT" } }, select: { userId: true } }),
     listMessagesPage(c.id),
     listReads(c.id),
   ]);

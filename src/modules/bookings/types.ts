@@ -1,4 +1,5 @@
 import { z } from "zod";
+import type { TFunction } from "@/lib/i18n/core";
 
 export const RESOURCE_KINDS = [
   { key: "RANGE", label: "Schiessanlage / Stand" },
@@ -151,9 +152,11 @@ export function isCalendarDate(s: unknown): s is string {
 
 export const WEEKDAYS = ["So", "Mo", "Di", "Mi", "Do", "Fr", "Sa"];
 
-export function formatDuration(min: number) {
-  if (min < 60) return `${min} Min.`;
+/** Dauer «1 h 30 Min.»; mit `t` in der Sprache des Vereins (z.B. für die Rechnung), sonst Deutsch. */
+export function formatDuration(min: number, t?: TFunction) {
   const h = Math.floor(min / 60);
   const m = min % 60;
+  if (t) return t(min < 60 ? "duration.minutes" : m ? "duration.hoursMinutes" : "duration.hours", { h, m: min < 60 ? min : m });
+  if (min < 60) return `${min} Min.`;
   return m ? `${h} h ${m} Min.` : `${h} h`;
 }

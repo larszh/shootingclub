@@ -4,12 +4,8 @@ on:
   push:
     branches: [main]
   pull_request:
+  # Manuell: unter «Use workflow from» den Branch wählen. Geprüft und deployt wird genau dessen Commit.
   workflow_dispatch:
-    inputs:
-      branch:
-        description: "Branch, der auf den Server soll"
-        required: false
-        default: ""
 
 concurrency:
   group: deploy-${{ github.ref }}
@@ -37,6 +33,7 @@ jobs:
       - run: npx prisma generate
       - run: npx tsc --noEmit
       - run: npx eslint .
+      - run: npm test
       - run: npm run build
 
   deploy:
@@ -48,7 +45,10 @@ jobs:
       name: production
       url: ${{ vars.APP_URL }}
     env:
-      DEPLOY_BRANCH: ${{ inputs.branch || vars.DEPLOY_BRANCH || github.ref_name }}
+      # Deployt wird genau der Commit, den der check-Job geprüft hat (github.sha), auf seinem Branch.
+      # Kein abweichender Branch per Eingabe oder Variable: das wäre ungeprüfter Code.
+      DEPLOY_BRANCH: ${{ github.ref_name }}
+      DEPLOY_SHA: ${{ github.sha }}
     steps:
       - name: SSH einrichten
         env:
@@ -83,6 +83,25 @@ jobs:
           APP_URL: ${{ vars.APP_URL }}
           PORT: ${{ vars.PORT || '3000' }}
           UPLOAD_DIR: ${{ vars.UPLOAD_DIR || './storage/uploads' }}
+          # Optional (leer erlaubt): Mailversand
+          SMTP_HOST: ${{ vars.SMTP_HOST }}
+          SMTP_PORT: ${{ vars.SMTP_PORT }}
+          SMTP_SECURE: ${{ vars.SMTP_SECURE }}
+          SMTP_USER: ${{ vars.SMTP_USER }}
+          SMTP_PASS: ${{ secrets.SMTP_PASS }}
+          MAIL_FROM: ${{ vars.MAIL_FROM }}
+          # Optional: Web Push
+          VAPID_PUBLIC_KEY: ${{ vars.VAPID_PUBLIC_KEY }}
+          VAPID_PRIVATE_KEY: ${{ secrets.VAPID_PRIVATE_KEY }}
+          VAPID_SUBJECT: ${{ vars.VAPID_SUBJECT }}
+          # Optional: Betrieb
+          JOBS_DISABLED: ${{ vars.JOBS_DISABLED }}
+          CHAT_POLL_MS: ${{ vars.CHAT_POLL_MS }}
+          DB_POOL: ${{ vars.DB_POOL }}
+          TRUST_CLOUDFLARE: ${{ vars.TRUST_CLOUDFLARE }}
+          BACKUP_DIR: ${{ vars.BACKUP_DIR }}
+          BACKUP_KEEP: ${{ vars.BACKUP_KEEP }}
+          ALLOW_NO_BACKUP: ${{ vars.ALLOW_NO_BACKUP }}
           EXTRA_ENV: ${{ secrets.EXTRA_ENV }}
         run: |
           set -euo pipefail
@@ -96,6 +115,13 @@ jobs:
             echo "APP_URL=\"$APP_URL\""
             echo "PORT=$PORT"
             echo "UPLOAD_DIR=\"$UPLOAD_DIR\""
+            # Optionale Werte nur schreiben, wenn gesetzt. Keine Zeilenumbrüche/Anführungszeichen zulassen.
+            for v in SMTP_HOST SMTP_PORT SMTP_SECURE SMTP_USER SMTP_PASS MAIL_FROM VAPID_PUBLIC_KEY VAPID_PRIVATE_KEY VAPID_SUBJECT JOBS_DISABLED CHAT_POLL_MS DB_POOL TRUST_CLOUDFLARE BACKUP_DIR BACKUP_KEEP ALLOW_NO_BACKUP; do
+              val="${!v:-}"
+              [ -n "$val" ] || continue
+              case "$val" in *$'\n'*|*'"'*) echo "$v enthält ungültige Zeichen (Zeilenumbruch oder \")" >&2; exit 1 ;; esac
+              echo "$v=\"$val\""
+            done
             if [ -n "${EXTRA_ENV:-}" ]; then printf '%s\n' "$EXTRA_ENV"; fi
           } > env.out
           ssh deploy "umask 077 && cat > '$APP_DIR/.env.new' && mv '$APP_DIR/.env.new' '$APP_DIR/.env'" < env.out
@@ -107,7 +133,9 @@ jobs:
         run: |
           set -euo pipefail
           test -n "$APP_DIR" || { echo "Variable APP_DIR fehlt"; exit 1; }
-          ssh deploy "cd '$APP_DIR' && DEPLOY_BRANCH='$DEPLOY_BRANCH' bash scripts/deploy.sh"
+          case "$DEPLOY_SHA" in ''|*[!0-9a-f]*) echo "Ungültiger Commit: $DEPLOY_SHA"; exit 1 ;; esac
+          case "$DEPLOY_BRANCH" in ''|*[!A-Za-z0-9._/-]*) echo "Ungültiger Branch-Name: $DEPLOY_BRANCH"; exit 1 ;; esac
+          ssh deploy "cd '$APP_DIR' && DEPLOY_BRANCH='$DEPLOY_BRANCH' DEPLOY_SHA='$DEPLOY_SHA' bash scripts/deploy.sh"
 
       - name: Aufräumen
         if: always()

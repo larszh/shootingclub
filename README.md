@@ -30,14 +30,17 @@ Nach dem Demo-Seed:
 
 Beitrittscode Demo-Verein: `DEMO42`. Im Demo-Verein sind alle Module aktiv, inklusive Dateiablage (Beispielordner), Chat (Gruppe «Vorstand» und eine Direktnachricht) und Munition (Beispielsortiment). Ohne Seed wird das allererste registrierte Konto automatisch Super-Admin.
 
-Weitere Befehle: `npm run typecheck`, `npm run lint`, `npm run build`, `npm run db:deploy` (Migrationen in Produktion), `npm run db:studio`.
+Weitere Befehle: `npm test` (Vitest, reine Funktionen), `npm run typecheck`, `npm run lint`, `npm run build`, `npm run db:deploy` (Migrationen in Produktion), `npm run db:studio`.
 
 ## Stack
 
 - Next.js 16 (App Router, Server Actions, Turbopack), React 19, TypeScript
 - Tailwind CSS 4 mit eigenen Design-Tokens (hell/dunkel automatisch)
 - Prisma 7 mit MySQL/MariaDB (`@prisma/adapter-mariadb`), versionierte Migrationen in `prisma/migrations`. Das Schema verzichtet bewusst auf Enums und Json-Spalten, damit es bei Bedarf auf PostgreSQL portierbar bleibt.
-- Eigene Session-Auth (bcrypt, DB-Sessions, httpOnly-Cookie), kein externer Auth-Dienst
+- Eigene Session-Auth (bcrypt, DB-Sessions, httpOnly-Cookie), Zwei-Faktor-Anmeldung (TOTP), kein externer Auth-Dienst
+- E-Mail über SMTP (nodemailer) mit Warteschlange in der DB, Web Push (VAPID), Hintergrund-Jobs im Node-Prozess
+- Mehrsprachigkeit DE/FR/IT (`src/lib/i18n`) für Mails, Benachrichtigungen und Rechnungen
+- Vitest für Unit-Tests
 - Datei-Uploads im lokalen `storage/uploads` (`src/lib/storage.ts`); die Dateiablage wählt den Speicherort pro Verein: Server, S3 (AWS, Hetzner, kompatible) oder Nextcloud/WebDAV (`src/lib/file-storage/`)
 - Chat-Echtzeit über Server-Sent Events (`/api/chat/stream`) mit In-Process-Bus, passend zum langlebigen Node-Prozess unter PM2 (nicht serverless)
 
@@ -47,10 +50,14 @@ Weitere Befehle: `npm run typecheck`, `npm run lint`, `npm run build`, `npm run 
 src/
   lib/            Kern: db, auth (inkl. Drosselung), tenant-kontext, permissions, modules-registry, storage,
                   crypto, time, money, qr-bill.ts (Schweizer QR-Rechnung als SVG), offline/ (IndexedDB, Outbox, Sync),
-                  file-storage/ (Adapter LOCAL, S3, WebDAV mit Verbindungstest)
+                  file-storage/ (Adapter LOCAL, S3, WebDAV mit Verbindungstest), audit.ts, mail/ (Warteschlange,
+                  Layout, SMTP-Versand), jobs/ (Runner mit DB-Sperre, Registry), i18n/ (de/fr/it, extra/*),
+                  push/ (Web Push), notify.ts (Push + E-Mail nach Einstellungen), totp.ts
   components/     Gemeinsame UI, u.a. invoice-document.tsx (A4-Rechnungslayout)
   modules/
-    core/         Auth- und Tenant-Actions (Registrierung, Beitritt, Rollen, Module)
+    core/         Auth- und Tenant-Actions (Registrierung, Beitritt, Rollen, Module), invitations, two-factor,
+                  privacy (Export, Kontolöschung), tenant-purge (Vereinslöschung), super-actions
+    members/      Mitgliederverwaltung: queries, actions, Import (CSV/XLSX), Haushalte
     scores/       Punkteerfassung: types, presets, queries, actions, ui/
     targets/      Zielscheiben: types, presets, svg-generator, queries, actions, ui/
     events/       Anlässe & News: types, queries, actions, ics, seed, ui/
@@ -62,7 +69,7 @@ src/
     ammo/         Munition: types, service (Bestand, Ausgabe, Rechnungsnummer, QR-Referenz), queries, actions,
                   payments (markAmmoInvoicePaid), render, seed, ui/
   app/
-    (auth)/       login, register
+    (auth)/       login (+ 2FA), register, forgot-/reset-/set-password, invite/[token]
     (app)/        eingeloggter Bereich mit App-Shell (Tab-Bar mobil, Sidebar Desktop)
       scores/     Programme, Durchgänge, Statistik, Ranglisten
       targets/    Galerie, Anlegen/Bearbeiten
@@ -74,16 +81,20 @@ src/
       chat/       Unterhaltungen, neue Nachricht, neue Gruppe
       ammo/       Munition bestellen, eigene Bestellungen
       members/    Mitgliederverzeichnis
-      me/         Profil, Passwort, Darstellung, Kalender-Abo
+      me/         Profil, Darstellung, Kalender-Abo; security/ (Passwort, 2FA, Sitzungen),
+                  notifications/ (Sprache, Push/E-Mail), privacy/ (Export, Konto löschen)
       help/       Hilfe
       onboarding/ Verein beitreten oder anlegen
-      admin/      Tenant-Einstellungen, Module, Mitglieder
+      admin/      Tenant-Einstellungen, Module
+      admin/members/   Mitgliederliste, Detail, Haushalte, Einladungen, Import
+      admin/audit/     Protokoll des Vereins, CSV, Vereinsarchiv
       admin/bookings/  Übersicht, Wochenkalender, Ressourcen, Einstellungen, Zahlungsanbieter
       admin/billing/   Übersicht und Jahreslauf, Mitglieder, Kategorien, Rechnungsprofil, Bankimport
       admin/payments/  Offene Posten über alle Bereiche, CSV-Export (admin/payments/export)
       admin/files/     Speicherort und Limits der Dateiablage
       admin/ammo/      Bestellungen, Ausgabe an der Theke, Sortiment, Einstellungen
-      super/      Super-Admin: Tenants, Benutzer, globale Programme/Scheiben
+      super/      Super-Admin: Tenants (inkl. Löschen/Wiederherstellen), Benutzer, globale Programme/Scheiben,
+                  audit/ (alle Vereine), system/ (Mail-Warteschlange, Jobs)
     offline/      Ersatzseite ohne Empfang (Service Worker)
     targets/[id]/print                Druckansicht ohne App-Shell
     bookings/[id]/invoice             Druckbare Reservations-Rechnung mit QR-Zahlteil
@@ -100,6 +111,9 @@ src/
     api/offline/snapshot              Offline-Snapshot des aktiven Vereins
     api/sync                          Übertragung der Offline-Outbox
     api/payments/stripe/[tenantId]    Stripe-Webhook pro Tenant
+    api/export/{me,archive}           Datenexport (eigene Daten, Vereinsarchiv) als ZIP
+    api/push/{key,subscribe}          Web Push: öffentlicher Schlüssel, Gerät an-/abmelden
+    api/health                        Healthcheck (DB-Verbindung)
 prisma/
   schema.prisma, migrations/, seed.ts (Super-Admin, globale Vorlagen, Demo-Verein; --presets-only für Updates)
 ```
@@ -181,6 +195,25 @@ Registry in `src/lib/modules.ts`. Jedes Modul ist pro Tenant ein-/ausschaltbar (
 
 **Rechnungsprofil** (gemeinsam): Zahlungsempfänger, Adresse, IBAN und Währung des Vereins, genutzt von Reservationen, Mitgliederbeiträgen und Munition. IBAN wird mit Prüfziffer validiert.
 
+**Mitgliederverwaltung** (Berechtigungen `members.view` / `members.manage`)
+- `/admin/members`: Liste mit Suche, Filtern (Status, Rolle, Kategorie, Haushalt, Zugang, Minderjährige), Seiten à 50, Sammelaktionen (Status, Kategorie, Zugangsmail, CSV-Export). Detailseite mit allen Feldern (Lizenznummer, Eintritt/Austritt, Erziehungsberechtigte bei Minderjährigen, interne Notiz) und Protokoll.
+- **Status** Aktiv, Passiv, Ehrenmitglied, Jungschütze, Gönner, Ausgetreten. Ausgetretene behalten ihre Daten (Resultate, Rechnungen), haben aber keinen Zugang mehr zum Verein.
+- **Haushalte**: Familien mit zahlender Person; der Jahreslauf erstellt pro Haushalt eine Sammelrechnung.
+- **Import** (`/admin/members/import`): CSV oder Excel (.xlsx), Vorlagen für ClubDesk, WebLing und Excel, Vorschau mit Fehlern und Dubletten, optional Einladungsmail zum Passwort-Setzen.
+- **Einladungen** per E-Mail mit Rolle (`/admin/members/invitations`), Annahme unter `/invite/<token>` mit Anmeldung oder Registrierung.
+
+**Konto & Sicherheit** (`/me`)
+- Profil mit Telefon und Geburtsdatum; **Sicherheit** (`/me/security`): Passwort ändern, Zwei-Faktor-Anmeldung (TOTP mit QR-Code, 8 Wiederherstellungscodes), aktive Sitzungen beenden. Passwort vergessen per E-Mail-Link.
+- **Benachrichtigungen & Sprache** (`/me/notifications`): Sprache DE/FR/IT, Push auf diesem Gerät, pro Thema (Chat, Mitteilungen, Reservationen, Rechnungen, Anlässe, Erinnerungen, System) Push und E-Mail ein/aus. Benachrichtigt wird bei neuen Chatnachrichten (nur wenn nicht online), Mitteilungen, Absagen von Anlässen, Reservationsstatus und Rechnungen.
+- **Datenschutz** (`/me/privacy`): alle eigenen Daten als ZIP, Konto löschen (pseudonymisiert; Rechnungen und Resultate bleiben dem Verein erhalten).
+
+**Betrieb & Nachvollziehbarkeit**
+- **Protokoll** (Audit-Log) für Rollenwechsel, Löschungen, Importe, Exporte und Einstellungen: pro Verein unter `/admin/audit` (mit CSV und Vereinsarchiv als ZIP für Inhaber), für Super-Admins über alle Vereine unter `/super/audit`.
+- **Vereine löschen** mit 30 Tagen Frist und «Wiederherstellen»; danach entfernt ein täglicher Job Daten und Dateien endgültig.
+- **System** (`/super/system`): SMTP-Status, Mail-Warteschlange, fehlgeschlagene Mails erneut senden, Testmail, Job-Übersicht mit «Jetzt ausführen».
+- **Hintergrund-Jobs** (`src/lib/jobs`): Mailversand (30 s), Aufräumen (stündlich), Erinnerungen (stündlich), Vereinslöschung und Totale nachtragen (täglich). Jeder Job ist über eine DB-Sperre gegen Doppelausführung geschützt; ausgelegt auf eine PM2-Instanz.
+- **Healthcheck** `GET /api/health` (`{"ok":true}` / HTTP 503) für Deploy und Monitoring; `scripts/deploy.sh` sichert die Datenbank vor jeder Migration.
+
 ### Offline-Betrieb & App-Installation (PWA)
 
 Standchef lässt sich auf dem Startbildschirm installieren (Teilen → «Zum Home-Bildschirm» bzw. «App installieren») und funktioniert im Schiessstand auch ohne Empfang.
@@ -203,4 +236,4 @@ Weitere Ergänzungen dieser Version:
 
 ## Produktion
 
-Siehe `docs/DEPLOY-CLOUDPANEL.md`. Kurzfassung: `.env` ausfüllen, `npm ci`, `npx prisma migrate deploy`, `npm run db:seed`, `npm run build`, `pm2 start ecosystem.config.cjs`. Updates mit `bash scripts/deploy.sh`; neue globale Programme und Scheiben ergänzt dabei `npx tsx prisma/seed.ts --presets-only` (legt nur fehlende Vorlagen an, kein Konto).
+Siehe `docs/DEPLOY-CLOUDPANEL.md` (inkl. SMTP mit SPF/DKIM, VAPID-Schlüssel, Backups und Wiederherstellung, Healthcheck, Jobs). Alle Umgebungsvariablen mit Erklärung stehen in `.env.example`. Kurzfassung: `.env` ausfüllen, `npm ci`, `npx prisma migrate deploy`, `npm run db:seed`, `npm run build`, `pm2 start ecosystem.config.cjs`. Updates mit `bash scripts/deploy.sh`; neue globale Programme und Scheiben ergänzt dabei `npx tsx prisma/seed.ts --presets-only` (legt nur fehlende Vorlagen an, kein Konto).

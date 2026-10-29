@@ -18,40 +18,54 @@ datasource db {
 // ---------------------------------------------------------------------------
 
 model User {
-  id           String   @id @default(cuid())
-  email        String   @unique
-  name         String
-  passwordHash String
-  isSuperAdmin Boolean  @default(false)
-  locale       String   @default("de")
-  street       String?
-  zip          String?
-  city         String?
-  avatarPath   String?  // relativ zu UPLOAD_DIR, z.B. avatars/<id>.webp
-  themePref    String   @default("system") // system | light | dark
-  calendarToken String? @unique // geheimer Token für iCal-Feed der eigenen Termine
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  id            String    @id @default(cuid())
+  email         String    @unique
+  name          String
+  passwordHash  String
+  isSuperAdmin  Boolean   @default(false)
+  locale        String    @default("de")
+  street        String?
+  zip           String?
+  city          String?
+  avatarPath    String? // relativ zu UPLOAD_DIR, z.B. avatars/<id>.webp
+  themePref     String    @default("system") // system | light | dark
+  calendarToken String?   @unique // geheimer Token für iCal-Feed der eigenen Termine
+  phone         String?
+  birthDate     DateTime? @db.Date // für Alterskategorien (U21, Veteran …) und Jungschützen
+  totpSecretEnc String?   @db.Text // AES-256-GCM, gesetzt sobald 2FA aktiviert ist
+  totpEnabledAt DateTime?
+  passwordSetAt DateTime? // null = Konto per Import/Einladung angelegt, Passwort noch nicht gesetzt
+  deletedAt     DateTime? // Konto gelöscht und pseudonymisiert (Rechnungen bleiben 10 Jahre)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
 
-  sessions         Session[]
-  memberships      Membership[]
-  programFavorites ProgramFavorite[]
-  createdPrograms  Program[]           @relation("ProgramCreator")
-  createdMatches   Match[]             @relation("MatchCreator")
-  participations   MatchParticipant[]
-  targetTemplates  TargetTemplate[]    @relation("TargetOwner")
-  targetFavorites  TargetFavorite[]
-  bookings         Booking[]
-  feeInvoices      FeeInvoice[]
-  createdEvents    Event[]             @relation("EventCreator")
-  eventRsvps       EventRsvp[]
-  announcements    Announcement[]      @relation("AnnouncementAuthor")
-  createdFolders   FileFolder[]        @relation("FolderCreator")
-  uploadedFiles    StoredFile[]        @relation("FileUploader")
-  chatMemberships  ChatMember[]
-  chatMessages     ChatMessage[]       @relation("ChatSender")
-  ammoOrders       AmmoOrder[]         @relation("AmmoBuyer")
-  ammoIssued       AmmoOrder[]         @relation("AmmoIssuer")
+  sessions          Session[]
+  memberships       Membership[]
+  programFavorites  ProgramFavorite[]
+  createdPrograms   Program[]                @relation("ProgramCreator")
+  createdMatches    Match[]                  @relation("MatchCreator")
+  participations    MatchParticipant[]
+  targetTemplates   TargetTemplate[]         @relation("TargetOwner")
+  targetFavorites   TargetFavorite[]
+  bookings          Booking[]
+  feeInvoices       FeeInvoice[]
+  createdEvents     Event[]                  @relation("EventCreator")
+  eventRsvps        EventRsvp[]
+  announcements     Announcement[]           @relation("AnnouncementAuthor")
+  createdFolders    FileFolder[]             @relation("FolderCreator")
+  uploadedFiles     StoredFile[]             @relation("FileUploader")
+  chatMemberships   ChatMember[]
+  chatMessages      ChatMessage[]            @relation("ChatSender")
+  ammoOrders        AmmoOrder[]              @relation("AmmoBuyer")
+  ammoIssued        AmmoOrder[]              @relation("AmmoIssuer")
+  authTokens        AuthToken[]
+  pushSubscriptions PushSubscription[]
+  notificationPrefs NotificationPreference[]
+  qualifications    Qualification[]          @relation("QualificationHolder")
+  shiftAssignments  ShiftAssignment[]
+  workLogs          WorkLog[]                @relation("WorkLogUser")
+  rangeVisits       RangeVisit[]             @relation("RangeVisitUser")
+  weaponLoans       WeaponLoan[]             @relation("WeaponLoanUser")
 }
 
 model Session {
@@ -66,72 +80,107 @@ model Session {
 }
 
 model Tenant {
-  id        String   @id @default(cuid())
-  slug      String   @unique
-  name      String
-  kind      String   @default("CLUB") // CLUB | RANGE | PRIVATE
-  city      String?
-  canton    String?
-  joinCode  String   @unique
-  logoPath    String?  // relativ zu UPLOAD_DIR
-  brandColor  String?  // Hex, z.B. #d6232d – Akzentfarbe (CI)
-  brandColor2 String?  // optionale Zweitfarbe für Verläufe/Highlights
-  description String?  @db.Text
-  website     String?
-  calendarToken String? @unique // geheimer Token für öffentlichen iCal-Feed (Anlässe)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id            String    @id @default(cuid())
+  slug          String    @unique
+  name          String
+  kind          String    @default("CLUB") // CLUB | RANGE | PRIVATE
+  city          String?
+  canton        String?
+  joinCode      String    @unique
+  logoPath      String? // relativ zu UPLOAD_DIR
+  brandColor    String? // Hex, z.B. #d6232d – Akzentfarbe (CI)
+  brandColor2   String? // optionale Zweitfarbe für Verläufe/Highlights
+  description   String?   @db.Text
+  website       String?
+  calendarToken String?   @unique // geheimer Token für öffentlichen iCal-Feed (Anlässe)
+  defaultLocale String    @default("de") // de | fr | it – Sprache für Rechnungen, Mails, Druck
+  replyToEmail  String? // Antwortadresse für Mails des Vereins
+  deletedAt     DateTime? // Löschung beantragt (Soft-Delete); endgültig gelöscht nach purgeAfter
+  purgeAfter    DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
 
-  memberships     Membership[]
-  modules         TenantModule[]
-  programs        Program[]
-  programSettings ProgramTenantSetting[]
-  matches         Match[]
-  targetTemplates TargetTemplate[]
-  targetSettings  TargetTenantSetting[]
-  bookingSettings BookingSettings?
-  resources       Resource[]
-  resourceBlocks  ResourceBlock[]
-  bookings        Booking[]
-  paymentConfigs  PaymentProviderConfig[]
-  invoices        Invoice[]
-  billingProfile  BillingProfile?
-  feeCategories   FeeCategory[]
-  feeRuns         FeeRun[]
-  feeInvoices     FeeInvoice[]
-  events          Event[]
-  announcements   Announcement[]
-  storageConfig   StorageConfig?
-  fileFolders     FileFolder[]
-  storedFiles     StoredFile[]
-  chats           ChatConversation[]
-  ammoSettings    AmmoSettings?
-  ammoProducts    AmmoProduct[]
-  ammoOrders      AmmoOrder[]
+  memberships        Membership[]
+  modules            TenantModule[]
+  programs           Program[]
+  programSettings    ProgramTenantSetting[]
+  matches            Match[]
+  targetTemplates    TargetTemplate[]
+  targetSettings     TargetTenantSetting[]
+  bookingSettings    BookingSettings?
+  resources          Resource[]
+  resourceBlocks     ResourceBlock[]
+  bookings           Booking[]
+  paymentConfigs     PaymentProviderConfig[]
+  invoices           Invoice[]
+  billingProfile     BillingProfile?
+  feeCategories      FeeCategory[]
+  feeRuns            FeeRun[]
+  feeInvoices        FeeInvoice[]
+  events             Event[]
+  announcements      Announcement[]
+  storageConfig      StorageConfig?
+  fileFolders        FileFolder[]
+  storedFiles        StoredFile[]
+  chats              ChatConversation[]
+  ammoSettings       AmmoSettings?
+  ammoProducts       AmmoProduct[]
+  ammoOrders         AmmoOrder[]
+  invitations        Invitation[]
+  households         Household[]
+  qualifications     Qualification[]
+  qualificationRules QualificationRule[]
+  shifts             Shift[]
+  workHoursSettings  WorkHoursSettings?
+  workLogs           WorkLog[]
+  championships      Championship[]
+  rangeDays          RangeDay[]
+  rangeVisits        RangeVisit[]
+  rangeRules         RangeRules[]
+  shootingWindows    ShootingWindow[]
+  shootingQuotas     ShootingQuota[]
+  incidents          Incident[]
+  clubWeapons        ClubWeapon[]
+  weaponLoans        WeaponLoan[]
+  ammoMovements      AmmoStockMovement[]
+  courses            Course[]
+  liveBoards         LiveBoard[]
 }
 
 model Membership {
-  id                    String   @id @default(cuid())
-  userId                String
-  tenantId              String
-  role                  String   @default("MEMBER") // OWNER | ADMIN | TRAINER | MEMBER
-  feeCategoryId         String?
-  feeAmountOverrideCents Int?    // individueller Beitrag, überschreibt die Kategorie
-  memberNumber          String?
-  createdAt             DateTime @default(now())
-  user                  User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  tenant                Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  feeCategory           FeeCategory? @relation(fields: [feeCategoryId], references: [id], onDelete: SetNull)
-  feeInvoices           FeeInvoice[]
+  id                     String       @id @default(cuid())
+  userId                 String
+  tenantId               String
+  role                   String       @default("MEMBER") // OWNER | ADMIN | TRAINER | MEMBER
+  feeCategoryId          String?
+  feeAmountOverrideCents Int? // individueller Beitrag, überschreibt die Kategorie
+  memberNumber           String?
+  status                 String       @default("ACTIVE") // ACTIVE | PASSIVE | HONORARY | JUNIOR | SUPPORTER | LEFT
+  joinedAt               DateTime?    @db.Date
+  leftAt                 DateTime?    @db.Date
+  licenseNumber          String? // Swiss-Shooting-Lizenznummer, vom Verein selbst erfasst
+  householdId            String?
+  guardianName           String? // gesetzliche Vertretung bei Minderjährigen
+  guardianEmail          String?
+  guardianPhone          String?
+  adminNote              String?      @db.Text // nur für Vorstand sichtbar
+  workHoursExempt        Boolean      @default(false)
+  createdAt              DateTime     @default(now())
+  user                   User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tenant                 Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  feeCategory            FeeCategory? @relation(fields: [feeCategoryId], references: [id], onDelete: SetNull)
+  household              Household?   @relation(fields: [householdId], references: [id], onDelete: SetNull)
+  feeInvoices            FeeInvoice[]
 
   @@unique([userId, tenantId])
   @@index([tenantId])
+  @@index([householdId])
 }
 
 model TenantModule {
   id        String  @id @default(cuid())
   tenantId  String
-  moduleKey String  // scores | targets | bookings | billing
+  moduleKey String // scores | targets | bookings | billing
   enabled   Boolean @default(true)
   tenant    Tenant  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
@@ -143,24 +192,29 @@ model TenantModule {
 // ---------------------------------------------------------------------------
 
 model Program {
-  id          String   @id @default(cuid())
-  tenantId    String?  // null = globales Programm (Super-Admin)
-  createdById String?
-  name        String
-  description String?  @db.Text
-  discipline  String   @default("PISTOL") // PISTOL | RIFLE | AIR_PISTOL | AIR_RIFLE | SHOTGUN | OTHER
-  weaponNote  String?
-  scoringMode String   @default("RINGS_INT") // RINGS_INT | RINGS_DECIMAL | HITS
-  stagesJson  String   @db.Text // Array<Stage>, siehe src/modules/scores/types.ts
-  isArchived  Boolean  @default(false)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id           String   @id @default(cuid())
+  tenantId     String? // null = globales Programm (Super-Admin)
+  createdById  String?
+  name         String
+  description  String?  @db.Text
+  discipline   String   @default("PISTOL") // PISTOL | RIFLE | AIR_PISTOL | AIR_RIFLE | SHOTGUN | OTHER
+  weaponNote   String?
+  scoringMode  String   @default("RINGS_INT") // RINGS_INT | RINGS_DECIMAL | HITS
+  officialKind String? // OP (Obligatorisch) | FS (Feldschiessen) | QUAL (Qualifikation) | null
+  passMinScore Float? // Bestehensgrenze (z.B. Obligatorisch 300 m: 42), konfigurierbar
+  passMaxZeros Int? // max. Nuller für Bestanden (z.B. 3)
+  stagesJson   String   @db.Text // Array<Stage>, siehe src/modules/scores/types.ts
+  isArchived   Boolean  @default(false)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
 
-  tenant    Tenant?                @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  createdBy User?                  @relation("ProgramCreator", fields: [createdById], references: [id], onDelete: SetNull)
-  settings  ProgramTenantSetting[]
-  favorites ProgramFavorite[]
-  matches   Match[]
+  tenant               Tenant?                @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  createdBy            User?                  @relation("ProgramCreator", fields: [createdById], references: [id], onDelete: SetNull)
+  settings             ProgramTenantSetting[]
+  favorites            ProgramFavorite[]
+  matches              Match[]
+  championshipPrograms ChampionshipProgram[]
+  qualificationRules   QualificationRule[]
 
   @@index([tenantId])
 }
@@ -188,50 +242,63 @@ model ProgramFavorite {
 }
 
 model Match {
-  id           String   @id @default(cuid())
+  id           String    @id @default(cuid())
   tenantId     String
   programId    String
   createdById  String?
   title        String?
-  date         DateTime @default(now())
+  date         DateTime  @default(now())
   locationNote String?
-  status       String   @default("OPEN") // OPEN | FINISHED
-  clientId     String?  @unique // vom Client erzeugte ID für Offline-Erstellung (idempotente Synchronisierung)
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  status       String    @default("OPEN") // OPEN | FINISHED
+  clientId     String?   @unique // vom Client erzeugte ID für Offline-Erstellung (idempotente Synchronisierung)
+  eventId      String? // optional: gehört zu einem Anlass (z.B. Obligatorisch-Termin)
+  finishedAt   DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
 
   tenant       Tenant             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   program      Program            @relation(fields: [programId], references: [id], onDelete: Restrict)
   createdBy    User?              @relation("MatchCreator", fields: [createdById], references: [id], onDelete: SetNull)
   participants MatchParticipant[]
+  event        Event?             @relation(fields: [eventId], references: [id], onDelete: SetNull)
 
   @@index([tenantId, date])
+  @@index([eventId])
 }
 
 model MatchParticipant {
-  id        String  @id @default(cuid())
-  matchId   String
-  userId    String? // null = Gast
-  guestName String?
-  note      String?
-  sortOrder Int     @default(0)
+  id           String    @id @default(cuid())
+  matchId      String
+  userId       String? // null = Gast
+  guestName    String?
+  note         String?
+  sortOrder    Int       @default(0)
+  total        Float? // Gesamttotal, beim Abschliessen bzw. Sync gespeichert (Rangliste ohne shotsJson-Parsing)
+  zeros        Int? // Anzahl Nuller
+  isOfficial   Boolean   @default(false) // amtliches Resultat (Bundesübung), vom Schützenmeister bestätigt
+  attempt      Int? // Versuch Nr. (Obligatorisch)
+  passed       Boolean?
+  verifiedById String?
+  verifiedAt   DateTime?
 
-  match   Match         @relation(fields: [matchId], references: [id], onDelete: Cascade)
-  user    User?         @relation(fields: [userId], references: [id], onDelete: SetNull)
-  results MatchResult[]
+  match          Match           @relation(fields: [matchId], references: [id], onDelete: Cascade)
+  user           User?           @relation(fields: [userId], references: [id], onDelete: SetNull)
+  results        MatchResult[]
+  qualifications Qualification[]
 
   @@index([matchId])
   @@index([userId])
+  @@index([userId, isOfficial])
 }
 
 model MatchResult {
-  id            String   @id @default(cuid())
-  participantId String
-  stageIndex    Int
-  shotsJson     String   @db.Text // number[]
-  total         Float    @default(0)
+  id              String    @id @default(cuid())
+  participantId   String
+  stageIndex      Int
+  shotsJson       String    @db.Text // number[]
+  total           Float     @default(0)
   clientUpdatedAt DateTime? // Zeitstempel vom Gerät (Offline-Sync, last-write-wins)
-  updatedAt     DateTime @updatedAt
+  updatedAt       DateTime  @updatedAt
 
   participant MatchParticipant @relation(fields: [participantId], references: [id], onDelete: Cascade)
 
@@ -243,20 +310,20 @@ model MatchResult {
 // ---------------------------------------------------------------------------
 
 model TargetTemplate {
-  id            String   @id @default(cuid())
-  tenantId      String?  // null = global (Super-Admin) oder privater Upload ohne Tenant
-  ownerUserId   String?  // gesetzt bei Upload durch Benutzer
-  name          String
-  description   String?  @db.Text
-  subject       String   // RINGS_10 | RINGS_5 | GRID | DOTS | SILHOUETTE | DIAMOND | UPLOAD
-  paramsJson    String   @db.Text // Objekt TargetParams, wird im Code immer gesetzt
-  paperSizes    String   @default("A4,A5,A6")
-  filePath      String?  // relativ zu UPLOAD_DIR
-  mimeType      String?
-  sharedWithTenant Boolean @default(false) // Benutzer-Upload für Tenant freigeben
-  isArchived    Boolean  @default(false)
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  id               String   @id @default(cuid())
+  tenantId         String? // null = global (Super-Admin) oder privater Upload ohne Tenant
+  ownerUserId      String? // gesetzt bei Upload durch Benutzer
+  name             String
+  description      String?  @db.Text
+  subject          String // RINGS_10 | RINGS_5 | GRID | DOTS | SILHOUETTE | DIAMOND | UPLOAD
+  paramsJson       String   @db.Text // Objekt TargetParams, wird im Code immer gesetzt
+  paperSizes       String   @default("A4,A5,A6")
+  filePath         String? // relativ zu UPLOAD_DIR
+  mimeType         String?
+  sharedWithTenant Boolean  @default(false) // Benutzer-Upload für Tenant freigeben
+  isArchived       Boolean  @default(false)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
 
   tenant    Tenant?               @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   owner     User?                 @relation("TargetOwner", fields: [ownerUserId], references: [id], onDelete: Cascade)
@@ -293,51 +360,54 @@ model TargetFavorite {
 // ---------------------------------------------------------------------------
 
 model BookingSettings {
-  id                        String  @id @default(cuid())
-  tenantId                  String  @unique
-  currency                  String  @default("CHF")
-  slotStepMinutes           Int     @default(30)
-  durationOptionsJson       String  @db.Text // [{minutes, priceCents}]
-  openingHoursJson          String  @db.Text // {"0":[["08:00","12:00"]],...} Schlüssel = Wochentag (0 = So)
-  approvalRequired          Boolean @default(false)
-  allowInvoice              Boolean @default(true)
-  allowOnline               Boolean @default(false)
-  onlineProvider            String  @default("NONE") // NONE | STRIPE | WORLDLINE | SUMUP
-  lastMinuteDiscountPercent Int     @default(0)
-  lastMinuteWindowHours     Int     @default(24)
-  minLeadMinutes            Int     @default(60)
-  maxAdvanceDays            Int     @default(60)
-  cancellationHours         Int     @default(24)
-  invoiceDueDays            Int     @default(30)
-  invoicePrefix             String  @default("R-")
-  invoiceNote               String? @db.Text
+  id                        String   @id @default(cuid())
+  tenantId                  String   @unique
+  currency                  String   @default("CHF")
+  slotStepMinutes           Int      @default(30)
+  durationOptionsJson       String   @db.Text // [{minutes, priceCents}]
+  openingHoursJson          String   @db.Text // {"0":[["08:00","12:00"]],...} Schlüssel = Wochentag (0 = So)
+  approvalRequired          Boolean  @default(false)
+  allowInvoice              Boolean  @default(true)
+  allowOnline               Boolean  @default(false)
+  onlineProvider            String   @default("NONE") // NONE | STRIPE | WORLDLINE | SUMUP
+  lastMinuteDiscountPercent Int      @default(0)
+  lastMinuteWindowHours     Int      @default(24)
+  minLeadMinutes            Int      @default(60)
+  maxAdvanceDays            Int      @default(60)
+  cancellationHours         Int      @default(24)
+  invoiceDueDays            Int      @default(30)
+  invoicePrefix             String   @default("R-")
+  invoiceNote               String?  @db.Text
   // Preise pro Person (optional). Die Preistabelle steckt in durationOptionsJson:
   // [{minutes, priceCents, personPrices?: number[] (Index 0 = 1 Person), flatFromPersons?, flatPriceCents?}]
-  personPricing             Boolean @default(false)
-  maxPersons                Int     @default(1)  // Standard-Höchstzahl Personen pro Buchung
-  flatExclusive             Boolean @default(true)  // Pauschalbuchung belegt die ganze Ressource
-  capacityPerPerson         Boolean @default(false) // true: jede Person belegt einen Platz der Kapazität
+  personPricing             Boolean  @default(false)
+  maxPersons                Int      @default(1) // Standard-Höchstzahl Personen pro Buchung
+  flatExclusive             Boolean  @default(true) // Pauschalbuchung belegt die ganze Ressource
+  capacityPerPerson         Boolean  @default(false) // true: jede Person belegt einen Platz der Kapazität
   updatedAt                 DateTime @updatedAt
 
   tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 }
 
 model Resource {
-  id                  String  @id @default(cuid())
+  id                  String   @id @default(cuid())
   tenantId            String
   name                String
-  description         String? @db.Text
-  kind                String  @default("LANE") // RANGE | LANE | ROOM | OTHER
-  capacity            Int     @default(1) // gleichzeitige Buchungen bzw. Plätze
-  maxPersons          Int?    // Abweichung von BookingSettings.maxPersons
-  durationOptionsJson String? @db.Text // optionale Abweichung von den Tenant-Optionen
-  isActive            Boolean @default(true)
-  sortOrder           Int     @default(0)
+  description         String?  @db.Text
+  kind                String   @default("LANE") // RANGE | LANE | ROOM | OTHER
+  capacity            Int      @default(1) // gleichzeitige Buchungen bzw. Plätze
+  maxPersons          Int? // Abweichung von BookingSettings.maxPersons
+  durationOptionsJson String?  @db.Text // optionale Abweichung von den Tenant-Optionen
+  isActive            Boolean  @default(true)
+  sortOrder           Int      @default(0)
   createdAt           DateTime @default(now())
 
-  tenant   Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  bookings Booking[]
-  blocks   ResourceBlock[]
+  tenant          Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  bookings        Booking[]
+  blocks          ResourceBlock[]
+  rangeDays       RangeDay[]
+  shootingWindows ShootingWindow[]
+  shootingQuotas  ShootingQuota[]
 
   @@index([tenantId])
 }
@@ -345,7 +415,7 @@ model Resource {
 model ResourceBlock {
   id         String   @id @default(cuid())
   tenantId   String
-  resourceId String?  // null = alle Ressourcen des Tenants
+  resourceId String? // null = alle Ressourcen des Tenants
   startsAt   DateTime
   endsAt     DateTime
   reason     String?
@@ -398,8 +468,8 @@ model Booking {
 model Payment {
   id          String   @id @default(cuid())
   bookingId   String
-  provider    String   // STRIPE | WORLDLINE | SUMUP
-  providerRef String   // Checkout-Session / Token / Checkout-ID
+  provider    String // STRIPE | WORLDLINE | SUMUP
+  providerRef String // Checkout-Session / Token / Checkout-ID
   status      String   @default("PENDING") // PENDING | PAID | FAILED | REFUNDED
   amountCents Int
   currency    String
@@ -416,7 +486,7 @@ model Payment {
 model PaymentProviderConfig {
   id             String   @id @default(cuid())
   tenantId       String
-  provider       String   // STRIPE | WORLDLINE | SUMUP
+  provider       String // STRIPE | WORLDLINE | SUMUP
   enabled        Boolean  @default(false)
   credentialsEnc String   @db.Text // AES-256-GCM, siehe src/lib/crypto.ts
   updatedAt      DateTime @updatedAt
@@ -436,7 +506,7 @@ model Invoice {
   status      String    @default("OPEN") // OPEN | PAID | CANCELLED
   amountCents Int
   currency    String
-  reference   String?   // QR-Referenz (27 Stellen) bei QR-IBAN, sonst null
+  reference   String? // QR-Referenz (27 Stellen) bei QR-IBAN, sonst null
   paidAt      DateTime?
 
   tenant  Tenant  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
@@ -512,14 +582,14 @@ model FeeInvoice {
   number        String
   memberName    String
   memberEmail   String?
-  memberAddress String?   // mehrzeilig, Snapshot
+  memberAddress String? // mehrzeilig, Snapshot
   categoryName  String
   amountCents   Int
   currency      String    @default("CHF")
   issuedAt      DateTime  @default(now())
   dueAt         DateTime
   status        String    @default("OPEN") // OPEN | PAID | CANCELLED
-  reference     String?   // QR-Referenz (27 Stellen) bei QR-IBAN, sonst null
+  reference     String? // QR-Referenz (27 Stellen) bei QR-IBAN, sonst null
   paidAt        DateTime?
   paymentNote   String?
   remindedAt    DateTime?
@@ -542,26 +612,29 @@ model FeeInvoice {
 // ---------------------------------------------------------------------------
 
 model Event {
-  id          String    @id @default(cuid())
-  tenantId    String
-  createdById String?
-  title       String
-  description String?   @db.Text
-  kind        String    @default("TRAINING") // TRAINING | COMPETITION | OBLIGATORY | MEETING | SOCIAL | WORK | OTHER
-  startsAt    DateTime
-  endsAt      DateTime?
-  allDay      Boolean   @default(false)
-  location    String?
-  rsvpEnabled Boolean   @default(true)
-  capacity    Int?
+  id           String    @id @default(cuid())
+  tenantId     String
+  createdById  String?
+  title        String
+  description  String?   @db.Text
+  kind         String    @default("TRAINING") // TRAINING | COMPETITION | OBLIGATORY | MEETING | SOCIAL | WORK | OTHER
+  startsAt     DateTime
+  endsAt       DateTime?
+  allDay       Boolean   @default(false)
+  location     String?
+  rsvpEnabled  Boolean   @default(true)
+  capacity     Int?
   rsvpDeadline DateTime?
-  isCancelled Boolean   @default(false)
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
+  isCancelled  Boolean   @default(false)
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
 
-  tenant    Tenant      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  createdBy User?       @relation("EventCreator", fields: [createdById], references: [id], onDelete: SetNull)
-  rsvps     EventRsvp[]
+  tenant         Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  createdBy      User?           @relation("EventCreator", fields: [createdById], references: [id], onDelete: SetNull)
+  rsvps          EventRsvp[]
+  matches        Match[]
+  shifts         Shift[]
+  courseSessions CourseSession[]
 
   @@index([tenantId, startsAt])
 }
@@ -570,7 +643,7 @@ model EventRsvp {
   id        String   @id @default(cuid())
   eventId   String
   userId    String
-  status    String   // YES | NO | MAYBE
+  status    String // YES | NO | MAYBE
   guests    Int      @default(0)
   note      String?
   createdAt DateTime @default(now())
@@ -608,7 +681,7 @@ model StorageConfig {
   tenantId       String   @unique
   provider       String   @default("LOCAL") // LOCAL | S3 | WEBDAV
   credentialsEnc String?  @db.Text // AES-256-GCM (src/lib/crypto.ts): S3 endpoint/region/bucket/keys, WebDAV url/user/app password
-  quotaMb        Int?     // optionales Speicherlimit pro Verein
+  quotaMb        Int? // optionales Speicherlimit pro Verein
   maxFileMb      Int      @default(25)
   updatedAt      DateTime @updatedAt
 
@@ -641,7 +714,7 @@ model StoredFile {
   name         String
   mimeType     String
   sizeBytes    Int
-  provider     String   // LOCAL | S3 | WEBDAV – wo die Datei tatsächlich liegt
+  provider     String // LOCAL | S3 | WEBDAV – wo die Datei tatsächlich liegt
   storageKey   String   @db.Text
   uploadedById String?
   context      String   @default("FILES") // FILES | CHAT
@@ -662,7 +735,7 @@ model StoredFile {
 model ChatConversation {
   id            String    @id @default(cuid())
   tenantId      String
-  kind          String    // DIRECT | GROUP
+  kind          String // DIRECT | GROUP
   title         String?
   directKey     String?   @unique // DIRECT: "<tenantId>:<userIdA>:<userIdB>" sortiert, verhindert Duplikate
   createdById   String?
@@ -716,16 +789,16 @@ model ChatMessage {
 // ---------------------------------------------------------------------------
 
 model AmmoSettings {
-  id              String   @id @default(cuid())
-  tenantId        String   @unique
-  onSiteOnly      Boolean  @default(true)  // Abgabe nur zum sofortigen Verbrauch auf dem Platz
-  requireIdCheck  Boolean  @default(true)  // Ausgabe nur mit bestätigter Berechtigungsprüfung
-  approvalRequired Boolean @default(false) // Bestellungen zuerst freigeben
-  invoicePrefix   String   @default("MU-")
-  invoiceDueDays  Int      @default(30)
-  maxRoundsPerOrder Int?   // optionales Limit pro Bestellung
-  note            String?  @db.Text // Hinweis für Mitglieder (z.B. rechtliche Hinweise)
-  updatedAt       DateTime @updatedAt
+  id                String   @id @default(cuid())
+  tenantId          String   @unique
+  onSiteOnly        Boolean  @default(true) // Abgabe nur zum sofortigen Verbrauch auf dem Platz
+  requireIdCheck    Boolean  @default(true) // Ausgabe nur mit bestätigter Berechtigungsprüfung
+  approvalRequired  Boolean  @default(false) // Bestellungen zuerst freigeben
+  invoicePrefix     String   @default("MU-")
+  invoiceDueDays    Int      @default(30)
+  maxRoundsPerOrder Int? // optionales Limit pro Bestellung
+  note              String?  @db.Text // Hinweis für Mitglieder (z.B. rechtliche Hinweise)
+  updatedAt         DateTime @updatedAt
 
   tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 }
@@ -739,39 +812,41 @@ model AmmoProduct {
   description   String?  @db.Text
   unitLabel     String   @default("Schachtel") // Verkaufseinheit
   roundsPerUnit Int      @default(50)
-  priceCents    Int      // Preis pro Einheit
-  stockUnits    Int?     // null = Bestand nicht geführt
+  priceCents    Int // Preis pro Einheit
+  stockUnits    Int? // null = Bestand nicht geführt
+  fundingType   String   @default("COMMERCIAL") // FEDERAL_FREE (Bund, gratis) | SUBSIDIZED | COMMERCIAL
   isActive      Boolean  @default(true)
   sortOrder     Int      @default(0)
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 
-  tenant Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  items  AmmoOrderItem[]
+  tenant    Tenant              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  items     AmmoOrderItem[]
+  movements AmmoStockMovement[]
 
   @@index([tenantId])
 }
 
 model AmmoOrder {
-  id            String    @id @default(cuid())
-  tenantId      String
-  userId        String?
-  status        String    @default("ORDERED") // ORDERED | APPROVED | ISSUED | CANCELLED
-  totalCents    Int
-  currency      String    @default("CHF")
-  note          String?
-  idChecked     Boolean   @default(false)
-  issuedAt      DateTime?
-  issuedById    String?
-  invoiceNumber String?
-  reference     String?   // QR-Referenz bei QR-IBAN
+  id              String    @id @default(cuid())
+  tenantId        String
+  userId          String?
+  status          String    @default("ORDERED") // ORDERED | APPROVED | ISSUED | CANCELLED
+  totalCents      Int
+  currency        String    @default("CHF")
+  note            String?
+  idChecked       Boolean   @default(false)
+  issuedAt        DateTime?
+  issuedById      String?
+  invoiceNumber   String?
+  reference       String? // QR-Referenz bei QR-IBAN
   invoiceIssuedAt DateTime?
-  dueAt         DateTime?
-  paymentStatus String    @default("UNPAID") // UNPAID | PAID | CANCELLED
-  paidAt        DateTime?
-  paymentNote   String?
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
+  dueAt           DateTime?
+  paymentStatus   String    @default("UNPAID") // UNPAID | PAID | CANCELLED
+  paidAt          DateTime?
+  paymentNote     String?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
 
   tenant   Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   user     User?           @relation("AmmoBuyer", fields: [userId], references: [id], onDelete: SetNull)
@@ -797,4 +872,629 @@ model AmmoOrderItem {
 
   order   AmmoOrder    @relation(fields: [orderId], references: [id], onDelete: Cascade)
   product AmmoProduct? @relation(fields: [productId], references: [id], onDelete: SetNull)
+}
+
+// ---------------------------------------------------------------------------
+// Plattform: Audit-Log, Mails, Jobs, Tokens, Push
+// ---------------------------------------------------------------------------
+
+// Bewusst ohne Relationen: Einträge überleben das Löschen von Tenant und Benutzer.
+model AuditLog {
+  id        String   @id @default(cuid())
+  tenantId  String?
+  actorId   String?
+  actorName String?
+  action    String // z.B. member.role.change, tenant.delete.request, fee.run.create
+  entity    String?
+  entityId  String?
+  detail    String?  @db.Text // kurzer Text ohne heikle Daten
+  ip        String?
+  createdAt DateTime @default(now())
+
+  @@index([tenantId, createdAt])
+  @@index([actorId, createdAt])
+}
+
+model AuthToken {
+  id        String    @id @default(cuid())
+  userId    String
+  kind      String // RESET | INVITE | VERIFY
+  tokenHash String    @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, kind])
+}
+
+model Invitation {
+  id          String    @id @default(cuid())
+  tenantId    String
+  email       String
+  name        String?
+  role        String    @default("MEMBER")
+  tokenHash   String    @unique
+  invitedById String?
+  expiresAt   DateTime
+  acceptedAt  DateTime?
+  createdAt   DateTime  @default(now())
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, email])
+}
+
+model MailMessage {
+  id        String    @id @default(cuid())
+  tenantId  String?
+  kind      String? // reset | invite | fee-invoice | reminder | booking | shift | …
+  toEmail   String
+  toName    String?
+  replyTo   String?
+  subject   String
+  html      String    @db.MediumText
+  text      String    @db.MediumText
+  status    String    @default("QUEUED") // QUEUED | SENDING | SENT | FAILED | SKIPPED
+  attempts  Int       @default(0)
+  lastError String?   @db.Text
+  sendAfter DateTime  @default(now())
+  sentAt    DateTime?
+  dedupeKey String?   @unique // verhindert doppelte Erinnerungen
+  createdAt DateTime  @default(now())
+
+  @@index([status, sendAfter])
+  @@index([tenantId, createdAt])
+}
+
+model JobLock {
+  name        String    @id
+  lockedUntil DateTime?
+  lastRunAt   DateTime?
+  lastStatus  String?
+  lastError   String?   @db.Text
+}
+
+model PushSubscription {
+  id           String    @id @default(cuid())
+  userId       String
+  endpointHash String    @unique // sha256 des Endpoints (Endpoints sind länger als 191 Zeichen)
+  endpoint     String    @db.Text
+  p256dh       String
+  auth         String
+  userAgent    String?
+  createdAt    DateTime  @default(now())
+  lastUsedAt   DateTime?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model NotificationPreference {
+  id      String  @id @default(cuid())
+  userId  String
+  channel String // EMAIL | PUSH
+  topic   String // chat | announcements | bookings | invoices | shifts | events | reminders
+  enabled Boolean @default(true)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, channel, topic])
+}
+
+// ---------------------------------------------------------------------------
+// Mitglieder: Haushalte, Qualifikationen
+// ---------------------------------------------------------------------------
+
+model Household {
+  id          String   @id @default(cuid())
+  tenantId    String
+  name        String
+  payerUserId String? // wer die Familienrechnung erhält
+  createdAt   DateTime @default(now())
+
+  tenant      Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  memberships Membership[]
+
+  @@index([tenantId])
+}
+
+model Qualification {
+  id                  String    @id @default(cuid())
+  tenantId            String
+  userId              String
+  kind                String // SCHUETZENMEISTER | JS_LEITER | JPLUS_LEITER | FIRST_AID | RANGE_OFFICER | INSTRUCTOR | WEAPON_QUAL | OTHER
+  label               String? // Freitext, z.B. «Pistole 25 m Einsatzqualifikation»
+  number              String?
+  validFrom           DateTime? @db.Date
+  validUntil          DateTime? @db.Date
+  verifiedById        String?
+  sourceParticipantId String? // Qualifikationsschiessen, aus dem diese Qualifikation stammt
+  note                String?
+  createdAt           DateTime  @default(now())
+
+  tenant Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user   User              @relation("QualificationHolder", fields: [userId], references: [id], onDelete: Cascade)
+  source MatchParticipant? @relation(fields: [sourceParticipantId], references: [id], onDelete: SetNull)
+
+  @@index([tenantId, kind])
+  @@index([userId])
+}
+
+// Qualifikationsschiessen (Polizei, Sicherheitsfirmen, Vereinsintern)
+model QualificationRule {
+  id                String   @id @default(cuid())
+  tenantId          String
+  programId         String
+  name              String
+  kind              String   @default("WEAPON_QUAL")
+  passScore         Float
+  maxZeros          Int?
+  validityMonths    Int      @default(12)
+  requireInstructor Boolean  @default(true)
+  isActive          Boolean  @default(true)
+  createdAt         DateTime @default(now())
+
+  tenant  Tenant  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  program Program @relation(fields: [programId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+}
+
+// ---------------------------------------------------------------------------
+// Helfereinsätze und Arbeitsstunden
+// ---------------------------------------------------------------------------
+
+model Shift {
+  id                    String   @id @default(cuid())
+  tenantId              String
+  eventId               String?
+  title                 String
+  startsAt              DateTime
+  endsAt                DateTime
+  capacity              Int      @default(1)
+  requiredQualification String? // Qualification.kind, mind. eine Person muss sie haben
+  hoursCredit           Float? // angerechnete Stunden (Standard: Dauer)
+  note                  String?
+  createdAt             DateTime @default(now())
+
+  tenant      Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  event       Event?            @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  assignments ShiftAssignment[]
+
+  @@index([tenantId, startsAt])
+}
+
+model ShiftAssignment {
+  id            String   @id @default(cuid())
+  shiftId       String
+  userId        String
+  status        String   @default("ASSIGNED") // ASSIGNED | DONE | NO_SHOW
+  hours         Float?
+  confirmedById String?
+  createdAt     DateTime @default(now())
+
+  shift Shift @relation(fields: [shiftId], references: [id], onDelete: Cascade)
+  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([shiftId, userId])
+  @@index([userId])
+}
+
+model WorkHoursSettings {
+  id                      String   @id @default(cuid())
+  tenantId                String   @unique
+  enabled                 Boolean  @default(false)
+  requiredHours           Float    @default(0)
+  ratePerMissingHourCents Int      @default(0) // Ersatzabgabe pro fehlende Stunde
+  appliesToStatuses       String   @default("ACTIVE") // CSV aus Membership.status
+  updatedAt               DateTime @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+}
+
+model WorkLog {
+  id           String    @id @default(cuid())
+  tenantId     String
+  userId       String
+  date         DateTime  @db.Date
+  hours        Float
+  description  String
+  approvedById String?
+  approvedAt   DateTime?
+  createdAt    DateTime  @default(now())
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user   User   @relation("WorkLogUser", fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, date])
+  @@index([userId])
+}
+
+// ---------------------------------------------------------------------------
+// Jahresmeisterschaft
+// ---------------------------------------------------------------------------
+
+model Championship {
+  id             String   @id @default(cuid())
+  tenantId       String
+  name           String
+  year           Int
+  startsOn       DateTime @db.Date
+  endsOn         DateTime @db.Date
+  bestOf         Int? // pro Programm zählen die besten N Resultate (null = alle)
+  officialOnly   Boolean  @default(false) // nur bestätigte Resultate
+  categoriesText String?  @db.Text // eine Kategorie pro Zeile: «Name;minAlter;maxAlter;Bonus»
+  rulesText      String?  @db.Text
+  isPublished    Boolean  @default(false)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  tenant   Tenant                @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  programs ChampionshipProgram[]
+
+  @@index([tenantId, year])
+}
+
+model ChampionshipProgram {
+  id             String  @id @default(cuid())
+  championshipId String
+  programId      String
+  required       Boolean @default(false)
+  weight         Float   @default(1)
+  maxCount       Int? // überschreibt bestOf für dieses Programm
+
+  championship Championship @relation(fields: [championshipId], references: [id], onDelete: Cascade)
+  program      Program      @relation(fields: [programId], references: [id], onDelete: Cascade)
+
+  @@unique([championshipId, programId])
+}
+
+// ---------------------------------------------------------------------------
+// Standbetrieb: Standbuch, Check-in, Schiesszeiten, Vorfälle
+// ---------------------------------------------------------------------------
+
+model RangeDay {
+  id          String    @id @default(cuid())
+  tenantId    String
+  resourceId  String? // Anlage (null = ganze Anlage)
+  date        DateTime  @db.Date
+  dutyUserId  String? // Standchef / Schützenmeister des Tages
+  dutyName    String?
+  openedAt    DateTime  @default(now())
+  closedAt    DateTime?
+  usedAm      Boolean   @default(false) // Schiesshalbtag Vormittag
+  usedPm      Boolean   @default(false) // Nachmittag
+  usedEvening Boolean   @default(false) // Abend
+  notes       String?   @db.Text
+  createdAt   DateTime  @default(now())
+
+  tenant        Tenant              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  resource      Resource?           @relation(fields: [resourceId], references: [id], onDelete: SetNull)
+  visits        RangeVisit[]
+  ammoMovements AmmoStockMovement[]
+
+  @@index([tenantId, date])
+}
+
+model RangeVisit {
+  id              String    @id @default(cuid())
+  tenantId        String
+  rangeDayId      String?
+  userId          String? // null = Gast
+  guestName       String?
+  guestEmail      String?
+  guestPhone      String?
+  guestBirthYear  Int?
+  guestIdChecked  Boolean   @default(false)
+  hostUserId      String? // betreuendes Mitglied bei Gästen
+  lane            String?
+  discipline      String?
+  checkedInAt     DateTime  @default(now())
+  checkedOutAt    DateTime?
+  clubWeaponId    String?
+  rulesId         String? // akzeptierte Standordnung (Version)
+  rulesAcceptedAt DateTime?
+  clientId        String?   @unique // Offline-Check-in
+  note            String?
+  createdAt       DateTime  @default(now())
+
+  tenant   Tenant      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  rangeDay RangeDay?   @relation(fields: [rangeDayId], references: [id], onDelete: SetNull)
+  user     User?       @relation("RangeVisitUser", fields: [userId], references: [id], onDelete: SetNull)
+  rules    RangeRules? @relation(fields: [rulesId], references: [id], onDelete: SetNull)
+
+  @@index([tenantId, checkedInAt])
+  @@index([userId])
+}
+
+model RangeRules {
+  id          String    @id @default(cuid())
+  tenantId    String
+  version     Int
+  title       String
+  body        String    @db.Text
+  isActive    Boolean   @default(false)
+  publishedAt DateTime?
+  createdAt   DateTime  @default(now())
+
+  tenant      Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  visits      RangeVisit[]
+  acceptances RulesAcceptance[]
+
+  @@unique([tenantId, version])
+}
+
+model RulesAcceptance {
+  id         String   @id @default(cuid())
+  rulesId    String
+  userId     String
+  acceptedAt DateTime @default(now())
+
+  rules RangeRules @relation(fields: [rulesId], references: [id], onDelete: Cascade)
+
+  @@unique([rulesId, userId])
+}
+
+// Bewilligte Schiesszeiten pro Anlage (Wochenplan)
+model ShootingWindow {
+  id          String  @id @default(cuid())
+  tenantId    String
+  resourceId  String?
+  weekday     Int // 0 = So … 6 = Sa
+  startMinute Int // Minuten ab Mitternacht
+  endMinute   Int
+  note        String?
+
+  tenant   Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  resource Resource? @relation(fields: [resourceId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+}
+
+// Kontingent Schiesshalbtage pro Jahr (aus Lärmbeurteilung/Bewilligung)
+model ShootingQuota {
+  id          String  @id @default(cuid())
+  tenantId    String
+  resourceId  String?
+  year        Int
+  maxHalfDays Int
+  note        String?
+
+  tenant   Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  resource Resource? @relation(fields: [resourceId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, resourceId, year])
+}
+
+model Incident {
+  id           String   @id @default(cuid())
+  tenantId     String
+  occurredAt   DateTime
+  kind         String   @default("NEAR_MISS") // ACCIDENT | NEAR_MISS | DAMAGE | OTHER
+  severity     String   @default("LOW") // LOW | MEDIUM | HIGH
+  location     String?
+  description  String   @db.Text
+  persons      String?  @db.Text
+  measures     String?  @db.Text
+  status       String   @default("OPEN") // OPEN | CLOSED
+  reportedById String?
+  clientId     String?  @unique
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, occurredAt])
+}
+
+// ---------------------------------------------------------------------------
+// Vereinswaffen und Munitionskontrolle
+// ---------------------------------------------------------------------------
+
+model ClubWeapon {
+  id                String    @id @default(cuid())
+  tenantId          String
+  name              String
+  discipline        String?
+  manufacturer      String?
+  model             String?
+  caliber           String?
+  serialNumber      String?
+  status            String    @default("AVAILABLE") // AVAILABLE | LOANED | SERVICE | BLOCKED | RETIRED
+  shotCount         Int       @default(0)
+  serviceEveryShots Int?
+  nextServiceAt     DateTime? @db.Date
+  notes             String?   @db.Text
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  tenant   Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  loans    WeaponLoan[]
+  services WeaponService[]
+
+  @@index([tenantId])
+}
+
+model WeaponLoan {
+  id           String    @id @default(cuid())
+  tenantId     String
+  weaponId     String
+  userId       String?
+  borrowerName String?
+  isMinor      Boolean   @default(false)
+  onSiteOnly   Boolean   @default(true) // nur am Stand unter Aufsicht
+  loanedAt     DateTime  @default(now())
+  dueAt        DateTime?
+  returnedAt   DateTime?
+  shots        Int?
+  issuedById   String?
+  reportDueAt  DateTime? // Meldefrist Kanton bei Minderjährigen (prüfen)
+  reportedAt   DateTime?
+  note         String?
+
+  tenant Tenant     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  weapon ClubWeapon @relation(fields: [weaponId], references: [id], onDelete: Cascade)
+  user   User?      @relation("WeaponLoanUser", fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([tenantId, loanedAt])
+  @@index([weaponId])
+}
+
+model WeaponService {
+  id        String   @id @default(cuid())
+  weaponId  String
+  date      DateTime @db.Date
+  kind      String   @default("SERVICE") // SERVICE | REPAIR | INSPECTION
+  note      String?
+  costCents Int?
+  byName    String?
+  createdAt DateTime @default(now())
+
+  weapon ClubWeapon @relation(fields: [weaponId], references: [id], onDelete: Cascade)
+
+  @@index([weaponId])
+}
+
+model AmmoStockMovement {
+  id          String   @id @default(cuid())
+  tenantId    String
+  productId   String
+  kind        String // RECEIPT | ISSUE | SALE | RETURN | INVENTORY | CORRECTION
+  units       Int // positiv = Zugang, negativ = Abgang
+  date        DateTime @default(now())
+  rangeDayId  String?
+  orderId     String?
+  source      String? // z.B. «Bund (Lieferschein 123)»
+  note        String?
+  createdById String?
+  createdAt   DateTime @default(now())
+
+  tenant   Tenant      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  product  AmmoProduct @relation(fields: [productId], references: [id], onDelete: Cascade)
+  rangeDay RangeDay?   @relation(fields: [rangeDayId], references: [id], onDelete: SetNull)
+
+  @@index([tenantId, date])
+  @@index([productId])
+}
+
+// ---------------------------------------------------------------------------
+// Kurse (Jungschützen, J+S, Ausbildung, Polizei)
+// ---------------------------------------------------------------------------
+
+model Course {
+  id                 String    @id @default(cuid())
+  tenantId           String
+  kind               String    @default("JUNGSCHUETZEN") // JUNGSCHUETZEN | JS | TRAINING | POLICE | OTHER
+  name               String
+  year               Int
+  startsOn           DateTime? @db.Date
+  endsOn             DateTime? @db.Date
+  leaderUserId       String?
+  minParticipants    Int?
+  requiredProgramIds String?   @db.Text // CSV von Program.id (Pflichtprogramme)
+  notes              String?   @db.Text
+  status             String    @default("PLANNED") // PLANNED | RUNNING | CLOSED
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+
+  tenant       Tenant              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  participants CourseParticipant[]
+  sessions     CourseSession[]
+
+  @@index([tenantId, year])
+}
+
+model CourseParticipant {
+  id            String    @id @default(cuid())
+  courseId      String
+  userId        String?
+  firstName     String
+  lastName      String
+  birthDate     DateTime? @db.Date
+  email         String?
+  phone         String?
+  street        String?
+  zip           String?
+  city          String?
+  guardianName  String?
+  guardianEmail String?
+  guardianPhone String?
+  clubWeaponId  String?
+  status        String    @default("REGISTERED") // REGISTERED | ACTIVE | COMPLETED | DROPPED
+  note          String?
+  createdAt     DateTime  @default(now())
+
+  course     Course             @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  attendance CourseAttendance[]
+  results    CourseResult[]
+
+  @@index([courseId])
+}
+
+model CourseSession {
+  id       String    @id @default(cuid())
+  courseId String
+  eventId  String?
+  title    String
+  startsAt DateTime
+  endsAt   DateTime?
+
+  course     Course             @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  event      Event?             @relation(fields: [eventId], references: [id], onDelete: SetNull)
+  attendance CourseAttendance[]
+
+  @@index([courseId, startsAt])
+}
+
+model CourseAttendance {
+  id            String  @id @default(cuid())
+  sessionId     String
+  participantId String
+  present       Boolean @default(true)
+  note          String?
+
+  session     CourseSession     @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  participant CourseParticipant @relation(fields: [participantId], references: [id], onDelete: Cascade)
+
+  @@unique([sessionId, participantId])
+}
+
+model CourseResult {
+  id                 String   @id @default(cuid())
+  participantId      String
+  programId          String?
+  label              String // Programmname (Snapshot)
+  score              Float?
+  passed             Boolean  @default(false)
+  date               DateTime @db.Date
+  matchParticipantId String?
+  createdAt          DateTime @default(now())
+
+  participant CourseParticipant @relation(fields: [participantId], references: [id], onDelete: Cascade)
+
+  @@index([participantId])
+}
+
+// ---------------------------------------------------------------------------
+// Live-Rangliste (TV/Beamer im Schützenhaus)
+// ---------------------------------------------------------------------------
+
+model LiveBoard {
+  id           String    @id @default(cuid())
+  tenantId     String
+  token        String    @unique
+  title        String
+  programId    String?
+  eventId      String?
+  date         DateTime? @db.Date // nur Durchgänge dieses Tages (null = heute)
+  showDecimals Boolean   @default(false)
+  expiresAt    DateTime?
+  createdAt    DateTime  @default(now())
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
 }

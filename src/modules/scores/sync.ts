@@ -8,6 +8,8 @@ import type { CurrentUser } from "@/lib/auth";
 import type { ScoreMatch, SyncMapping, SyncOpResult } from "@/lib/offline/types";
 import { MAX_STAGE_PENALTIES, parseStages, sanitizeShots, stageEntryLimit, stageTotal, type ScoringMode } from "./types";
 import type { MatchView } from "./queries";
+import { participantTotals, totalsChanged } from "./totals";
+import { clampClientTime } from "./sync-time";
 
 /**
  * Server-Logik für Durchgänge, gemeinsam genutzt von den Server Actions und der
@@ -63,15 +65,6 @@ export const setMatchStatusInputSchema = z.intersection(
   matchRefSchema,
   z.object({ status: z.enum(["OPEN", "FINISHED"]), clientUpdatedAt: timestampSchema }),
 );
-
-/** Gerätezeit übernehmen, aber nie weiter als 5 Minuten in die Zukunft (falsch gestellte Uhren). */
-function clampClientTime(v: number | string | Date | undefined): Date {
-  const now = Date.now();
-  if (v === undefined) return new Date(now);
-  const t = v instanceof Date ? v.getTime() : typeof v === "number" ? v : Date.parse(v);
-  if (!Number.isFinite(t) || t < Date.UTC(2020, 0, 1)) return new Date(now);
-  return new Date(Math.min(t, now + 5 * 60_000));
-}
 
 function parseMatchDate(date: string | undefined): Date {
   if (!date) return new Date();
@@ -132,8 +125,9 @@ export async function createMatchCore(
   const program = await db.program.findUnique({ where: { id: programId } });
   if (!program || (program.tenantId && program.tenantId !== actor.tenantId) || program.isArchived) return coreFail("Programm nicht verfügbar", "program_unavailable");
 
-  // Nur Mitglieder desselben Tenants als Gegner; Reihenfolge = Index aus dem Client.
-  const memberIds = new Set((await db.membership.findMany({ where: { tenantId: actor.tenantId }, select: { userId: true } })).map((m) => m.userId));
+  // Nur aktuelle Mitglieder desselben Tenants (nicht ausgetreten, Konto nicht gelöscht) als Gegner;
+  // Reihenfolge = Index aus dem Client.
+  const memberIds = new Set((await db.membership.findMany({ where: { tenantId: actor.tenantId, status: { not: "LEFT" }, user: { deletedAt: null } }, select: { userId: true } })).map((m) => m.userId));
   const seen = new Set<string>();
   const rows: Array<{ userId: string | null; guestName: string | null; note: string | null; sortOrder: number }> = [];
   participants.forEach((p, index) => {
@@ -191,6 +185,74 @@ async function loadMatchForActor(actor: ScoreActor, ref: { matchId?: string; mat
   const isParticipant = m.participants.some((p) => p.userId === actor.userId);
   if (!isCreator && !isParticipant && !actor.can("match.viewAll")) return coreFail("Keine Berechtigung", "forbidden");
   return { ok: true as const, match: m, isCreator };
+}
+
+// ---------------------------------------------------------------------------
+// Gespeicherte Kennzahlen (MatchParticipant.total/zeros, Match.finishedAt)
+// ---------------------------------------------------------------------------
+
+/**
+ * Berechnet Total und Nuller der Teilnehmer eines Durchgangs aus den gespeicherten Serien neu
+ * (eine Abfrage für alle Teilnehmer, geschrieben wird nur bei Änderungen). Mit participantId
+ * nur für diesen Teilnehmer. Wird nach jedem Speichern einer Serie und beim Abschliessen aufgerufen.
+ *
+ * Geschrieben wird nur unter Zeilensperre (SELECT … FOR UPDATE auf den Teilnehmer) mit frisch
+ * gelesenen Serien: zwei gleichzeitige Speicherungen verschiedener Serien können sonst ein
+ * veraltetes Total ablegen (Lost Update). Die Sperre serialisiert die Neuberechnungen; die
+ * zuletzt laufende liest alle zuvor gespeicherten Serien.
+ */
+export async function recomputeMatchTotals(matchId: string, participantId?: string): Promise<number> {
+  const parts = await db.matchParticipant.findMany({
+    where: { matchId, ...(participantId ? { id: participantId } : {}) },
+    select: { id: true, total: true, zeros: true, results: { select: { shotsJson: true, total: true } } },
+  });
+  let updated = 0;
+  for (const p of parts) {
+    // Unveränderte Teilnehmer ohne Sperre überspringen; eine parallele Speicherung berechnet selbst neu.
+    if (!totalsChanged(p, participantTotals(p.results))) continue;
+    const wrote = await db.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT id FROM \`MatchParticipant\` WHERE id = ${p.id} FOR UPDATE`;
+      const fresh = await tx.matchParticipant.findUnique({
+        where: { id: p.id },
+        select: { total: true, zeros: true, results: { select: { shotsJson: true, total: true } } },
+      });
+      if (!fresh) return false;
+      const next = participantTotals(fresh.results);
+      if (!totalsChanged(fresh, next)) return false;
+      await tx.matchParticipant.update({ where: { id: p.id }, data: next });
+      return true;
+    });
+    if (wrote) updated += 1;
+  }
+  return updated;
+}
+
+/**
+ * Einmalige Nachführung für Daten von vor der Einführung der gespeicherten Kennzahlen:
+ * Teilnehmer mit Serien, aber ohne Total, und abgeschlossene Durchgänge ohne finishedAt.
+ * Begrenzt pro Aufruf; mehrfach aufrufbar, bis 0 zurückkommt. Match.updatedAt bleibt
+ * unverändert (dient der Synchronisierung als Zeitpunkt des letzten Statuswechsels).
+ */
+export async function backfillMatchTotals(scope: { tenantId?: string; programId?: string; userId?: string } = {}, limit = 200): Promise<number> {
+  const matchWhere = { ...(scope.tenantId ? { tenantId: scope.tenantId } : {}), ...(scope.programId ? { programId: scope.programId } : {}) };
+  const missing = await db.matchParticipant.findMany({
+    where: { total: null, results: { some: {} }, ...(scope.userId ? { userId: scope.userId } : {}), match: matchWhere },
+    select: { matchId: true },
+    distinct: ["matchId"],
+    take: limit,
+  });
+  let n = 0;
+  for (const m of missing) n += await recomputeMatchTotals(m.matchId);
+  const unfinished = await db.match.findMany({
+    where: { ...matchWhere, status: "FINISHED", finishedAt: null },
+    select: { id: true, updatedAt: true },
+    take: limit,
+  });
+  for (const m of unfinished) {
+    await db.match.update({ where: { id: m.id }, data: { finishedAt: m.updatedAt, updatedAt: m.updatedAt } });
+    n += 1;
+  }
+  return n;
 }
 
 // ---------------------------------------------------------------------------
@@ -268,6 +330,7 @@ export async function saveStageResultCore(
     const current = await db.matchResult.findUnique({ where });
     return { ok: true, total: current?.total ?? total, ignored: true, matchId: match.id };
   }
+  await recomputeMatchTotals(match.id, participant.id);
   revalidatePath(`/scores/matches/${match.id}`);
   return { ok: true, total, ignored: false, matchId: match.id };
 }
@@ -298,12 +361,16 @@ export async function setMatchStatusCore(actor: ScoreActor, raw: z.input<typeof 
   if (match.status !== parsed.data.status || clientUpdatedAt.getTime() > match.updatedAt.getTime()) {
     // Zeitpunkt des Wechsels speichern; nie auf/vor createdAt, sonst gälte er als «nie geändert»
     const updatedAt = new Date(Math.max(clientUpdatedAt.getTime(), match.createdAt.getTime() + STATUS_UNCHANGED_MS + 1));
+    const finished = parsed.data.status === "FINISHED";
     const res = await db.match.updateMany({
       where: { id: match.id, updatedAt: match.updatedAt },
-      data: { status: parsed.data.status, updatedAt },
+      // finishedAt: Zeitpunkt des Abschlusses (bleibt beim erneuten Bestätigen), beim Wiedereröffnen leer
+      data: { status: parsed.data.status, updatedAt, finishedAt: finished ? (match.status === "FINISHED" && match.finishedAt ? match.finishedAt : updatedAt) : null },
     });
     // Gleichzeitig geändert: neu laden und erneut entscheiden
     if (res.count === 0) return attempt < 3 ? setMatchStatusCore(actor, raw, attempt + 1) : coreFail("Status wurde gleichzeitig geändert", "conflict", true);
+    // Sicherheitsnetz: beim Abschliessen alle Totale aus den Serien nachführen
+    if (finished) await recomputeMatchTotals(match.id);
   }
   revalidatePath(`/scores/matches/${match.id}`);
   revalidatePath("/scores");

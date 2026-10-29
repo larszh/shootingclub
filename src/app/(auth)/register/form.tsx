@@ -19,12 +19,22 @@ function passwordStrength(pw: string) {
   return { label: "Stark", tone: "text-ok", width: "100%" };
 }
 
-export function RegisterForm({ joinCode, joinTenantName }: { joinCode?: string; joinTenantName?: string }) {
+export function RegisterForm({ joinCode, joinTenantName, next, invite, defaultEmail, defaultName, submitLabel }: {
+  joinCode?: string;
+  joinTenantName?: string;
+  /** Ziel nach der Registrierung (z.B. /invite/…) */
+  next?: string;
+  /** Einladungs-Token: bei passender E-Mail wird direkt beigetreten, Beitrittscode entfällt. */
+  invite?: string;
+  defaultEmail?: string;
+  defaultName?: string;
+  submitLabel?: string;
+}) {
   const [state, action] = useActionState(registerAction, null);
   const fe = state && !state.ok ? (state.fieldErrors ?? {}) : {};
   // Kontrollierte Felder bleiben nach einem Fehler erhalten.
-  const [name, setName] = useState("");
-  const [email, setEmail] = useState("");
+  const [name, setName] = useState(defaultName ?? "");
+  const [email, setEmail] = useState(defaultEmail ?? "");
   const [password, setPassword] = useState("");
   const [code, setCode] = useState(joinCode ?? "");
   const online = useOnlineStatus();
@@ -34,6 +44,8 @@ export function RegisterForm({ joinCode, joinTenantName }: { joinCode?: string; 
   return (
     <Card className="p-5">
       <form action={action} className="space-y-4">
+        {next ? <input type="hidden" name="next" value={next} /> : null}
+        {invite ? <input type="hidden" name="invite" value={invite} /> : null}
         <Field label="Name" error={fe.name}>
           <Input name="name" autoComplete="name" autoCapitalize="words" enterKeyHint="next" required placeholder="Vorname Nachname" autoFocus value={name} onChange={(e) => setName(e.target.value)} aria-invalid={!!fe.name || undefined} />
         </Field>
@@ -53,7 +65,7 @@ export function RegisterForm({ joinCode, joinTenantName }: { joinCode?: string; 
             </div>
           ) : null}
         </div>
-        <div>
+        {invite ? null : <div>
           <div className="mb-1.5 flex items-center gap-1.5">
             <label htmlFor="joinCode" className="text-sm font-medium text-ink-2">Beitrittscode (optional)</label>
             <Hint label="Was ist der Beitrittscode?">
@@ -81,11 +93,11 @@ export function RegisterForm({ joinCode, joinTenantName }: { joinCode?: string; 
           ) : (
             <p className="mt-1 text-xs text-ink-3">Vom Verein erhalten? Dann hier eingeben, sonst später.</p>
           )}
-        </div>
+        </div>}
         {state && !state.ok ? <Alert icon={<AlertCircle className="h-4 w-4" />}>{state.error}</Alert> : null}
         {!online ? <Alert tone="warn">Keine Verbindung. Zum Registrieren brauchst du Internet.</Alert> : null}
         <SubmitButton className="w-full" size="lg" pendingText="Konto wird erstellt…">
-          {codeLocked ? "Konto erstellen & beitreten" : "Konto erstellen"}
+          {submitLabel ?? (codeLocked ? "Konto erstellen & beitreten" : "Konto erstellen")}
         </SubmitButton>
       </form>
     </Card>

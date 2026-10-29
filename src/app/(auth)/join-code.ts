@@ -18,7 +18,7 @@ export async function lookupJoinTenant(code: string | null) {
   if (!code) return null;
   const limited = throttle(`join-preview-ip:${await clientIp()}`, THROTTLE.joinCode.limit * 3, THROTTLE.joinCode.windowMs);
   if (limited) return null;
-  const t = await db.tenant.findUnique({ where: { joinCode: code }, select: { id: true, name: true, city: true, logoPath: true, updatedAt: true } });
+  const t = await db.tenant.findFirst({ where: { joinCode: code, deletedAt: null }, select: { id: true, name: true, city: true, logoPath: true, updatedAt: true } });
   if (!t) return null;
   return { name: t.name, city: t.city, logoUrl: tenantLogoUrl(t) };
 }

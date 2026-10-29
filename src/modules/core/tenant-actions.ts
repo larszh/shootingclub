@@ -5,12 +5,15 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { db } from "@/lib/db";
 import { THROTTLE, clientIp, getCurrentUser, throttle } from "@/lib/auth";
-import { getAppContext, requirePermission, requireSuperAdmin, setActiveTenantCookie } from "@/lib/tenant";
+import { requirePermission, requireSuperAdmin, setActiveTenantCookie } from "@/lib/tenant";
 import { isModuleKey } from "@/lib/modules";
-import { isTenantRole } from "@/lib/permissions";
+import { ROLE_LABELS, isTenantRole, type TenantRole } from "@/lib/permissions";
 import { fail, ok, type ActionResult } from "@/lib/action-result";
 import { randomCode, slugify } from "@/lib/utils";
+import { todayZurich } from "@/lib/time";
 import { removeUserFromTenantChats } from "@/modules/chat/service";
+import { audit } from "@/lib/audit";
+import { LOCALES, LOCALE_LABELS, type Locale } from "@/lib/i18n/locales";
 
 const TENANT_KINDS = ["CLUB", "RANGE", "PRIVATE"] as const;
 
@@ -60,12 +63,17 @@ export async function joinTenantAction(_prev: ActionResult | null, formData: For
     throttle(`join-ip:${await clientIp()}`, THROTTLE.joinCode.limit, THROTTLE.joinCode.windowMs);
   if (limited) return fail(limited);
   const tenant = await db.tenant.findUnique({ where: { joinCode: code } });
-  if (!tenant) return fail("Beitrittscode nicht gefunden.");
-  await db.membership.upsert({
-    where: { userId_tenantId: { userId: user.id, tenantId: tenant.id } },
-    create: { userId: user.id, tenantId: tenant.id, role: "MEMBER" },
-    update: {},
-  });
+  if (!tenant || tenant.deletedAt) return fail("Beitrittscode nicht gefunden.");
+  const existing = await db.membership.findUnique({ where: { userId_tenantId: { userId: user.id, tenantId: tenant.id } }, select: { status: true } });
+  if (existing?.status === "LEFT") return fail("Deine Mitgliedschaft in diesem Verein ist beendet. Bitte wende dich an den Vorstand.");
+  if (!existing) {
+    try {
+      await db.membership.create({ data: { userId: user.id, tenantId: tenant.id, role: "MEMBER", status: "ACTIVE", joinedAt: new Date(`${todayZurich()}T00:00:00Z`) } });
+    } catch (e) {
+      // Doppelklick: Mitgliedschaft wurde inzwischen angelegt
+      if ((e as { code?: string }).code !== "P2002") throw e;
+    }
+  }
   await setActiveTenantCookie(tenant.id);
   redirect("/");
 }
@@ -73,30 +81,48 @@ export async function joinTenantAction(_prev: ActionResult | null, formData: For
 export async function switchTenantAction(tenantId: string) {
   const user = await getCurrentUser();
   if (!user) redirect("/login");
-  const allowed = user.isSuperAdmin || user.memberships.some((m) => m.tenantId === tenantId);
-  if (!allowed) return;
+  // user.memberships enthält nur Mitgliedschaften mit Zugang (nicht LEFT, Verein nicht gelöscht).
+  const member = user.memberships.some((m) => m.tenantId === tenantId);
+  if (!user.isSuperAdmin && !member) return;
   await setActiveTenantCookie(tenantId);
   revalidatePath("/", "layout");
   redirect("/");
 }
 
 export async function updateMemberRoleAction(membershipId: string, role: string): Promise<ActionResult> {
-  const ctx = await requirePermission("tenant.manage");
+  const ctx = await requirePermission("members.manage");
   if (!isTenantRole(role)) return fail("Ungültige Rolle");
-  const m = await db.membership.findUnique({ where: { id: membershipId } });
+  const m = await db.membership.findUnique({ where: { id: membershipId }, include: { user: { select: { name: true } } } });
   if (!m || m.tenantId !== ctx.tenant.id) return fail("Nicht gefunden");
+  if (m.role === role) return ok();
   if (m.role === "OWNER" && !ctx.user.isSuperAdmin && ctx.tenant.role !== "OWNER") return fail("Nur Inhaber können Inhaber ändern.");
   if (role === "OWNER" && !ctx.user.isSuperAdmin && ctx.tenant.role !== "OWNER") return fail("Nur Inhaber können Inhaber ernennen.");
+  if (m.userId === ctx.user.id && !ctx.user.isSuperAdmin) return fail("Die eigene Rolle kann nur jemand anderes ändern.");
+  if (role === "OWNER" && m.status === "LEFT") return fail("Ausgetretene Mitglieder können nicht Inhaber werden.");
+  if (m.role === "OWNER" && role !== "OWNER") {
+    const owners = await db.membership.count({ where: { tenantId: ctx.tenant.id, role: "OWNER" } });
+    if (owners <= 1) return fail("Der Verein braucht mindestens einen Inhaber. Zuerst eine andere Person zum Inhaber machen.");
+  }
   await db.membership.update({ where: { id: membershipId }, data: { role } });
-  revalidatePath("/admin/members");
-  return ok();
+  await audit({
+    tenantId: ctx.tenant.id, actorId: ctx.user.id, actorName: ctx.user.name, action: "member.role.change", entity: "Membership", entityId: m.id,
+    detail: `${m.user.name}: ${ROLE_LABELS[m.role as TenantRole] ?? m.role} → ${ROLE_LABELS[role]}`,
+  });
+  revalidatePath("/admin/members", "layout");
+  revalidatePath("/members");
+  return ok(undefined, "Rolle geändert.");
 }
 
+/**
+ * Mitgliedschaft endgültig löschen (z.B. falsch erfasst). Für reguläre Austritte stattdessen den
+ * Status «Ausgetreten» setzen: dann bleiben Daten und Rechnungen beim Mitglied.
+ */
 export async function removeMemberAction(membershipId: string): Promise<ActionResult> {
-  const ctx = await requirePermission("tenant.manage");
-  const m = await db.membership.findUnique({ where: { id: membershipId } });
+  const ctx = await requirePermission("members.manage");
+  const m = await db.membership.findUnique({ where: { id: membershipId }, include: { user: { select: { name: true } } } });
   if (!m || m.tenantId !== ctx.tenant.id) return fail("Nicht gefunden");
   if (m.role === "OWNER") return fail("Inhaber können nicht entfernt werden.");
+  if (m.userId === ctx.user.id) return fail("Du kannst dich nicht selbst entfernen.");
   await db.membership.delete({ where: { id: membershipId } });
   // Aus allen Chats dieses Vereins entfernen (Nachrichten bleiben erhalten). Ein Fehler hier darf
   // das Entfernen nicht rückgängig machen: Lesezugriffe prüfen die Mitgliedschaft ohnehin.
@@ -105,25 +131,18 @@ export async function removeMemberAction(membershipId: string): Promise<ActionRe
   } catch (e) {
     console.error("Chat-Mitgliedschaften konnten nicht entfernt werden:", e);
   }
-  revalidatePath("/admin/members");
-  return ok();
+  if (m.householdId) {
+    const h = await db.household.findUnique({ where: { id: m.householdId }, select: { payerUserId: true, memberships: { select: { userId: true }, take: 1 } } });
+    if (h && h.payerUserId === m.userId) await db.household.update({ where: { id: m.householdId }, data: { payerUserId: h.memberships[0]?.userId ?? null } });
+  }
+  await audit({ tenantId: ctx.tenant.id, actorId: ctx.user.id, actorName: ctx.user.name, action: "member.remove", entity: "Membership", entityId: m.id, detail: m.user.name });
+  revalidatePath("/admin/members", "layout");
+  revalidatePath("/members");
+  return ok(undefined, `${m.user.name} entfernt.`);
 }
 
-export async function addMemberByEmailAction(_prev: ActionResult | null, formData: FormData): Promise<ActionResult> {
-  const ctx = await requirePermission("tenant.manage");
-  const email = String(formData.get("email") ?? "").trim().toLowerCase();
-  const role = String(formData.get("role") ?? "MEMBER");
-  if (!isTenantRole(role) || role === "OWNER") return fail("Ungültige Rolle");
-  const user = await db.user.findUnique({ where: { email } });
-  if (!user) return fail("Kein Konto mit dieser E-Mail. Die Person kann sich mit dem Beitrittscode registrieren.");
-  // Bestehende Mitgliedschaften (inkl. Inhaber) nicht über diesen Weg ändern;
-  // Rollenwechsel laufen über updateMemberRoleAction mit den Inhaber-Prüfungen.
-  const existing = await db.membership.findUnique({ where: { userId_tenantId: { userId: user.id, tenantId: ctx.tenant.id } } });
-  if (existing) return fail("Bereits Mitglied – Rolle unter Mitglieder ändern.");
-  await db.membership.create({ data: { userId: user.id, tenantId: ctx.tenant.id, role } });
-  revalidatePath("/admin/members");
-  return ok(undefined, `${user.name} hinzugefügt.`);
-}
+// Bestehende Konten (z.B. aus einem anderen Verein) werden nie direkt verknüpft: Sie erhalten eine
+// Einladung (inviteMemberAction) und treten erst bei, wenn die Person sie selbst annimmt.
 
 export async function regenerateJoinCodeAction(): Promise<ActionResult> {
   const ctx = await requirePermission("tenant.manage");
@@ -161,6 +180,8 @@ function normalizeWebsite(raw: string): string | null | false {
 
 const updateTenantSchema = createTenantSchema.extend({
   description: z.string().trim().max(2000, "Beschreibung zu lang (max. 2000 Zeichen)").optional(),
+  defaultLocale: z.enum(LOCALES as readonly [Locale, ...Locale[]], { message: "Ungültige Vereinssprache" }).optional(),
+  replyToEmail: z.string().trim().toLowerCase().max(190).email("Ungültige E-Mail-Adresse").optional(),
 });
 export async function updateTenantAction(_prev: ActionResult | null, formData: FormData): Promise<ActionResult> {
   const ctx = await requirePermission("tenant.manage");
@@ -170,15 +191,33 @@ export async function updateTenantAction(_prev: ActionResult | null, formData: F
     city: formData.get("city") || undefined,
     canton: formData.get("canton") || undefined,
     description: formData.get("description") || undefined,
+    defaultLocale: formData.get("defaultLocale") || undefined,
+    replyToEmail: formData.get("replyToEmail") || undefined,
   });
-  if (!parsed.success) return fail(parsed.error.issues[0]?.message ?? "Ungültige Eingabe");
+  if (!parsed.success) {
+    const issue = parsed.error.issues[0];
+    const field = issue?.path[0];
+    const msg = issue?.message ?? "Ungültige Eingabe";
+    return fail(msg, field === "replyToEmail" || field === "defaultLocale" ? { [field]: msg } : undefined);
+  }
   const website = normalizeWebsite(String(formData.get("website") ?? ""));
   if (website === false) return fail("Ungültige Webseite, z.B. «www.sv-beispiel.ch».", { website: "Ungültige Adresse" });
-  const { description, ...rest } = parsed.data;
+  const { description, defaultLocale, replyToEmail, ...rest } = parsed.data;
+  const before = await db.tenant.findUnique({ where: { id: ctx.tenant.id }, select: { defaultLocale: true, replyToEmail: true } });
+  // Fehlt ein Feld im Formular (ältere Clients), bleibt der bisherige Wert.
+  const nextLocale = defaultLocale ?? before?.defaultLocale ?? "de";
+  const nextReplyTo = formData.has("replyToEmail") ? replyToEmail || null : before?.replyToEmail ?? null;
   await db.tenant.update({
     where: { id: ctx.tenant.id },
-    data: { ...rest, city: rest.city ?? null, canton: rest.canton ?? null, description: description || null, website },
+    data: { ...rest, city: rest.city ?? null, canton: rest.canton ?? null, description: description || null, website, defaultLocale: nextLocale, replyToEmail: nextReplyTo },
   });
+  const label = (l: string | null | undefined) => (l && l in LOCALE_LABELS ? LOCALE_LABELS[l as keyof typeof LOCALE_LABELS] : l ?? "–");
+  if (before && before.defaultLocale !== nextLocale) {
+    await audit({ tenantId: ctx.tenant.id, actorId: ctx.user.id, actorName: ctx.user.name, action: "tenant.locale.change", entity: "Tenant", entityId: ctx.tenant.id, detail: `Vereinssprache ${label(before.defaultLocale)} → ${label(nextLocale)}` });
+  }
+  if (before && (before.replyToEmail ?? null) !== nextReplyTo) {
+    await audit({ tenantId: ctx.tenant.id, actorId: ctx.user.id, actorName: ctx.user.name, action: "tenant.replyto.change", entity: "Tenant", entityId: ctx.tenant.id, detail: nextReplyTo ? `Antwortadresse: ${nextReplyTo}` : "Antwortadresse entfernt" });
+  }
   revalidatePath("/", "layout");
   return ok(undefined, "Gespeichert.");
 }
@@ -197,29 +236,4 @@ export async function superCreateTenantAction(_prev: ActionResult | null, formDa
   await db.tenant.create({ data: { ...parsed.data, slug: await uniqueSlug(parsed.data.name), joinCode: randomCode() } });
   revalidatePath("/super/tenants");
   return ok(undefined, "Tenant angelegt.");
-}
-
-export async function superSetSuperAdminAction(userId: string, value: boolean): Promise<ActionResult> {
-  const me = await requireSuperAdmin();
-  if (me.id === userId && !value) return fail("Du kannst dir selbst den Super-Admin nicht entziehen.");
-  await db.user.update({ where: { id: userId }, data: { isSuperAdmin: value } });
-  revalidatePath("/super/users");
-  return ok();
-}
-
-export async function superDeleteTenantAction(tenantId: string): Promise<ActionResult> {
-  await requireSuperAdmin();
-  await db.tenant.delete({ where: { id: tenantId } });
-  revalidatePath("/super/tenants");
-  return ok();
-}
-
-export async function updateProfileAction(_prev: ActionResult | null, formData: FormData): Promise<ActionResult> {
-  const ctx = await getAppContext();
-  const name = String(formData.get("name") ?? "").trim();
-  if (name.length < 2) return fail("Name zu kurz");
-  const opt = (k: string) => { const v = String(formData.get(k) ?? "").trim(); return v ? v.slice(0, 80) : null; };
-  await db.user.update({ where: { id: ctx.user.id }, data: { name, street: opt("street"), zip: opt("zip"), city: opt("city") } });
-  revalidatePath("/", "layout");
-  return ok(undefined, "Gespeichert.");
 }

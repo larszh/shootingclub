@@ -206,7 +206,8 @@ export function cancellationInfo(b: { startsAt: Date; status: string }, cancella
 /** Mitglieder des Vereins für die Auswahl «Buchung für Mitglied erfassen». */
 export async function listMembersForBooking(tenantId: string) {
   const rows = await db.membership.findMany({
-    where: { tenantId },
+    // Ausgetretene und gelöschte Konten nicht zur Auswahl anbieten.
+    where: { tenantId, status: { not: "LEFT" }, user: { deletedAt: null } },
     include: { user: { select: { id: true, name: true, email: true, avatarPath: true, updatedAt: true } } },
     orderBy: { user: { name: "asc" } },
   });

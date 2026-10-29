@@ -1,5 +1,6 @@
 import "server-only";
 import { renderQrBillSvg } from "@/lib/qr-bill";
+import { getT, getTenantLocale } from "@/lib/i18n";
 import { dueDateInDays } from "@/modules/billing/dates";
 import { getBillingProfile, profileToCreditor, type BillingProfileView } from "./profile";
 import { ensureReference } from "./reference";
@@ -26,17 +27,22 @@ export function splitMemberAddress(memberAddress: string | null) {
  * Baut die Druckdaten einer Beitragsrechnung (optional als Zahlungserinnerung).
  * Bei QR-IBAN erhält eine offene Rechnung ohne Referenz jetzt eine (wird gespeichert).
  */
-export async function buildFeeInvoiceDocument(inv: Inv, tenantId: string, tenantName: string, opts?: { reminder?: boolean; profile?: BillingProfileView }): Promise<InvoiceDocumentProps> {
+export async function buildFeeInvoiceDocument(inv: Inv, tenantId: string, tenantName: string, opts?: { reminder?: boolean; profile?: BillingProfileView; locale?: string }): Promise<InvoiceDocumentProps> {
   const profile = opts?.profile ?? (await getBillingProfile(tenantId, tenantName));
+  // Rechnungen erscheinen in der Vereinssprache (Tenant.defaultLocale).
+  const locale = opts?.locale ?? (await getTenantLocale(tenantId));
+  const t = getT(locale);
   const creditor = profileToCreditor(profile, tenantName);
   const { street, zip, city } = splitMemberAddress(inv.memberAddress);
-  const title = opts?.reminder ? "Zahlungserinnerung" : "Rechnung";
-  const purpose = `${inv.run?.title ?? `Mitgliederbeitrag ${inv.year}`} ${inv.number}`;
+  const title = opts?.reminder ? t("invoice.reminder") : t("invoice.title");
+  const feeLabel = inv.run?.title ?? t("invoice.annualFeeYear", { year: inv.year });
+  const purpose = `${feeLabel} ${inv.number}`;
   const reference = inv.status === "OPEN" && profile.qrIban ? await ensureReference("FEE", inv, profile.iban) : inv.reference;
   const qr = inv.status === "OPEN"
-    ? await renderQrBillSvg({ amountCents: inv.amountCents, currency: inv.currency, creditor, debtor: { name: inv.memberName, street, zip, city }, message: purpose, reference: profile.qrIban ? reference : null })
+    ? await renderQrBillSvg({ amountCents: inv.amountCents, currency: inv.currency, creditor, debtor: { name: inv.memberName, street, zip, city }, message: purpose, reference: profile.qrIban ? reference : null, locale })
     : null;
   return {
+    locale,
     title,
     number: inv.number,
     issuedAt: inv.issuedAt,
@@ -45,9 +51,9 @@ export async function buildFeeInvoiceDocument(inv: Inv, tenantId: string, tenant
     currency: inv.currency,
     payee: creditor,
     debtor: { name: inv.memberName, email: inv.memberEmail, street, zip, city, memberNumber: inv.membership?.memberNumber ?? null },
-    lines: [{ label: inv.run?.title ?? `Mitgliederbeitrag ${inv.year}`, sublabel: inv.categoryName, amountCents: inv.amountCents }],
+    lines: [{ label: feeLabel, sublabel: inv.categoryName, amountCents: inv.amountCents }],
     totalCents: inv.amountCents,
-    intro: opts?.reminder ? `Für die Rechnung ${inv.number} haben wir bisher keinen Zahlungseingang festgestellt. Bitte begleichen Sie den Betrag innert 14 Tagen. Falls sich die Zahlung mit diesem Schreiben kreuzt, betrachten Sie es als gegenstandslos.` : null,
+    intro: opts?.reminder ? t("invoice.reminderIntro", { number: inv.number }) : null,
     note: inv.run?.note ?? null,
     reference: profile.qrIban ? reference : null,
     qrSvg: qr,

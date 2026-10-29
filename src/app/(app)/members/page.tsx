@@ -7,6 +7,7 @@ import { TenantLogo } from "@/components/logo";
 import { userAvatarUrl } from "@/components/avatar";
 import { TENANT_ROLES } from "@/lib/permissions";
 import { formatDateZurich } from "@/lib/time";
+import { displayEmail } from "@/modules/members/types";
 import { MemberDirectory, type DirectoryMember } from "./directory";
 
 export const metadata: Metadata = { title: "Mitglieder" };
@@ -15,12 +16,13 @@ const ROLE_ORDER = new Map<string, number>(TENANT_ROLES.map((r, i) => [r, i]));
 
 export default async function MembersDirectoryPage() {
   const ctx = await requireTenant();
-  const canManage = ctx.can("tenant.manage");
+  const canViewContacts = ctx.can("members.view");
   const [tenant, memberships] = await Promise.all([
     db.tenant.findUniqueOrThrow({ where: { id: ctx.tenant.id }, select: { name: true, city: true, canton: true, description: true, website: true } }),
     db.membership.findMany({
-      where: { tenantId: ctx.tenant.id },
-      select: { id: true, role: true, createdAt: true, user: { select: { id: true, name: true, email: true, avatarPath: true, updatedAt: true } } },
+      // Ausgetretene erscheinen nicht im Verzeichnis.
+      where: { tenantId: ctx.tenant.id, status: { not: "LEFT" } },
+      select: { id: true, role: true, status: true, createdAt: true, joinedAt: true, user: { select: { id: true, name: true, email: true, phone: true, avatarPath: true, updatedAt: true } } },
     }),
   ]);
 
@@ -29,10 +31,13 @@ export default async function MembersDirectoryPage() {
       id: m.id,
       userId: m.user.id,
       name: m.user.name,
-      email: canManage ? m.user.email : null,
+      // Kontaktdaten nur für Vorstand/Trainer (members.view)
+      email: canViewContacts ? displayEmail(m.user.email) : null,
+      phone: canViewContacts ? m.user.phone : null,
       role: m.role,
+      status: m.status,
       avatarUrl: userAvatarUrl(m.user),
-      since: formatDateZurich(m.createdAt, { weekday: undefined, day: undefined, month: "long", year: "numeric" }),
+      since: formatDateZurich(m.joinedAt ?? m.createdAt, { weekday: undefined, day: undefined, month: "long", year: "numeric" }),
       isSelf: m.user.id === ctx.user.id,
     }))
     .sort((a, b) => (ROLE_ORDER.get(a.role) ?? 9) - (ROLE_ORDER.get(b.role) ?? 9) || a.name.localeCompare(b.name, "de-CH"));
@@ -46,7 +51,7 @@ export default async function MembersDirectoryPage() {
         title="Mitglieder"
         subtitle={`${members.length} ${members.length === 1 ? "Mitglied" : "Mitglieder"} in ${tenant.name}`}
         back={{ href: "/me", label: "Mehr" }}
-        action={canManage ? <LinkButton href="/admin/members" variant="secondary" size="sm"><Settings className="h-4 w-4" /> Verwalten</LinkButton> : undefined}
+        action={canViewContacts ? <LinkButton href="/admin/members" variant="secondary" size="sm"><Settings className="h-4 w-4" /> Verwalten</LinkButton> : undefined}
       />
 
       {tenant.description || tenant.website || ctx.tenant.logoUrl ? (

@@ -30,7 +30,19 @@ export type Permission =
   | "announcements.manage" // Mitteilungen an alle erfassen
   | "files.manage" // Dateiablage: Ordner, Sichtbarkeit, fremde Dateien verwalten
   | "files.upload" // Dateiablage: Dateien hochladen
-  | "ammo.manage"; // Munition: Einstellungen, Sortiment, Ausgabe, Rechnungen
+  | "ammo.manage" // Munition: Einstellungen, Sortiment, Ausgabe, Rechnungen
+  | "members.view" // Mitgliederliste mit Kontaktdaten sehen
+  | "members.manage" // Mitgliederdaten, Import, Haushalte, Einladungen
+  | "audit.view" // Protokoll der Änderungen im Verein
+  | "results.verify" // amtliche Resultate bestätigen (Schützenmeister)
+  | "range.duty" // Standdienst: Standbuch öffnen, Check-in, Gäste
+  | "range.manage" // Standordnung, Schiesszeiten, Kontingent, Vorfälle
+  | "weapons.loan" // Vereinswaffen ausgeben und zurücknehmen
+  | "weapons.manage" // Vereinswaffen erfassen, Wartung
+  | "shifts.manage" // Helfereinsätze planen, Stunden bestätigen
+  | "courses.manage" // Kurse (Jungschützen, J+S, Ausbildung) führen
+  | "championship.manage" // Jahresmeisterschaft einrichten
+  | "qualifications.manage"; // Qualifikationen erfassen und bestätigen
 
 const PERMISSION_MIN_ROLE: Record<Permission, TenantRole> = {
   "tenant.manage": "ADMIN",
@@ -44,6 +56,18 @@ const PERMISSION_MIN_ROLE: Record<Permission, TenantRole> = {
   "files.manage": "ADMIN",
   "files.upload": "MEMBER",
   "ammo.manage": "ADMIN",
+  "members.view": "TRAINER",
+  "members.manage": "ADMIN",
+  "audit.view": "ADMIN",
+  "results.verify": "TRAINER",
+  "range.duty": "TRAINER",
+  "range.manage": "ADMIN",
+  "weapons.loan": "TRAINER",
+  "weapons.manage": "ADMIN",
+  "shifts.manage": "ADMIN",
+  "courses.manage": "TRAINER",
+  "championship.manage": "ADMIN",
+  "qualifications.manage": "ADMIN",
 };
 
 export type Actor = { isSuperAdmin: boolean; role: string | null };

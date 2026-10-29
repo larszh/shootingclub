@@ -3,6 +3,7 @@ import { db } from "@/lib/db";
 import type { AppContext } from "@/lib/tenant";
 import { safeJson } from "@/lib/utils";
 import { firedShots, parseStages, programTotals, type Stage } from "./types";
+import { backfillMatchTotals } from "./sync";
 import { assignRanks, compareEntries, countTopShots, periodRange, round1, weekStreaks, type Period, type RankedEntry } from "./analytics";
 
 type Ctx = AppContext & { tenant: NonNullable<AppContext["tenant"]> };
@@ -58,30 +59,63 @@ export type LeaderboardEntry = RankedEntry & {
   matchId: string;
   attempts: number;
   isMe: boolean;
+  /** Anzahl Nuller (Fehlschüsse) im gewerteten Durchgang, null bei älteren Daten */
+  zeros: number | null;
 };
+
+/** Detailwerte (Höchstwerte, letzte Serie) für die Feinwertung bei gleichem Total. */
+async function tieBreakDetails(participantIds: string[], stages: Stage[], scoringMode: string) {
+  const out = new Map<string, { topShots: number; lastStage: number }>();
+  const CHUNK = 1000;
+  for (let i = 0; i < participantIds.length; i += CHUNK) {
+    const rows = await db.matchResult.findMany({
+      where: { participantId: { in: participantIds.slice(i, i + CHUNK) } },
+      select: { participantId: true, stageIndex: true, shotsJson: true, total: true },
+    });
+    const byPart = new Map<string, ResultRow[]>();
+    for (const r of rows) {
+      const list = byPart.get(r.participantId) ?? [];
+      list.push(r);
+      byPart.set(r.participantId, list);
+    }
+    for (const [id, results] of byPart) {
+      const s = summarize(results, stages, scoringMode);
+      out.set(id, { topShots: s.topShots, lastStage: s.lastStage });
+    }
+  }
+  return out;
+}
 
 /**
  * Rangliste eines Programms im aktiven Tenant: bestes Resultat pro Mitglied aus
  * ABGESCHLOSSENEN Durchgängen. Gäste werden separat geführt. Alle Mitglieder dürfen sie sehen.
+ *
+ * Gerechnet wird mit den gespeicherten Totalen (MatchParticipant.total). Nur für die Bestwerte
+ * (pro Mitglied alle Versuche mit dem besten Total, dazu die besten Gäste) werden die Schüsse
+ * gelesen, um bei gleichem Total nach Höchstwerten und letzter Serie zu entscheiden.
  */
 export async function getLeaderboard(ctx: Ctx, programId: string, period: Period) {
   const program = await visibleProgram(ctx, programId);
   if (!program) return null;
   const range = periodRange(period, new Date());
-  const best = new Map<string, LeaderboardEntry>();
-  const guests: LeaderboardEntry[] = [];
-  // Seitenweise über alle Teilnahmen (stabil nach id), damit kein Bestwert verloren geht.
-  const PAGE = 2000;
+  // Ältere Daten ohne gespeichertes Total einmalig nachführen (begrenzt, danach no-op).
+  await backfillMatchTotals({ tenantId: ctx.tenant.id, programId });
+
+  type Row = { id: string; userId: string | null; guestName: string | null; total: number; zeros: number | null; matchId: string; date: Date; user: { id: string; name: string; avatarPath: string | null; updatedAt: Date } | null };
+  const bestByUser = new Map<string, { total: number; rows: Row[]; attempts: number }>();
+  const guests: Row[] = [];
+  // Seitenweise (stabil nach id), schlanke Zeilen ohne Schüsse.
+  const PAGE = 5000;
   let afterId: string | undefined;
   for (;;) {
     const parts = await db.matchParticipant.findMany({
       where: {
         ...(afterId ? { id: { gt: afterId } } : {}),
+        total: { not: null },
         match: { tenantId: ctx.tenant.id, programId, status: "FINISHED", ...(range.from ? { date: { gte: range.from } } : {}) },
-        results: { some: {} },
       },
-      include: {
-        results: { select: { stageIndex: true, shotsJson: true, total: true } },
+      select: {
+        id: true, userId: true, guestName: true, total: true, zeros: true,
         user: { select: { id: true, name: true, avatarPath: true, updatedAt: true } },
         match: { select: { id: true, date: true } },
       },
@@ -89,38 +123,59 @@ export async function getLeaderboard(ctx: Ctx, programId: string, period: Period
       take: PAGE,
     });
     for (const p of parts) {
-      const s = summarize(p.results, program.stages, program.scoringMode);
-      const entry: LeaderboardEntry = {
-        rank: 0,
-        key: p.userId ?? `guest:${p.id}`,
-        userId: p.userId,
-        name: p.user?.name ?? p.guestName ?? "Gast",
-        avatarUrl: avatarUrlOf(p.user),
-        matchId: p.match.id,
-        attempts: 1,
-        isMe: p.userId === ctx.user.id,
-        total: s.total,
-        topShots: s.topShots,
-        lastStage: s.lastStage,
-        date: p.match.date,
-      };
+      const row: Row = { id: p.id, userId: p.userId, guestName: p.guestName, total: p.total ?? 0, zeros: p.zeros, matchId: p.match.id, date: p.match.date, user: p.user };
       if (!p.userId) {
-        guests.push(entry);
+        guests.push(row);
         continue;
       }
-      const cur = best.get(p.userId);
-      if (!cur) best.set(p.userId, entry);
+      const cur = bestByUser.get(p.userId);
+      if (!cur) bestByUser.set(p.userId, { total: row.total, rows: [row], attempts: 1 });
       else {
-        const attempts = cur.attempts + 1;
-        if (compareEntries(entry, cur) < 0) best.set(p.userId, { ...entry, attempts });
-        else cur.attempts = attempts;
+        cur.attempts += 1;
+        if (row.total > cur.total) {
+          cur.total = row.total;
+          cur.rows = [row];
+        } else if (row.total === cur.total) cur.rows.push(row);
       }
     }
     if (parts.length < PAGE) break;
     afterId = parts[parts.length - 1]!.id;
   }
-  const entries = assignRanks([...best.values()].sort(compareEntries));
-  const guestEntries = assignRanks(guests.sort(compareEntries)).slice(0, 10);
+
+  // Gäste: die besten 10 plus alle mit gleichem Total wie der 10. (Feinwertung entscheidet)
+  guests.sort((a, b) => b.total - a.total);
+  const guestCut = guests[9]?.total;
+  const guestCandidates = guestCut === undefined ? guests : guests.filter((g) => g.total >= guestCut);
+
+  const candidateIds = [...[...bestByUser.values()].flatMap((b) => b.rows.map((r) => r.id)), ...guestCandidates.map((g) => g.id)];
+  const details = await tieBreakDetails(candidateIds, program.stages, program.scoringMode);
+
+  const toEntry = (r: Row, attempts: number): LeaderboardEntry => {
+    const d = details.get(r.id) ?? { topShots: 0, lastStage: 0 };
+    return {
+      rank: 0,
+      key: r.userId ?? `guest:${r.id}`,
+      userId: r.userId,
+      name: r.user?.name ?? r.guestName ?? "Gast",
+      avatarUrl: avatarUrlOf(r.user),
+      matchId: r.matchId,
+      attempts,
+      isMe: r.userId === ctx.user.id,
+      zeros: r.zeros,
+      total: round1(r.total),
+      topShots: d.topShots,
+      lastStage: d.lastStage,
+      date: r.date,
+    };
+  };
+
+  const best: LeaderboardEntry[] = [];
+  for (const b of bestByUser.values()) {
+    const entries = b.rows.map((r) => toEntry(r, b.attempts)).sort(compareEntries);
+    best.push(entries[0]!);
+  }
+  const entries = assignRanks(best.sort(compareEntries));
+  const guestEntries = assignRanks(guestCandidates.map((g) => toEntry(g, 1)).sort(compareEntries)).slice(0, 10);
   return {
     program: { id: program.id, name: program.name, scoringMode: program.scoringMode, max: program.totals.max },
     decimal: program.scoringMode === "RINGS_DECIMAL",

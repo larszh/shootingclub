@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getCurrentUser } from "@/lib/auth";
+import { safeNextPath } from "@/lib/utils";
 import { CalendarDays, Crosshair, Printer, Receipt } from "lucide-react";
 import { Avatar } from "@/components/avatar";
 import { RegisterForm } from "./form";
@@ -16,12 +17,14 @@ const FEATURES = [
   { icon: Receipt, title: "Beiträge mit QR-Rechnung", text: "Scannen und in der Banking-App zahlen." },
 ];
 
-export default async function RegisterPage({ searchParams }: { searchParams: Promise<{ code?: string | string[] }> }) {
-  const code = normalizeJoinCode((await searchParams).code);
+export default async function RegisterPage({ searchParams }: { searchParams: Promise<{ code?: string | string[]; next?: string | string[] }> }) {
+  const sp = await searchParams;
+  const code = normalizeJoinCode(sp.code);
+  const next = safeNextPath(sp.next);
   // Bereits angemeldet: mit Code direkt zum Beitreten, statt den Code zu verlieren.
-  if (await getCurrentUser()) redirect(code ? `/onboarding?force=1&code=${encodeURIComponent(code)}` : "/");
+  if (await getCurrentUser()) redirect(code ? `/onboarding?force=1&code=${encodeURIComponent(code)}` : (next ?? "/"));
   const tenant = await lookupJoinTenant(code);
-  const loginHref = code ? `/login?code=${encodeURIComponent(code)}` : "/login";
+  const loginHref = code ? `/login?code=${encodeURIComponent(code)}` : next ? `/login?next=${encodeURIComponent(next)}` : "/login";
 
   return (
     <div className="animate-rise [animation-delay:120ms]">
@@ -42,7 +45,7 @@ export default async function RegisterPage({ searchParams }: { searchParams: Pro
       ) : null}
 
       {/* Auch ein unbekannter Code wird vorausgefüllt, damit man einen Tippfehler direkt korrigieren kann. */}
-      <RegisterForm joinCode={code ?? undefined} joinTenantName={tenant?.name} />
+      <RegisterForm joinCode={code ?? undefined} joinTenantName={tenant?.name} next={next ?? undefined} />
 
       <p className="mt-6 text-center text-sm text-ink-3">
         Schon registriert?{" "}

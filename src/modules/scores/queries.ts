@@ -2,7 +2,10 @@ import "server-only";
 import { db } from "@/lib/db";
 import type { AppContext } from "@/lib/tenant";
 import type { Prisma } from "@/generated/prisma/client";
+import { safeJson } from "@/lib/utils";
 import { firedShots, parseStages, programTotals, type Stage } from "./types";
+import { plannedShotsForStages } from "./totals";
+import { backfillMatchTotals, recomputeMatchTotals } from "./sync";
 
 export type ProgramView = {
   id: string;
@@ -203,7 +206,8 @@ export type MatchView = NonNullable<Awaited<ReturnType<typeof getMatch>>>;
 
 export async function listTenantMembers(tenantId: string) {
   const ms = await db.membership.findMany({
-    where: { tenantId },
+    // Ausgetretene und gelöschte Konten nicht zur Auswahl anbieten.
+    where: { tenantId, status: { not: "LEFT" }, user: { deletedAt: null } },
     include: { user: { select: { id: true, name: true, email: true, avatarPath: true, updatedAt: true } } },
     orderBy: { user: { name: "asc" } },
   });
@@ -216,33 +220,65 @@ export async function listTenantMembers(tenantId: string) {
   }));
 }
 
-/** Persönliche Statistik des Benutzers im aktiven Tenant. */
+/**
+ * Persönliche Statistik des Benutzers im aktiven Tenant (Startseite). Nutzt die gespeicherten
+ * Totale (MatchParticipant.total); Schüsse werden nur für offene Durchgänge gelesen, bei
+ * abgeschlossenen zählen die geplanten Schüsse der erfassten Serien.
+ */
 export async function userStats(ctx: AppContext & { tenant: NonNullable<AppContext["tenant"]> }) {
+  await backfillMatchTotals({ tenantId: ctx.tenant.id, userId: ctx.user.id });
   const parts = await db.matchParticipant.findMany({
     where: { userId: ctx.user.id, match: { tenantId: ctx.tenant.id } },
-    include: { results: true, match: { include: { program: { select: { id: true, name: true, stagesJson: true, scoringMode: true } } } } },
+    select: {
+      total: true,
+      results: { select: { stageIndex: true } },
+      match: { select: { status: true, program: { select: { id: true, name: true, stagesJson: true, scoringMode: true } } } },
+    },
     orderBy: [{ match: { date: "desc" } }, { match: { createdAt: "desc" } }],
     take: 200,
   });
-  // Strafen ohne Schuss (z.B. Verfahrensfehler) zählen nicht als Schuss
-  const totalShots = parts.reduce((a, p) => {
-    const stages = parseStages(p.match.program.stagesJson);
-    return a + p.results.reduce((b, r) => {
-      const shots = JSON.parse(r.shotsJson) as number[];
+  const stagesCache = new Map<string, Stage[]>();
+  const stagesOf = (prog: { id: string; stagesJson: string }) => {
+    let st = stagesCache.get(prog.id);
+    if (!st) {
+      st = parseStages(prog.stagesJson);
+      stagesCache.set(prog.id, st);
+    }
+    return st;
+  };
+
+  // Schüsse offener Durchgänge exakt (ohne Strafen ohne Schuss), sonst geplante Schüsse der erfassten Serien
+  let totalShots = 0;
+  for (const p of parts) {
+    if (p.match.status !== "FINISHED") continue;
+    const stages = stagesOf(p.match.program);
+    totalShots += plannedShotsForStages(p.results.map((r) => r.stageIndex), stages.map((st) => st.shots));
+  }
+  const openParts = await db.matchParticipant.findMany({
+    where: { userId: ctx.user.id, match: { tenantId: ctx.tenant.id, status: { not: "FINISHED" } }, results: { some: {} } },
+    select: { id: true, results: { select: { stageIndex: true, shotsJson: true } }, match: { select: { program: { select: { id: true, stagesJson: true, scoringMode: true } } } } },
+    orderBy: { match: { date: "desc" } },
+    take: 50,
+  });
+  for (const p of openParts) {
+    const stages = stagesOf({ id: p.match.program.id, stagesJson: p.match.program.stagesJson });
+    for (const r of p.results) {
+      const shots = safeJson<number[]>(r.shotsJson, []);
       const st = stages[r.stageIndex];
-      return b + (st ? firedShots(st, shots, p.match.program.scoringMode) : shots.length);
-    }, 0);
-  }, 0);
+      totalShots += st ? firedShots(st, shots, p.match.program.scoringMode) : shots.length;
+    }
+  }
+
   const byProgram = new Map<string, { name: string; best: number; count: number; max: number; last: number; decimal: boolean }>();
   for (const p of parts) {
-    const total = Math.round(p.results.reduce((a, r) => a + r.total, 0) * 10) / 10;
+    const total = Math.round((p.total ?? 0) * 10) / 10;
     const key = p.match.program.id;
-    const max = programTotals(parseStages(p.match.program.stagesJson), p.match.program.scoringMode).max;
     const cur = byProgram.get(key);
     if (cur) {
       cur.best = Math.max(cur.best, total);
       cur.count += 1;
     } else {
+      const max = programTotals(stagesOf(p.match.program), p.match.program.scoringMode).max;
       byProgram.set(key, { name: p.match.program.name, best: total, count: 1, max, last: total, decimal: p.match.program.scoringMode === "RINGS_DECIMAL" });
     }
   }
@@ -258,11 +294,15 @@ export async function userStats(ctx: AppContext & { tenant: NonNullable<AppConte
 export async function isPersonalBest(matchId: string, userId: string) {
   const m = await db.match.findUnique({
     where: { id: matchId },
-    select: { id: true, tenantId: true, programId: true, date: true, createdAt: true, participants: { where: { userId }, select: { results: { select: { total: true } } } } },
+    select: { id: true, tenantId: true, programId: true, date: true, createdAt: true, participants: { where: { userId }, select: { id: true, total: true, _count: { select: { results: true } } } } },
   });
   const mine = m?.participants[0];
-  if (!m || !mine || mine.results.length === 0) return null;
-  const total = Math.round(mine.results.reduce((a, r) => a + r.total, 0) * 10) / 10;
+  if (!m || !mine || mine._count.results === 0) return null;
+  // Ältere Daten ohne gespeichertes Total nachführen (danach no-op)
+  if (mine.total === null) await recomputeMatchTotals(m.id, mine.id);
+  await backfillMatchTotals({ tenantId: m.tenantId, programId: m.programId, userId });
+  const fresh = mine.total ?? (await db.matchParticipant.findUnique({ where: { id: mine.id }, select: { total: true } }))?.total ?? 0;
+  const total = Math.round(fresh * 10) / 10;
   const program = await db.program.findUnique({ where: { id: m.programId }, select: { stagesJson: true } });
   const stageCount = parseStages(program?.stagesJson ?? "[]").length;
   const others = await db.matchParticipant.findMany({
@@ -275,14 +315,14 @@ export async function isPersonalBest(matchId: string, userId: string) {
         programId: m.programId,
         OR: [{ date: { lt: m.date } }, { date: m.date, createdAt: { lt: m.createdAt } }],
       },
-      results: { some: {} },
+      total: { not: null },
     },
-    select: { results: { select: { total: true } }, match: { select: { status: true } } },
+    select: { total: true, _count: { select: { results: true } }, match: { select: { status: true } } },
     take: 2000,
   });
   const previous = others
-    .filter((o) => o.match.status === "FINISHED" || (stageCount > 0 && o.results.length >= stageCount))
-    .map((o) => Math.round(o.results.reduce((a, r) => a + r.total, 0) * 10) / 10);
+    .filter((o) => o.match.status === "FINISHED" || (stageCount > 0 && o._count.results >= stageCount))
+    .map((o) => Math.round((o.total ?? 0) * 10) / 10);
   const previousBest = previous.length ? Math.max(...previous) : null;
   return {
     total,

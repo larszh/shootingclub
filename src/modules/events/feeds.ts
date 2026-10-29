@@ -44,7 +44,8 @@ const eventSelect = { id: true, title: true, description: true, kind: true, star
 
 /** Vereins-Feed: alle Anlässe (abgesagte mit STATUS:CANCELLED). null = unbekannter Token. */
 export async function buildTenantFeed(token: string, baseUrl: string) {
-  const tenant = await db.tenant.findUnique({ where: { calendarToken: token }, select: { id: true, name: true, slug: true } });
+  // Gelöschte Vereine (in der Löschfrist) liefern keinen Feed mehr (404).
+  const tenant = await db.tenant.findFirst({ where: { calendarToken: token, deletedAt: null }, select: { id: true, name: true, slug: true } });
   if (!tenant) return null;
   if (!(await isEventsModuleEnabled(tenant.id))) return null;
   const events = await db.event.findMany({
@@ -59,7 +60,7 @@ export async function buildTenantFeed(token: string, baseUrl: string) {
 
 /** Persönlicher Feed: Zusagen/Vielleicht aus allen Vereinen + eigene Reservationen. */
 export async function buildUserFeed(token: string, baseUrl: string) {
-  const user = await db.user.findUnique({ where: { calendarToken: token }, select: { id: true, name: true, memberships: { select: { tenantId: true, tenant: { select: { name: true } } } } } });
+  const user = await db.user.findUnique({ where: { calendarToken: token }, select: { id: true, name: true, memberships: { where: { status: { not: "LEFT" }, tenant: { deletedAt: null } }, select: { tenantId: true, tenant: { select: { name: true } } } } } });
   if (!user) return null;
   const tenantIds = await enabledEventTenantIds(user.memberships.map((m) => m.tenantId));
   const multi = user.memberships.length > 1;
@@ -75,7 +76,7 @@ export async function buildUserFeed(token: string, baseUrl: string) {
         })
       : Promise.resolve([]),
     db.booking.findMany({
-      where: { userId: user.id, status: { in: ["CONFIRMED", "PENDING"] }, startsAt: { gte: since } },
+      where: { userId: user.id, status: { in: ["CONFIRMED", "PENDING"] }, startsAt: { gte: since }, tenant: { deletedAt: null } },
       select: { id: true, startsAt: true, endsAt: true, status: true, note: true, persons: true, isFlatRate: true, createdAt: true, updatedAt: true, tenantId: true, resource: { select: { name: true } }, tenant: { select: { name: true } } },
       orderBy: { startsAt: "asc" },
       take: 1000,
@@ -144,7 +145,7 @@ export async function buildAttendanceCsv(user: { id: string; isSuperAdmin: boole
   if (!(await isEventsModuleEnabled(event.tenantId))) return null;
 
   const [members, rsvps] = await Promise.all([
-    db.membership.findMany({ where: { tenantId: event.tenantId }, select: { userId: true, memberNumber: true, user: { select: { name: true, email: true } } } }),
+    db.membership.findMany({ where: { tenantId: event.tenantId, status: { not: "LEFT" } }, select: { userId: true, memberNumber: true, user: { select: { name: true, email: true } } } }),
     db.eventRsvp.findMany({ where: { eventId: event.id }, select: { userId: true, status: true, guests: true, note: true, updatedAt: true, user: { select: { name: true, email: true } } } }),
   ]);
   const byUser = new Map(rsvps.map((r) => [r.userId, r]));

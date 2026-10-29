@@ -3,6 +3,8 @@ import { db } from "@/lib/db";
 import type { AppContext } from "@/lib/tenant";
 import { zurichParts } from "@/lib/time";
 import { isOverdue } from "./dates";
+import { householdCoverage, planFeeInvoices } from "./fee-run-plan";
+import { loadFeeCandidates, withInvoiceMembers } from "./fee-run";
 import { userAvatarUrl } from "@/components/avatar";
 
 type TenantCtx = AppContext & { tenant: NonNullable<AppContext["tenant"]> };
@@ -21,15 +23,17 @@ export async function listCategories(tenantId: string, opts?: { includeInactive?
 
 /** Mitglieder mit Kategorie, Beitrag und Rechnungsstatus für ein Jahr. */
 export async function listMembersForBilling(tenantId: string, year: number) {
-  const members = await db.membership.findMany({
+  const members = await withInvoiceMembers(db, tenantId, await db.membership.findMany({
     where: { tenantId },
     include: {
       user: { select: { id: true, name: true, email: true, street: true, zip: true, city: true, avatarPath: true, updatedAt: true } },
       feeCategory: true,
-      feeInvoices: { where: { year, status: { not: "CANCELLED" } }, select: { id: true, number: true, status: true, amountCents: true } },
+      feeInvoices: { where: { year, status: { not: "CANCELLED" } }, select: { id: true, number: true, status: true, amountCents: true, categoryName: true, issuedAt: true } },
     },
     orderBy: { user: { name: "asc" } },
-  });
+  }));
+  // Mitglieder, die eine Haushaltsrechnung eines anderen Haushaltsmitglieds schon abdeckt
+  const covered = householdCoverage(members.map((m) => ({ membershipId: m.id, householdId: m.householdId, createdAt: m.createdAt, invoices: m.feeInvoices })));
   return members.map((m) => ({
     membershipId: m.id,
     userId: m.user.id,
@@ -38,11 +42,14 @@ export async function listMembersForBilling(tenantId: string, year: number) {
     avatarUrl: userAvatarUrl(m.user),
     address: [m.user.street, [m.user.zip, m.user.city].filter(Boolean).join(" ")].filter(Boolean).join(", ") || null,
     role: m.role,
+    status: m.status,
     memberNumber: m.memberNumber,
     category: m.feeCategory ? { id: m.feeCategory.id, name: m.feeCategory.name, amountCents: m.feeCategory.amountCents } : null,
     overrideCents: m.feeAmountOverrideCents,
     effectiveCents: m.feeAmountOverrideCents ?? m.feeCategory?.amountCents ?? null,
-    invoice: m.feeInvoices[0] ?? null,
+    invoice: m.feeInvoices[0] ? { id: m.feeInvoices[0].id, number: m.feeInvoices[0].number, status: m.feeInvoices[0].status, amountCents: m.feeInvoices[0].amountCents } : null,
+    /** In der Haushaltsrechnung (Nummer) eines anderen Haushaltsmitglieds enthalten */
+    coveredBy: covered.get(m.id) ?? null,
   }));
 }
 
@@ -87,8 +94,9 @@ export async function getFeeInvoice(ctx: TenantCtx, id: string) {
 export async function feeStats(tenantId: string, year: number) {
   const [invoices, members, withCategory] = await Promise.all([
     db.feeInvoice.findMany({ where: { tenantId, year }, select: { status: true, amountCents: true, dueAt: true } }),
-    db.membership.count({ where: { tenantId } }),
-    db.membership.count({ where: { tenantId, OR: [{ feeCategoryId: { not: null } }, { feeAmountOverrideCents: { not: null } }] } }),
+    // Ausgetretene zählen nicht mit (erhalten keine Rechnung mehr)
+    db.membership.count({ where: { tenantId, status: { not: "LEFT" } } }),
+    db.membership.count({ where: { tenantId, status: { not: "LEFT" }, OR: [{ feeCategoryId: { not: null } }, { feeAmountOverrideCents: { not: null } }] } }),
   ]);
   const now = new Date();
   const open = invoices.filter((i) => i.status === "OPEN");
@@ -101,4 +109,17 @@ export async function feeStats(tenantId: string, year: number) {
     openCents: open.reduce((a, i) => a + i.amountCents, 0),
     paidCents: invoices.filter((i) => i.status === "PAID").reduce((a, i) => a + i.amountCents, 0),
   };
+}
+
+/**
+ * Vorschau für den Jahreslauf (Trockenlauf mit derselben Planung wie createRunAction): wie viele
+ * Mitglieder noch offen sind und wie viele Rechnungen mit bzw. ohne «Haushalte zusammenfassen» entstehen.
+ */
+export async function feeRunPreview(tenantId: string, year: number) {
+  const { candidates, households } = await loadFeeCandidates(db, tenantId, year);
+  const separate = planFeeInvoices(candidates, [], false).length;
+  const combined = planFeeInvoices(candidates, households, true).length;
+  const covered = householdCoverage(candidates);
+  const alreadyInvoiced = candidates.filter((c) => c.status !== "LEFT" && (c.invoices.length > 0 || covered.has(c.membershipId))).length;
+  return { members: separate, invoicesCombined: combined, invoicesSeparate: separate, alreadyInvoiced };
 }

@@ -4,6 +4,7 @@ import { db } from "@/lib/db";
 import { getRun, listInvoices } from "@/modules/billing/queries";
 import { buildFeeInvoiceDocument } from "@/modules/billing/render";
 import { getBillingProfile } from "@/modules/billing/profile";
+import { getTenantLocale } from "@/lib/i18n";
 import { isOverdue } from "@/modules/billing/dates";
 import { InvoiceDocument, PrintShell } from "@/components/invoice-document";
 import { PrintButton } from "@/components/print-button";
@@ -20,9 +21,9 @@ export default async function RunPrintPage({ params, searchParams }: { params: P
   const reminder = sp.reminder === "1";
   let invoices = await listInvoices(ctx.tenant.id, { runId: run.id, status: sp.filter === "all" ? undefined : "OPEN" });
   if (sp.filter === "overdue" || reminder) invoices = invoices.filter((i) => i.status === "OPEN" && isOverdue(i.dueAt));
-  const profile = await getBillingProfile(ctx.tenant.id, ctx.tenant.name);
+  const [profile, locale] = await Promise.all([getBillingProfile(ctx.tenant.id, ctx.tenant.name), getTenantLocale(ctx.tenant.id)]);
   const memberships = await db.membership.findMany({ where: { id: { in: invoices.map((i) => i.membershipId).filter((x): x is string => !!x) } }, select: { id: true, memberNumber: true } });
-  const docs = await Promise.all(invoices.map((inv) => buildFeeInvoiceDocument({ ...inv, run, membership: memberships.find((m) => m.id === inv.membershipId) ?? null }, ctx.tenant.id, ctx.tenant.name, { reminder, profile })));
+  const docs = await Promise.all(invoices.map((inv) => buildFeeInvoiceDocument({ ...inv, run, membership: memberships.find((m) => m.id === inv.membershipId) ?? null }, ctx.tenant.id, ctx.tenant.name, { reminder, profile, locale })));
   return (
     <PrintShell title={`${reminder ? "Zahlungserinnerungen" : "Rechnungen"} ${run.title}`} subtitle={`${docs.length} Seiten · A4`} action={<PrintButton />}>
       {docs.length === 0 ? <p className="text-sm text-neutral-600 py-10">Keine passenden Rechnungen.</p> : docs.map((d) => <InvoiceDocument key={d.number} {...d} />)}
