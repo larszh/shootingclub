@@ -10,6 +10,7 @@ import { RunForm } from "@/modules/billing/ui/run-form";
 import { YearSelect } from "@/modules/billing/ui/year-select";
 import { formatMoney } from "@/lib/money";
 import { formatDateZurich } from "@/lib/time";
+import { getT, getTenantLocale } from "@/lib/i18n";
 
 export const metadata: Metadata = { title: "Mitgliederbeiträge verwalten" };
 
@@ -18,7 +19,9 @@ export default async function AdminBillingPage({ searchParams }: { searchParams:
   const sp = await searchParams;
   const rawYear = Number(sp.year);
   const year = Number.isInteger(rawYear) && rawYear >= 2000 && rawYear <= 2100 ? rawYear : currentYear();
-  const [stats, runs, preview, profile] = await Promise.all([feeStats(ctx.tenant.id, year), listRuns(ctx.tenant.id), feeRunPreview(ctx.tenant.id, year), getBillingProfile(ctx.tenant.id, ctx.tenant.name)]);
+  const [stats, runs, preview, profile, locale] = await Promise.all([feeStats(ctx.tenant.id, year), listRuns(ctx.tenant.id), feeRunPreview(ctx.tenant.id, year), getBillingProfile(ctx.tenant.id, ctx.tenant.name), getTenantLocale(ctx.tenant.id)]);
+  // Titel erscheint auf der Rechnung und im QR-Zahlteil: in der Sprache des Vereins vorschlagen.
+  const defaultTitle = `${getT(locale)("invoice.memberFee")} ${year}`;
   const run = runs.find((r) => r.year === year);
   // Gleiche Planung wie der Lauf selbst: ohne Ausgetretene und ohne Mitglieder in einer Haushaltsrechnung
   const eligible = preview.members;
@@ -55,7 +58,7 @@ export default async function AdminBillingPage({ searchParams }: { searchParams:
         </Link>
       ) : null}
       {eligible > 0 || !run ? (
-        <div className="mt-2.5"><RunForm year={year} defaults={{ title: run?.title ?? `Mitgliederbeitrag ${year}`, invoicePrefix: run?.invoicePrefix ?? last?.invoicePrefix ?? "MB-", dueDays: run?.dueDays ?? last?.dueDays ?? 30, note: run?.note ?? last?.note ?? null }} eligible={eligible} invoices={{ combined: preview.invoicesCombined, separate: preview.invoicesSeparate }} alreadyInvoiced={preview.alreadyInvoiced} /></div>
+        <div className="mt-2.5"><RunForm year={year} defaults={{ title: run?.title ?? defaultTitle, invoicePrefix: run?.invoicePrefix ?? last?.invoicePrefix ?? "MB-", dueDays: run?.dueDays ?? last?.dueDays ?? 30, note: run?.note ?? last?.note ?? null }} eligible={eligible} invoices={{ combined: preview.invoicesCombined, separate: preview.invoicesSeparate }} alreadyInvoiced={preview.alreadyInvoiced} /></div>
       ) : (
         <p className="mt-2 text-xs text-ink-3">Alle Mitglieder mit Beitrag haben eine Rechnung für {year}. Neue Mitglieder erhalten ihre Rechnung unter «Mitglieder».</p>
       )}

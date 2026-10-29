@@ -13,10 +13,11 @@ import { ensureReference, tenantQrIban } from "./reference";
 import { isQrIban } from "@/lib/qr-reference";
 import { todayZurich, zurichParts } from "@/lib/time";
 import { dueDateInDays } from "./dates";
-import { feeInvoicesToCreate, householdInvoiceCovering } from "./fee-run";
+import { feeInvoicesToCreate, householdInvoiceCovering, householdMemberAuditRows, type FeeSnapshot } from "./fee-run";
 import { audit } from "@/lib/audit";
 import { notify } from "@/lib/notify";
-import { formatDate, formatMoneyLocale } from "@/lib/i18n/core";
+import { formatDate, formatMoneyLocale, getT } from "@/lib/i18n/core";
+import { getTenantLocale } from "@/lib/i18n";
 
 
 const revalidate = () => { revalidatePath("/admin/billing"); revalidatePath("/billing"); revalidatePath("/admin/bookings"); };
@@ -157,7 +158,7 @@ async function nextNumber(tx: Tx, tenantId: string, prefix: string, year: number
   return `${prefix}${year}-${String(count + 1 + offset).padStart(4, "0")}`;
 }
 
-type MemberSnapshot = { id: string; userId: string; name: string; email: string; address: string | null; categoryId: string | null; categoryName: string; amountCents: number };
+type MemberSnapshot = FeeSnapshot;
 
 function isUniqueViolation(e: unknown) {
   return typeof e === "object" && e !== null && (e as { code?: unknown }).code === "P2002";
@@ -187,14 +188,17 @@ async function createInvoiceFor(tx: Tx, tenantId: string, run: { id: string; yea
  * (zwei Tabs, zwei Admins) nacheinander laufen und dieselben Mitglieder nicht doppelt verrechnen.
  * `pick` bestimmt innerhalb der Sperre, wer eine Rechnung erhält.
  */
-async function createInvoicesLocked(tenantId: string, run: { id: string; year: number; invoicePrefix: string; dueAt: Date }, pick: (tx: Tx) => Promise<MemberSnapshot[]>) {
+async function createInvoicesLocked(tenantId: string, actor: { id: string; name: string }, run: { id: string; year: number; invoicePrefix: string; dueAt: Date }, pick: (tx: Tx) => Promise<MemberSnapshot[]>) {
   const billing = await billingDefaults(tenantId);
   const created = await db.$transaction(async (tx) => {
     await tx.$queryRaw`SELECT id FROM \`FeeRun\` WHERE id = ${run.id} FOR UPDATE`;
     const out = [];
     for (const m of await pick(tx)) {
       const inv = await createInvoiceFor(tx, tenantId, run, m, billing);
-      if (inv) out.push(inv);
+      if (!inv) continue;
+      // Haushaltsrechnung: festhalten, welche Mitgliedschaften sie enthält (bestimmt die Abdeckung bei späteren Läufen).
+      if (m.covers?.length) await tx.auditLog.createMany({ data: householdMemberAuditRows(tenantId, inv, m.covers, actor) });
+      out.push(inv);
     }
     return out;
   }, { maxWait: 15_000, timeout: 120_000 });
@@ -242,7 +246,7 @@ export async function createRunAction(_prev: ActionResult | null, formData: Form
   });
   // «Haushalte zusammenfassen» (Standard an): eine Rechnung pro Haushalt an den Zahler.
   const combineHouseholds = formData.get("combineHouseholds") !== "off";
-  const created = (await createInvoicesLocked(ctx.tenant.id, { ...run, dueAt }, (tx) => feeInvoicesToCreate(tx, ctx.tenant.id, r.year, combineHouseholds))).length;
+  const created = (await createInvoicesLocked(ctx.tenant.id, ctx.user, { ...run, dueAt }, (tx) => feeInvoicesToCreate(tx, ctx.tenant.id, r.year, combineHouseholds))).length;
   await audit({
     tenantId: ctx.tenant.id, actorId: ctx.user.id, actorName: ctx.user.name, action: "billing.run", entity: "FeeRun", entityId: run.id,
     detail: `${r.title} ${r.year}: ${created} ${created === 1 ? "Rechnung" : "Rechnungen"} erstellt${combineHouseholds ? " (Haushalte zusammengefasst)" : ""}`,
@@ -264,18 +268,20 @@ export async function createSingleInvoiceAction(membershipId: string, year: numb
   if (amount === null || amount <= 0) return fail("Kein Beitrag definiert (Kategorie oder individueller Betrag).");
   const profile = await db.billingProfile.findUnique({ where: { tenantId: ctx.tenant.id } });
   if (!profile?.payeeName || !profile.iban) return fail("Bitte zuerst das Rechnungsprofil ausfüllen.");
+  // Titel und Bezeichnung erscheinen auf der Rechnung: in der Sprache des Vereins.
+  const memberFee = getT(await getTenantLocale(ctx.tenant.id))("invoice.memberFee");
   const run = await upsertRun({
     where: { tenantId_year: { tenantId: ctx.tenant.id, year } },
-    create: { tenantId: ctx.tenant.id, year, title: `Mitgliederbeitrag ${year}`, dueAt: dueDateInDays(30) },
+    create: { tenantId: ctx.tenant.id, year, title: `${memberFee} ${year}`, dueAt: dueDateInDays(30) },
     update: {},
   });
   const dueAt = dueDateInDays(run.dueDays);
   const snapshot: MemberSnapshot = {
     id: m.id, userId: m.userId, name: m.user.name, email: m.user.email,
     address: [m.user.street, [m.user.zip, m.user.city].filter(Boolean).join(" ")].filter(Boolean).join("\n") || null,
-    categoryId: m.feeCategoryId, categoryName: m.feeCategory?.name ?? "Mitgliederbeitrag", amountCents: amount,
+    categoryId: m.feeCategoryId, categoryName: m.feeCategory?.name ?? memberFee, amountCents: amount,
   };
-  const created = await createInvoicesLocked(ctx.tenant.id, { ...run, dueAt }, async (tx) => {
+  const created = await createInvoicesLocked(ctx.tenant.id, ctx.user, { ...run, dueAt }, async (tx) => {
     // Innerhalb der Sperre nochmals prüfen, ob inzwischen eine Rechnung entstanden ist.
     const exists = await tx.feeInvoice.count({ where: { membershipId: m.id, year, status: { not: "CANCELLED" } } });
     return exists || (await householdInvoiceCovering(tx, ctx.tenant.id, m.id, year)) ? [] : [snapshot];

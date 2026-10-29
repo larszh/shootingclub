@@ -1,3 +1,4 @@
+import type { TFunction } from "@/lib/i18n/core";
 import type { DurationOption } from "./types";
 
 export type PricingSettings = { lastMinuteDiscountPercent: number; lastMinuteWindowHours: number; personPricing?: boolean };
@@ -84,10 +85,14 @@ export function priceTablePreview(option: DurationOption, maxPersons: number, pe
   return parts.join(", ");
 }
 
-/** Personen-Zusatz für Rechnung, Kalender und Export: «3 Personen», «Pauschal (5 Personen)»; null bei 1 Person. */
-export function personsSuffix(b: { persons: number; isFlatRate: boolean }) {
-  if (b.isFlatRate) return `Pauschal (${personWord(b.persons)})`;
-  return b.persons > 1 ? personWord(b.persons) : null;
+/**
+ * Personen-Zusatz für Rechnung, Kalender und Export: «3 Personen», «Pauschal (5 Personen)»; null bei 1 Person.
+ * Mit `t` in der Sprache des Vereins (z.B. für die Rechnung), sonst Deutsch.
+ */
+export function personsSuffix(b: { persons: number; isFlatRate: boolean }, t?: TFunction) {
+  const word = (n: number) => (t ? t(n === 1 ? "invoice.persons.one" : "invoice.persons.many", { count: n }) : personWord(n));
+  if (b.isFlatRate) return t ? t("invoice.flatRate", { persons: word(b.persons) }) : `Pauschal (${word(b.persons)})`;
+  return b.persons > 1 ? word(b.persons) : null;
 }
 
 export type CapacitySettings = { maxPersons: number; flatExclusive: boolean; capacityPerPerson: boolean };

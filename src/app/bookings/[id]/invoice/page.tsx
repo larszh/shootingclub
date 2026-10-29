@@ -34,7 +34,7 @@ export default async function InvoicePage({ params }: { params: Promise<{ id: st
         locale={locale}
         number={inv.number} issuedAt={inv.issuedAt} dueAt={inv.dueAt} status={inv.status} currency={inv.currency}
         payee={creditor} debtor={{ name: b.user?.name ?? t("invoice.guest"), email: b.user?.email, street: b.user?.street, zip: b.user?.zip, city: b.user?.city }}
-        lines={[{ label: [t("invoice.bookingLine", { resource: b.resource.name }), personsSuffix(b)].filter(Boolean).join(" · "), sublabel: `${formatDate(b.startsAt, locale, { weekday: "long" })}, ${formatTimeRange(b.startsAt, b.endsAt)} · ${formatDuration(b.durationMinutes)}`, amountCents: b.basePriceCents }]}
+        lines={[{ label: [t("invoice.bookingLine", { resource: b.resource.name }), personsSuffix(b, t)].filter(Boolean).join(" · "), sublabel: `${formatDate(b.startsAt, locale, { weekday: "long" })}, ${formatTimeRange(b.startsAt, b.endsAt)} · ${formatDuration(b.durationMinutes, t)}`, amountCents: b.basePriceCents }]}
         discount={b.discountCents > 0 ? { label: b.discountReason ?? t("invoice.discount"), amountCents: b.discountCents } : null}
         totalCents={inv.amountCents} note={s.invoiceNote} qrSvg={qr} reference={reference}
       />

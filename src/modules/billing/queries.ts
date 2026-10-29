@@ -4,7 +4,7 @@ import type { AppContext } from "@/lib/tenant";
 import { zurichParts } from "@/lib/time";
 import { isOverdue } from "./dates";
 import { householdCoverage, planFeeInvoices } from "./fee-run-plan";
-import { loadFeeCandidates } from "./fee-run";
+import { loadFeeCandidates, withInvoiceMembers } from "./fee-run";
 import { userAvatarUrl } from "@/components/avatar";
 
 type TenantCtx = AppContext & { tenant: NonNullable<AppContext["tenant"]> };
@@ -23,7 +23,7 @@ export async function listCategories(tenantId: string, opts?: { includeInactive?
 
 /** Mitglieder mit Kategorie, Beitrag und Rechnungsstatus für ein Jahr. */
 export async function listMembersForBilling(tenantId: string, year: number) {
-  const members = await db.membership.findMany({
+  const members = await withInvoiceMembers(db, tenantId, await db.membership.findMany({
     where: { tenantId },
     include: {
       user: { select: { id: true, name: true, email: true, street: true, zip: true, city: true, avatarPath: true, updatedAt: true } },
@@ -31,7 +31,7 @@ export async function listMembersForBilling(tenantId: string, year: number) {
       feeInvoices: { where: { year, status: { not: "CANCELLED" } }, select: { id: true, number: true, status: true, amountCents: true, categoryName: true, issuedAt: true } },
     },
     orderBy: { user: { name: "asc" } },
-  });
+  }));
   // Mitglieder, die eine Haushaltsrechnung eines anderen Haushaltsmitglieds schon abdeckt
   const covered = householdCoverage(members.map((m) => ({ membershipId: m.id, householdId: m.householdId, createdAt: m.createdAt, invoices: m.feeInvoices })));
   return members.map((m) => ({

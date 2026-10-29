@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { ShieldCheck } from "lucide-react";
 import { getAppContext } from "@/lib/tenant";
-import { currentSessionHash } from "@/lib/auth";
+import { currentSessionHash, SESSION_START_ACTION } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { formatDateTimeZurich, formatDateZurich } from "@/lib/time";
 import { Badge, Card, PageHeader, SectionTitle } from "@/components/ui";
@@ -11,11 +11,21 @@ import { PasswordCard, SessionsCard, TwoFactorCard } from "./forms";
 export const metadata: Metadata = { title: "Sicherheit" };
 
 async function loadSecurity(userId: string) {
-  return Promise.all([
+  const [user, sessions, current] = await Promise.all([
     db.user.findUnique({ where: { id: userId }, select: { totpEnabledAt: true, passwordSetAt: true } }),
     db.session.findMany({ where: { userId, expiresAt: { gt: new Date() } }, select: { id: true, createdAt: true, expiresAt: true, tokenHash: true }, orderBy: { createdAt: "desc" } }),
     currentSessionHash(),
   ]);
+  // Gerät und IP, beim Anmelden festgehalten (ältere Sitzungen haben keinen Eintrag).
+  const oldest = sessions.at(-1)?.createdAt;
+  const starts = sessions.length
+    ? await db.auditLog.findMany({
+        where: { actorId: userId, action: SESSION_START_ACTION, entity: "Session", entityId: { in: sessions.map((s) => s.id) }, ...(oldest ? { createdAt: { gte: new Date(oldest.getTime() - 60_000) } } : {}) },
+        select: { entityId: true, detail: true, ip: true },
+      })
+    : [];
+  const device = new Map(starts.map((r) => [r.entityId, { label: r.detail, ip: r.ip }]));
+  return [user, sessions.map((s) => ({ ...s, device: device.get(s.id) ?? null })), current] as const;
 }
 
 export default async function SecurityPage() {
@@ -54,6 +64,8 @@ export default async function SecurityPage() {
         sessions={sessions.map((s) => ({
           id: s.id,
           current: s.tokenHash === current,
+          device: s.device?.label ?? null,
+          ip: s.device?.ip ?? null,
           since: formatDateTimeZurich(s.createdAt),
           until: formatDateZurich(s.expiresAt, { weekday: undefined }),
         }))}

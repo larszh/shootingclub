@@ -268,13 +268,15 @@ function TwoFactorEnabled({ recoveryLeft }: { recoveryLeft: number }) {
   );
 }
 
-export function SessionsCard({ sessions }: { sessions: Array<{ id: string; current: boolean; since: string; until: string }> }) {
+type SessionRow = { id: string; current: boolean; since: string; until: string; device: string | null; ip: string | null };
+
+export function SessionsCard({ sessions }: { sessions: SessionRow[] }) {
   const [pending, start] = useTransition();
   const [busyId, setBusyId] = useState<string | null>(null);
   const others = sessions.filter((s) => !s.current).length;
-  // Nur die anderen Geräte durchnummerieren, ältestes zuerst: Die Nummern bleiben stabil,
-  // wenn sich ein neues Gerät anmeldet (Liste ist neueste zuerst sortiert).
-  const otherNo = new Map(sessions.filter((s) => !s.current).map((s, i, arr) => [s.id, arr.length - i]));
+  // Bezeichnung aus Browser und System (beim Anmelden festgehalten); ohne Angabe «Anderes Gerät».
+  // Keine laufenden Nummern: Sie verschieben sich, sobald sich ein Gerät abmeldet.
+  const label = (s: SessionRow) => s.device ?? (s.current ? "Dieses Gerät" : "Anderes Gerät");
 
   function terminate(id: string) {
     setBusyId(id);
@@ -304,13 +306,13 @@ export function SessionsCard({ sessions }: { sessions: Array<{ id: string; curre
             <Smartphone className="h-5 w-5 shrink-0 text-ink-3" aria-hidden />
             <div className="min-w-0 flex-1">
               <p className="flex items-center gap-2 font-medium">
-                {s.current ? "Dieses Gerät" : `Anderes Gerät ${otherNo.get(s.id)}`}
-                {s.current ? <Badge tone="ok">Aktuell</Badge> : null}
+                <span className="truncate">{label(s)}</span>
+                {s.current ? <Badge tone="ok">{s.device ? "Dieses Gerät" : "Aktuell"}</Badge> : null}
               </p>
-              <p className="text-xs text-ink-3">Angemeldet seit {s.since} · gültig bis {s.until}</p>
+              <p className="text-xs text-ink-3">Angemeldet seit {s.since}{s.ip ? ` · IP ${s.ip}` : ""} · gültig bis {s.until}</p>
             </div>
             {!s.current ? (
-              <Button type="button" variant="secondary" size="sm" className="h-11" disabled={pending} onClick={() => terminate(s.id)} aria-label={`Anderes Gerät ${otherNo.get(s.id)} abmelden (angemeldet seit ${s.since})`}>
+              <Button type="button" variant="secondary" size="sm" className="h-11" disabled={pending} onClick={() => terminate(s.id)} aria-label={`${label(s)} abmelden (angemeldet seit ${s.since})`}>
                 {busyId === s.id ? <Spinner /> : <LogOut className="h-4 w-4" aria-hidden />} Abmelden
               </Button>
             ) : null}

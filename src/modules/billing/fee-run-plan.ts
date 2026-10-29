@@ -3,9 +3,26 @@
  * Mit «Haushalte zusammenfassen» erhalten Mitglieder desselben Haushalts EINE Rechnung an den
  * Zahler (Summe der Beiträge, Bezeichnung «Familie Muster (3 Mitglieder)»).
  */
+import { getT } from "@/lib/i18n/core";
 import { HOUSEHOLD_INVOICE_RE, householdInvoiceLabel } from "../members/types";
 
-export type FeeSnapshot = { id: string; userId: string; name: string; email: string; address: string | null; categoryId: string | null; categoryName: string; amountCents: number };
+export type FeeSnapshot = {
+  id: string; userId: string; name: string; email: string; address: string | null; categoryId: string | null; categoryName: string; amountCents: number;
+  /** Nur Haushaltsrechnung: die darin verrechneten Mitgliedschaften (wird beim Anlegen festgehalten). */
+  covers?: Array<{ membershipId: string; name: string }>;
+};
+
+export type FeeCandidateInvoice = {
+  id?: string;
+  categoryName: string;
+  number?: string;
+  issuedAt?: Date;
+  /**
+   * Nur Haushaltsrechnungen: die beim Anlegen festgehaltenen Mitgliedschaften, die darin enthalten sind.
+   * undefined/null = nicht festgehalten (ältere Rechnung), dann gilt die Schätzung über den Haushalt.
+   */
+  members?: string[] | null;
+};
 
 export type FeeCandidate = {
   membershipId: string;
@@ -19,37 +36,50 @@ export type FeeCandidate = {
   /** Beitrag (Überschreibung oder Kategorie), null = keiner */
   amountCents: number | null;
   householdId: string | null;
-  /** Erfasst am – wer erst nach einer Haushaltsrechnung dazukommt, ist von ihr nicht abgedeckt. */
+  /** Erfasst am – nur für ältere Haushaltsrechnungen ohne festgehaltene Mitglieder. */
   createdAt?: Date;
   /** Nicht stornierte Rechnungen dieses Jahres auf diese Mitgliedschaft */
-  invoices: Array<{ categoryName: string; number?: string; issuedAt?: Date }>;
+  invoices: FeeCandidateInvoice[];
 };
 
 export type CoverageInput = Pick<FeeCandidate, "membershipId" | "householdId" | "createdAt" | "invoices">;
 
 /**
  * Mitgliedschaften ohne eigene Rechnung, die eine Haushaltsrechnung dieses Jahres bereits abdeckt.
- * Die Haushaltsrechnung liegt nur auf der Mitgliedschaft der Person, die damals zahlte. Abgedeckt sind
- * daher alle Mitglieder desselben Haushalts – unabhängig davon, wer heute zahlt, ob die zahlende
- * Person inzwischen ausgetreten ist oder ob «Haushalte zusammenfassen» beim nächsten Lauf aus ist.
- * Wer erst nach der Rechnung erfasst wurde (Eintritt unter dem Jahr), ist nicht abgedeckt.
- * Liste muss alle Mitgliedschaften des Haushalts enthalten, auch ausgetretene.
+ * Die Haushaltsrechnung liegt nur auf der Mitgliedschaft der Person, die damals zahlte; welche
+ * Mitgliedschaften sie enthält, wird beim Anlegen festgehalten (`members`). Abgedeckt ist genau, wer
+ * darin enthalten war – unabhängig davon, wer heute zahlt, ob die zahlende Person ausgetreten oder
+ * nicht mehr im Haushalt ist, ob «Haushalte zusammenfassen» aus ist, und unabhängig davon, wer
+ * später in den Haushalt kommt.
+ * Ältere Haushaltsrechnungen ohne festgehaltene Mitglieder: abgedeckt sind die Mitglieder desselben
+ * Haushalts, die vor der Rechnung erfasst wurden (Schätzung).
+ * Liste muss alle Mitgliedschaften des Vereins enthalten, auch ausgetretene.
  */
 export function householdCoverage(list: CoverageInput[]): Map<string, { number: string | null }> {
-  const byHousehold = new Map<string, Array<{ number: string | null; issuedAt?: Date }>>();
+  const recorded = new Map<string, { number: string | null }>();
+  const legacy = new Map<string, Array<{ number: string | null; issuedAt?: Date }>>();
   for (const c of list) {
-    if (!c.householdId) continue;
     for (const i of c.invoices) {
       if (!HOUSEHOLD_INVOICE_RE.test(i.categoryName)) continue;
-      const g = byHousehold.get(c.householdId) ?? [];
-      g.push({ number: i.number ?? null, issuedAt: i.issuedAt });
-      byHousehold.set(c.householdId, g);
+      if (i.members) {
+        for (const id of i.members) if (!recorded.has(id)) recorded.set(id, { number: i.number ?? null });
+      } else if (c.householdId) {
+        const g = legacy.get(c.householdId) ?? [];
+        g.push({ number: i.number ?? null, issuedAt: i.issuedAt });
+        legacy.set(c.householdId, g);
+      }
     }
   }
   const out = new Map<string, { number: string | null }>();
   for (const c of list) {
-    if (!c.householdId || c.invoices.length) continue;
-    const inv = byHousehold.get(c.householdId)?.find((i) => !c.createdAt || !i.issuedAt || i.issuedAt >= c.createdAt);
+    if (c.invoices.length) continue;
+    const rec = recorded.get(c.membershipId);
+    if (rec) {
+      out.set(c.membershipId, rec);
+      continue;
+    }
+    if (!c.householdId) continue;
+    const inv = legacy.get(c.householdId)?.find((i) => !c.createdAt || !i.issuedAt || i.issuedAt >= c.createdAt);
     if (inv) out.set(c.membershipId, { number: inv.number });
   }
   return out;
@@ -59,8 +89,9 @@ export type FeeHousehold = { id: string; name: string; payerUserId: string | nul
 
 const hasFee = (c: FeeCandidate) => c.amountCents !== null && c.amountCents > 0;
 
-function single(c: FeeCandidate): FeeSnapshot {
-  return { id: c.membershipId, userId: c.userId, name: c.name, email: c.email, address: c.address, categoryId: c.categoryId, categoryName: c.categoryName ?? "Mitgliederbeitrag", amountCents: c.amountCents! };
+function single(c: FeeCandidate, locale?: string | null): FeeSnapshot {
+  // Ohne Kategorie (nur individueller Betrag): Bezeichnung in der Sprache des Vereins.
+  return { id: c.membershipId, userId: c.userId, name: c.name, email: c.email, address: c.address, categoryId: c.categoryId, categoryName: c.categoryName ?? getT(locale)("invoice.memberFee"), amountCents: c.amountCents! };
 }
 
 /** `locale`: Sprache des Vereins für die Bezeichnung der Haushaltsrechnung (Standard Deutsch). */
@@ -81,7 +112,7 @@ export function planFeeInvoices(candidates: FeeCandidate[], households: FeeHouse
       groups.set(c.householdId, g);
       continue;
     }
-    if (!billed(c) && hasFee(c)) out.push(single(c));
+    if (!billed(c) && hasFee(c)) out.push(single(c, locale));
   }
 
   for (const [householdId, members] of groups) {
@@ -91,7 +122,7 @@ export function planFeeInvoices(candidates: FeeCandidate[], households: FeeHouse
     const open = sorted.filter((m) => !billed(m) && hasFee(m));
     if (!open.length) continue;
     if (open.length === 1) {
-      out.push(single(open[0]!));
+      out.push(single(open[0]!, locale));
       continue;
     }
     const sum = open.reduce((s, m) => s + m.amountCents!, 0);
@@ -105,6 +136,7 @@ export function planFeeInvoices(candidates: FeeCandidate[], households: FeeHouse
       categoryId: categories.size === 1 ? open[0]!.categoryId : null,
       categoryName: householdInvoiceLabel(household.name, open.length, locale),
       amountCents: sum,
+      covers: open.map((m) => ({ membershipId: m.membershipId, name: m.name })),
     });
   }
   return out;

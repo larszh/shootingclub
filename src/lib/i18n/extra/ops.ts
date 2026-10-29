@@ -15,13 +15,13 @@ const de: Record<string, string> = {
 const fr: Record<string, string> = {
   "ops.accountDeleted.subject": "Ton compte Standchef a été supprimé",
   "ops.accountDeleted.title": "Compte supprimé",
-  "ops.accountDeleted.p1": "Comme demandé, nous avons supprimé ton compte Standchef. Nom, adresse e-mail, téléphone, adresse et photo de profil ont été effacés ; tu ne peux plus te connecter.",
+  "ops.accountDeleted.p1": "Comme demandé, nous avons supprimé ton compte Standchef. Nom, adresse e-mail, téléphone, adresse et photo de profil ont été effacés\u00A0; tu ne peux plus te connecter.",
   "ops.accountDeleted.p2": "Pour des raisons légales (obligation de conservation de 10 ans), les factures, réservations et résultats restent auprès de la société, mais sans ton nom.",
-  "ops.accountDeleted.p3": "Ce n'était pas toi ? Contacte immédiatement ta société.",
+  "ops.accountDeleted.p3": "Ce n'était pas toi\u00A0? Contacte immédiatement ta société.",
 
-  "ops.tenantDeletion.subject": "Suppression de «{tenant}» planifiée",
+  "ops.tenantDeletion.subject": "Suppression de «\u00A0{tenant}\u00A0» planifiée",
   "ops.tenantDeletion.title": "La société sera supprimée",
-  "ops.tenantDeletion.p1": "La société «{tenant}» a été marquée pour suppression et n'est plus accessible aux membres.",
+  "ops.tenantDeletion.p1": "La société «\u00A0{tenant}\u00A0» a été marquée pour suppression et n'est plus accessible aux membres.",
   "ops.tenantDeletion.p2": "Le {date}, toutes les données et tous les fichiers seront définitivement supprimés. D'ici là, la société peut être restaurée par le support Standchef.",
 };
 

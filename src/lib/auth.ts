@@ -4,6 +4,7 @@ import { cache } from "react";
 import { createHash, createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 import bcrypt from "bcryptjs";
 import { db } from "@/lib/db";
+import { describeUserAgent } from "@/lib/user-agent";
 
 const SESSION_COOKIE = "standchef_session";
 const SESSION_DAYS = 30;
@@ -20,10 +21,26 @@ export async function verifyPassword(pw: string, hash: string) {
   return bcrypt.compare(pw, hash);
 }
 
+/** Audit-Aktion beim Anmelden: hält Gerät (aus dem User-Agent) und IP der Sitzung fest (entityId = Sitzung). */
+export const SESSION_START_ACTION = "auth.session.start";
+
 export async function createSession(userId: string) {
   const token = randomBytes(32).toString("base64url");
   const expiresAt = new Date(Date.now() + SESSION_DAYS * 86_400_000);
-  await db.session.create({ data: { userId, tokenHash: hashToken(token), expiresAt } });
+  const session = await db.session.create({ data: { userId, tokenHash: hashToken(token), expiresAt } });
+  // Gerät und IP für «Angemeldete Geräte» festhalten (die Sitzung selbst hat dafür keine Felder).
+  try {
+    const h = await headers();
+    const ip = await clientIp();
+    await db.auditLog.create({
+      data: {
+        actorId: userId, action: SESSION_START_ACTION, entity: "Session", entityId: session.id,
+        detail: (describeUserAgent(h.get("user-agent")) ?? "Unbekanntes Gerät").slice(0, 200), ip: ip === "unknown" ? null : ip.slice(0, 191),
+      },
+    });
+  } catch {
+    // Protokollieren darf die Anmeldung nie verhindern.
+  }
   const jar = await cookies();
   jar.set(SESSION_COOKIE, token, {
     httpOnly: true,

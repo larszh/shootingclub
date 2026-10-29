@@ -104,4 +104,37 @@ describe("planFeeInvoices", () => {
       expect(cov.has("m-Vater")).toBe(false);
     });
   });
+  describe("Haushaltsrechnung mit festgehaltenen Mitgliedern", () => {
+    const before = new Date("2027-01-01T00:00:00Z");
+    const inv = { categoryName: "Familie Muster (3 Mitglieder)", number: "MB-2027-0002", issuedAt: new Date("2027-02-01T10:00:00Z"), members: ["m-Zoe", "m-Anna", "m-Max"] };
+    const family = () => [
+      c("Zoe", { householdId: "h1", createdAt: before, invoices: [inv] }),
+      c("Anna", { householdId: "h1", createdAt: before }),
+      c("Max", { householdId: "h1", createdAt: before }),
+    ];
+
+    it("plan hält die verrechneten Mitgliedschaften fest", () => {
+      const plan = planFeeInvoices([c("Vater", { householdId: "h1" }), c("Kind", { householdId: "h1" }), c("Mutter", { householdId: "h1", amountCents: 0 })], households, true);
+      expect(plan[0]!.covers?.map((x) => x.membershipId).sort()).toEqual(["m-Kind", "m-Vater"]);
+    });
+
+    it("zahlende Person nicht mehr im Haushalt: übrige bleiben abgedeckt", () => {
+      const [zoe, anna, max] = family();
+      const list = [{ ...zoe!, householdId: null, status: "LEFT" }, anna!, max!];
+      expect(planFeeInvoices(list, households, true)).toEqual([]);
+      expect(planFeeInvoices(list, households, false)).toEqual([]);
+      expect(householdCoverage(list).get("m-Anna")).toEqual({ number: "MB-2027-0002" });
+    });
+
+    it("später in den Haushalt aufgenommen (auch langjährig): nicht abgedeckt", () => {
+      const list = [...family(), c("Xaver", { householdId: "h1", createdAt: new Date("2020-01-01T00:00:00Z") })];
+      expect(householdCoverage(list).has("m-Xaver")).toBe(false);
+      expect(planFeeInvoices(list, households, true).map((p) => p.id)).toEqual(["m-Xaver"]);
+    });
+
+    it("in einen anderen Haushalt gewechselt: bleibt abgedeckt", () => {
+      const [zoe, anna, max] = family();
+      expect(householdCoverage([zoe!, { ...anna!, householdId: "h2" }, max!]).get("m-Anna")).toEqual({ number: "MB-2027-0002" });
+    });
+  });
 });
