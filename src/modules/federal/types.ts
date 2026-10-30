@@ -5,7 +5,7 @@
  * Wichtig: Fristen, Grenzwerte und Abläufe sind vom Verein einstellbar und hier nie als Tatsachen
  * hinterlegt. Die App unterstützt den Schützenmeister, ersetzt aber dessen Verantwortung nicht.
  */
-import { zurichParts } from "@/lib/time";
+import { addDays, zurichParts, zurichToUtc } from "@/lib/time";
 import { toCsv } from "@/modules/scores/analytics";
 
 export { evaluatePass, autoAttempt, passLabel } from "@/modules/scores/official";
@@ -170,6 +170,18 @@ export function mergeShootingDays(matchDates: readonly Date[], visitDates: reado
   for (const d of matchDates) add(d, "match");
   for (const d of visitDates) add(d, "visit");
   return [...byDay.entries()].sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)).map(([day, source]) => ({ date: dayToDbDate(day)!, source }));
+}
+
+/** Jahre, die der Schiessnachweis zurückschaut. */
+export const NACHWEIS_YEARS = 5;
+
+/** Zeitraum des Nachweises: die letzten fünf Jahre bis heute (Schweizer Kalendertage). */
+export function nachweisRange(now: Date) {
+  const today = swissDay(now);
+  let fromDay = `${Number(today.slice(0, 4)) - NACHWEIS_YEARS}${today.slice(4)}`;
+  // 29.2. gibt es nicht in jedem Jahr: auf den 1.3. ausweichen
+  if (!dayToDbDate(fromDay)) fromDay = addDays(fromDay.replace("-02-29", "-02-28"), 1);
+  return { from: zurichToUtc(fromDay, "00:00"), to: now, fromDay, today };
 }
 
 /** Schiesstage nach Jahr gruppiert (neueste zuerst). */

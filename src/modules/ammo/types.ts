@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { FUNDING_TYPES } from "./stock";
 
 /**
  * Munition (Modul «ammo»). Verkauf ausschliesslich auf Rechnung – Zahlungsanbieter wie Stripe oder
@@ -86,6 +87,7 @@ export const productSchema = z.object({
   stockUnits: z.preprocess((v) => (v === "" || v === null || v === undefined ? null : v), z.coerce.number().int("Bestand: ganze Zahl.").min(0, "Bestand darf nicht negativ sein.").max(1_000_000, "Bestand zu gross.").nullable()),
   isActive: z.boolean(),
   sortOrder: z.coerce.number().int().min(-1000).max(100_000).default(0),
+  fundingType: z.enum(FUNDING_TYPES, { message: "Ungültige Finanzierungsart." }).default("COMMERCIAL"),
 });
 
 export const orderLinesSchema = z

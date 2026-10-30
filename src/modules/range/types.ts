@@ -124,8 +124,10 @@ export const closeFlagsSchema = z.object({
 });
 
 /** Kurze Zufalls-ID für Check-ins (Doppeltipps und Offline-Wiederholungen ergeben keinen zweiten Eintrag). */
-export function newClientId() {
-  if (typeof crypto !== "undefined" && "randomUUID" in crypto) return crypto.randomUUID();
-  const bytes = crypto.getRandomValues(new Uint8Array(16));
-  return Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
+export function newClientId(): string {
+  const c: Crypto = globalThis.crypto;
+  if (typeof c.randomUUID === "function") return c.randomUUID();
+  // Ältere Browser ohne randomUUID (z.B. ohne HTTPS im lokalen Netz)
+  const bytes = c.getRandomValues(new Uint8Array(16));
+  return Array.from(bytes, (b: number) => b.toString(16).padStart(2, "0")).join("");
 }

@@ -17,6 +17,10 @@ import { ensureInvoiceForBooking } from "./invoice";
 import { startOnlinePayment } from "./payment-flow";
 import { notify, tenantUserIdsWithRole } from "@/lib/notify";
 import { formatDateTime } from "@/lib/i18n/core";
+import { checkBookingWindow, windowRejectMessage } from "@/modules/range/booking-window";
+
+/** Hinweis bei Reservationen der Verwaltung ausserhalb der bewilligten Schiesszeiten (Modul «range»). */
+const OUTSIDE_WINDOW_NOTE = "Achtung: ausserhalb der bewilligten Schiesszeiten";
 
 /** Verwaltungsrecht und aktives Modul «bookings» verlangen. */
 async function requireBookingsAdmin() {
@@ -143,6 +147,16 @@ export async function createBookingAction(_prev: ActionResult | null, formData: 
   if (!slot) return fail("Diese Zeit liegt ausserhalb der Öffnungszeiten.");
   if (!slot.available) return fail(`Dieser Termin ist nicht verfügbar (${slot.reason}).`);
 
+  // Standbetrieb: bewilligte Schiesszeiten. Mitglieder werden abgewiesen, die Verwaltung erhält einen Vermerk.
+  let windowNote: string | null = null;
+  if (ctx.hasModule("range")) {
+    const check = await checkBookingWindow(ctx.tenant.id, resourceId, slot.startsAt, slot.endsAt);
+    if (!check.ok) {
+      if (!ctx.can("tenant.manage")) return fail(windowRejectMessage(check));
+      windowNote = `${OUTSIDE_WINDOW_NOTE} (${check.allowed})`.slice(0, 191);
+    }
+  }
+
   const quote = quotePrice(option, slot.startsAt, settings, plan.persons);
   let paymentMethod: "NONE" | "INVOICE" | "ONLINE" = "NONE";
   if (quote.totalCents > 0) {
@@ -175,6 +189,7 @@ export async function createBookingAction(_prev: ActionResult | null, formData: 
     totalCents: quote.totalCents,
     currency: settings.currency,
     note: note ?? null,
+    adminNote: windowNote,
     confirmedAt: status === "CONFIRMED" ? new Date() : null,
   });
   if (!booking) return fail(SLOT_TAKEN);
@@ -559,6 +574,13 @@ export async function adminCreateBookingAction(_prev: ActionResult | null, formD
   if (!slot) return fail("Diese Zeit liegt ausserhalb der Öffnungszeiten.");
   if (!slot.available) return fail(`Dieser Termin ist nicht verfügbar (${slot.reason}).`);
 
+  // Standbetrieb: ausserhalb der bewilligten Schiesszeiten darf die Verwaltung reservieren, mit Vermerk.
+  let windowNote: string | null = null;
+  if (ctx.hasModule("range")) {
+    const check = await checkBookingWindow(ctx.tenant.id, resourceId, slot.startsAt, slot.endsAt);
+    if (!check.ok) windowNote = `${OUTSIDE_WINDOW_NOTE} (${check.allowed})`;
+  }
+
   const quote = quotePrice(option, slot.startsAt, settings, plan.persons);
   const now = new Date();
   let pricing: { basePriceCents: number; discountCents: number; discountReason: string | null; totalCents: number } = quote;
@@ -597,7 +619,7 @@ export async function adminCreateBookingAction(_prev: ActionResult | null, formD
     totalCents: pricing.totalCents,
     currency: settings.currency,
     note: note ?? null,
-    adminNote: `Erfasst durch ${ctx.user.name}`.slice(0, 191),
+    adminNote: [`Erfasst durch ${ctx.user.name}`, windowNote].filter(Boolean).join(" · ").slice(0, 191),
     confirmedAt: now,
     paidAt,
   });
@@ -607,7 +629,7 @@ export async function adminCreateBookingAction(_prev: ActionResult | null, formD
 
   revalidatePath("/bookings");
   revalidatePath("/admin/bookings");
-  redirect(`/bookings/${booking.id}?created=1`);
+  redirect(`/bookings/${booking.id}?created=1${windowNote ? "&outsideWindow=1" : ""}`);
 }
 
 // ---------------------------------------------------------------------------

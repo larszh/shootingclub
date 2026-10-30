@@ -1,3 +1,4 @@
+import { Suspense } from "react";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import {
@@ -46,6 +47,7 @@ import { canSeeFolder, loadFolderTree } from "@/modules/files/queries";
 import { FileTypeIcon } from "@/modules/files/ui/file-icon";
 import { PushPrompt } from "@/components/pwa/push-prompt";
 import { TwoFactorHint } from "../me/security/hint";
+import { ModuleStatusCards } from "./module-cards";
 
 type TenantCtx = AppContext & { tenant: ActiveTenant };
 
@@ -317,6 +319,13 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
       ) : null}
 
       {ctx.hasModule("events") ? <AnnouncementsCard ctx={ctx} /> : null}
+
+      {/* Stand, Schicht, Obligatorisch, Meisterschaft: eigene kleine Abfragen, gestreamt */}
+      {ctx.hasModule("range") || ctx.hasModule("shifts") || ctx.hasModule("federal") || ctx.hasModule("championship") ? (
+        <Suspense fallback={null}>
+          <ModuleStatusCards ctx={ctx} />
+        </Suspense>
+      ) : null}
 
       {scores ? (
         <>

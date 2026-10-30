@@ -1,7 +1,10 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
-import { Ban, CalendarPlus, CircleHelp, Clock, MapPin, UserRound, X } from "lucide-react";
+import { BadgeCheck, Ban, CalendarPlus, ChevronRight, CircleHelp, Clock, HandHelping, MapPin, UserRound, X } from "lucide-react";
+import Link from "next/link";
+import { db } from "@/lib/db";
 import { requireModule } from "@/lib/tenant";
+import { zurichParts } from "@/lib/time";
 import { cn } from "@/lib/utils";
 import { Alert, Card, PageHeader, SectionTitle, buttonClasses } from "@/components/ui";
 import { Avatar } from "@/components/avatar";
@@ -42,6 +45,12 @@ export default async function EventDetailPage({ params, searchParams }: { params
   const when = whenLabel(e);
   const shareText = [e.title, `${longDate(e.startsAt)} · ${when}`, e.location].filter(Boolean).join("\n");
   const pct = e.capacity ? Math.min(100, Math.round((d.seatsTaken / e.capacity) * 100)) : 0;
+  // Querverweise auf Welle-B-Module (nur wenn aktiv): Obligatorisch → Bundesübungen, Schichten → Helfer.
+  const federalLink = e.kind === "OBLIGATORY" && ctx.hasModule("federal");
+  const shifts = ctx.hasModule("shifts") && !e.isCancelled && !d.isPast
+    ? await db.shift.findMany({ where: { tenantId: ctx.tenant.id, eventId: e.id }, select: { capacity: true, _count: { select: { assignments: true } } }, take: 50 })
+    : [];
+  const openSlots = shifts.reduce((a, s) => a + Math.max(0, s.capacity - s._count.assignments), 0);
 
   return (
     <div>
@@ -79,6 +88,28 @@ export default async function EventDetailPage({ params, searchParams }: { params
         <a href={`/api/ical/event/${e.id}`} className={buttonClasses("secondary", "md", "flex-1")} download><CalendarPlus className="h-4 w-4" /> In Kalender</a>
         <ShareButton title={e.title} text={shareText} path={`/events/${e.id}`} />
       </div>
+
+      {federalLink || shifts.length ? (
+        <Card className="animate-rise mt-3 divide-y divide-line overflow-hidden">
+          {federalLink ? (
+            <Link href={`/federal?year=${zurichParts(e.startsAt).dateStr.slice(0, 4)}`} className="flex min-h-13 items-center gap-3 px-4 py-2.5 transition-colors hover:bg-surface-2">
+              <BadgeCheck className="h-5 w-5 shrink-0 text-accent" aria-hidden />
+              <span className="min-w-0 flex-1"><span className="block font-medium">Bundesübungen</span><span className="block text-xs text-ink-3">Status, Fristen und amtliche Resultate zum Obligatorisch</span></span>
+              <ChevronRight className="h-4 w-4 shrink-0 text-ink-3" aria-hidden />
+            </Link>
+          ) : null}
+          {shifts.length ? (
+            <Link href="/shifts" className="flex min-h-13 items-center gap-3 px-4 py-2.5 transition-colors hover:bg-surface-2">
+              <HandHelping className={cn("h-5 w-5 shrink-0", openSlots ? "text-warn" : "text-ok")} aria-hidden />
+              <span className="min-w-0 flex-1">
+                <span className="block font-medium">{openSlots ? "Helfer gesucht" : "Helfereinsätze"}</span>
+                <span className="block text-xs text-ink-3">{openSlots ? (openSlots === 1 ? "Noch 1 Platz frei – jetzt eintragen" : `Noch ${openSlots} Plätze frei – jetzt eintragen`) : "Alle Schichten sind besetzt"}</span>
+              </span>
+              <ChevronRight className="h-4 w-4 shrink-0 text-ink-3" aria-hidden />
+            </Link>
+          ) : null}
+        </Card>
+      ) : null}
 
       {e.rsvpEnabled ? (
         <>

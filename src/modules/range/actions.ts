@@ -1,8 +1,11 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { redirect } from "next/navigation";
 import { z } from "zod";
 import { db } from "@/lib/db";
+import { getCurrentUser } from "@/lib/auth";
+import { setActiveTenantCookie } from "@/lib/tenant";
 import { audit } from "@/lib/audit";
 import { notify, tenantUserIdsWithRole } from "@/lib/notify";
 import { fail, ok, type ActionResult } from "@/lib/action-result";
@@ -11,7 +14,7 @@ import { hasValidQualification } from "@/modules/qualifications/service";
 import { createWeaponLoan, returnWeaponLoan } from "@/modules/weapons/service";
 import { requireRange } from "./guard";
 import { ageOn, dayKeyToDbDate, dbDateKey, isPlausibleBirthYear, minorStatusFromBirthYear, parseTimeToMinutes } from "./logic";
-import { findOpenLoanForWeapon, getActiveRules } from "./queries";
+import { findOpenLoanForVisit, getActiveRules } from "./queries";
 import {
   clientIdSchema, closeFlagsSchema, guestSchema, idSchema, incidentSchema, kindLabel, quotaSchema, rulesSchema, severityInfo, visitUpdateSchema, windowSchema,
 } from "./types";
@@ -238,7 +241,7 @@ export async function deleteVisitAction(visitId: string): Promise<ActionResult> 
   if (!idSchema.safeParse(visitId).success) return fail("Ungültige Anfrage.");
   const v = await db.rangeVisit.findFirst({ where: { id: visitId, tenantId: ctx.tenant.id, rangeDay: { closedAt: null } }, include: { user: { select: { name: true } } } });
   if (!v) return fail("Eintrag nicht gefunden oder Standbuch abgeschlossen.");
-  if (v.clubWeaponId && (await findOpenLoanForWeapon(ctx.tenant.id, v.clubWeaponId))) return fail("Zuerst die Vereinswaffe zurücknehmen.");
+  if (await findOpenLoanForVisit(ctx.tenant.id, v)) return fail("Zuerst die Vereinswaffe zurücknehmen.");
   await db.rangeVisit.deleteMany({ where: { id: v.id, tenantId: ctx.tenant.id } });
   await audit({ tenantId: ctx.tenant.id, actorId: ctx.user.id, actorName: ctx.user.name, action: "range.visit.delete", entity: "RangeVisit", entityId: v.id, detail: v.user?.name ?? v.guestName ?? "" });
   revalidate();
@@ -258,7 +261,7 @@ export async function issueWeaponAction(visitId: string, weaponId: string): Prom
     include: { user: { select: { name: true, birthDate: true } }, rangeDay: { select: { date: true } } },
   });
   if (!v) return fail("Eintrag nicht gefunden oder bereits ausgecheckt.");
-  if (v.clubWeaponId && (await findOpenLoanForWeapon(tenantId, v.clubWeaponId))) return fail("Diese Person hat bereits eine Vereinswaffe.");
+  if (await findOpenLoanForVisit(tenantId, v)) return fail("Diese Person hat bereits eine Vereinswaffe.");
   const today = todayZurich();
   const year = Number(today.slice(0, 4));
   const isMinor = v.user
@@ -274,8 +277,8 @@ export async function issueWeaponAction(visitId: string, weaponId: string): Prom
   return ok(undefined, isMinor ? "Vereinswaffe ausgegeben (minderjährig – Meldefrist beachten)." : "Vereinswaffe ausgegeben.");
 }
 
-async function returnWeaponOfVisit(tenantId: string, weaponId: string, shots: number | null) {
-  const loan = await findOpenLoanForWeapon(tenantId, weaponId);
+async function returnWeaponOfVisit(tenantId: string, visit: { clubWeaponId: string | null; userId: string | null; guestName: string | null }, shots: number | null) {
+  const loan = await findOpenLoanForVisit(tenantId, visit);
   if (!loan) return { ok: true as const };
   const r = await returnWeaponLoan(tenantId, loan.id, shots);
   return r.ok ? { ok: true as const } : { ok: false as const, error: r.error ?? "Rückgabe fehlgeschlagen." };
@@ -287,9 +290,9 @@ export async function returnWeaponAction(visitId: string, shots: number | null):
   const ctx = await dutyCtx();
   if (!ctx) return fail(NO_RIGHT);
   if (!idSchema.safeParse(visitId).success || !shotsSchema.safeParse(shots).success) return fail("Ungültige Schusszahl.");
-  const v = await db.rangeVisit.findFirst({ where: { id: visitId, tenantId: ctx.tenant.id }, select: { clubWeaponId: true } });
+  const v = await db.rangeVisit.findFirst({ where: { id: visitId, tenantId: ctx.tenant.id }, select: { clubWeaponId: true, userId: true, guestName: true } });
   if (!v?.clubWeaponId) return fail("Keine Vereinswaffe ausgegeben.");
-  const r = await returnWeaponOfVisit(ctx.tenant.id, v.clubWeaponId, shots);
+  const r = await returnWeaponOfVisit(ctx.tenant.id, v, shots);
   if (!r.ok) return fail(r.error);
   revalidate();
   return ok(undefined, "Vereinswaffe zurückgenommen.");
@@ -303,7 +306,7 @@ export async function checkOutAction(visitId: string, shots: number | null = nul
   if (!v) return fail("Eintrag nicht gefunden.");
   if (v.checkedOutAt) return ok(undefined, "Bereits ausgecheckt.");
   if (v.clubWeaponId) {
-    const r = await returnWeaponOfVisit(ctx.tenant.id, v.clubWeaponId, shots);
+    const r = await returnWeaponOfVisit(ctx.tenant.id, v, shots);
     if (!r.ok) return fail(r.error);
   }
   await db.rangeVisit.updateMany({ where: { id: v.id, tenantId: ctx.tenant.id, checkedOutAt: null }, data: { checkedOutAt: new Date() } });
@@ -319,10 +322,10 @@ export async function closeDayAction(dayId: string, input: { usedAm: boolean; us
   const parsed = closeFlagsSchema.safeParse(input);
   if (!idSchema.safeParse(dayId).success || !parsed.success) return fail("Ungültige Eingabe.");
   const tenantId = ctx.tenant.id;
-  const day = await db.rangeDay.findFirst({ where: { id: dayId, tenantId, closedAt: null }, include: { visits: { where: { checkedOutAt: null }, select: { id: true, clubWeaponId: true } } } });
+  const day = await db.rangeDay.findFirst({ where: { id: dayId, tenantId, closedAt: null }, include: { visits: { where: { checkedOutAt: null }, select: { id: true, clubWeaponId: true, userId: true, guestName: true } } } });
   if (!day) return fail("Standbuch nicht gefunden oder bereits abgeschlossen.");
   for (const v of day.visits) {
-    if (v.clubWeaponId && (await findOpenLoanForWeapon(tenantId, v.clubWeaponId))) return fail("Es sind noch Vereinswaffen ausgegeben. Bitte zuerst zurücknehmen (Auschecken mit Schusszahl).");
+    if (await findOpenLoanForVisit(tenantId, v)) return fail("Es sind noch Vereinswaffen ausgegeben. Bitte zuerst zurücknehmen (Auschecken mit Schusszahl).");
   }
   const now = new Date();
   await db.$transaction([
@@ -358,6 +361,10 @@ export async function reopenDayAction(dayId: string): Promise<ActionResult> {
   const ctx = await adminCtx();
   if (!ctx) return fail(NO_RIGHT);
   if (!idSchema.safeParse(dayId).success) return fail("Ungültige Anfrage.");
+  const day = await db.rangeDay.findFirst({ where: { id: dayId, tenantId: ctx.tenant.id, closedAt: { not: null } }, select: { date: true, resourceId: true } });
+  if (!day) return fail("Standbuch nicht gefunden oder bereits offen.");
+  const other = await db.rangeDay.count({ where: { tenantId: ctx.tenant.id, date: day.date, resourceId: day.resourceId, closedAt: null } });
+  if (other > 0) return fail("Für diese Anlage und diesen Tag ist bereits ein anderes Standbuch offen.");
   const res = await db.rangeDay.updateMany({ where: { id: dayId, tenantId: ctx.tenant.id, closedAt: { not: null } }, data: { closedAt: null } });
   if (res.count === 0) return fail("Standbuch nicht gefunden oder bereits offen.");
   await audit({ tenantId: ctx.tenant.id, actorId: ctx.user.id, actorName: ctx.user.name, action: "range.day.reopen", entity: "RangeDay", entityId: dayId });
@@ -375,6 +382,17 @@ export async function acceptRulesAction(rulesId: string): Promise<ActionResult> 
   await db.rulesAcceptance.upsert({ where: { rulesId_userId: { rulesId, userId: ctx.user.id } }, create: { rulesId, userId: ctx.user.id }, update: {} });
   revalidate();
   return ok(undefined, "Standordnung bestätigt.");
+}
+
+/** QR-Code eines anderen Vereins gescannt: aktiven Verein wechseln und zurück zum Check-in. */
+export async function switchTenantForCheckInAction(tenantId: string) {
+  const user = await getCurrentUser();
+  if (!user) redirect("/login");
+  if (!idSchema.safeParse(tenantId).success) redirect("/range/checkin");
+  // user.memberships enthält nur Mitgliedschaften mit Zugang (nicht LEFT, Verein nicht gelöscht).
+  if (user.memberships.some((m) => m.tenantId === tenantId)) await setActiveTenantCookie(tenantId);
+  revalidatePath("/", "layout");
+  redirect("/range/checkin");
 }
 
 export async function selfCheckInAction(input: { dayId: string; clientId: string; acceptRulesId?: string | null; lane?: string; discipline?: string }): Promise<ActionResult<{ id: string } | { needsRules: string }>> {
@@ -420,11 +438,11 @@ export async function selfCheckInAction(input: { dayId: string; clientId: string
 export async function selfCheckOutAction(visitId: string): Promise<ActionResult> {
   const ctx = await requireRange();
   if (!idSchema.safeParse(visitId).success) return fail("Ungültige Anfrage.");
-  const v = await db.rangeVisit.findFirst({ where: { id: visitId, tenantId: ctx.tenant.id, userId: ctx.user.id }, select: { id: true, checkedOutAt: true, clubWeaponId: true } });
+  const v = await db.rangeVisit.findFirst({ where: { id: visitId, tenantId: ctx.tenant.id, userId: ctx.user.id }, select: { id: true, checkedOutAt: true, clubWeaponId: true, userId: true, guestName: true } });
   if (!v) return fail("Eintrag nicht gefunden.");
   if (v.checkedOutAt) return ok(undefined, "Bereits ausgecheckt.");
-  if (v.clubWeaponId && (await findOpenLoanForWeapon(ctx.tenant.id, v.clubWeaponId))) return fail("Bitte die Vereinswaffe beim Standdienst zurückgeben. Er checkt dich dann aus.");
-  await db.rangeVisit.updateMany({ where: { id: v.id, checkedOutAt: null }, data: { checkedOutAt: new Date() } });
+  if (await findOpenLoanForVisit(ctx.tenant.id, v)) return fail("Bitte die Vereinswaffe beim Standdienst zurückgeben. Er checkt dich dann aus.");
+  await db.rangeVisit.updateMany({ where: { id: v.id, tenantId: ctx.tenant.id, checkedOutAt: null }, data: { checkedOutAt: new Date() } });
   revalidate();
   return ok(undefined, "Ausgecheckt. Danke und bis bald!");
 }
@@ -624,8 +642,8 @@ export async function reportIncidentAction(_prev: ActionResult<{ id: string }> |
     });
   } catch (e) {
     if (isUniqueError(e) && i.clientId) {
-      const ex = await db.incident.findUnique({ where: { clientId: i.clientId }, select: { id: true } });
-      if (ex) return ok({ id: ex.id }, "Meldung erfasst.");
+      const ex = await db.incident.findUnique({ where: { clientId: i.clientId }, select: { id: true, tenantId: true } });
+      if (ex) return ex.tenantId === tenantId ? ok({ id: ex.id }, "Meldung erfasst.") : fail("Ungültige Anfrage.");
     }
     return handle(e);
   }

@@ -18,7 +18,7 @@ import { personsSuffix } from "@/modules/bookings/pricing";
 
 export const metadata: Metadata = { title: "Reservation" };
 
-export default async function BookingDetailPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ cancelled?: string; created?: string }> }) {
+export default async function BookingDetailPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ cancelled?: string; created?: string; outsideWindow?: string }> }) {
   const ctx = await requireModule("bookings");
   const { id } = await params;
   const sp = await searchParams;
@@ -39,6 +39,7 @@ export default async function BookingDetailPage({ params, searchParams }: { para
         action={<Badge tone={st.tone}>{st.label}</Badge>} />
 
       {sp.created ? <div className="mb-4"><Alert tone="ok">Buchung erfasst{b.user ? ` für ${b.user.name}` : ""}.</Alert></div> : null}
+      {sp.created && sp.outsideWindow && ctx.can("tenant.manage") ? <div className="mb-4"><Alert tone="warn">Achtung: Diese Buchung liegt ausserhalb der bewilligten Schiesszeiten. Der Hinweis ist unter «Notiz Verwaltung» gespeichert.</Alert></div> : null}
       {sp.cancelled ? <div className="mb-4"><Alert tone="info">Zahlung abgebrochen. Du kannst sie unten erneut starten.</Alert></div> : null}
       {b.status === "PENDING" ? <div className="mb-4"><Alert tone="info">Die Verwaltung prüft deine Anfrage. {b.paymentMethod === "ONLINE" ? "Bezahlt wird nach der Freigabe." : ""}</Alert></div> : null}
       {b.status === "REJECTED" ? <div className="mb-4"><Alert>Diese Anfrage wurde abgelehnt.{b.adminNote ? ` Grund: ${b.adminNote}` : ""}</Alert></div> : null}

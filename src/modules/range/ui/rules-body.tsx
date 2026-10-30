@@ -18,6 +18,7 @@ export function RulesBody({ body, className }: { body: string; className?: strin
         if (b.type === "h1") return <h2 key={i} className="pt-1 text-lg font-semibold text-ink"><Parts parts={b.parts} /></h2>;
         if (b.type === "h2") return <h3 key={i} className="pt-1 font-semibold text-ink"><Parts parts={b.parts} /></h3>;
         if (b.type === "p") return <p key={i}><Parts parts={b.parts} /></p>;
+        if (b.type !== "ul" && b.type !== "ol") return null;
         const List = b.type === "ul" ? "ul" : "ol";
         return (
           <List key={i} className={cn("space-y-1 pl-5", b.type === "ul" ? "list-disc" : "list-decimal")}>

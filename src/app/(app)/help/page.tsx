@@ -292,12 +292,171 @@ const ENTRIES: FaqEntry[] = [
     </>,
   ),
   entry(
+    "stand-checkin",
+    "member",
+    "Wie checke ich am Stand ein?",
+    "Standbetrieb Check-in einchecken auschecken QR-Code Standordnung Standbuch Stand offen",
+    <>
+      <p>Scanne den QR-Code am Stand oder öffne <Link href="/range">Standbetrieb</Link> → «Einchecken». Beim ersten Mal bestätigst du die aktuelle Standordnung. Beim Gehen tippst du auf «Auschecken».</p>
+      <p>So weiss der Standchef, wer am Stand ist. Die Einträge landen im Standbuch des Vereins.</p>
+    </>,
+  ),
+  entry(
+    "helfer",
+    "member",
+    "Wie trage ich mich für einen Helfereinsatz ein?",
+    "Helfereinsätze Schicht eintragen austragen Arbeitsstunden Ersatzabgabe Stunden erfassen Kalender",
+    <>
+      <p>Unter <Link href="/shifts">Helfereinsätze</Link> siehst du offene Schichten. Mit «Eintragen» übernimmst du einen Platz, bis zum Beginn kannst du dich wieder austragen. Unter «Meine» lädst du eine Schicht in deinen Kalender.</p>
+      <p>Hat dein Verein Pflicht-Arbeitsstunden, siehst du unter «Stunden», wie viele dir noch fehlen. Arbeit ausserhalb von Schichten erfasst du dort selbst, der Vorstand bestätigt sie.</p>
+    </>,
+  ),
+  entry(
+    "obligatorisch",
+    "member",
+    "Wo sehe ich, ob mein Obligatorisch bestanden ist?",
+    "Bundesübungen Obligatorisch Feldschiessen bestanden verblieben amtlich Schiessnachweis Bestätigung Waffenerwerb",
+    <>
+      <p>Unter <Link href="/federal">Bundesübungen</Link> siehst du deinen Stand im laufenden Jahr. Er erscheint, sobald der Schützenmeister dein Resultat amtlich bestätigt hat. Bestätigte Resultate kannst du nicht mehr selbst ändern.</p>
+      <p>Unter «Schiessnachweis» findest du deine Schiesstage der letzten Jahre und eine Bestätigung zum Ausdrucken. Welche Nachweise eine Behörde verlangt, entscheidet die zuständige Stelle.</p>
+    </>,
+  ),
+  entry(
+    "meisterschaft",
+    "member",
+    "Wie wird die Jahresmeisterschaft berechnet?",
+    "Jahresmeisterschaft Rangliste Rang Streichresultate beste Resultate Kategorie Bonus Pflichtprogramm nicht klassiert",
+    <>
+      <p>Für jedes Programm der Meisterschaft zählen deine besten Resultate (z.B. die besten 3), die übrigen werden gestrichen. Fehlt ein Pflichtprogramm, bist du «nicht klassiert». Die genauen Regeln stehen auf der Seite der <Link href="/championship">Meisterschaft</Link>; massgebend ist das Reglement deines Vereins.</p>
+    </>,
+  ),
+  entry(
+    "kurse",
+    "member",
+    "Wo sehe ich meinen Stand im Kurs?",
+    "Kurse Jungschützenkurs J+S Ausbildung Präsenz Pflichtprogramme Kursausweis",
+    <>
+      <p>Unter <Link href="/courses">Kurse</Link> siehst du deine Kurse mit Präsenz und den Pflichtprogrammen, die du schon bestanden hast. Den Kursausweis erstellt die Kursleitung nach dem Abschluss.</p>
+    </>,
+  ),
+  entry(
+    "amtlich-bestaetigen",
+    "admin",
+    "Wie bestätige ich amtliche Resultate (Obligatorisch, Feldschiessen)?",
+    "amtlich bestätigen Schützenmeister Obligatorisch Feldschiessen Mindestpunktzahl Nuller Versuch SAT-Admin Export Verbliebene Fristen",
+    <>
+      <ol>
+        <li>Beim Programm die amtliche Art (OP, FS) und die Bestehensregeln einstellen. Werte bitte mit den aktuellen Vorgaben (VBS/SSV/Kanton) prüfen.</li>
+        <li>Unter <Link href="/federal">Bundesübungen</Link> einen Durchgang zum Obligatorisch-Anlass starten; angemeldete Mitglieder werden übernommen.</li>
+        <li>Im Durchgang pro Person «Amtlich bestätigen». Danach ist das Resultat für die Schützen gesperrt.</li>
+      </ol>
+      <p>Für die Meldung gibt es einen CSV-Export und eine Druckliste für SAT-Admin. AHV-Nummern speichert Standchef nicht. Die Verantwortung für die Meldung bleibt beim Schützenmeister.</p>
+    </>,
+  ),
+  entry(
+    "standbuch",
+    "admin",
+    "Wie führe ich als Standchef das Standbuch?",
+    "Standbuch Standchef Standdienst öffnen schliessen Gäste Ausweis Minderjährige Halbtage Vorfall Übergabe",
+    <>
+      <ol>
+        <li>Unter <Link href="/range">Standbetrieb</Link> «Stand öffnen» – für eine Anlage oder die ganze Anlage.</li>
+        <li>Mitglieder checken selbst per QR-Code ein, Gäste erfasst du direkt (Name, Jahrgang, «Ausweis geprüft»).</li>
+        <li>Am Schluss «Tag abschliessen»: Offene Besuche werden ausgecheckt, die Schiesshalbtage werden vorgeschlagen.</li>
+      </ol>
+      <p>Vorfälle meldest du unter «Vorfälle». Die App hilft beim Dokumentieren, die Verantwortung am Stand bleibt beim Standchef.</p>
+    </>,
+  ),
+  entry(
+    "schiesszeiten",
+    "admin",
+    "Wo erfasse ich Standordnung, Schiesszeiten und Kontingent?",
+    "Standordnung Schiesszeiten bewilligt Kontingent Halbtage Reservationen ausserhalb Version veröffentlichen",
+    <>
+      <p>Unter <Link href="/admin/range/rules">Standordnung</Link> schreibst und veröffentlichst du die Standordnung; Mitglieder bestätigen sie beim Einchecken. Unter <Link href="/admin/range/times">Schiesszeiten</Link> erfasst du die bewilligten Zeiten und das Halbtage-Kontingent pro Jahr.</p>
+      <p>Reservationen ausserhalb der bewilligten Zeiten werden für Mitglieder abgelehnt. Werte bitte mit der Bewilligung eurer Gemeinde bzw. des Kantons abgleichen.</p>
+    </>,
+  ),
+  entry(
+    "vereinswaffen",
+    "admin",
+    "Wie leihe ich eine Vereinswaffe aus?",
+    "Vereinswaffen Ausleihe Quittung Rückgabe Schusszähler Wartung Minderjährige Meldung gesperrt",
+    <>
+      <p>Unter <Link href="/weapons">Vereinswaffen</Link> eine verfügbare Waffe öffnen und «Ausleihen» wählen – an ein Mitglied oder mit freiem Namen. Die Quittung kannst du ausdrucken und unterschreiben lassen. Bei der Rückgabe trägst du die Schusszahl ein; ist die Wartung fällig, wird die Waffe automatisch auf «Wartung» gesetzt.</p>
+      <p>Bei Minderjährigen erinnert die App an eine allfällige Meldefrist. Ob und wie gemeldet werden muss, bitte mit den aktuellen Vorgaben (Waffengesetz, Kanton) prüfen.</p>
+    </>,
+  ),
+  entry(
+    "munitionskontrolle",
+    "admin",
+    "Wie führe ich die Munitionskontrolle?",
+    "Munitionskontrolle Bestand Eingang Abgabe Rücknahme Korrektur Inventur Jahresübersicht Bundesmunition subventioniert",
+    <>
+      <p>Unter <Link href="/admin/ammo/stock">Munitionskontrolle</Link> buchst du Eingänge, Abgaben am Stand, Rücknahmen und Korrekturen. Verkäufe über das Munitionsmodul werden automatisch gebucht. Mit der Inventur gleichst du den gezählten Bestand ab.</p>
+      <p>Die Jahresübersicht zeigt die Bewegungen getrennt nach Finanzierung (Bund, subventioniert, kommerziell) – zum Ausdrucken oder als CSV.</p>
+    </>,
+  ),
+  entry(
+    "arbeitsstunden",
+    "admin",
+    "Wie plane ich Helfereinsätze und verrechne die Ersatzabgabe?",
+    "Helfereinsätze Schichten planen kopieren Arbeitsstunden Pflicht Ersatzabgabe Rechnung bestätigen erledigt",
+    <>
+      <ol>
+        <li>Unter <Link href="/admin/shifts">Helfereinsätze</Link> Schichten erfassen – zu einem Anlass oder als Standdienst – und bei Bedarf auf mehrere Daten kopieren.</li>
+        <li>Nach dem Einsatz «erledigt» bestätigen; die Stunden werden angerechnet.</li>
+        <li>Unter <Link href="/admin/shifts/settings">Einstellungen</Link> Pflichtstunden und Ansatz pro fehlende Stunde festlegen; unter «Stunden» die Ersatzabgabe als QR-Rechnung verrechnen.</li>
+      </ol>
+      <p>Massgebend sind die Statuten bzw. Beschlüsse eures Vereins.</p>
+    </>,
+  ),
+  entry(
+    "qualifikationen",
+    "admin",
+    "Wofür sind Qualifikationen?",
+    "Qualifikationen Schützenmeister J+S Leiter Erste Hilfe Standchef gültig bis abgelaufen Qualifikationsschiessen",
+    <>
+      <p>Unter <Link href="/admin/qualifications">Qualifikationen</Link> erfasst du z.B. Schützenmeister, J+S-Leitung oder Erste Hilfe mit Gültigkeit. Schichten und Standdienst warnen, wenn niemand mit der nötigen Qualifikation eingeteilt ist; vor dem Ablauf gibt es eine Erinnerung.</p>
+      <p>Die App ersetzt keine offizielle Anerkennung. Bitte keine AHV-Nummern erfassen.</p>
+    </>,
+  ),
+  entry(
+    "kurse-admin",
+    "admin",
+    "Wie führe ich einen Jungschützenkurs oder J+S-Kurs?",
+    "Kurse Jungschützenkurs J+S NDS Teilnehmende Import Präsenz Pflichtprogramme Kursausweis Qualifikationsschiessen",
+    <>
+      <p>Unter <Link href="/courses">Kurse</Link> legst du den Kurs an, erfasst Teilnehmende (auch per CSV-Import) und Kurstage. Die Präsenz nimmst du am Handy auf; die Präsenzliste gibt es als CSV für die Übertragung in die NDS. Pflichtprogramme zeigen, wer was bestanden hat.</p>
+      <p>Unter «Qualifikationsschiessen» definierst du Regeln und erteilst danach Qualifikationen. Details der Kursarten bitte mit den aktuellen Vorgaben (VBS, BASPO/J+S) prüfen.</p>
+    </>,
+  ),
+  entry(
+    "live-rangliste",
+    "admin",
+    "Wie zeige ich die Live-Rangliste auf dem Bildschirm im Schützenhaus?",
+    "Live-Rangliste Bildschirm TV Fernseher Link QR-Code Anzeige Wettkampf Resultate live",
+    <>
+      <p>Unter <Link href="/admin/live">Live-Rangliste</Link> eine Anzeige für ein Programm oder einen Anlass anlegen. Den geheimen Link öffnest du im Browser des Bildschirms – ohne Anmeldung. Die Anzeige aktualisiert sich selbst und läuft zum eingestellten Zeitpunkt ab. Mit «Neuer Link» machst du einen weitergegebenen Link ungültig.</p>
+    </>,
+  ),
+  entry(
+    "meisterschaft-admin",
+    "admin",
+    "Wie richte ich die Jahresmeisterschaft ein?",
+    "Jahresmeisterschaft einrichten Programme Gewichtung Streichresultate Kategorien Bonus veröffentlichen GV Rangliste drucken",
+    <>
+      <p>Unter <Link href="/championship">Jahresmeisterschaft</Link> Zeitraum, Programme (Pflicht, Gewichtung) und Anzahl gewerteter Resultate festlegen, optional Kategorien mit Bonus. Die Rangliste rechnet sich laufend aus den abgeschlossenen Durchgängen. Mit «Veröffentlichen» sehen sie alle Mitglieder; für die GV gibt es eine Druckansicht.</p>
+    </>,
+  ),
+  entry(
     "module",
     "admin",
     "Welche Module gibt es und wie schalte ich sie ein?",
-    "Module einschalten ausschalten Punkteerfassung Zielscheiben Anlässe Reservationen Mitgliederbeiträge Dateiablage Chat Munition",
+    "Module einschalten ausschalten Punkteerfassung Zielscheiben Anlässe Reservationen Mitgliederbeiträge Dateiablage Chat Munition Bundesübungen Standbetrieb Vereinswaffen Helfereinsätze Kurse Jahresmeisterschaft",
     <>
-      <p>Unter <Link href="/admin">Verein</Link> schaltest du Module pro Verein ein oder aus: Punkteerfassung, Zielscheiben, Anlässe & News, Reservationen, Mitgliederbeiträge, Dateiablage, Chat und Munition. Ausgeschaltete Module verschwinden für alle Mitglieder aus dem Menü – Daten bleiben erhalten.</p>
+      <p>Unter <Link href="/admin">Verein</Link> schaltest du Module pro Verein ein oder aus: Punkteerfassung, Zielscheiben, Anlässe & News, Reservationen, Mitgliederbeiträge, Dateiablage, Chat, Munition, Bundesübungen, Standbetrieb, Vereinswaffen, Helfereinsätze, Kurse und Jahresmeisterschaft. Ausgeschaltete Module verschwinden für alle Mitglieder aus dem Menü – Daten bleiben erhalten.</p>
+      <p>Mobil liegen weniger genutzte Module unter «Mehr», auf dem Computer in der Seitenleiste unter «Schiessen» und «Verein».</p>
     </>,
   ),
 ];

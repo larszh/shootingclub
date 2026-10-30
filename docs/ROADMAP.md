@@ -33,24 +33,27 @@ Details im README.
 - **Datenschutz (revDSG)**: eigener Datenexport als ZIP, Kontolöschung mit Pseudonymisierung, Vereinsarchiv für Inhaber, Protokoll pro Verein und global mit CSV.
 - **Betrieb**: Vereine mit 30 Tagen Frist löschen und wiederherstellen, DB-Backup vor jeder Migration mit Rotation und Wiederherstellungsbefehl, Unit-Tests (Vitest) in CI, gespeicherte Resultat-Totale für schnelle Ranglisten.
 
+### Welle B: Vereinsbetrieb (erledigt)
+- **Bundesübungen** (`/federal`): amtliche Art pro Programm (OP/FS/QUAL) mit einstellbaren Bestehensregeln, «Amtlich bestätigen» durch den Schützenmeister mit Versuchsnummer und Sperre gegen Änderungen, Durchgang zum Obligatorisch-Anlass, Verbliebene, Fristen pro Jahr, SAT-Admin-Export (CSV und Druckliste, ohne AHV-Nummern), Schiessnachweis mit Bestätigung zum Drucken, Erinnerungen.
+- **Standbetrieb** (`/range`): Standbuch mit Standchef, QR-Check-in mit Bestätigung der Standordnung, Gäste, Vereinswaffen am Stand, Tagesabschluss mit Schiesshalbtagen, bewilligte Schiesszeiten (auch als Prüfung bei Reservationen) und Halbtage-Kontingent, Vorfälle, Jahresbericht und CSV.
+- **Vereinswaffen** (`/weapons`): Inventar, Ausleihe mit Quittung, Rückgabe mit Schusszähler, Wartung, Meldefrist bei Minderjährigen; **Munitionskontrolle** (`/admin/ammo/stock`) mit Bewegungsjournal, Inventur und Jahresübersicht nach Finanzierung.
+- **Helfereinsätze** (`/shifts`): Schichten zu Anlässen und Standdienst, Ein- und Austragen, Arbeitsstunden-Konto, Ersatzabgabe als QR-Rechnung, **Qualifikationen** (`/admin/qualifications`) mit Ablaufwarnung.
+- **Kurse** (`/courses`): Jungschützenkurs, J+S, Ausbildung mit Teilnehmenden (CSV-Import), Kurstagen, Präsenz am Handy, Präsenz-CSV für die NDS, Pflichtprogrammen, Kursausweis; Qualifikationsschiessen mit Regeln.
+- **Jahresmeisterschaft** (`/championship`): Programme mit Gewichtung, Streichresultaten und Kategorien, Rangliste mit «Mein Stand», Veröffentlichen, GV-Druck und CSV.
+- **Live-Rangliste** (`/admin/live`, öffentlich `/live/[token]`): Vollbild für den Bildschirm im Schützenhaus mit SSE-Aktualisierung, ablaufendem geheimem Link und QR-Code.
+- **Integration**: Navigation mit Gruppen «Schiessen» und «Verein», Statuskarten auf der Startseite, Querverweise im Anlass (Obligatorisch, Helfer gesucht), Erinnerungen über `REMINDER_HOOKS` (Schichten, Vereinswaffen, Bundesübungen), Demo-Daten für alle Module, FAQ.
+- **Offen aus Welle B**: Feldschiessen-Auszeichnungen (Kranz/Karte) mit Limitentabelle; Einstellungen pro Verein für Waffen-Meldefristen und Sperrgrund als eigene Felder (braucht Schema-Erweiterung); Pro-rata-Arbeitsstunden bei Eintritt im Lauf des Jahres; Vor- und Nachname getrennt für den SAT-Export.
+
 ## Nächste Wellen
 
-### Welle B: Vereinsbetrieb (Datenmodell steht bereits)
-- **Standbetrieb**: Schiesstage, Standblatt/Besucherliste mit QR-Check-in, Standregeln mit Bestätigung, Schiessfenster und Kontingente, Vorfälle melden (`RangeDay`, `RangeVisit`, `RangeRules`, `RulesAcceptance`, `ShootingWindow`, `ShootingQuota`, `Incident`).
-- **Bundesübungen**: Obligatorisch und Feldschiessen mit offiziellem Programm, Bestanden-Prüfung (Mindestpunkte, Nuller), Visierung durch Schützenmeister, Wiederholungen (`Program.officialKind`, `MatchParticipant.passed/verifiedById`), Munitionsabrechnung nach Bund/Verein (`AmmoProduct.fundingType`).
-- **Kurse**: Jungschützen- und Einsteigerkurse mit Teilnehmenden, Lektionen, Präsenz und Resultaten (`Course*`), Qualifikationen mit Regeln und Ablauf (`Qualification`, `QualificationRule`).
-- **Schichten / Arbeitsstunden**: Helfereinsätze (Schützenfest, Standdienst) mit Einteilung, Soll-Stunden pro Mitglied, Erfassung und Befreiungen (`Shift`, `ShiftAssignment`, `WorkHoursSettings`, `WorkLog`).
-- **Waffen**: Vereinswaffen mit Ausleihe, Rückgabe und Service-Historie (`ClubWeapon`, `WeaponLoan`, `WeaponService`), Munitionsbestand mit Bewegungen (`AmmoStockMovement`).
-- **Meisterschaft**: Vereinsmeisterschaft über mehrere Programme mit Streichresultaten und Kategorien (`Championship`, `ChampionshipProgram`).
-- **Live-Rangliste**: Bildschirm im Schützenhaus mit laufender Rangliste (`LiveBoard`), Aktualisierung über den Chat-Bus/SSE.
-- **Erinnerungen** dieser Module über `REMINDER_HOOKS` (`src/lib/jobs/registry.ts`) und `notify()`.
-
 ### Welle C: Anbindungen
-- **TWINT** (über Zahlungsanbieter) für Beiträge, Reservationen und Munition.
-- **Banana Buchhaltung**: Export der Buchungen (Beiträge, Reservationen, Munition) im Banana-Format.
-- **Elektronische Trefferanzeige**: Import von Resultaten aus SIUS/Polytronic/Meyton (CSV/XML).
-- **Widgets**: einbettbare Termine, Ranglisten und Reservationskalender für die Vereinswebsite.
+- **TWINT / Payrexx** (über Zahlungsanbieter) für Beiträge, Reservationen und Munition (ausser Gratis-Bundesmunition).
+- **Buchhaltung**: Export der Buchungen (Beiträge, Reservationen, Munition) für Banana und bexio.
+- **Elektronische Trefferanzeige**: Import von Resultaten aus Meyton und SIUS (CSV), später Polytronic.
+- **iCal-Verbesserungen und Widgets**: einbettbare Termine, Ranglisten und Reservationskalender für die Vereinswebsite.
 - **Gemeinsame Anlagen**: mehrere Vereine teilen eine Schiessanlage (Belegung, Kosten, Standbetrieb).
+- **Kantonalverband**: Ansicht über mehrere Vereine (z.B. Obligatorisch-Statistik, Meldungen).
+- **Weitere Übersetzungen** (FR/IT für die Module der Welle B und die Admin-Seiten).
 
 ### Mehrsprachigkeit, nächste Schritte
 1. App-Shell und /me übersetzen, `<html lang>` aus `getRequestLocale()`.
@@ -62,7 +65,7 @@ Details im README.
 
 ### Produkt
 - **Live-Wettkampf**: Gegner sehen die Eingabe des anderen in Echtzeit (Server-Sent Events oder Polling alle paar Sekunden auf der Match-Seite).
-- **Vereinsmeisterschaft** mit eigener Wertung über mehrere Programme und Vergleich mit dem eigenen Schnitt.
+- **Vereinsmeisterschaft**: Vergleich mit dem eigenen Schnitt (die Wertung selbst ist mit der Jahresmeisterschaft umgesetzt).
 - **Trefferbild**: Optional pro Schuss die Lage auf der Scheibe antippen (x/y), daraus Streukreis und Mittelpunkt berechnen. Kombiniert Modul Scheiben und Punkte.
 - **Beitritt mit Freigabe** durch Admin (statt sofort per Code), Gäste nachträglich einem Konto zuordnen.
 - **Programm-Import/-Export** als JSON, damit Vereine Programme tauschen können.

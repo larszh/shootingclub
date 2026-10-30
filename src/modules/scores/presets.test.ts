@@ -5,8 +5,7 @@ import { programInputSchema } from "./types";
 describe("PROGRAM_PRESETS", () => {
   it("sind gültige Programme", () => {
     for (const p of PROGRAM_PRESETS) {
-      const { key: _key, aliases: _aliases, ...input } = p;
-      const r = programInputSchema.safeParse(input);
+      const r = programInputSchema.safeParse(p);
       expect(r.success, `${p.name}: ${r.success ? "" : r.error.issues[0]?.message}`).toBe(true);
     }
   });

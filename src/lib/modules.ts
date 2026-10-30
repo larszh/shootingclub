@@ -32,7 +32,7 @@ export const MODULES: ModuleDefinition[] = [
   {
     key: "scores",
     name: "Punkteerfassung",
-    description: "Programme definieren, Resultate erfassen, Wettkämpfe mit Vereinskollegen oder Gästen.",
+    description: "Programme definieren, Resultate erfassen, Wettkämpfe mit Vereinskollegen oder Gästen, Live-Rangliste für den Bildschirm im Schützenhaus.",
     href: "/scores",
     status: "ready",
     defaultEnabled: true,
@@ -88,7 +88,7 @@ export const MODULES: ModuleDefinition[] = [
   {
     key: "ammo",
     name: "Munition",
-    description: "Munition im Verein bestellen und ausgeben, Abrechnung nur auf Rechnung mit QR-Rechnung.",
+    description: "Munition im Verein bestellen und ausgeben, Abrechnung nur auf Rechnung mit QR-Rechnung, Bestandeskontrolle mit Inventur und Jahresübersicht.",
     href: "/ammo",
     status: "ready",
     defaultEnabled: false,

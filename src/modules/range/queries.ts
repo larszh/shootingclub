@@ -69,7 +69,8 @@ export async function listMemberOptions(tenantId: string): Promise<MemberOption[
 export async function listOpenDays(tenantId: string) {
   return db.rangeDay.findMany({
     where: { tenantId, closedAt: null },
-    include: { resource: { select: { name: true } }, _count: { select: { visits: true } } },
+    // Anzahl der Personen, die gerade eingecheckt sind.
+    include: { resource: { select: { name: true } }, _count: { select: { visits: { where: { checkedOutAt: null } } } } },
     orderBy: [{ date: "desc" }, { openedAt: "asc" }],
   });
 }
@@ -98,14 +99,22 @@ export async function getDayBoard(tenantId: string, dayId: string) {
   const [weapons, hosts, openLoans] = await Promise.all([
     weaponIds.length ? db.clubWeapon.findMany({ where: { tenantId, id: { in: weaponIds } }, select: { id: true, name: true, caliber: true } }) : [],
     hostIds.length ? db.user.findMany({ where: { id: { in: hostIds } }, select: { id: true, name: true } }) : [],
-    weaponIds.length ? db.weaponLoan.findMany({ where: { tenantId, weaponId: { in: weaponIds }, returnedAt: null }, select: { id: true, weaponId: true } }) : [],
+    weaponIds.length ? db.weaponLoan.findMany({ where: { tenantId, weaponId: { in: weaponIds }, returnedAt: null }, select: { id: true, weaponId: true, userId: true, borrowerName: true } }) : [],
   ]);
   return { day, weapons, hosts, openLoans };
 }
 
-/** Offene Leihe einer Vereinswaffe (für Rückgabe beim Auschecken). */
-export async function findOpenLoanForWeapon(tenantId: string, weaponId: string) {
-  return db.weaponLoan.findFirst({ where: { tenantId, weaponId, returnedAt: null }, orderBy: { loanedAt: "desc" }, select: { id: true } });
+/** Gehört eine offene Leihe zu diesem Besuch? (gleiche Waffe und gleiche Person bzw. gleicher Gastname) */
+export function loanMatchesVisit(loan: { weaponId: string; userId: string | null; borrowerName: string | null }, visit: { clubWeaponId: string | null; userId: string | null; guestName: string | null }) {
+  if (!visit.clubWeaponId || loan.weaponId !== visit.clubWeaponId) return false;
+  return visit.userId ? loan.userId === visit.userId : !loan.userId && loan.borrowerName === visit.guestName;
+}
+
+/** Offene Leihe der Vereinswaffe eines Besuchs (für Rückgabe beim Auschecken). */
+export async function findOpenLoanForVisit(tenantId: string, visit: { clubWeaponId: string | null; userId: string | null; guestName: string | null }) {
+  if (!visit.clubWeaponId) return null;
+  const loans = await db.weaponLoan.findMany({ where: { tenantId, weaponId: visit.clubWeaponId, returnedAt: null }, orderBy: { loanedAt: "desc" }, select: { id: true, weaponId: true, userId: true, borrowerName: true } });
+  return loans.find((l) => loanMatchesVisit(l, visit)) ?? null;
 }
 
 /** Vorschlag für die Halbtage beim Abschliessen (offene Besuche zählen bis jetzt). */

@@ -8,6 +8,7 @@ import {
   formatDbDate,
   groupDaysByYear,
   mergeShootingDays,
+  nachweisRange,
   opStatusByUser,
   parseYear,
   rankFs,
@@ -139,5 +140,17 @@ describe("SAT-Export", () => {
     expect(line).toContain("'@Ort");
     expect(line).toContain("'-Prog");
     expect(line).toContain(";nein;");
+  });
+});
+
+describe("nachweisRange", () => {
+  it("schaut fünf Jahre zurück", () => {
+    const r = nachweisRange(new Date("2026-10-29T10:00:00Z"));
+    expect(r.fromDay).toBe("2021-10-29");
+    expect(r.today).toBe("2026-10-29");
+  });
+
+  it("weicht beim 29. Februar auf den 1. März aus", () => {
+    expect(nachweisRange(new Date("2028-02-29T10:00:00Z")).fromDay).toBe("2023-03-01");
   });
 });

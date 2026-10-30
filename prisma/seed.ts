@@ -7,7 +7,13 @@ import { TARGET_PRESETS } from "../src/modules/targets/presets";
 import { seedDemoEvents } from "../src/modules/events/seed";
 import { seedDemoFiles } from "../src/modules/files/seed";
 import { seedDemoChat } from "../src/modules/chat/seed";
-import { seedDemoAmmo } from "../src/modules/ammo/seed";
+import { seedDemoAmmo, seedDemoAmmoStock } from "../src/modules/ammo/seed";
+import { seedDemoFederal } from "../src/modules/federal/seed";
+import { seedDemoRange } from "../src/modules/range/seed";
+import { seedDemoWeapons } from "../src/modules/weapons/seed";
+import { seedDemoShifts } from "../src/modules/shifts/seed";
+import { seedDemoCourses } from "../src/modules/courses/seed";
+import { seedDemoChampionship } from "../src/modules/championship/seed";
 
 const u = new URL(process.env.DATABASE_URL ?? "mysql://standchef:standchef@127.0.0.1:3306/standchef");
 const db = new PrismaClient({
@@ -134,6 +140,19 @@ async function main() {
     await seedDemoFiles(db, demo.id, anna.id);
     await seedDemoChat(db, demo.id, [anna.id, beat.id, admin.id]);
     await seedDemoAmmo(db, demo.id);
+
+    // Welle B: Bundesübungen, Standbetrieb, Vereinswaffen, Helfereinsätze, Kurse, Jahresmeisterschaft (idempotent)
+    for (const moduleKey of ["federal", "range", "weapons", "shifts", "courses", "championship"] as const) {
+      await db.tenantModule.upsert({ where: { tenantId_moduleKey: { tenantId: demo.id, moduleKey } }, update: { enabled: true }, create: { tenantId: demo.id, moduleKey, enabled: true } });
+    }
+    const demoUsers = [anna.id, beat.id, admin.id]; // erste Person = Standchef / Kursleitung
+    await seedDemoFederal(db, demo.id, demoUsers);
+    await seedDemoShifts(db, demo.id, demoUsers);
+    await seedDemoRange(db, demo.id, demoUsers);
+    await seedDemoWeapons(db, demo.id, demoUsers);
+    await seedDemoAmmoStock(db, demo.id, [anna.id]);
+    await seedDemoCourses(db, demo.id, demoUsers);
+    await seedDemoChampionship(db, demo.id, demoUsers);
     console.log("Demo-Verein: Beitrittscode DEMO42 · anna@example.ch / beat@example.ch (Passwort demo1234)");
   }
 
