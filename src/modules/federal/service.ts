@@ -21,7 +21,8 @@ export async function shootingDaysForUser(tenantId: string, userId: string, from
     db.matchParticipant.findMany({
       where: {
         userId,
-        results: { some: {} },
+        // Erfasstes Resultat: Serien oder ein gespeichertes Total (z.B. übernommene/importierte Resultate ohne Serien)
+        OR: [{ results: { some: {} } }, { total: { not: null } }],
         match: { tenantId, status: "FINISHED", date: { gte: new Date(from.getTime() - margin), lte: new Date(to.getTime() + margin) } },
       },
       select: { match: { select: { date: true } } },

@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { getAppContext } from "@/lib/tenant";
+import type { Permission } from "@/lib/permissions";
 import { PageHeader } from "@/components/ui";
 import { Faq, type FaqEntry } from "./faq";
 
@@ -307,7 +308,7 @@ const ENTRIES: FaqEntry[] = [
     "Wie trage ich mich für einen Helfereinsatz ein?",
     "Helfereinsätze Schicht eintragen austragen Arbeitsstunden Ersatzabgabe Stunden erfassen Kalender",
     <>
-      <p>Unter <Link href="/shifts">Helfereinsätze</Link> siehst du offene Schichten. Mit «Eintragen» übernimmst du einen Platz, bis zum Beginn kannst du dich wieder austragen. Unter «Meine» lädst du eine Schicht in deinen Kalender.</p>
+      <p>Unter <Link href="/shifts">Helfereinsätze</Link> siehst du offene Schichten. Mit «Ich helfe mit» übernimmst du einen Platz, bis zum Beginn kannst du dich wieder austragen. Unter «Meine» lädst du eine Schicht in deinen Kalender.</p>
       <p>Hat dein Verein Pflicht-Arbeitsstunden, siehst du unter «Stunden», wie viele dir noch fehlen. Arbeit ausserhalb von Schichten erfasst du dort selbst, der Vorstand bestätigt sie.</p>
     </>,
   ),
@@ -461,15 +462,32 @@ const ENTRIES: FaqEntry[] = [
   ),
 ];
 
+/**
+ * Anleitungen für Funktionen, die schon unterhalb der Admin-Rolle erlaubt sind (z.B. Trainer/Schützenmeister).
+ * Wer die Berechtigung hat, sieht die Anleitung auch ohne «tenant.manage».
+ */
+const ENTRY_PERMISSION: Partial<Record<string, Permission>> = {
+  "amtlich-bestaetigen": "results.verify",
+  standbuch: "range.duty",
+  vereinswaffen: "weapons.loan",
+  "kurse-admin": "courses.manage",
+  "live-rangliste": "match.viewAll",
+};
+
 export default async function HelpPage() {
   const ctx = await getAppContext();
   const isAdmin = ctx.tenant ? ctx.can("tenant.manage") : ctx.user.isSuperAdmin;
-  const entries = isAdmin ? ENTRIES : ENTRIES.filter((e) => e.audience === "member");
+  const entries = ENTRIES.filter((e) => {
+    if (e.audience === "member" || isAdmin) return true;
+    const perm = ENTRY_PERMISSION[e.id];
+    return !!perm && ctx.can(perm);
+  });
+  const showAudienceFilter = entries.some((e) => e.audience === "admin");
 
   return (
     <div>
       <PageHeader title="Hilfe" subtitle="Antworten auf häufige Fragen. Tippe auf eine Frage, um die Antwort zu sehen." back={{ href: "/me", label: "Mehr" }} />
-      <Faq entries={entries} isAdmin={isAdmin} />
+      <Faq entries={entries} isAdmin={showAudienceFilter} />
       <p className="mt-8 text-center text-sm text-ink-3">
         Nicht gefunden, was du suchst? Frag deinen Vereinsadmin{ctx.tenant ? <> von {ctx.tenant.name}</> : null}.
       </p>

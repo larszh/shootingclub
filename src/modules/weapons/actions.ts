@@ -6,7 +6,7 @@ import { db } from "@/lib/db";
 import { audit } from "@/lib/audit";
 import { fail, ok, type ActionResult } from "@/lib/action-result";
 import { requireModule } from "@/lib/tenant";
-import { zurichToUtc } from "@/lib/time";
+import { todayZurich, zurichToUtc } from "@/lib/time";
 import { dayKeyToDbDate, parseCostToCents, stripBlockReason, withBlockReason } from "./logic";
 import { createWeaponLoan, returnWeaponLoan } from "./service";
 import { blockReasonSchema, isWeaponStatus, loanSchema, serviceSchema, shotsSchema, weaponSchema, WEAPON_STATUS } from "./types";
@@ -123,6 +123,7 @@ export async function lendWeaponAction(input: {
     return fail(issue?.message ?? "Ungültige Eingabe.", issue?.path[0] ? { [String(issue.path[0])]: issue.message } : undefined);
   }
   const v = parsed.data;
+  if (v.dueDate && v.dueDate < todayZurich()) return fail("«Rückgabe bis» darf nicht in der Vergangenheit liegen.", { dueDate: "Datum ab heute wählen." });
   const res = await createWeaponLoan({
     tenantId: ctx.tenant.id, weaponId: v.weaponId, userId: v.userId, borrowerName: v.userId ? null : v.borrowerName, isMinor: v.isMinor,
     onSiteOnly: v.onSiteOnly, issuedById: ctx.user.id, note: v.note, dueAt: v.dueDate ? zurichToUtc(v.dueDate, "23:59") : null, reportDays: v.reportDays,

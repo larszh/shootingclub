@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
-import { BadgeCheck, Ban, CalendarPlus, ChevronRight, CircleHelp, Clock, HandHelping, MapPin, UserRound, X } from "lucide-react";
+import { BadgeCheck, Ban, CalendarPlus, ChevronRight, CircleHelp, Clock, GraduationCap, HandHelping, MapPin, UserRound, X } from "lucide-react";
 import Link from "next/link";
 import { db } from "@/lib/db";
 import { requireModule } from "@/lib/tenant";
@@ -14,6 +14,9 @@ import { DateBadge, KindChip, RichText } from "@/modules/events/ui/bits";
 import { RsvpPanel } from "@/modules/events/ui/rsvp-panel";
 import { ShareButton } from "@/modules/events/ui/share-button";
 import { EventManageBar } from "@/modules/events/ui/manage-actions";
+import { canSelfSignUp, staffing } from "@/modules/shifts/logic";
+import { nowDate } from "@/modules/billing/dates";
+import { courseSessionForEvent } from "@/modules/courses/queries";
 
 export const metadata: Metadata = { title: "Anlass" };
 
@@ -48,9 +51,16 @@ export default async function EventDetailPage({ params, searchParams }: { params
   // Querverweise auf Welle-B-Module (nur wenn aktiv): Obligatorisch → Bundesübungen, Schichten → Helfer.
   const federalLink = e.kind === "OBLIGATORY" && ctx.hasModule("federal");
   const shifts = ctx.hasModule("shifts") && !e.isCancelled && !d.isPast
-    ? await db.shift.findMany({ where: { tenantId: ctx.tenant.id, eventId: e.id }, select: { capacity: true, _count: { select: { assignments: true } } }, take: 50 })
+    ? await db.shift.findMany({ where: { tenantId: ctx.tenant.id, eventId: e.id }, select: { startsAt: true, capacity: true, assignments: { select: { status: true } } }, take: 50 })
     : [];
-  const openSlots = shifts.reduce((a, s) => a + Math.max(0, s.capacity - s._count.assignments), 0);
+  // Kurse → Kurslektion zum Anlass (Präsenz erfassen), nur für Kursverantwortliche.
+  const courseSession = ctx.hasModule("courses") && ctx.can("courses.manage") ? await courseSessionForEvent(ctx.tenant.id, e.id) : null;
+  // Gleiche Regeln wie unter /shifts: NO_SHOW belegt keinen Platz, begonnene Schichten sind nicht mehr buchbar.
+  const now = nowDate();
+  const openSlots = shifts.reduce((a, s) => {
+    const st = staffing(s.capacity, s.assignments);
+    return a + (canSelfSignUp(s, st, now) ? st.open : 0);
+  }, 0);
 
   return (
     <div>
@@ -89,7 +99,7 @@ export default async function EventDetailPage({ params, searchParams }: { params
         <ShareButton title={e.title} text={shareText} path={`/events/${e.id}`} />
       </div>
 
-      {federalLink || shifts.length ? (
+      {federalLink || shifts.length || courseSession ? (
         <Card className="animate-rise mt-3 divide-y divide-line overflow-hidden">
           {federalLink ? (
             <Link href={`/federal?year=${zurichParts(e.startsAt).dateStr.slice(0, 4)}`} className="flex min-h-13 items-center gap-3 px-4 py-2.5 transition-colors hover:bg-surface-2">
@@ -103,7 +113,17 @@ export default async function EventDetailPage({ params, searchParams }: { params
               <HandHelping className={cn("h-5 w-5 shrink-0", openSlots ? "text-warn" : "text-ok")} aria-hidden />
               <span className="min-w-0 flex-1">
                 <span className="block font-medium">{openSlots ? "Helfer gesucht" : "Helfereinsätze"}</span>
-                <span className="block text-xs text-ink-3">{openSlots ? (openSlots === 1 ? "Noch 1 Platz frei – jetzt eintragen" : `Noch ${openSlots} Plätze frei – jetzt eintragen`) : "Alle Schichten sind besetzt"}</span>
+                <span className="block text-xs text-ink-3">{openSlots ? (openSlots === 1 ? "Noch 1 Platz frei – jetzt eintragen" : `Noch ${openSlots} Plätze frei – jetzt eintragen`) : "Keine freien Plätze mehr"}</span>
+              </span>
+              <ChevronRight className="h-4 w-4 shrink-0 text-ink-3" aria-hidden />
+            </Link>
+          ) : null}
+          {courseSession ? (
+            <Link href={`/courses/${courseSession.courseId}/sessions/${courseSession.id}`} className="flex min-h-13 items-center gap-3 px-4 py-2.5 transition-colors hover:bg-surface-2">
+              <GraduationCap className="h-5 w-5 shrink-0 text-accent" aria-hidden />
+              <span className="min-w-0 flex-1">
+                <span className="block font-medium">Zur Kurslektion / Präsenz erfassen</span>
+                <span className="block truncate text-xs text-ink-3">{courseSession.course.name}{courseSession.title ? ` · ${courseSession.title}` : ""}</span>
               </span>
               <ChevronRight className="h-4 w-4 shrink-0 text-ink-3" aria-hidden />
             </Link>

@@ -1,6 +1,6 @@
 import "server-only";
 import { db } from "@/lib/db";
-import { attendanceIndex, attendanceSummary, completionMatrix, dbDay, parseIdCsv } from "./logic";
+import { attendanceIndex, attendanceSummary, completionMatrix, dbDay, parseIdCsv, splitGrantNote } from "./logic";
 
 // --- Programme / Mitglieder ------------------------------------------------------------------------------
 
@@ -260,9 +260,16 @@ export async function getQualificationCertificate(tenantId: string, id: string) 
     },
   });
   if (!q) return null;
-  const [names, rule] = await Promise.all([
-    userNames([q.verifiedById]),
-    q.source ? db.qualificationRule.findFirst({ where: { tenantId, programId: q.source.match.programId, kind: q.kind }, orderBy: { isActive: "desc" } }) : Promise.resolve(null),
-  ]);
-  return { ...q, verifiedByName: q.verifiedById ? names.get(q.verifiedById) ?? null : null, rule };
+  const names = await userNames([q.verifiedById]);
+  // Anforderung als Momentaufnahme aus der Bemerkung (bei der Erteilung gespeichert), nicht aus der aktuellen Regel.
+  const { note, requirement } = splitGrantNote(q.note);
+  return { ...q, note, requirement, verifiedByName: q.verifiedById ? names.get(q.verifiedById) ?? null : null };
+}
+
+/** Kurslektion zu einem Kalendereintrag (für den Link «Zur Kurslektion» auf der Anlassseite). */
+export async function courseSessionForEvent(tenantId: string, eventId: string) {
+  return db.courseSession.findFirst({
+    where: { eventId, course: { tenantId } },
+    select: { id: true, title: true, courseId: true, course: { select: { name: true } } },
+  });
 }

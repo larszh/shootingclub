@@ -189,3 +189,19 @@ export const IMPORT_COLUMNS = [
   "E-Mail Erziehungsberechtigte",
   "Telefon Erziehungsberechtigte",
 ] as const;
+
+/**
+ * Qualifikationsarten, die die Kursleitung (nur «courses.manage») über Qualifikationsschiessen vergeben darf.
+ * Sicherheits- und Leiterqualifikationen (Schützenmeister, Standchef, J+S-Leiter usw.) nur mit «qualifications.manage».
+ */
+export const TRAINER_QUAL_KINDS: readonly string[] = ["WEAPON_QUAL", "OTHER"];
+
+/** Braucht diese Qualifikationsart «qualifications.manage» (Admin)? Unbekannte Arten gelten als geschützt. */
+export function isProtectedQualKind(kind: string): boolean {
+  return !TRAINER_QUAL_KINDS.includes(kind);
+}
+
+/** «1 Monat» / «12 Monate». */
+export function monthsLabel(n: number): string {
+  return `${n} ${n === 1 ? "Monat" : "Monate"}`;
+}

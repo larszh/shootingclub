@@ -23,8 +23,9 @@ const db = new PrismaClient({
 /**
  * Globale Programme und Scheiben anlegen, die noch fehlen (Abgleich über den Namen bzw. frühere Namen).
  * Idempotent: bestehende Einträge, auch von Admins geänderte, bleiben unverändert. Einzige Ausnahme:
- * Vorlagen mit amtlicher Art (Obligatorisch, Feldschiessen) setzen Art und Grenzwerte bei bestehenden
- * globalen Programmen, solange diese noch keine amtliche Art haben (siehe presetOfficialUpdate).
+ * Vorlagen mit amtlicher Art (Obligatorisch, Feldschiessen) setzen die Art bei bestehenden globalen
+ * Programmen, solange diese noch keine haben, und entfernen eine früher vorbelegte, unveränderte
+ * Bestehensgrenze (siehe presetOfficialUpdate). Eigene Grenzwerte bleiben unverändert.
  */
 async function seedPresets(createdById: string | null) {
   let programs = 0;
@@ -47,7 +48,7 @@ async function seedPresets(createdById: string | null) {
     });
     programs++;
   }
-  if (updated) console.log(`Vorlagen: ${updated} globale Programme als amtlich markiert.`);
+  if (updated) console.log(`Vorlagen: ${updated} globale Programme abgeglichen (amtliche Art / Bestehensgrenze).`);
 
   let targets = 0;
   for (const t of TARGET_PRESETS) {

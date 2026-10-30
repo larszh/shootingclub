@@ -1,10 +1,10 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { getCurrentUser } from "@/lib/auth";
 import { getAppContext } from "@/lib/tenant";
-import { formatDateTimeZurich, todayZurich } from "@/lib/time";
+import { todayZurich } from "@/lib/time";
 import { slugify } from "@/lib/utils";
 import { csvResponse, toCsv } from "@/modules/billing/csv";
-import { fundingInfo, isStockKind, stockKindInfo } from "@/modules/ammo/stock";
+import { formatMovementDate, fundingInfo, isStockKind, stockKindInfo } from "@/modules/ammo/stock";
 import { listMovements } from "@/modules/ammo/stock-service";
 
 export const dynamic = "force-dynamic";
@@ -30,7 +30,7 @@ export async function GET(req: NextRequest) {
   }, 50_000);
   const header = ["Datum", "Art", "Produkt", "Kaliber", "Finanzierung", "Einheiten", "Einheit", "Schuss", "Herkunft/Anlass", "Rechnung", "Standbuch", "Bemerkung", "Erfasst von"];
   const data = rows.map((m) => [
-    formatDateTimeZurich(m.date), stockKindInfo(m.kind).label, m.product.name, m.product.caliber, fundingInfo(m.product.fundingType).label,
+    formatMovementDate(m.date, m.createdAt), stockKindInfo(m.kind).label, m.product.name, m.product.caliber, fundingInfo(m.product.fundingType).label,
     m.units, m.product.unitLabel, m.units * m.product.roundsPerUnit, m.source ?? "", m.invoiceNumber ?? "",
     m.rangeDay ? m.rangeDay.date.toISOString().slice(0, 10) : "", m.note ?? "", m.createdByName ?? "",
   ]);

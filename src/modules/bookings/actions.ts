@@ -199,7 +199,8 @@ export async function createBookingAction(_prev: ActionResult | null, formData: 
 
   revalidatePath("/bookings");
   if (status === "CONFIRMED" && paymentMethod === "ONLINE") redirect(`/bookings/${booking.id}/pay`);
-  redirect(`/bookings/${booking.id}`);
+  // Verwaltung hat ausserhalb der Schiesszeiten gebucht: Hinweis auf der Detailseite anzeigen.
+  redirect(windowNote ? `/bookings/${booking.id}?created=1&outsideWindow=1` : `/bookings/${booking.id}`);
 }
 
 export async function cancelBookingAction(bookingId: string): Promise<ActionResult> {

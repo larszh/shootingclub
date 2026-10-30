@@ -6,9 +6,53 @@
 import { randomBytes } from "node:crypto";
 import type { PrismaClient } from "../../generated/prisma/client";
 
-type Db = Pick<PrismaClient, "championship" | "liveBoard" | "program" | "match" | "matchParticipant" | "user">;
+type Db = Pick<PrismaClient, "championship" | "liveBoard" | "program" | "match" | "matchParticipant" | "matchResult" | "user">;
 
 const DAY = 86_400_000;
+
+/** Serien eines Programms (nur Schusszahl und Höchstwert) aus stagesJson, robust gegen kaputte Daten. */
+function seedStages(stagesJson: string): Array<{ shots: number; max: number }> {
+  let raw: unknown;
+  try {
+    raw = JSON.parse(stagesJson);
+  } catch {
+    return [];
+  }
+  if (!Array.isArray(raw)) return [];
+  return raw.map((s: unknown) => {
+    const o = (s && typeof s === "object" ? s : {}) as { shots?: unknown; maxPerShot?: unknown };
+    const shots = Math.max(1, Math.floor(Number(o.shots) || 1));
+    const max = Math.max(1, Math.floor(Number(o.maxPerShot) || 10));
+    return { shots, max };
+  });
+}
+
+/**
+ * Verteilt ein gewünschtes Total gleichmässig auf alle Schüsse aller Serien (ganzzahlig, je Schuss
+ * höchstens maxPerShot). Ist das Total grösser als möglich, wird es auf das Maximum begrenzt.
+ * Liefert die Schüsse pro Serie; die Summe aller Schüsse ist das tatsächliche Total.
+ */
+export function distributeSeedShots(stages: Array<{ shots: number; max: number }>, target: number): number[][] {
+  const flat: Array<{ stage: number; max: number; v: number }> = [];
+  stages.forEach((s, i) => {
+    for (let k = 0; k < s.shots; k++) flat.push({ stage: i, max: s.max, v: 0 });
+  });
+  let rest = Math.max(0, Math.round(target));
+  // Runde für Runde je +1 auf Schüsse mit Reserve, bis das Total verteilt ist.
+  while (rest > 0) {
+    let progressed = false;
+    for (const f of flat) {
+      if (rest === 0) break;
+      if (f.v < f.max) {
+        f.v += 1;
+        rest -= 1;
+        progressed = true;
+      }
+    }
+    if (!progressed) break;
+  }
+  return stages.map((_, i) => flat.filter((f) => f.stage === i).map((f) => f.v));
+}
 
 export async function seedDemoChampionship(db: Db, tenantId: string, userIds: string[]) {
   const year = new Date().getUTCFullYear();
@@ -17,8 +61,9 @@ export async function seedDemoChampionship(db: Db, tenantId: string, userIds: st
 
   if ((await db.championship.count({ where: { tenantId } })) === 0) {
     const programs = await db.program.findMany({
-      where: { OR: [{ tenantId: null }, { tenantId }], isArchived: false, officialKind: null },
-      select: { id: true, name: true },
+      // Ohne Zonenwertung: Die Demo-Schüsse unten sind ganzzahlige Ringe bzw. Treffer.
+      where: { OR: [{ tenantId: null }, { tenantId }], isArchived: false, officialKind: null, scoringMode: { not: "ZONES" } },
+      select: { id: true, name: true, stagesJson: true, scoringMode: true },
       orderBy: [{ tenantId: "desc" }, { name: "asc" }],
       take: 2,
     });
@@ -48,14 +93,26 @@ export async function seedDemoChampionship(db: Db, tenantId: string, userIds: st
         const yearStart = Date.UTC(year, 0, 1);
         const scores = [[92, 88, 95, 81], [85, 90, 79, 93], [88, 76, 91, 84]];
         for (const [pi, p] of programs.entries()) {
+          const stages = seedStages(p.stagesJson);
           for (let round = 0; round < 3; round++) {
             const at = new Date(Math.max(yearStart + DAY, now - (60 - round * 20 - pi * 3) * DAY));
             const match = await db.match.create({
               data: { tenantId, programId: p.id, createdById: users[0], title: `Training ${round + 1}`, date: at, status: "FINISHED", finishedAt: at },
             });
             for (const [ui, userId] of users.entries()) {
-              const total = scores[round]![ui % 4]! - pi * 5;
-              await db.matchParticipant.create({ data: { matchId: match.id, userId, sortOrder: ui, total, zeros: 0 } });
+              const target = scores[round]![ui % 4]! - pi * 5;
+              // Echte Serien (MatchResult) anlegen, damit ein erneutes Öffnen/Abschliessen das Total
+              // aus den Schüssen neu berechnet statt es zu löschen (recomputeMatchTotals).
+              const perStage = distributeSeedShots(stages, target);
+              const stageTotals = perStage.map((shots) => shots.reduce((a, b) => a + b, 0));
+              const total = stages.length ? stageTotals.reduce((a, b) => a + b, 0) : target;
+              const zeros = perStage.reduce((n, shots) => n + shots.filter((v) => v === 0).length, 0);
+              const participant = await db.matchParticipant.create({ data: { matchId: match.id, userId, sortOrder: ui, total, zeros } });
+              for (const [stageIndex, shots] of perStage.entries()) {
+                await db.matchResult.create({
+                  data: { participantId: participant.id, stageIndex, shotsJson: JSON.stringify(shots), total: stageTotals[stageIndex]! },
+                });
+              }
             }
           }
         }
@@ -70,7 +127,8 @@ export async function seedDemoChampionship(db: Db, tenantId: string, userIds: st
         tenantId,
         token: randomBytes(32).toString("base64url"),
         title: "Live-Rangliste Training",
-        date: new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate())),
+        // null = immer «heute» (Schweizer Tag, siehe buildSnapshot), damit die Demo-Tafel nicht an den Seed-Tag gebunden ist.
+        date: null,
         showDecimals: false,
         expiresAt: new Date(today.getTime() + 7 * DAY),
       },

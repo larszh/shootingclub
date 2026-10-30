@@ -55,7 +55,7 @@ export default async function QualificationCertificatePage({ params }: { params:
             {line("Datum", formatDateZurich(q.source.match.finishedAt ?? q.source.match.date, { weekday: undefined }))}
             {line("Programm", q.source.match.program.name)}
             {line("Resultat", `${q.source.total ?? "–"} Punkte, ${q.source.zeros ?? "–"} Nuller`)}
-            {q.rule ? line("Anforderung", `mindestens ${q.rule.passScore} Punkte${q.rule.maxZeros != null ? `, höchstens ${q.rule.maxZeros} Nuller` : ""}`) : null}
+            {q.requirement ? line("Anforderung", q.requirement) : null}
           </>
         ) : null}
         {q.note ? line("Bemerkung", q.note) : null}

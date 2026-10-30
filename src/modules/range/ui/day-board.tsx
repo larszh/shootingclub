@@ -92,25 +92,29 @@ export function DayBoard({
           </div>
           <Button variant="secondary" size="sm" className="h-11 shrink-0" onClick={() => setDialog({ kind: "duty" })}>Übergeben</Button>
         </div>
-        {!day.isToday ? <Alert tone="warn" className="mt-3">Dieses Standbuch ist nicht von heute. Bitte abschliessen.</Alert> : null}
+        {!day.isToday ? <Alert tone="warn" className="mt-3">Dieses Standbuch ist nicht von heute. Es nimmt keine neuen Einträge mehr an. Bitte abschliessen und für heute ein neues Standbuch öffnen.</Alert> : null}
         {dutyWarning ? <Alert tone="warn" className="mt-3" icon={<ShieldAlert className="h-4 w-4" />}>{dutyWarning}</Alert> : null}
       </Card>
 
       <div className="stagger grid grid-cols-3 gap-2.5">
         <StatCard label="Anwesend" value={present.length} tone={present.length ? "accent" : "neutral"} />
-        <StatCard label="Heute total" value={visits.length} />
+        <StatCard label={day.isToday ? "Heute total" : "Total"} value={visits.length} />
         <StatCard label="Gäste" value={guests} />
       </div>
 
-      <div className="grid grid-cols-2 gap-2.5">
-        <Button size="lg" className="h-14" onClick={() => setDialog({ kind: "member" })}><Users className="h-5 w-5" /> Mitglied</Button>
-        <Button size="lg" variant="secondary" className="h-14" onClick={() => setDialog({ kind: "guest" })}><UserPlus className="h-5 w-5" /> Gast</Button>
-      </div>
+      {day.isToday ? (
+        <div className="grid grid-cols-2 gap-2.5">
+          <Button size="lg" className="h-14" onClick={() => setDialog({ kind: "member" })}><Users className="h-5 w-5" /> Mitglied</Button>
+          <Button size="lg" variant="secondary" className="h-14" onClick={() => setDialog({ kind: "guest" })}><UserPlus className="h-5 w-5" /> Gast</Button>
+        </div>
+      ) : (
+        <Button size="lg" className="h-14 w-full" onClick={() => setDialog({ kind: "close" })}>Tag abschliessen</Button>
+      )}
 
       <SectionTitle>Am Stand ({present.length})</SectionTitle>
       {present.length ? (
         <Card className="animate-rise divide-y divide-line overflow-hidden">
-          {present.map((v) => <VisitRow key={v.id} v={v} weaponsEnabled={weapons !== null} onEdit={() => setDialog({ kind: "edit", visit: v })} onWeapon={() => setDialog({ kind: "weapon", visit: v })} onCheckout={() => setDialog({ kind: "checkout", visit: v })} />)}
+          {present.map((v) => <VisitRow key={v.id} v={v} weaponsEnabled={weapons !== null && day.isToday} onEdit={() => setDialog({ kind: "edit", visit: v })} onWeapon={() => setDialog({ kind: "weapon", visit: v })} onCheckout={() => setDialog({ kind: "checkout", visit: v })} />)}
         </Card>
       ) : (
         <EmptyState icon={<Crosshair className="h-5 w-5" />} title="Noch niemand eingecheckt" text="Mitglieder checken sich per QR-Code selbst ein oder du erfasst sie hier." />
@@ -127,7 +131,7 @@ export function DayBoard({
 
       <NotesCard dayId={day.id} notes={day.notes} />
 
-      <Button variant="secondary" size="lg" className="h-14 w-full" onClick={() => setDialog({ kind: "close" })}>Tag abschliessen</Button>
+      {day.isToday ? <Button variant="secondary" size="lg" className="h-14 w-full" onClick={() => setDialog({ kind: "close" })}>Tag abschliessen</Button> : null}
 
       {dialog?.kind === "member" ? <MemberDialog onClose={close} dayId={day.id} members={members} presentIds={new Set(present.map((v) => v.userId).filter((x): x is string => !!x))} listId={listId} rulesActive={rulesActive} /> : null}
       {dialog?.kind === "guest" ? <GuestDialog onClose={close} dayId={day.id} members={members} listId={listId} rulesActive={rulesActive} year={year} /> : null}

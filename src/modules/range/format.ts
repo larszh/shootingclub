@@ -1,10 +1,20 @@
-import { APP_TZ, formatDateZurich } from "../../lib/time";
+import { APP_TZ, formatDateZurich, zurichParts } from "../../lib/time";
 
 const timeFmt = new Intl.DateTimeFormat("de-CH", { timeZone: APP_TZ, hour: "2-digit", minute: "2-digit" });
 
 /** Uhrzeit in Schweizer Zeit, z.B. "18:05". */
 export function fmtTime(d: Date) {
   return timeFmt.format(d);
+}
+
+const dateTimeFmt = new Intl.DateTimeFormat("de-CH", { timeZone: APP_TZ, day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
+
+/**
+ * Uhrzeit für einen Eintrag im Standbuch vom Tag `dayKey` ("YYYY-MM-DD"). Liegt der Zeitpunkt an
+ * einem anderen Tag (z.B. Standbuch erst am Folgetag abgeschlossen), mit Datum: "31.10., 08:10".
+ */
+export function fmtTimeOn(d: Date, dayKey: string) {
+  return zurichParts(d).dateStr === dayKey ? timeFmt.format(d) : dateTimeFmt.format(d);
 }
 
 /** @db.Date-Wert als Datum, z.B. "Sa., 07.03.2026". */

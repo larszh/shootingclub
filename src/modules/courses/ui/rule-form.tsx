@@ -7,6 +7,7 @@ import { Alert, Card, Field, Input, Select } from "@/components/ui";
 import { Switch } from "@/components/ui/controls";
 import { SubmitButton, submitKeepingValues } from "@/components/ui/form";
 import { saveRuleAction } from "@/modules/courses/actions";
+import { isProtectedQualKind } from "@/modules/courses/types";
 import { QUALIFICATION_KINDS } from "@/modules/qualifications/types";
 
 export type RuleFormValues = {
@@ -16,7 +17,7 @@ export type RuleFormValues = {
 type ProgramOpt = { id: string; name: string; passMinScore: number | null; passMaxZeros: number | null };
 
 /** Regel für ein Qualifikationsschiessen (Programm, Mindestpunktzahl, Nuller, Gültigkeit). */
-export function RuleForm({ initial, programs }: { initial?: RuleFormValues; programs: ProgramOpt[] }) {
+export function RuleForm({ initial, programs, allKinds }: { initial?: RuleFormValues; programs: ProgramOpt[]; allKinds: boolean }) {
   const router = useRouter();
   const [state, action, pending] = useActionState(saveRuleAction, null);
   const err = state && !state.ok ? state.fieldErrors : undefined;
@@ -25,6 +26,7 @@ export function RuleForm({ initial, programs }: { initial?: RuleFormValues; prog
   const [maxZeros, setMaxZeros] = useState(initial?.maxZeros != null ? String(initial.maxZeros) : "");
   const [requireInstructor, setRequireInstructor] = useState(initial?.requireInstructor ?? true);
   const [isActive, setIsActive] = useState(initial?.isActive ?? true);
+  const kinds = allKinds ? QUALIFICATION_KINDS : QUALIFICATION_KINDS.filter((k) => !isProtectedQualKind(k.key));
 
   useEffect(() => {
     if (state?.ok && state.data?.id) router.push(`/courses/qualifications/${state.data.id}`);
@@ -53,9 +55,13 @@ export function RuleForm({ initial, programs }: { initial?: RuleFormValues; prog
             {programs.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
           </Select>
         </Field>
-        <Field label="Art der Qualifikation" error={err?.kind}>
+        <Field
+          label="Art der Qualifikation"
+          hint={allKinds ? "Sicherheits- und Leiterqualifikationen werden immer von einer anderen Person erteilt." : "Sicherheits- und Leiterqualifikationen (Schützenmeister, Standchef usw.) legt ein Admin fest."}
+          error={err?.kind}
+        >
           <Select name="kind" defaultValue={initial?.kind ?? "WEAPON_QUAL"}>
-            {QUALIFICATION_KINDS.map((k) => <option key={k.key} value={k.key}>{k.label}</option>)}
+            {kinds.map((k) => <option key={k.key} value={k.key}>{k.label}</option>)}
           </Select>
         </Field>
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">

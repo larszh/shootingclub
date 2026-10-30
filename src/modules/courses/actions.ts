@@ -17,6 +17,7 @@ import {
   dayToDbDate,
   dbDay,
   evaluateRule,
+  grantNote,
   guardianProblem,
   mapImportRows,
   parseIdCsv,
@@ -25,10 +26,22 @@ import {
   toIdCsv,
   type ImportedParticipant,
 } from "./logic";
-import { courseSchema, isCourseStatus, isParticipantStatus, participantSchema, resultSchema, ruleSchema, sessionSchema, COURSE_STATUS, PARTICIPANT_STATUS } from "./types";
+import {
+  courseSchema,
+  isCourseStatus,
+  isParticipantStatus,
+  isProtectedQualKind,
+  participantSchema,
+  resultSchema,
+  ruleSchema,
+  sessionSchema,
+  COURSE_STATUS,
+  PARTICIPANT_STATUS,
+} from "./types";
 
 const idSchema = z.string().min(1).max(40);
 const NO_RIGHT = "Dafür fehlt dir die Berechtigung.";
+const PROTECTED_KIND = "Sicherheits- und Leiterqualifikationen (z.B. Schützenmeister, Standchef, J+S-Leiter) kann nur ein Admin festlegen und erteilen.";
 const BAD = "Ungültige Anfrage.";
 const str = (fd: FormData, k: string) => (fd.get(k) === null ? "" : String(fd.get(k)));
 const bool = (fd: FormData, k: string) => ["on", "true", "1"].includes(str(fd, k));
@@ -60,6 +73,30 @@ async function accessibleProgramIds(tenantId: string, ids: string[]) {
   const rows = await db.program.findMany({ where: { id: { in: ids }, OR: [{ tenantId: null }, { tenantId }] }, select: { id: true } });
   const ok = new Set(rows.map((r) => r.id));
   return ids.filter((id) => ok.has(id));
+}
+
+/**
+ * Abgeschlossene Teilnehmende, deren Pflichtprogramme nicht (mehr) alle bestanden sind (Resultat gelöscht,
+ * Pflichtprogramme geändert), wieder auf «Aktiv» setzen. Gibt die Anzahl zurückgesetzter Personen zurück.
+ */
+async function reopenIncomplete(tenantId: string, actorId: string, course: { id: string; name: string; requiredProgramIds: string | null }, onlyParticipantId?: string): Promise<number> {
+  const done = await db.courseParticipant.findMany({
+    where: { courseId: course.id, status: "COMPLETED", ...(onlyParticipantId ? { id: onlyParticipantId } : {}) },
+    select: { id: true, firstName: true, lastName: true },
+  });
+  if (!done.length) return 0;
+  const results = await db.courseResult.findMany({
+    where: { participantId: { in: done.map((p) => p.id) } },
+    select: { participantId: true, programId: true, passed: true, score: true, date: true },
+  });
+  const rows = completionMatrix(done.map((p) => p.id), parseIdCsv(course.requiredProgramIds), results.map((r) => ({ ...r, date: dbDay(r.date)! })));
+  const reopen = new Set(rows.filter((r) => !r.allPassed).map((r) => r.participantId));
+  if (!reopen.size) return 0;
+  await db.courseParticipant.updateMany({ where: { id: { in: [...reopen] }, courseId: course.id, status: "COMPLETED" }, data: { status: "ACTIVE" } });
+  for (const p of done.filter((x) => reopen.has(x.id))) {
+    await audit({ tenantId, actorId, action: "courses.participant.reopen", entity: "CourseParticipant", entityId: p.id, detail: `${course.name}: ${p.firstName} ${p.lastName} – Pflichtprogramme nicht mehr erfüllt, Abschluss zurückgenommen` });
+  }
+  return reopen.size;
 }
 
 async function loadParticipant(tenantId: string, id: string) {
@@ -95,8 +132,9 @@ export async function saveCourseAction(_prev: ActionResult<{ id: string }> | nul
     const res = await db.course.updateMany({ where: { id, tenantId }, data });
     if (res.count === 0) return fail("Kurs nicht gefunden.");
     await audit({ tenantId, actorId: ctx.user.id, action: "courses.update", entity: "Course", entityId: id, detail: v.name });
+    const reopened = await reopenIncomplete(tenantId, ctx.user.id, { id, name: v.name, requiredProgramIds: data.requiredProgramIds });
     revalidate();
-    return ok({ id }, "Gespeichert.");
+    return ok({ id }, reopened ? `Gespeichert. ${reopened} Abschluss/Abschlüsse zurückgenommen, weil nicht mehr alle Pflichtprogramme bestanden sind.` : "Gespeichert.");
   }
   const created = await db.course.create({ data: { ...data, tenantId }, select: { id: true } });
   await audit({ tenantId, actorId: ctx.user.id, action: "courses.create", entity: "Course", entityId: created.id, detail: `${v.name} (${v.kind}, ${v.year})` });
@@ -408,12 +446,16 @@ export async function deleteResultAction(id: string): Promise<ActionResult> {
   const ctx = await manageCtx();
   if (!ctx) return fail(NO_RIGHT);
   if (!idSchema.safeParse(id).success) return fail(BAD);
-  const r = await db.courseResult.findFirst({ where: { id, participant: { course: { tenantId: ctx.tenant.id } } }, select: { id: true, label: true, participantId: true } });
+  const r = await db.courseResult.findFirst({
+    where: { id, participant: { course: { tenantId: ctx.tenant.id } } },
+    select: { id: true, label: true, participantId: true, participant: { select: { course: { select: { id: true, name: true, requiredProgramIds: true } } } } },
+  });
   if (!r) return fail("Resultat nicht gefunden.");
   await db.courseResult.deleteMany({ where: { id, participantId: r.participantId } });
   await audit({ tenantId: ctx.tenant.id, actorId: ctx.user.id, action: "courses.result.delete", entity: "CourseResult", entityId: id, detail: r.label });
+  const reopened = await reopenIncomplete(ctx.tenant.id, ctx.user.id, r.participant.course, r.participantId);
   revalidate();
-  return ok(undefined, "Resultat gelöscht.");
+  return ok(undefined, reopened ? "Resultat gelöscht. Der Kursabschluss wurde zurückgenommen, weil nicht mehr alle Pflichtprogramme bestanden sind." : "Resultat gelöscht.");
 }
 
 // --- Qualifikationsschiessen ----------------------------------------------------------------------------------
@@ -431,7 +473,19 @@ export async function saveRuleAction(_prev: ActionResult<{ id: string }> | null,
   if (!parsed.success) return zodFail(parsed.error);
   const v = parsed.data;
   if (!QUALIFICATION_KINDS.some((k) => k.key === v.kind)) return fail("Ungültige Art.", { kind: "Bitte wählen." });
+  const isQualAdmin = ctx.can("qualifications.manage");
+  if (isProtectedQualKind(v.kind) && !isQualAdmin) return fail(PROTECTED_KIND, { kind: "Bitte «Waffen-Qualifikation» oder «Andere» wählen." });
+  // Sicherheits- und Leiterqualifikationen: immer Vier-Augen-Prinzip und eine echte Mindestpunktzahl.
+  if (isProtectedQualKind(v.kind)) {
+    if (v.passScore <= 0) return fail("Für diese Qualifikationsart ist eine Mindestpunktzahl über 0 nötig.", { passScore: "Bitte eine Mindestpunktzahl angeben." });
+    v.requireInstructor = true;
+  }
   if (!(await accessibleProgramIds(tenantId, [v.programId])).length) return fail("Programm nicht gefunden.", { programId: "Bitte wählen." });
+  if (id && !isQualAdmin) {
+    const cur = await db.qualificationRule.findFirst({ where: { id, tenantId }, select: { kind: true } });
+    if (!cur) return fail("Regel nicht gefunden.");
+    if (isProtectedQualKind(cur.kind)) return fail(PROTECTED_KIND);
+  }
   if (id) {
     const res = await db.qualificationRule.updateMany({ where: { id, tenantId }, data: v });
     if (res.count === 0) return fail("Regel nicht gefunden.");
@@ -449,8 +503,9 @@ export async function deleteRuleAction(id: string): Promise<ActionResult> {
   const ctx = await qualCtx();
   if (!ctx) return fail(NO_RIGHT);
   if (!idSchema.safeParse(id).success) return fail(BAD);
-  const r = await db.qualificationRule.findFirst({ where: { id, tenantId: ctx.tenant.id }, select: { name: true } });
+  const r = await db.qualificationRule.findFirst({ where: { id, tenantId: ctx.tenant.id }, select: { name: true, kind: true } });
   if (!r) return fail("Regel nicht gefunden.");
+  if (isProtectedQualKind(r.kind) && !ctx.can("qualifications.manage")) return fail(PROTECTED_KIND);
   await db.qualificationRule.deleteMany({ where: { id, tenantId: ctx.tenant.id } });
   await audit({ tenantId: ctx.tenant.id, actorId: ctx.user.id, action: "qualifications.rule.delete", entity: "QualificationRule", entityId: id, detail: r.name });
   revalidate();
@@ -469,6 +524,8 @@ export async function grantQualificationAction(ruleId: string, matchParticipantI
   const rule = await db.qualificationRule.findFirst({ where: { id: ruleId, tenantId } });
   if (!rule) return fail("Regel nicht gefunden.");
   if (!rule.isActive) return fail("Diese Regel ist deaktiviert.");
+  const protectedKind = isProtectedQualKind(rule.kind);
+  if (protectedKind && !ctx.can("qualifications.manage")) return fail(PROTECTED_KIND);
   const mp = await db.matchParticipant.findFirst({
     where: { id: matchParticipantId, match: { tenantId, programId: rule.programId, status: "FINISHED" } },
     select: { id: true, userId: true, total: true, zeros: true, user: { select: { name: true, deletedAt: true } }, match: { select: { date: true, finishedAt: true } } },
@@ -476,14 +533,14 @@ export async function grantQualificationAction(ruleId: string, matchParticipantI
   if (!mp) return fail("Durchgang nicht gefunden oder nicht abgeschlossen.");
   if (!mp.userId || !mp.user || mp.user.deletedAt) return fail("Qualifikationen können nur Mitgliedern mit Konto erteilt werden.");
   if (!(await isTenantMember(tenantId, mp.userId))) return fail("Die Person ist nicht (mehr) Mitglied des Vereins.");
-  if (rule.requireInstructor && mp.userId === ctx.user.id) return fail("Eine eigene Qualifikation muss von einer anderen Ausbildnerin bzw. einem anderen Ausbildner erteilt werden.");
+  if ((rule.requireInstructor || protectedKind) && mp.userId === ctx.user.id) return fail("Eine eigene Qualifikation muss von einer anderen Ausbildnerin bzw. einem anderen Ausbildner erteilt werden.");
   const ev = evaluateRule({ passScore: rule.passScore, maxZeros: rule.maxZeros }, { total: mp.total, zeros: mp.zeros });
   if (!ev.ok) return fail(`Regel nicht erfüllt: ${ev.reasons.join(" ")}`);
   const shotDay = zurichParts(mp.match.finishedAt ?? mp.match.date).dateStr;
   const validity = qualificationValidity(shotDay, rule.validityMonths);
   const q = await grantQualification({
     tenantId, userId: mp.userId, kind: rule.kind, label: rule.name, validFrom: dayToDbDate(validity.validFrom), validUntil: dayToDbDate(validity.validUntil),
-    verifiedById: ctx.user.id, sourceParticipantId: mp.id, note: `${mp.total ?? "–"} Pkt., ${mp.zeros ?? "–"} Nuller`,
+    verifiedById: ctx.user.id, sourceParticipantId: mp.id, note: grantNote({ total: mp.total, zeros: mp.zeros }, { passScore: rule.passScore, maxZeros: rule.maxZeros }),
   });
   await audit({ tenantId, actorId: ctx.user.id, action: "qualifications.grant", entity: "Qualification", entityId: q.id, detail: `${mp.user.name}: ${rule.name} bis ${validity.validUntil}` });
   revalidate();

@@ -86,8 +86,14 @@ export const visitUpdateSchema = z.object({
 
 export const rulesSchema = z.object({
   title: z.string().trim().min(2, "Titel fehlt.").max(191),
-  body: z.string().trim().min(10, "Text fehlt.").max(30000, "Text zu lang."),
+  // Browser senden Textarea-Inhalte mit CRLF; einheitlich mit LF speichern (sonst bleibt der Editor «ungespeichert»).
+  body: z.string().transform(normalizeRulesBody).pipe(z.string().min(10, "Text fehlt.").max(30000, "Text zu lang.")),
 });
+
+/** Zeilenenden auf LF vereinheitlichen und trimmen (Server und Editor vergleichen so dasselbe). */
+export function normalizeRulesBody(s: string): string {
+  return s.replace(/\r\n?/g, "\n").trim();
+}
 
 export const windowSchema = z.object({
   resourceId: optText(40),

@@ -6,7 +6,7 @@ import { todayZurich } from "@/lib/time";
 import { requireQualificationAccess } from "@/modules/courses/guard";
 import { chDate, dbDay } from "@/modules/courses/logic";
 import { listHolders, listRules, type HolderItem } from "@/modules/courses/queries";
-import { QUAL_RESPONSIBILITY_HINT } from "@/modules/courses/types";
+import { monthsLabel, QUAL_RESPONSIBILITY_HINT } from "@/modules/courses/types";
 import { qualificationLabel, qualificationState, type QualificationState } from "@/modules/qualifications/types";
 
 export const metadata: Metadata = { title: "Qualifikationsschiessen" };
@@ -73,7 +73,7 @@ export default async function QualificationsPage({ searchParams }: { searchParam
                   {!r.isActive ? <Badge tone="outline">inaktiv</Badge> : null}
                 </div>
                 <div className="text-xs text-ink-3">
-                  {r.program.name} · ab {r.passScore} Punkten{r.maxZeros != null ? `, max. ${r.maxZeros} Nuller` : ""} · {r.validityMonths} Monate gültig
+                  {r.program.name} · ab {r.passScore} Punkten{r.maxZeros != null ? `, max. ${r.maxZeros} Nuller` : ""} · {monthsLabel(r.validityMonths)} gültig
                 </div>
               </div>
               <ChevronRight className="h-4 w-4 shrink-0 text-ink-3" />

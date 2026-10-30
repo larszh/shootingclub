@@ -93,10 +93,11 @@ export async function seedDemoRange(db: Db, tenantId: string, userIds: string[])
   }
 
   const last = dates[dates.length - 1];
+  // Vorfall während der Öffnungszeit des letzten Schiesstags (50 Minuten nach Öffnung).
   if (last) {
     await db.incident.create({
       data: {
-        tenantId, occurredAt: zurichToUtc(last.d, "10:20"), kind: "NEAR_MISS", severity: "MEDIUM", location: "300-m-Stand, Scheibe 3",
+        tenantId, occurredAt: new Date(zurichToUtc(last.d, last.from).getTime() + 50 * 60_000), kind: "NEAR_MISS", severity: "MEDIUM", location: "300-m-Stand, Scheibe 3",
         description: "Schütze hat mit geschlossenem Verschluss den Stand verlassen. Sofort angesprochen, Waffe entladen.",
         persons: "Standdienst, ein Schütze", measures: "Hinweis im nächsten Training wiederholt, Plakat «Verschluss offen» aufgehängt.", status: "CLOSED", reportedById: duty ?? null,
       },

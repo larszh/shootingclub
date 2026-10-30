@@ -41,7 +41,7 @@ async function rangeCard(ctx: TenantCtx): Promise<ModuleCard | null> {
     icon: DoorOpen,
     title: "Stand heute",
     value: "offen",
-    hint: [where, people === 1 ? "1 Person am Stand" : `${people} Personen am Stand`, duty ? `Standchef: ${duty}` : null].filter(Boolean).join(" · "),
+    hint: [where, people === 1 ? "1 Person am Stand" : `${people} Personen am Stand`, duty ? `Standdienst: ${duty}` : null].filter(Boolean).join(" · "),
     tone: "ok",
   };
 }
@@ -76,7 +76,7 @@ async function federalCard(ctx: TenantCtx): Promise<ModuleCard | null> {
   });
   const st = opStatusByUser(rows.map((r) => ({ userId: r.userId, passed: r.passed, attempt: r.attempt, date: r.match.date }))).get(ctx.user.id);
   const base = { key: "federal", href: "/federal", icon: BadgeCheck, title: `Obligatorisch ${year}` };
-  if (!st) return { ...base, value: "offen", hint: "Noch kein amtliches Resultat", tone: "neutral" };
+  if (!st) return { ...base, value: "kein Resultat erfasst", hint: "Noch kein amtliches Resultat in diesem Jahr", tone: "neutral" };
   if (st.status === "passed") return { ...base, value: "bestanden", hint: `Amtlich bestätigt am ${formatDateZurich(st.lastDate, { weekday: undefined })}`, tone: "ok" };
   if (st.status === "failed") return { ...base, value: "noch offen", hint: st.attempts === 1 ? "1 Versuch, noch nicht bestanden" : `${st.attempts} Versuche, noch nicht bestanden`, tone: "warn" };
   return { ...base, value: "erfasst", hint: "Amtliches Resultat bestätigt", tone: "neutral" };

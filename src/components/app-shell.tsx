@@ -127,11 +127,13 @@ export function AppShell({
   const title = tenant?.name ?? "Standchef";
   const admins = adminLinks(admin);
   // Für die Verwaltung: längster passender Link ist aktiv (/admin/members/import nicht zusätzlich /admin)
-  const activeAdmin = admins.filter((n) => matches(n.href)).sort((a, b) => b.href.length - a.href.length)[0]?.href;
+  // Beansprucht ein Hauptmenü-Eintrag unter /admin (z.B. /admin/live) den Pfad, ist kein Verwaltungslink aktiv.
+  const navClaimsAdminPath = items.some((n) => n.href.startsWith("/admin") && matches(n.href));
+  const activeAdmin = navClaimsAdminPath ? undefined : admins.filter((n) => matches(n.href)).sort((a, b) => b.href.length - a.href.length)[0]?.href;
 
   // Längster passender Eintrag gewinnt (/admin/live ist kein Verwaltungs-«Mehr»).
   const sideLink = (n: NavItem) => {
-    const active = isActive(n.href) && !(n.href === "/me" && (activeAdmin || items.some((o) => o.href !== "/me" && o.href.startsWith("/admin") && matches(o.href))));
+    const active = isActive(n.href) && !(n.href === "/me" && (activeAdmin || navClaimsAdminPath));
     return (
       <Link key={n.href} href={n.href} aria-current={active ? "page" : undefined}
         className={cn("flex items-center gap-3 rounded-control px-3 h-11 text-[15px] font-medium transition-colors", active ? "bg-accent-soft text-accent" : "text-ink-2 hover:bg-surface-2")}>

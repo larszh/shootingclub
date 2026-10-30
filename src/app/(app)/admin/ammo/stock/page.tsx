@@ -2,9 +2,9 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { BarChart3, ClipboardList, Download } from "lucide-react";
 import { Alert, Badge, Button, Card, EmptyState, Field, Input, LinkButton, PageHeader, SectionTitle, Select } from "@/components/ui";
-import { formatDateTimeZurich, todayZurich } from "@/lib/time";
+import { todayZurich } from "@/lib/time";
 import { requireAmmoAdmin } from "@/modules/ammo/guard";
-import { fundingInfo, isStockKind, STOCK_CHECK_HINT, STOCK_KIND, STOCK_KINDS, stockKindInfo } from "@/modules/ammo/stock";
+import { formatMovementDate, fundingInfo, isStockKind, STOCK_CHECK_HINT, STOCK_KIND, STOCK_KINDS, stockKindInfo } from "@/modules/ammo/stock";
 import { listMovements, recentRangeDays, type MovementFilter } from "@/modules/ammo/stock-service";
 import { AdminAmmoTabs } from "@/modules/ammo/ui/admin-tabs";
 import { StockBooking } from "@/modules/ammo/ui/stock-booking";
@@ -111,7 +111,7 @@ export default async function AmmoStockPage({ searchParams }: { searchParams: Pr
                     <span className="truncate text-sm font-medium">{m.product.name}</span>
                   </div>
                   <div className="text-xs text-ink-3">
-                    {formatDateTimeZurich(m.date)}
+                    {formatMovementDate(m.date, m.createdAt)}
                     {m.source ? ` · ${m.source}` : ""}
                     {m.invoiceNumber ? ` · ${m.invoiceNumber}` : ""}
                     {m.rangeDay ? ` · Standbuch ${m.rangeDay.date.toISOString().slice(0, 10).split("-").reverse().join(".")}${m.rangeDay.resource ? ` (${m.rangeDay.resource.name})` : ""}` : ""}

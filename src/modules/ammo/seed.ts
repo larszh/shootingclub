@@ -4,6 +4,7 @@
  * Einstellungen nur anlegen, wenn keine existieren; Produkte nur, wenn der Verein noch keine hat.
  */
 import type { PrismaClient } from "../../generated/prisma/client";
+import { addDays, todayZurich, zurichToUtc } from "../../lib/time";
 
 type Db = Pick<PrismaClient, "ammoSettings" | "ammoProduct">;
 
@@ -48,8 +49,9 @@ export async function seedDemoAmmoStock(db: StockDb, tenantId: string, userIds: 
   if ((await db.ammoStockMovement.count({ where: { tenantId } })) > 0) return { created: 0, skipped: true };
   const products = await db.ammoProduct.findMany({ where: { tenantId }, select: { id: true, caliber: true, stockUnits: true } });
   const by = userIds[0] ?? null;
-  const now = Date.now();
-  const DAY = 86_400_000;
+  // Rückdatierte Demo-Buchungen wie im Formular: Schweizer Kalendertag, Mittag (keine zufällige Uhrzeit).
+  const today = todayZurich();
+  const daysAgo = (n: number) => zurichToUtc(addDays(today, -n), "12:00");
   let created = 0;
   for (const p of products) {
     const funding = p.caliber.includes("GP 90") ? "SUBSIDIZED" : p.caliber.includes("GP 11") ? "FEDERAL_FREE" : null;
@@ -60,9 +62,9 @@ export async function seedDemoAmmoStock(db: StockDb, tenantId: string, userIds: 
     const issue = funding ? Math.min(receipt, Math.floor(stock / 4)) : 0;
     const opening = stock - receipt + issue;
     const rows = [
-      { kind: "CORRECTION", units: opening, date: new Date(now - 90 * DAY), source: null, note: "Anfangsbestand" },
-      ...(receipt ? [{ kind: "RECEIPT", units: receipt, date: new Date(now - 40 * DAY), source: funding === "FEDERAL_FREE" ? "Bund, Lieferschein DEMO-1" : "Bund (verbilligt), Lieferschein DEMO-2", note: null }] : []),
-      ...(issue ? [{ kind: "ISSUE", units: -issue, date: new Date(now - 20 * DAY), source: "Obligatorisch (Demo)", note: null }] : []),
+      { kind: "CORRECTION", units: opening, date: daysAgo(90), source: null, note: "Anfangsbestand" },
+      ...(receipt ? [{ kind: "RECEIPT", units: receipt, date: daysAgo(40), source: funding === "FEDERAL_FREE" ? "Bund, Lieferschein DEMO-1" : "Bund (verbilligt), Lieferschein DEMO-2", note: null }] : []),
+      ...(issue ? [{ kind: "ISSUE", units: -issue, date: daysAgo(20), source: "Obligatorisch (Demo)", note: null }] : []),
     ];
     await db.ammoStockMovement.createMany({ data: rows.map((r) => ({ ...r, tenantId, productId: p.id, createdById: by })) });
     created += rows.length;

@@ -11,6 +11,9 @@ export const metadata = { title: "Kursausweis" };
 
 type P = CourseDetail["participants"][number];
 
+/** «Erfolgreich abgeschlossen» nur, wenn der Abschluss bestätigt ist und alle Pflichtprogramme (noch) bestanden sind. */
+const isCompleted = (p: P) => p.status === "COMPLETED" && p.completion.allPassed;
+
 /**
  * Kursausweise (je eine A4-Seite). ?p=<id> für eine Person, sonst alle Abgeschlossenen.
  * Teilnehmende mit Konto dürfen den eigenen Ausweis drucken, sobald der Kurs abgeschlossen ist.
@@ -24,9 +27,9 @@ export default async function CourseCertificatePage({ params, searchParams }: { 
   const canManage = ctx.can("courses.manage");
   let people: P[];
   if (canManage) {
-    people = sp.p ? course.participants.filter((p) => p.id === sp.p) : course.participants.filter((p) => p.status === "COMPLETED");
+    people = sp.p ? course.participants.filter((p) => p.id === sp.p) : course.participants.filter(isCompleted);
   } else {
-    const me = course.participants.find((p) => p.userId === ctx.user.id && p.status === "COMPLETED");
+    const me = course.participants.find((p) => p.userId === ctx.user.id && isCompleted(p));
     if (!me) redirect("/courses?denied=1");
     people = [me];
   }
@@ -49,11 +52,11 @@ export default async function CourseCertificatePage({ params, searchParams }: { 
             {[p.street, [p.zip, p.city].filter(Boolean).join(" ")].filter(Boolean).length ? <div className="text-neutral-700">{[p.street, [p.zip, p.city].filter(Boolean).join(" ")].filter(Boolean).join(", ")}</div> : null}
           </div>
           <p className="mb-4">
-            {p.status === "COMPLETED" ? "hat den Kurs " : "hat am Kurs "}
+            {isCompleted(p) ? "hat den Kurs " : "hat am Kurs "}
             <strong>{course.name}</strong>
             {isCourseKind(course.kind) ? ` (${COURSE_KIND[course.kind].label})` : ""}
             {dates ? ` vom ${dates}` : ` ${course.year}`}
-            {p.status === "COMPLETED" ? " erfolgreich abgeschlossen." : " teilgenommen."}
+            {isCompleted(p) ? " erfolgreich abgeschlossen." : " teilgenommen."}
           </p>
           <div className="mb-4 grid grid-cols-2 gap-2">
             <div><span className="text-neutral-500">Präsenz:</span> {p.attendance.present} von {p.attendance.total} Lektionen</div>

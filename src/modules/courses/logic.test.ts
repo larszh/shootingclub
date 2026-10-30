@@ -8,6 +8,7 @@ import {
   completionMatrix,
   evaluatePass,
   evaluateRule,
+  grantNote,
   guardianProblem,
   isMinorOn,
   mapImportRows,
@@ -15,9 +16,11 @@ import {
   parseIdCsv,
   participantKey,
   qualificationValidity,
+  splitGrantNote,
   splitName,
   toIdCsv,
 } from "./logic";
+import { isProtectedQualKind, monthsLabel } from "./types";
 
 describe("ageOn / isMinorOn", () => {
   it("rechnet ganze Jahre bis zum Stichtag", () => {
@@ -174,5 +177,30 @@ describe("Hilfen", () => {
     expect(guardianProblem({ birthDate: "2015-01-01", guardianName: null, guardianEmail: null, guardianPhone: null }, "2026-01-01")).toContain("Unter 18");
     expect(guardianProblem({ birthDate: "2015-01-01", guardianName: "Eva", guardianEmail: null, guardianPhone: "079" }, "2026-01-01")).toBeNull();
     expect(guardianProblem({ birthDate: "1990-01-01", guardianName: null, guardianEmail: null, guardianPhone: null }, "2026-01-01")).toBeNull();
+  });
+});
+
+describe("grantNote / splitGrantNote", () => {
+  it("speichert die Anforderung zum Zeitpunkt der Erteilung", () => {
+    const note = grantNote({ total: 126, zeros: 0 }, { passScore: 60, maxZeros: 2 });
+    expect(splitGrantNote(note)).toEqual({ note: "126 Pkt., 0 Nuller", requirement: "mindestens 60 Punkte, höchstens 2 Nuller" });
+  });
+  it("ältere Bemerkungen ohne Anforderung bleiben unverändert", () => {
+    expect(splitGrantNote("126 Pkt., 0 Nuller")).toEqual({ note: "126 Pkt., 0 Nuller", requirement: null });
+    expect(splitGrantNote(null)).toEqual({ note: null, requirement: null });
+  });
+});
+
+describe("isProtectedQualKind / monthsLabel", () => {
+  it("Sicherheits- und Leiterqualifikationen sind geschützt", () => {
+    expect(isProtectedQualKind("SCHUETZENMEISTER")).toBe(true);
+    expect(isProtectedQualKind("RANGE_OFFICER")).toBe(true);
+    expect(isProtectedQualKind("JS_LEITER")).toBe(true);
+    expect(isProtectedQualKind("WEAPON_QUAL")).toBe(false);
+    expect(isProtectedQualKind("OTHER")).toBe(false);
+  });
+  it("Einzahl und Mehrzahl", () => {
+    expect(monthsLabel(1)).toBe("1 Monat");
+    expect(monthsLabel(12)).toBe("12 Monate");
   });
 });

@@ -12,7 +12,7 @@ export default async function NewRulePage() {
   return (
     <div className="max-w-2xl">
       <PageHeader title="Neue Qualifikationsregel" back={{ href: "/courses/qualifications", label: "Qualifikationen" }} />
-      <RuleForm programs={programs} />
+      <RuleForm programs={programs} allKinds={ctx.can("qualifications.manage")} />
     </div>
   );
 }

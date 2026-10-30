@@ -115,8 +115,9 @@ const day = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Datum fehlt");
 export const championshipProgramSchema = z.object({
   programId: z.string().min(1).max(40),
   required: z.boolean(),
-  weight: z.coerce.number().min(0, "Gewicht mindestens 0").max(100, "Gewicht höchstens 100"),
-  maxCount: z.coerce.number().int("Anzahl als ganze Zahl").min(1, "Anzahl mindestens 1").max(100, "Anzahl höchstens 100").nullable(),
+  // Ohne coerce: Das Formular schickt Zahlen als JSON; ungültige Eingaben (null/Text) dürfen nicht still zu 0 werden.
+  weight: z.number({ error: "Gewicht als Zahl angeben" }).min(0, "Gewicht mindestens 0").max(100, "Gewicht höchstens 100"),
+  maxCount: z.number({ error: "Anzahl als ganze Zahl angeben" }).int("Anzahl als ganze Zahl").min(1, "Anzahl mindestens 1").max(100, "Anzahl höchstens 100").nullable(),
 });
 export type ChampionshipProgramInput = z.infer<typeof championshipProgramSchema>;
 
@@ -134,6 +135,34 @@ export const championshipSchema = z
   })
   .refine((v) => v.startsOn <= v.endsOn, { message: "Ende liegt vor dem Beginn", path: ["endsOn"] });
 export type ChampionshipInput = z.infer<typeof championshipSchema>;
+
+/** Zahl aus einem Formularfeld («1,5» oder «1.5»); null, wenn keine gültige Zahl. */
+export function parseDecimalInput(raw: string): number | null {
+  const s = raw.trim().replace(",", ".");
+  if (!/^-?\d+(\.\d+)?$|^-?\.\d+$/.test(s)) return null;
+  const n = Number(s);
+  return Number.isFinite(n) ? n : null;
+}
+
+/** Fehlermeldung zum Gewicht eines Programms (leer = 1), sonst null. */
+export function weightInputError(raw: string): string | null {
+  if (raw.trim() === "") return null;
+  const n = parseDecimalInput(raw);
+  if (n === null) return "Gewicht als Zahl angeben";
+  if (n < 0) return "Gewicht mindestens 0";
+  if (n > 100) return "Gewicht höchstens 100";
+  return null;
+}
+
+/** Fehlermeldung zur Anzahl «Beste N» eines Programms (leer = wie oben), sonst null. */
+export function maxCountInputError(raw: string): string | null {
+  if (raw.trim() === "") return null;
+  const n = parseDecimalInput(raw);
+  if (n === null || !Number.isInteger(n)) return "Anzahl als ganze Zahl angeben";
+  if (n < 1) return "Anzahl mindestens 1";
+  if (n > 100) return "Anzahl höchstens 100";
+  return null;
+}
 
 /** Gewicht für die Anzeige: «×1», «×1.5». */
 export function formatWeight(w: number) {

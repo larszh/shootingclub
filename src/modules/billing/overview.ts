@@ -7,6 +7,7 @@ import { ensureAmmoReference } from "@/modules/ammo/service";
 import { getBillingProfile, type BillingProfileView } from "./profile";
 import { ensureReference } from "./reference";
 import { isOverdue } from "./dates";
+import { feeInvoiceTitle, isStandaloneFeeInvoice } from "./fee-title";
 
 /**
  * Zahlungsübersicht über alle Quellen: Mitgliederbeiträge (FeeInvoice), Reservations-Rechnungen
@@ -126,7 +127,7 @@ export async function listMyPayments(ctx: TenantCtx, now: Date): Promise<MyPayme
     src.fee
       ? db.feeInvoice.findMany({
           where: { tenantId, userId },
-          select: { id: true, tenantId: true, number: true, year: true, categoryName: true, amountCents: true, currency: true, status: true, issuedAt: true, dueAt: true, paidAt: true, reference: true, run: { select: { title: true } } },
+          select: { id: true, tenantId: true, number: true, year: true, categoryName: true, amountCents: true, currency: true, status: true, issuedAt: true, dueAt: true, paidAt: true, reference: true, runId: true, membershipId: true, run: { select: { title: true } } },
           orderBy: { issuedAt: "desc" },
           take: 200,
         })
@@ -160,7 +161,7 @@ export async function listMyPayments(ctx: TenantCtx, now: Date): Promise<MyPayme
     const reference = !qrIban ? null : status === "OPEN" ? await ensureReference("FEE", f, qrIban) : f.reference;
     items.push({
       key: `FEE:${f.id}`, source: "FEE", id: f.id, number: f.number,
-      title: f.run?.title ?? `Mitgliederbeitrag ${f.year}`, detail: f.categoryName, memberName: null,
+      title: feeInvoiceTitle(f, `Mitgliederbeitrag ${f.year}`), detail: isStandaloneFeeInvoice(f) ? null : f.categoryName, memberName: null,
       amountCents: f.amountCents, currency: f.currency, status, group: groupOf(status),
       issuedAt: f.issuedAt, dueAt: f.dueAt, paidAt: f.paidAt,
       overdue: status === "OPEN" && isOverdue(f.dueAt, now), reference,
@@ -269,7 +270,7 @@ export async function listOpenItems(ctx: TenantCtx, now: Date): Promise<OpenItem
     src.fee
       ? db.feeInvoice.findMany({
           where: { tenantId, status: "OPEN" },
-          select: { id: true, number: true, year: true, memberName: true, categoryName: true, amountCents: true, currency: true, issuedAt: true, dueAt: true, reference: true, run: { select: { title: true } } },
+          select: { id: true, number: true, year: true, memberName: true, categoryName: true, amountCents: true, currency: true, issuedAt: true, dueAt: true, reference: true, runId: true, membershipId: true, run: { select: { title: true } } },
           orderBy: { dueAt: "asc" },
           take: 5000,
         })
@@ -297,7 +298,7 @@ export async function listOpenItems(ctx: TenantCtx, now: Date): Promise<OpenItem
   const items: PaymentItem[] = [
     ...fees.map<PaymentItem>((f) => ({
       key: `FEE:${f.id}`, source: "FEE", id: f.id, number: f.number,
-      title: f.run?.title ?? `Mitgliederbeitrag ${f.year}`, detail: f.categoryName, memberName: f.memberName,
+      title: feeInvoiceTitle(f, `Mitgliederbeitrag ${f.year}`), detail: isStandaloneFeeInvoice(f) ? null : f.categoryName, memberName: f.memberName,
       amountCents: f.amountCents, currency: f.currency, status: "OPEN", group: "open",
       issuedAt: f.issuedAt, dueAt: f.dueAt, paidAt: null, overdue: isOverdue(f.dueAt, now), reference: ref(f.reference),
       href: `/billing/invoices/${f.id}/print`, external: true,

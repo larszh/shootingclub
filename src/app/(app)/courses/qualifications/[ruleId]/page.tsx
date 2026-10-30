@@ -8,7 +8,7 @@ import { deleteRuleAction, grantQualificationAction, revokeQualificationAction }
 import { requireQualificationAccess } from "@/modules/courses/guard";
 import { chDate, dbDay, evaluateRule, qualificationValidity } from "@/modules/courses/logic";
 import { getRule, recentMatchesForProgram } from "@/modules/courses/queries";
-import { QUAL_RESPONSIBILITY_HINT } from "@/modules/courses/types";
+import { isProtectedQualKind, monthsLabel, QUAL_RESPONSIBILITY_HINT } from "@/modules/courses/types";
 import { NavActionButton } from "@/modules/courses/ui/nav-action-button";
 import { qualificationLabel } from "@/modules/qualifications/types";
 
@@ -19,7 +19,11 @@ export default async function RulePage({ params }: { params: Promise<{ ruleId: s
   const { ruleId } = await params;
   const rule = await getRule(ctx.tenant.id, ruleId.slice(0, 40));
   if (!rule) notFound();
-  const isInstructor = ctx.can("courses.manage");
+  const protectedKind = isProtectedQualKind(rule.kind);
+  const isQualAdmin = ctx.can("qualifications.manage");
+  // Sicherheits- und Leiterqualifikationen erteilt nur ein Admin (qualifications.manage).
+  const isInstructor = ctx.can("courses.manage") && (!protectedKind || isQualAdmin);
+  const canEditRule = !protectedKind || isQualAdmin;
   const matches = await recentMatchesForProgram(ctx.tenant.id, rule.programId, 20);
   const limits = { passScore: rule.passScore, maxZeros: rule.maxZeros };
 
@@ -29,17 +33,21 @@ export default async function RulePage({ params }: { params: Promise<{ ruleId: s
         title={rule.name}
         subtitle={`${qualificationLabel(rule.kind)} · ${rule.program.name}`}
         back={{ href: "/courses/qualifications", label: "Qualifikationen" }}
-        action={<LinkButton href={`/courses/qualifications/${rule.id}/edit`} variant="secondary" size="md"><Pencil className="h-4 w-4" /> Bearbeiten</LinkButton>}
+        action={canEditRule ? <LinkButton href={`/courses/qualifications/${rule.id}/edit`} variant="secondary" size="md"><Pencil className="h-4 w-4" /> Bearbeiten</LinkButton> : undefined}
       />
 
       <Card className="mb-4 grid grid-cols-2 gap-3 p-4 text-sm sm:grid-cols-4">
         <div><div className="text-xs text-ink-3">Mindestpunktzahl</div><div className="font-semibold tabular-nums">{rule.passScore}</div></div>
         <div><div className="text-xs text-ink-3">Max. Nuller</div><div className="font-semibold tabular-nums">{rule.maxZeros ?? "–"}</div></div>
-        <div><div className="text-xs text-ink-3">Gültigkeit</div><div className="font-semibold">{rule.validityMonths} Monate</div></div>
-        <div><div className="text-xs text-ink-3">Erteilung</div><div className="font-semibold">{rule.requireInstructor ? "durch Ausbildner:in" : "Kursleitung"}</div></div>
+        <div><div className="text-xs text-ink-3">Gültigkeit</div><div className="font-semibold">{monthsLabel(rule.validityMonths)}</div></div>
+        <div><div className="text-xs text-ink-3">Erteilung</div><div className="font-semibold">{rule.requireInstructor || protectedKind ? "durch Ausbildner:in" : "Kursleitung"}</div></div>
       </Card>
       {!rule.isActive ? <Alert tone="warn" className="mb-4">Diese Regel ist inaktiv. Es können keine Qualifikationen erteilt werden.</Alert> : null}
-      {!isInstructor ? <Alert tone="info" className="mb-4">Qualifikationen erteilen kann nur die Kursleitung (Ausbildner:innen).</Alert> : null}
+      {!isInstructor ? (
+        <Alert tone="info" className="mb-4">
+          {protectedKind && ctx.can("courses.manage") ? "Sicherheits- und Leiterqualifikationen kann nur ein Admin erteilen." : "Qualifikationen erteilen kann nur die Kursleitung (Ausbildner:innen)."}
+        </Alert>
+      ) : null}
 
       <SectionTitle>Abgeschlossene Durchgänge</SectionTitle>
       {matches.length === 0 ? (
@@ -60,7 +68,7 @@ export default async function RulePage({ params }: { params: Promise<{ ruleId: s
                     const ev = evaluateRule(limits, { total: p.total, zeros: p.zeros });
                     const granted = p.qualifications.find((q) => q.kind === rule.kind) ?? null;
                     const self = p.userId === ctx.user.id;
-                    const blockedSelf = rule.requireInstructor && self;
+                    const blockedSelf = (rule.requireInstructor || protectedKind) && self;
                     return (
                       <li key={p.id} className="flex flex-wrap items-center gap-3 px-4 py-3">
                         <div className="min-w-0 flex-1">
@@ -106,16 +114,18 @@ export default async function RulePage({ params }: { params: Promise<{ ruleId: s
 
       <p className="mt-4 text-xs text-ink-3">{QUAL_RESPONSIBILITY_HINT}</p>
 
-      <div className="mt-6 flex justify-end">
-        <NavActionButton
-          to="/courses/qualifications"
-          variant="ghost"
-          action={deleteRuleAction.bind(null, rule.id)}
-          confirm={{ title: "Regel löschen?", message: "Bereits erteilte Qualifikationen bleiben bestehen.", tone: "danger", confirmLabel: "Löschen" }}
-        >
-          <Trash2 className="h-4 w-4" /> Regel löschen
-        </NavActionButton>
-      </div>
+      {canEditRule ? (
+        <div className="mt-6 flex justify-end">
+          <NavActionButton
+            to="/courses/qualifications"
+            variant="ghost"
+            action={deleteRuleAction.bind(null, rule.id)}
+            confirm={{ title: "Regel löschen?", message: "Bereits erteilte Qualifikationen bleiben bestehen.", tone: "danger", confirmLabel: "Löschen" }}
+          >
+            <Trash2 className="h-4 w-4" /> Regel löschen
+          </NavActionButton>
+        </div>
+      ) : null}
     </div>
   );
 }

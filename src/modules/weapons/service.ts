@@ -86,7 +86,10 @@ export async function createWeaponLoan(l: {
   const name = l.borrowerName?.trim().slice(0, 191) || null;
   if (!l.userId && !name) return { ok: false, error: "Bitte ein Mitglied wählen oder einen Namen eingeben." };
   let isMinor = l.isMinor === true;
-  let borrowerName = name;
+  // Bei Mitgliedern keine Namenskopie speichern (Anzeige über die user-Relation, siehe queries.ts):
+  // so bleibt nach einer Kontolöschung kein Klarname in der Ausleihe zurück.
+  const borrowerName = l.userId ? null : name;
+  let displayName = name;
   if (l.userId) {
     const m = await db.membership.findFirst({
       where: { tenantId: l.tenantId, userId: l.userId, status: { not: "LEFT" }, user: { deletedAt: null } },
@@ -94,7 +97,7 @@ export async function createWeaponLoan(l: {
     });
     if (!m) return { ok: false, error: "Mitglied nicht gefunden." };
     if (isMinorOn(m.user.birthDate, todayZurich()) === true) isMinor = true;
-    borrowerName = m.user.name.slice(0, 191);
+    displayName = m.user.name;
   }
   const reportDays = isMinor ? (l.reportDays && l.reportDays > 0 ? Math.min(365, Math.round(l.reportDays)) : await defaultMinorReportDays(l.tenantId)) : null;
 
@@ -123,7 +126,7 @@ export async function createWeaponLoan(l: {
         select: { id: true },
       });
     });
-    await audit({ tenantId: l.tenantId, actorId: l.issuedById, action: "weapons.loan.create", entity: "WeaponLoan", entityId: loan.id, detail: `${borrowerName ?? ""}${isMinor ? " (minderjährig)" : ""}` });
+    await audit({ tenantId: l.tenantId, actorId: l.issuedById, action: "weapons.loan.create", entity: "WeaponLoan", entityId: loan.id, detail: `${displayName ?? ""}${isMinor ? " (minderjährig)" : ""}` });
     return { ok: true, id: loan.id };
   } catch (e) {
     if (e instanceof LoanError) return { ok: false, error: e.message };

@@ -26,4 +26,12 @@ describe("money", () => {
     expect(formatMoney(5)).toMatch(/0\.05/);
     expect(formatMoney(100, "EUR")).toContain("EUR");
   });
+
+  it("formatiert deterministisch (unabhängig von ICU, gleich auf Server und Client)", () => {
+    expect(formatMoney(438000)).toBe("CHF 4’380.00");
+    expect(formatMoney(3000)).toBe("CHF 30.00");
+    expect(formatMoney(123456789)).toBe("CHF 1’234’567.89");
+    expect(formatMoney(-1505)).toBe("-CHF 15.05");
+    expect(formatMoney(5)).toBe("CHF 0.05");
+  });
 });

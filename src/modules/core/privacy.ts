@@ -17,6 +17,9 @@ import { safeJson } from "@/lib/utils";
  */
 
 export const DELETED_USER_NAME = "Gelöschtes Mitglied";
+/** Vor- und Nachname für Datensätze mit getrennten Pflichtfeldern (z.B. Kursanmeldung). */
+export const DELETED_FIRST_NAME = "Gelöschte";
+export const DELETED_LAST_NAME = "Person";
 
 /** Pseudonyme Adresse eines gelöschten Kontos (eindeutig, nie zustellbar). */
 export function deletedEmailFor(userId: string) {
@@ -39,7 +42,10 @@ export function zipFiles(files: Record<string, string>, now: Date = new Date()):
 
 /** Alle Personendaten eines Benutzers als JSON-taugliches Objekt. */
 export async function collectPersonalData(userId: string) {
-  const [user, memberships, participations, bookings, feeInvoices, ammoOrders, rsvps, messages, files, prefs, pushCount, sessionCount] = await Promise.all([
+  const [
+    user, memberships, participations, bookings, feeInvoices, ammoOrders, rsvps, messages, files, prefs, pushCount, sessionCount,
+    rangeVisits, guestsHosted, rulesAcceptances, qualifications, courseParticipations, weaponLoans, shiftAssignments, workLogs, incidentsReported, rangeDuties,
+  ] = await Promise.all([
     db.user.findUnique({
       where: { id: userId },
       select: { id: true, email: true, name: true, locale: true, street: true, zip: true, city: true, phone: true, birthDate: true, themePref: true, isSuperAdmin: true, totpEnabledAt: true, passwordSetAt: true, createdAt: true, updatedAt: true, avatarPath: true },
@@ -91,8 +97,68 @@ export async function collectPersonalData(userId: string) {
     db.notificationPreference.findMany({ where: { userId }, select: { channel: true, topic: true, enabled: true } }),
     db.pushSubscription.count({ where: { userId } }),
     db.session.count({ where: { userId } }),
+    db.rangeVisit.findMany({
+      where: { userId },
+      select: { checkedInAt: true, checkedOutAt: true, lane: true, discipline: true, note: true, rulesAcceptedAt: true, tenant: { select: { name: true } } },
+      orderBy: { checkedInAt: "desc" },
+    }),
+    db.rangeVisit.findMany({
+      where: { hostUserId: userId },
+      select: { guestName: true, checkedInAt: true, tenant: { select: { name: true } } },
+      orderBy: { checkedInAt: "desc" },
+    }),
+    db.rulesAcceptance.findMany({
+      where: { userId },
+      select: { acceptedAt: true, rules: { select: { version: true, title: true, tenant: { select: { name: true } } } } },
+      orderBy: { acceptedAt: "desc" },
+    }),
+    db.qualification.findMany({
+      where: { userId },
+      select: { kind: true, label: true, number: true, validFrom: true, validUntil: true, note: true, createdAt: true, tenant: { select: { name: true } } },
+      orderBy: { createdAt: "desc" },
+    }),
+    db.courseParticipant.findMany({
+      where: { userId },
+      select: {
+        firstName: true, lastName: true, birthDate: true, email: true, phone: true, street: true, zip: true, city: true,
+        guardianName: true, guardianEmail: true, guardianPhone: true, status: true, note: true, createdAt: true,
+        course: { select: { name: true, year: true, tenant: { select: { name: true } } } },
+        attendance: { select: { present: true, note: true, session: { select: { title: true, startsAt: true } } } },
+        results: { select: { label: true, score: true, passed: true, date: true } },
+      },
+      orderBy: { createdAt: "desc" },
+    }),
+    db.weaponLoan.findMany({
+      where: { userId },
+      select: {
+        loanedAt: true, dueAt: true, returnedAt: true, shots: true, isMinor: true, onSiteOnly: true, reportDueAt: true, reportedAt: true, note: true,
+        weapon: { select: { name: true, caliber: true, serialNumber: true } }, tenant: { select: { name: true } },
+      },
+      orderBy: { loanedAt: "desc" },
+    }),
+    db.shiftAssignment.findMany({
+      where: { userId },
+      select: { status: true, hours: true, createdAt: true, shift: { select: { title: true, startsAt: true, endsAt: true, tenant: { select: { name: true } } } } },
+      orderBy: { createdAt: "desc" },
+    }),
+    db.workLog.findMany({
+      where: { userId },
+      select: { date: true, hours: true, description: true, approvedAt: true, tenant: { select: { name: true } } },
+      orderBy: { date: "desc" },
+    }),
+    db.incident.findMany({
+      where: { reportedById: userId },
+      select: { occurredAt: true, kind: true, severity: true, location: true, description: true, status: true, tenant: { select: { name: true } } },
+      orderBy: { occurredAt: "desc" },
+    }),
+    db.rangeDay.findMany({
+      where: { dutyUserId: userId },
+      select: { date: true, dutyName: true, openedAt: true, closedAt: true, tenant: { select: { name: true } } },
+      orderBy: { date: "desc" },
+    }),
   ]);
   if (!user) return null;
+  const day = (d: Date | null | undefined) => (d ? d.toISOString().slice(0, 10) : null);
 
   return {
     exportedAt: new Date().toISOString(),
@@ -132,6 +198,27 @@ export async function collectPersonalData(userId: string) {
     chatMessages: messages.map((m) => ({ club: m.conversation.tenant.name, conversation: m.conversation.kind === "GROUP" ? m.conversation.title ?? "Gruppe" : "Direktnachricht", sentAt: iso(m.createdAt), editedAt: iso(m.editedAt), text: m.body })),
     uploadedFiles: files.map((f) => ({ club: f.tenant.name, name: f.name, type: f.mimeType, bytes: f.sizeBytes, area: f.context, uploadedAt: iso(f.createdAt) })),
     notificationPreferences: prefs,
+    rangeVisits: rangeVisits.map((v) => ({ club: v.tenant.name, checkedInAt: iso(v.checkedInAt), checkedOutAt: iso(v.checkedOutAt), lane: v.lane, discipline: v.discipline, rulesAcceptedAt: iso(v.rulesAcceptedAt), note: v.note })),
+    guestsHosted: guestsHosted.map((g) => ({ club: g.tenant.name, guest: g.guestName, checkedInAt: iso(g.checkedInAt) })),
+    rulesAcceptances: rulesAcceptances.map((a) => ({ club: a.rules.tenant.name, rules: a.rules.title, version: a.rules.version, acceptedAt: iso(a.acceptedAt) })),
+    qualifications: qualifications.map((q) => ({ club: q.tenant.name, kind: q.kind, label: q.label, number: q.number, validFrom: day(q.validFrom), validUntil: day(q.validUntil), note: q.note, createdAt: iso(q.createdAt) })),
+    courses: courseParticipations.map((c) => ({
+      club: c.course.tenant.name, course: c.course.name, year: c.course.year, status: c.status,
+      firstName: c.firstName, lastName: c.lastName, birthDate: day(c.birthDate), email: c.email, phone: c.phone, street: c.street, zip: c.zip, city: c.city,
+      guardian: c.guardianName || c.guardianEmail || c.guardianPhone ? { name: c.guardianName, email: c.guardianEmail, phone: c.guardianPhone } : null,
+      note: c.note, registeredAt: iso(c.createdAt),
+      attendance: c.attendance.map((a) => ({ session: a.session.title, startsAt: iso(a.session.startsAt), present: a.present, note: a.note })),
+      results: c.results.map((r) => ({ label: r.label, score: r.score, passed: r.passed, date: day(r.date) })),
+    })),
+    weaponLoans: weaponLoans.map((l) => ({
+      club: l.tenant.name, weapon: l.weapon.name, caliber: l.weapon.caliber, serialNumber: l.weapon.serialNumber,
+      loanedAt: iso(l.loanedAt), dueAt: iso(l.dueAt), returnedAt: iso(l.returnedAt), shots: l.shots, minor: l.isMinor, onSiteOnly: l.onSiteOnly,
+      reportDueAt: iso(l.reportDueAt), reportedAt: iso(l.reportedAt), note: l.note,
+    })),
+    shifts: shiftAssignments.map((a) => ({ club: a.shift.tenant.name, shift: a.shift.title, startsAt: iso(a.shift.startsAt), endsAt: iso(a.shift.endsAt), status: a.status, hours: a.hours, signedUpAt: iso(a.createdAt) })),
+    workLogs: workLogs.map((w) => ({ club: w.tenant.name, date: day(w.date), hours: w.hours, description: w.description, approvedAt: iso(w.approvedAt) })),
+    incidentsReported: incidentsReported.map((i) => ({ club: i.tenant.name, occurredAt: iso(i.occurredAt), kind: i.kind, severity: i.severity, location: i.location, description: i.description, status: i.status })),
+    rangeDuties: rangeDuties.map((r) => ({ club: r.tenant.name, date: day(r.date), name: r.dutyName, openedAt: iso(r.openedAt), closedAt: iso(r.closedAt) })),
   };
 }
 
@@ -146,7 +233,9 @@ export async function buildPersonalExportZip(userId: string): Promise<Uint8Array
     "",
     "meine-daten.json enthält alle Daten, die Standchef zu deinem Konto speichert:",
     "Profil, Mitgliedschaften, Resultate, Reservationen, Rechnungen (Beiträge, Reservationen, Munition),",
-    "Anmeldungen zu Anlässen, deine Chat-Nachrichten (nur Text) und die Liste deiner hochgeladenen Dateien.",
+    "Anmeldungen zu Anlässen, deine Chat-Nachrichten (nur Text), die Liste deiner hochgeladenen Dateien,",
+    "Standbesuche und betreute Gäste, akzeptierte Standordnungen, Qualifikationen, Kurse (Präsenz, Resultate),",
+    "Waffenausleihen, Helfereinsätze und Arbeitsstunden, gemeldete Vorfälle und Standdienste.",
     "",
     "Die Dateien selbst kannst du in der Dateiablage deines Vereins herunterladen.",
   ].join("\r\n");
@@ -176,6 +265,9 @@ export async function soleOwnerTenants(userId: string): Promise<Array<{ id: stri
 /**
  * Löscht ein Konto durch Pseudonymisierung. Rechnungen, Buchungen und Resultate bleiben
  * (Aufbewahrungspflicht 10 Jahre, OR 958f) und verweisen auf das pseudonymisierte Konto.
+ * Als Nachweis bleiben ausserdem Waffenausleihen (Waffengesetz), Standbuch (Standbesuche,
+ * Standdienste) und Vorfälle sowie Kurs- und Qualifikationsresultate (NDS, Ranglisten) erhalten;
+ * Namenskopien, Kontaktangaben und Notizen darin werden entfernt bzw. pseudonymisiert.
  * Künftige, unbezahlte Buchungen werden storniert, wartende Mails an die alte Adresse verworfen.
  * Prüfungen (Passwort, einziger Inhaber) macht der Aufrufer.
  */
@@ -216,6 +308,19 @@ export async function pseudonymizeUser(userId: string): Promise<{ email: string;
     // Mitgliedschaften enden; Beitragsrechnungen bleiben über membershipId verknüpft.
     db.membership.updateMany({ where: { userId, status: { not: "LEFT" } }, data: { status: "LEFT", leftAt: today } }),
     db.membership.updateMany({ where: { userId }, data: { role: "MEMBER", licenseNumber: null, guardianName: null, guardianEmail: null, guardianPhone: null, adminNote: null, householdId: null } }),
+    // Kursanmeldungen: Präsenz und Resultate bleiben (NDS), Personalien werden entfernt.
+    db.courseParticipant.updateMany({
+      where: { userId },
+      data: {
+        firstName: DELETED_FIRST_NAME, lastName: DELETED_LAST_NAME, birthDate: null, email: null, phone: null, street: null, zip: null, city: null,
+        guardianName: null, guardianEmail: null, guardianPhone: null, note: null,
+      },
+    }),
+    // Waffenausleihen bleiben als Nachweis (Waffengesetz), ohne Namenskopie.
+    db.weaponLoan.updateMany({ where: { userId }, data: { borrowerName: null } }),
+    db.rangeDay.updateMany({ where: { dutyUserId: userId }, data: { dutyName: DELETED_USER_NAME } }),
+    db.qualification.updateMany({ where: { userId }, data: { number: null, note: null } }),
+    db.rangeVisit.updateMany({ where: { userId }, data: { note: null } }),
     db.user.update({
       where: { id: userId },
       data: {
@@ -276,7 +381,10 @@ const dt = (d: Date | null | undefined) => (d ? d.toISOString().replace("T", " "
 
 /** CSV-Dateien mit allen wesentlichen Daten eines Vereins (Mitglieder, Resultate, Anlässe, Buchungen, Rechnungen, Dateien). */
 export async function buildTenantArchiveFiles(tenantId: string): Promise<Record<string, string>> {
-  const [tenant, members, participants, events, bookings, feeInvoices, ammoOrders, files] = await Promise.all([
+  const [
+    tenant, members, participants, events, bookings, feeInvoices, ammoOrders, files,
+    rangeVisits, rangeDays, qualifications, courseParticipants, weaponLoans, shiftAssignments, workLogs, incidents,
+  ] = await Promise.all([
     db.tenant.findUnique({ where: { id: tenantId }, select: { name: true, slug: true, city: true, canton: true, createdAt: true } }),
     db.membership.findMany({
       where: { tenantId },
@@ -312,6 +420,51 @@ export async function buildTenantArchiveFiles(tenantId: string): Promise<Record<
       where: { tenantId },
       select: { name: true, mimeType: true, sizeBytes: true, provider: true, context: true, createdAt: true, folder: { select: { name: true } }, uploadedBy: { select: { name: true } } },
       orderBy: { createdAt: "desc" },
+    }),
+    db.rangeVisit.findMany({
+      where: { tenantId },
+      select: { checkedInAt: true, checkedOutAt: true, lane: true, discipline: true, guestName: true, guestBirthYear: true, guestIdChecked: true, rulesAcceptedAt: true, note: true, user: { select: { name: true } } },
+      orderBy: { checkedInAt: "desc" },
+    }),
+    db.rangeDay.findMany({
+      where: { tenantId },
+      select: { date: true, dutyName: true, openedAt: true, closedAt: true, usedAm: true, usedPm: true, usedEvening: true, notes: true, resource: { select: { name: true } } },
+      orderBy: { date: "desc" },
+    }),
+    db.qualification.findMany({
+      where: { tenantId },
+      select: { kind: true, label: true, number: true, validFrom: true, validUntil: true, note: true, createdAt: true, user: { select: { name: true } } },
+      orderBy: [{ kind: "asc" }, { createdAt: "desc" }],
+    }),
+    db.courseParticipant.findMany({
+      where: { course: { tenantId } },
+      select: {
+        firstName: true, lastName: true, birthDate: true, email: true, phone: true, status: true, createdAt: true,
+        course: { select: { name: true, year: true } },
+        attendance: { select: { present: true } },
+        results: { select: { label: true, score: true, passed: true } },
+      },
+      orderBy: [{ course: { year: "desc" } }, { lastName: "asc" }],
+    }),
+    db.weaponLoan.findMany({
+      where: { tenantId },
+      select: { loanedAt: true, dueAt: true, returnedAt: true, shots: true, isMinor: true, onSiteOnly: true, reportDueAt: true, reportedAt: true, borrowerName: true, note: true, user: { select: { name: true } }, weapon: { select: { name: true, serialNumber: true } } },
+      orderBy: { loanedAt: "desc" },
+    }),
+    db.shiftAssignment.findMany({
+      where: { shift: { tenantId } },
+      select: { status: true, hours: true, user: { select: { name: true } }, shift: { select: { title: true, startsAt: true, endsAt: true } } },
+      orderBy: { shift: { startsAt: "desc" } },
+    }),
+    db.workLog.findMany({
+      where: { tenantId },
+      select: { date: true, hours: true, description: true, approvedAt: true, user: { select: { name: true } } },
+      orderBy: { date: "desc" },
+    }),
+    db.incident.findMany({
+      where: { tenantId },
+      select: { occurredAt: true, kind: true, severity: true, location: true, description: true, persons: true, measures: true, status: true },
+      orderBy: { occurredAt: "desc" },
     }),
   ]);
   if (!tenant) return {};
@@ -358,6 +511,46 @@ export async function buildTenantArchiveFiles(tenantId: string): Promise<Record<
   out["dateien.csv"] = toCsv([
     ["Name", "Ordner", "Typ", "Grösse (Bytes)", "Speicher", "Bereich", "Hochgeladen von", "Hochgeladen am"],
     ...files.map((f) => [f.name, f.folder?.name ?? "", f.mimeType, f.sizeBytes, f.provider, f.context, f.uploadedBy?.name ?? "", dt(f.createdAt)]),
+  ]);
+  const yn = (b: boolean) => (b ? "ja" : "nein");
+  out["standbuch.csv"] = toCsv([
+    ["Eingecheckt", "Ausgecheckt", "Person", "Gast", "Gast Jahrgang", "Ausweis geprüft", "Scheibe/Bahn", "Disziplin", "Standordnung akzeptiert", "Bemerkung"],
+    ...rangeVisits.map((v) => [dt(v.checkedInAt), dt(v.checkedOutAt), v.user?.name ?? "", v.guestName, v.guestBirthYear, yn(v.guestIdChecked), v.lane, v.discipline, dt(v.rulesAcceptedAt), v.note]),
+  ]);
+  out["standdienste.csv"] = toCsv([
+    ["Datum", "Anlage", "Standdienst", "Geöffnet", "Geschlossen", "Vormittag", "Nachmittag", "Abend", "Notizen"],
+    ...rangeDays.map((r) => [d10(r.date), r.resource?.name ?? "", r.dutyName, dt(r.openedAt), dt(r.closedAt), yn(r.usedAm), yn(r.usedPm), yn(r.usedEvening), r.notes]),
+  ]);
+  out["qualifikationen.csv"] = toCsv([
+    ["Person", "Art", "Bezeichnung", "Nummer", "Gültig ab", "Gültig bis", "Notiz", "Erfasst"],
+    ...qualifications.map((q) => [q.user.name, q.kind, q.label, q.number, d10(q.validFrom), d10(q.validUntil), q.note, d10(q.createdAt)]),
+  ]);
+  out["kurse.csv"] = toCsv([
+    ["Kurs", "Jahr", "Vorname", "Nachname", "Geburtsdatum", "E-Mail", "Telefon", "Status", "Anwesend", "Lektionen", "Resultate", "Angemeldet"],
+    ...courseParticipants.map((c) => [
+      c.course.name, c.course.year, c.firstName, c.lastName, d10(c.birthDate), c.email, c.phone, c.status,
+      c.attendance.filter((a) => a.present).length, c.attendance.length,
+      c.results.map((r) => `${r.label}: ${r.score ?? "–"}${r.passed ? " (bestanden)" : ""}`).join(", "), d10(c.createdAt),
+    ]),
+  ]);
+  out["waffenausleihen.csv"] = toCsv([
+    ["Ausgeliehen", "Waffe", "Seriennummer", "Person", "Minderjährig", "Nur am Stand", "Fällig", "Zurück", "Schüsse", "Meldefrist", "Gemeldet", "Notiz"],
+    ...weaponLoans.map((l) => [
+      dt(l.loanedAt), l.weapon.name, l.weapon.serialNumber, l.user?.name ?? l.borrowerName ?? "", yn(l.isMinor), yn(l.onSiteOnly),
+      dt(l.dueAt), dt(l.returnedAt), l.shots, d10(l.reportDueAt), d10(l.reportedAt), l.note,
+    ]),
+  ]);
+  out["helfereinsaetze.csv"] = toCsv([
+    ["Beginn", "Ende", "Schicht", "Person", "Status", "Stunden"],
+    ...shiftAssignments.map((a) => [dt(a.shift.startsAt), dt(a.shift.endsAt), a.shift.title, a.user.name, a.status, a.hours]),
+  ]);
+  out["arbeitsstunden.csv"] = toCsv([
+    ["Datum", "Person", "Stunden", "Beschreibung", "Bestätigt am"],
+    ...workLogs.map((w) => [d10(w.date), w.user.name, w.hours, w.description, dt(w.approvedAt)]),
+  ]);
+  out["vorfaelle.csv"] = toCsv([
+    ["Zeitpunkt", "Art", "Schwere", "Ort", "Beschreibung", "Beteiligte", "Massnahmen", "Status"],
+    ...incidents.map((i) => [dt(i.occurredAt), i.kind, i.severity, i.location, i.description, i.persons, i.measures, i.status]),
   ]);
   out["LIESMICH.txt"] = [
     `Vereinsarchiv ${tenant.name} (${tenant.slug})`,

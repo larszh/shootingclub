@@ -3,7 +3,7 @@ import { todayZurich } from "@/lib/time";
 import { userAvatarUrl } from "@/components/avatar";
 import type { BoardVisit } from "./ui/day-board";
 import { ageOn, dbDateKey, minorStatusFromBirthYear } from "./logic";
-import { fmtTime } from "./format";
+import { fmtTimeOn } from "./format";
 import { loanMatchesVisit, type getDayBoard } from "./queries";
 
 type Board = NonNullable<Awaited<ReturnType<typeof getDayBoard>>>;
@@ -12,6 +12,7 @@ type Board = NonNullable<Awaited<ReturnType<typeof getDayBoard>>>;
 export function toBoardVisits(board: Board, activeRulesId: string | null, acceptedUserIds: Set<string>): BoardVisit[] {
   const today = todayZurich();
   const year = Number(today.slice(0, 4));
+  const dayKey = dbDateKey(board.day.date);
   const weapons = new Map(board.weapons.map((w) => [w.id, w]));
   const hosts = new Map(board.hosts.map((h) => [h.id, h.name]));
   return board.day.visits.map((v) => {
@@ -34,8 +35,8 @@ export function toBoardVisits(board: Board, activeRulesId: string | null, accept
       lane: v.lane,
       discipline: v.discipline,
       note: v.note,
-      inLabel: fmtTime(v.checkedInAt),
-      outLabel: v.checkedOutAt ? fmtTime(v.checkedOutAt) : null,
+      inLabel: fmtTimeOn(v.checkedInAt, dayKey),
+      outLabel: v.checkedOutAt ? fmtTimeOn(v.checkedOutAt, dayKey) : null,
       weapon: v.clubWeaponId ? { id: v.clubWeaponId, name: w?.name ?? "Vereinswaffe", open: board.openLoans.some((l) => loanMatchesVisit(l, v)) } : null,
       rulesOk,
       minor,

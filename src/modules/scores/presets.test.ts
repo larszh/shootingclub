@@ -20,8 +20,9 @@ describe("PROGRAM_PRESETS", () => {
   it("markieren Obligatorisch und Feldschiessen", () => {
     const op = PROGRAM_PRESETS.find((p) => p.key === "op-300");
     expect(op?.officialKind).toBe("OP");
-    expect(op?.passMinScore).toBe(42);
-    expect(op?.passMaxZeros).toBe(3);
+    // Keine vorbelegte Grenze: 42 Punkte / 3 Nuller passen nicht zur Ringwertung (10er) der Vorlage
+    expect(op?.passMinScore ?? null).toBeNull();
+    expect(op?.passMaxZeros ?? null).toBeNull();
     const pistol = PROGRAM_PRESETS.find((p) => p.key === "op-25-pistol");
     expect(pistol?.officialKind).toBe("OP");
     expect(pistol?.passMinScore ?? null).toBeNull();
@@ -40,12 +41,18 @@ describe("presetOfficialUpdate", () => {
   const op = PROGRAM_PRESETS.find((p) => p.key === "op-300")!;
 
   it("setzt die amtliche Art bei bestehenden Programmen ohne Art", () => {
-    expect(presetOfficialUpdate({ officialKind: null, passMinScore: null, passMaxZeros: null }, op)).toEqual({ officialKind: "OP", passMinScore: 42, passMaxZeros: 3 });
+    expect(presetOfficialUpdate({ officialKind: null, passMinScore: null, passMaxZeros: null }, op)).toEqual({ officialKind: "OP" });
+  });
+
+  it("entfernt die früher vorbelegte Grenze 42/3, aber keine eigenen Grenzen", () => {
+    expect(presetOfficialUpdate({ officialKind: "OP", passMinScore: 42, passMaxZeros: 3 }, op)).toEqual({ passMinScore: null, passMaxZeros: null });
+    expect(presetOfficialUpdate({ officialKind: null, passMinScore: 42, passMaxZeros: 3 }, op)).toEqual({ officialKind: "OP", passMinScore: null, passMaxZeros: null });
+    expect(presetOfficialUpdate({ officialKind: "OP", passMinScore: 42, passMaxZeros: 2 }, op)).toBeNull();
   });
 
   it("überschreibt keine Anpassungen und ist idempotent", () => {
     expect(presetOfficialUpdate({ officialKind: "OP", passMinScore: 40, passMaxZeros: 2 }, op)).toBeNull();
-    expect(presetOfficialUpdate({ officialKind: null, passMinScore: 45, passMaxZeros: null }, op)).toEqual({ officialKind: "OP", passMinScore: 45, passMaxZeros: 3 });
+    expect(presetOfficialUpdate({ officialKind: null, passMinScore: 45, passMaxZeros: null }, op)).toEqual({ officialKind: "OP" });
   });
 
   it("ändert nichts bei Vorlagen ohne amtliche Art", () => {

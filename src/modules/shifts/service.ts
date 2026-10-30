@@ -82,7 +82,9 @@ const when = (d: Date) => formatDateZurich(d, { year: undefined });
 
 /**
  * Stündlicher Erinnerungs-Hook:
- * 1. 24 Stunden vor einem Einsatz an die eingeteilten Mitglieder (Thema «shifts», einmal pro Einteilung).
+ * 1. 24 Stunden vor einem Einsatz an die eingeteilten Mitglieder (einmal pro Einteilung).
+ * Beide Einsatz-Erinnerungen laufen über das Thema «reminders» (E-Mail standardmässig an), sonst erreichen sie
+ * ohne Push-Abo niemanden und werden wegen der Dedupe-Markierung auch nie nachgeholt.
  * 2. 3 Tage vorher an die Einsatzplaner (Admins), wenn ein Einsatz unterbesetzt ist (einmal pro Einsatz).
  * 3. 60 Tage vor Ablauf einer Qualifikation an die Inhaberin bzw. den Inhaber (einmal pro Ablaufdatum).
  * Nachts (vor 7 und ab 22 Uhr) wird nichts verschickt; die nächste Stunde holt es nach.
@@ -108,7 +110,7 @@ export async function runShiftReminders(now: Date = new Date()): Promise<{ assig
           if (done.has(key)) continue;
           const place = s.event?.location ? `, ${s.event.location}` : "";
           await notify({
-            tenantId, userIds: [a.userId], topic: "shifts",
+            tenantId, userIds: [a.userId], topic: "reminders",
             title: `Helfereinsatz morgen: ${s.title}`,
             body: `${when(s.startsAt)}, ${formatTimeRange(s.startsAt, s.endsAt)} Uhr${place}${s.event ? ` · ${s.event.title}` : ""}. Danke für deinen Einsatz!`,
             emailBody: `Du bist für «${s.title}»${s.event ? ` (${s.event.title})` : ""} eingeteilt: ${when(s.startsAt)}, ${formatTimeRange(s.startsAt, s.endsAt)} Uhr${place}.\n\nFalls du verhindert bist, melde dich bitte rechtzeitig bei den Verantwortlichen.`,
@@ -134,7 +136,7 @@ export async function runShiftReminders(now: Date = new Date()): Promise<{ assig
           const lines = fresh.map((x) => `${x.s.title} (${formatDateZurich(x.s.startsAt, { year: undefined })}): ${x.st.filled}/${x.st.capacity}`);
           if (managers.length) {
             await notify({
-              tenantId, userIds: managers, topic: "shifts",
+              tenantId, userIds: managers, topic: "reminders",
               title: fresh.length === 1 ? "Helfereinsatz unterbesetzt" : `${fresh.length} Helfereinsätze unterbesetzt`,
               body: lines.slice(0, 5).join(" · ") + (lines.length > 5 ? ` und ${lines.length - 5} weitere` : ""),
               emailBody: `In den nächsten drei Tagen fehlen noch Helferinnen und Helfer:\n\n${lines.join("\n")}\n\nBitte Mitglieder anfragen oder einteilen.`,

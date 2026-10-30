@@ -7,6 +7,7 @@ import { listMyFeeInvoices } from "@/modules/billing/queries";
 import { getBillingProfile } from "@/modules/billing/profile";
 import { ensureReferences } from "@/modules/billing/reference";
 import { FEE_INVOICE_STATUS } from "@/modules/billing/types";
+import { feeInvoiceTitle, isStandaloneFeeInvoice } from "@/modules/billing/fee-title";
 import { CopyField } from "@/modules/billing/ui/copy-field";
 import { formatMoney } from "@/lib/money";
 import { formatDateZurich } from "@/lib/time";
@@ -38,8 +39,8 @@ export default async function BillingPage() {
               <Card key={i.id} className="p-4 space-y-2.5">
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0">
-                    <div className="font-semibold">{i.run?.title ?? `Mitgliederbeitrag ${i.year}`}</div>
-                    <div className="text-xs text-ink-3">{i.number} · {i.categoryName} · fällig {formatDateZurich(i.dueAt, { weekday: undefined })}</div>
+                    <div className="font-semibold">{feeInvoiceTitle(i, `Mitgliederbeitrag ${i.year}`)}</div>
+                    <div className="text-xs text-ink-3">{i.number}{isStandaloneFeeInvoice(i) ? "" : ` · ${i.categoryName}`} · fällig {formatDateZurich(i.dueAt, { weekday: undefined })}</div>
                   </div>
                   <div className="text-right shrink-0"><div className="text-lg font-semibold tabular-nums">{formatMoney(i.amountCents, i.currency)}</div><Badge tone="warn">offen</Badge></div>
                 </div>
@@ -51,7 +52,7 @@ export default async function BillingPage() {
                     {profile.qrIban && i.reference ? (
                       <CopyField label="Referenznummer" value={i.reference} display={formatQrReference(i.reference)} />
                     ) : (
-                      <CopyField label="Zahlungszweck (Mitteilung)" value={`${i.run?.title ?? `Mitgliederbeitrag ${i.year}`} ${i.number}`} mono={false} />
+                      <CopyField label="Zahlungszweck (Mitteilung)" value={`${feeInvoiceTitle(i, `Mitgliederbeitrag ${i.year}`)} ${i.number}`} mono={false} />
                     )}
                     <CopyField label="Betrag" value={(i.amountCents / 100).toFixed(2)} display={formatMoney(i.amountCents, i.currency)} />
                   </div>
@@ -74,7 +75,7 @@ export default async function BillingPage() {
               return (
                 <Link key={i.id} href={`/billing/invoices/${i.id}/print`} target="_blank" className="flex items-center gap-3 px-4 py-3 hover:bg-surface-2 min-h-14">
                   <FileText className="h-5 w-5 text-ink-2" />
-                  <div className="min-w-0 flex-1"><div className="font-medium">{i.run?.title ?? `Mitgliederbeitrag ${i.year}`}</div><div className="text-xs text-ink-3">{i.number} · {i.categoryName}{i.paidAt ? ` · bezahlt am ${formatDateZurich(i.paidAt, { weekday: undefined })}` : ""}</div></div>
+                  <div className="min-w-0 flex-1"><div className="font-medium">{feeInvoiceTitle(i, `Mitgliederbeitrag ${i.year}`)}</div><div className="text-xs text-ink-3">{i.number}{isStandaloneFeeInvoice(i) ? "" : ` · ${i.categoryName}`}{i.paidAt ? ` · bezahlt am ${formatDateZurich(i.paidAt, { weekday: undefined })}` : ""}</div></div>
                   <div className="text-right"><div className="font-semibold tabular-nums">{formatMoney(i.amountCents, i.currency)}</div><Badge tone={st.tone}>{st.label}</Badge></div>
                 </Link>
               );

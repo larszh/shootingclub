@@ -150,6 +150,29 @@ export function evaluateRule(rule: RuleLimits, result: { total: number | null; z
   return { ok: reasons.length === 0, reasons };
 }
 
+/** Anforderung einer Regel als Text, z.B. «mindestens 60 Punkte, höchstens 2 Nuller». */
+export function requirementText(rule: RuleLimits): string {
+  return `mindestens ${fmtNum(rule.passScore)} Punkte${rule.maxZeros !== null ? `, höchstens ${rule.maxZeros} Nuller` : ""}`;
+}
+
+const REQ_MARKER = " · Anforderung: ";
+
+/**
+ * Bemerkung einer erteilten Qualifikation: Resultat plus die bei der Erteilung geltende Anforderung
+ * (Momentaufnahme – spätere Änderungen der Regel ändern den Nachweis nicht).
+ */
+export function grantNote(result: { total: number | null; zeros: number | null }, rule: RuleLimits): string {
+  return `${result.total ?? "–"} Pkt., ${result.zeros ?? "–"} Nuller${REQ_MARKER}${requirementText(rule)}`;
+}
+
+/** Bemerkung zerlegen: Anforderung (falls bei der Erteilung gespeichert) und übrige Bemerkung. */
+export function splitGrantNote(note: string | null | undefined): { note: string | null; requirement: string | null } {
+  if (!note) return { note: null, requirement: null };
+  const i = note.indexOf(REQ_MARKER);
+  if (i < 0) return { note, requirement: null };
+  return { note: note.slice(0, i) || null, requirement: note.slice(i + REQ_MARKER.length) || null };
+}
+
 /** Gültigkeit einer erteilten Qualifikation: ab Schiesstag, bis Schiesstag + Monate. */
 export function qualificationValidity(shotDay: string, validityMonths: number): { validFrom: string; validUntil: string } {
   return { validFrom: shotDay, validUntil: addMonthsDay(shotDay, Math.max(1, Math.round(validityMonths))) };

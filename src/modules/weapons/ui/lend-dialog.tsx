@@ -7,14 +7,19 @@ import { Alert, Button, Field, Input, LinkButton, Select } from "@/components/ui
 import { Switch, Segmented } from "@/components/ui/controls";
 import { Dialog } from "@/components/ui/dialog";
 import { Spinner } from "@/components/ui/form";
+import { todayZurich } from "@/lib/time";
 import { toast } from "@/lib/ui-feedback";
 import { lendWeaponAction } from "@/modules/weapons/actions";
 import { MINOR_HINT, RESPONSIBILITY_HINT } from "@/modules/weapons/types";
 
 export type LendMember = { userId: string; name: string; memberNumber: string | null; minor: boolean | null };
 
-/** Knopf «Ausleihen» mit Dialog: Mitglied (ohne Ausgetretene) oder freier Name, minderjährig, nur am Stand, Rückgabe bis. */
-export function LendButton({ weapons, members, defaultReportDays, size = "md", className, label = "Ausleihen" }: {
+/**
+ * Knopf «Ausleihen» mit Dialog: Mitglied (ohne Ausgetretene) oder freier Name, minderjährig, nur am Stand, Rückgabe bis.
+ * `hideTrigger`: Knopf ausblenden (z.B. Waffe nicht mehr verfügbar), ein offener Dialog bleibt aber stehen. So überlebt
+ * der Erfolgsschritt («Quittung drucken») das Neuladen der Seite, wenn die Seite danach die offene Ausleihe zeigt.
+ */
+export function LendButton({ weapons, members, defaultReportDays, size = "md", className, label = "Ausleihen", hideTrigger = false }: {
   /** Eine Waffe (Detailseite) oder Auswahl verfügbarer Waffen (Übersicht) */
   weapons: { id: string; name: string }[];
   members: LendMember[];
@@ -22,11 +27,13 @@ export function LendButton({ weapons, members, defaultReportDays, size = "md", c
   size?: "sm" | "md" | "lg";
   className?: string;
   label?: string;
+  hideTrigger?: boolean;
 }) {
   const [open, setOpen] = useState(false);
+  if (hideTrigger && !open) return null;
   return (
     <>
-      <Button size={size} className={className} onClick={() => setOpen(true)}><HandHelping className="h-4 w-4" /> {label}</Button>
+      {hideTrigger ? null : <Button size={size} className={className} onClick={() => setOpen(true)}><HandHelping className="h-4 w-4" /> {label}</Button>}
       {open ? <LendDialog weapons={weapons} members={members} defaultReportDays={defaultReportDays} onClose={() => setOpen(false)} /> : null}
     </>
   );
@@ -45,6 +52,7 @@ function LendDialog({ weapons, members, defaultReportDays, onClose }: { weapons:
   const [reportDays, setReportDays] = useState(String(defaultReportDays));
   const [note, setNote] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [today] = useState(todayZurich);
   const [done, setDone] = useState<{ id: string; name: string } | null>(null);
   const [weaponId, setWeaponId] = useState(weapons[0]?.id ?? "");
   const weapon = weapons.find((w) => w.id === weaponId) ?? null;
@@ -64,6 +72,7 @@ function LendDialog({ weapons, members, defaultReportDays, onClose }: { weapons:
     if (!weapon) return setError("Bitte eine Waffe wählen.");
     if (mode === "member" && !picked) return setError("Bitte ein Mitglied wählen.");
     if (mode === "name" && !name.trim()) return setError("Bitte einen Namen eingeben.");
+    if (dueDate && dueDate < today) return setError("«Rückgabe bis» darf nicht in der Vergangenheit liegen.");
     start(async () => {
       try {
         const r = await lendWeaponAction({
@@ -162,7 +171,7 @@ function LendDialog({ weapons, members, defaultReportDays, onClose }: { weapons:
         ) : null}
         <Switch label="Nur am Stand unter Aufsicht" description="Kein Mitnehmen nach Hause." checked={onSiteOnly} onChange={setOnSiteOnly} />
         <div className="grid gap-3 sm:grid-cols-2">
-          <Field label="Rückgabe bis (optional)"><Input type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} /></Field>
+          <Field label="Rückgabe bis (optional)"><Input type="date" min={today} value={dueDate} onChange={(e) => setDueDate(e.target.value)} /></Field>
           <Field label="Bemerkung (optional)"><Input value={note} onChange={(e) => setNote(e.target.value)} maxLength={191} placeholder="z.B. Jungschützenkurs" /></Field>
         </div>
         {error ? <Alert>{error}</Alert> : null}

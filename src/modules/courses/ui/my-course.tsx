@@ -1,6 +1,6 @@
 import Link from "next/link";
-import { CheckCircle2, Circle, XCircle } from "lucide-react";
-import { Badge, Card, ProgressBar } from "@/components/ui";
+import { CheckCircle2, Circle, Printer, XCircle } from "lucide-react";
+import { Badge, Card, LinkButton, ProgressBar } from "@/components/ui";
 import { chDate } from "@/modules/courses/logic";
 import type { CourseDetail } from "@/modules/courses/queries";
 import { courseKindLabel, participantStatusInfo } from "@/modules/courses/types";
@@ -48,6 +48,11 @@ export function MyCourseCard({ course, me, link = true }: { course: CourseDetail
         </ul>
       ) : null}
       {me.weapon ? <div className="text-xs text-ink-3">Zugeteilte Vereinswaffe: {me.weapon.name}</div> : null}
+      {me.status === "COMPLETED" && me.completion.allPassed ? (
+        <LinkButton href={`/courses/${course.id}/certificate`} variant="secondary" size="md" className="w-full sm:w-auto" prefetch={false}>
+          <Printer className="h-4 w-4" /> Kursausweis
+        </LinkButton>
+      ) : null}
     </Card>
   );
 }

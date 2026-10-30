@@ -6,7 +6,7 @@ import { Alert, Badge, Card, Field, Input, Select, Textarea } from "@/components
 import { Switch } from "@/components/ui/controls";
 import { SubmitButton, submitKeepingValues } from "@/components/ui/form";
 import { saveChampionshipAction } from "@/modules/championship/actions";
-import { CATEGORY_EXAMPLE, CHAMPIONSHIP_RULES_HINT, parseCategories } from "@/modules/championship/types";
+import { CATEGORY_EXAMPLE, CHAMPIONSHIP_RULES_HINT, maxCountInputError, parseCategories, parseDecimalInput, weightInputError } from "@/modules/championship/types";
 
 type ProgramOption = { id: string; name: string; discipline: string; officialKind: string | null };
 type Selected = { programId: string; required: boolean; weight: string; maxCount: string };
@@ -49,8 +49,9 @@ export function ChampionshipForm({ values, programs }: { values: ChampionshipFor
     selected.map((s) => ({
       programId: s.programId,
       required: s.required,
-      weight: s.weight.trim() === "" ? 1 : Number(s.weight.replace(",", ".")),
-      maxCount: s.maxCount.trim() === "" ? null : Number(s.maxCount),
+      // Ungültige Eingaben gehen als Text mit, damit der Server sie ablehnt (statt still 0 bzw. «unbegrenzt»).
+      weight: s.weight.trim() === "" ? 1 : parseDecimalInput(s.weight) ?? s.weight,
+      maxCount: s.maxCount.trim() === "" ? null : parseDecimalInput(s.maxCount) ?? s.maxCount,
     })),
   );
 
@@ -109,10 +110,10 @@ export function ChampionshipForm({ values, programs }: { values: ChampionshipFor
                   </button>
                 </div>
                 <div className="mt-2 grid grid-cols-2 gap-3">
-                  <Field label="Gewicht" hint="1 = normal">
+                  <Field label="Gewicht" hint="1 = normal" error={weightInputError(s.weight) ?? undefined}>
                     <Input inputMode="decimal" value={s.weight} onChange={(e) => update(s.programId, { weight: e.target.value })} aria-label={`Gewicht ${p?.name ?? ""}`} />
                   </Field>
-                  <Field label="Beste N" hint="leer = wie oben">
+                  <Field label="Beste N" hint="leer = wie oben" error={maxCountInputError(s.maxCount) ?? undefined}>
                     <Input type="number" inputMode="numeric" min={1} max={100} value={s.maxCount} onChange={(e) => update(s.programId, { maxCount: e.target.value })} aria-label={`Anzahl ${p?.name ?? ""}`} />
                   </Field>
                 </div>

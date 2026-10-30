@@ -63,7 +63,10 @@ export default async function RangeTodayPage({ searchParams }: { searchParams: P
   }
 
   // --- Standdienst -------------------------------------------------------------------
-  const selected = sp.new ? undefined : (openDays.find((d) => d.id === sp.day) ?? todayDays[0] ?? openDays[0]);
+  // Standardmässig nur ein Standbuch von heute öffnen; alte (nicht abgeschlossene) nur auf Auswahl.
+  const selected = sp.new ? undefined : (openDays.find((d) => d.id === sp.day) ?? todayDays[0]);
+  const staleDays = openDays.filter((d) => dbDateKey(d.date) !== today);
+  const dayTabLabel = (d: (typeof openDays)[number]) => `${dayTitle(d)}${dbDateKey(d.date) !== today ? ` (${fmtDay(d.date, { weekday: undefined, year: undefined })})` : ""}`;
   const [resources, members] = await Promise.all([listRangeResources(tenantId), listMemberOptions(tenantId)]);
 
   if (!selected) {
@@ -74,7 +77,15 @@ export default async function RangeTodayPage({ searchParams }: { searchParams: P
         {header}
         <RangeTabs tabs={tabs} />
         {openDays.length ? (
-          <LinkTabs active="new" label="Offene Standbücher" items={[...openDays.map((d) => ({ value: d.id, href: `/range?day=${d.id}`, label: dayTitle(d) })), { value: "new", href: "/range?new=1", label: "+ Neu" }]} />
+          <LinkTabs active="new" label="Offene Standbücher" items={[...openDays.map((d) => ({ value: d.id, href: `/range?day=${d.id}`, label: dayTabLabel(d) })), { value: "new", href: "/range?new=1", label: "+ Neu" }]} />
+        ) : null}
+        {staleDays.length ? (
+          <Alert tone="warn">
+            {staleDays.length === 1 ? "Ein Standbuch eines früheren Tages ist noch offen" : `${staleDays.length} Standbücher früherer Tage sind noch offen`}. Bitte abschliessen:{" "}
+            {staleDays.map((d, i) => (
+              <span key={d.id}>{i ? ", " : ""}<Link href={`/range?day=${d.id}`} className="inline-flex min-h-11 items-center font-medium underline">{fmtDay(d.date)} · {dayTitle(d)}</Link></span>
+            ))}
+          </Alert>
         ) : null}
         <StatusCard days={todayDays} />
         <OpenDayForm resources={resources} members={members.map((m) => ({ userId: m.userId, name: m.name }))} currentUserId={ctx.user.id} currentQualified={qualified} />
@@ -112,7 +123,7 @@ export default async function RangeTodayPage({ searchParams }: { searchParams: P
       {header}
       <RangeTabs tabs={tabs} />
       {openDays.length > 1 || resources.length ? (
-        <LinkTabs active={selected.id} label="Offene Standbücher" items={[...openDays.map((d) => ({ value: d.id, href: `/range?day=${d.id}`, label: `${dayTitle(d)}${dbDateKey(d.date) !== today ? " (alt)" : ""}`, count: d._count.visits })), { value: "new", href: "/range?new=1", label: "+ Neu" }]} />
+        <LinkTabs active={selected.id} label="Offene Standbücher" items={[...openDays.map((d) => ({ value: d.id, href: `/range?day=${d.id}`, label: dayTabLabel(d), count: d._count.visits })), { value: "new", href: "/range?new=1", label: "+ Neu" }]} />
       ) : null}
       <DayBoard
         key={selected.id}

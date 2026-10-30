@@ -51,9 +51,11 @@ export default async function WeaponDetailPage({ params }: { params: Promise<{ i
       ) : null}
 
       {/* Ausleihe */}
-      <Card className="animate-rise mb-4 p-4">
+      {/* LendButton steht immer an derselben Stelle (nur der Knopf wird ausgeblendet), damit der Erfolgsdialog
+          nach dem Ausleihen das Neuladen der Seite übersteht (die Seite zeigt dann die offene Ausleihe). */}
+      <Card className="animate-rise mb-4 flex flex-wrap items-center justify-between gap-3 p-4">
         {open ? (
-          <div className="space-y-3">
+          <div className="w-full space-y-3">
             <div>
               <div className="text-xs uppercase tracking-wider text-ink-3">Ausgeliehen an</div>
               <div className="text-lg font-semibold">{open.borrower}</div>
@@ -73,13 +75,11 @@ export default async function WeaponDetailPage({ params }: { params: Promise<{ i
             </div>
           </div>
         ) : w.status === "AVAILABLE" ? (
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <p className="text-sm text-ink-2">Die Waffe ist verfügbar.</p>
-            <LendButton weapons={[{ id: w.id, name: w.name }]} members={members} defaultReportDays={reportDays} size="lg" />
-          </div>
+          <p className="text-sm text-ink-2">Die Waffe ist verfügbar.</p>
         ) : (
           <p className="text-sm text-ink-3">Zurzeit nicht ausleihbar ({st.label}).</p>
         )}
+        <LendButton weapons={[{ id: w.id, name: w.name }]} members={members} defaultReportDays={reportDays} size="lg" hideTrigger={!!open || w.status !== "AVAILABLE"} />
       </Card>
 
       {/* Daten */}

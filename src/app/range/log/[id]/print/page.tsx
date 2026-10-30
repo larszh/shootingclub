@@ -4,7 +4,8 @@ import { PrintButton } from "@/components/print-button";
 import { requireRangeDuty } from "@/modules/range/guard";
 import { getActiveRules, getRangeDayDetail } from "@/modules/range/queries";
 import { toBoardVisits } from "@/modules/range/board";
-import { dayTitle, flagsLabel, fmtDay, fmtTime, printedAtLabel } from "@/modules/range/format";
+import { dayTitle, flagsLabel, fmtDay, fmtTimeOn, printedAtLabel } from "@/modules/range/format";
+import { dbDateKey } from "@/modules/range/logic";
 import { PrintSheet, PrintTable, SignatureLine } from "@/modules/range/ui/print-sheet";
 import { db } from "@/lib/db";
 
@@ -34,7 +35,7 @@ export default async function RangeDayPrintPage({ params }: { params: Promise<{ 
       >
         <div className="mb-4 grid grid-cols-4 gap-3">
           <div><div className="text-[8pt] uppercase text-neutral-500">Standdienst</div><div className="font-medium">{day.dutyName ?? "–"}</div></div>
-          <div><div className="text-[8pt] uppercase text-neutral-500">Geöffnet / geschlossen</div><div className="font-medium">{fmtTime(day.openedAt)} – {day.closedAt ? fmtTime(day.closedAt) : "offen"}</div></div>
+          <div><div className="text-[8pt] uppercase text-neutral-500">Geöffnet / geschlossen</div><div className="font-medium">{fmtTimeOn(day.openedAt, dbDateKey(day.date))} – {day.closedAt ? fmtTimeOn(day.closedAt, dbDateKey(day.date)) : "offen"}</div></div>
           <div><div className="text-[8pt] uppercase text-neutral-500">Besuche</div><div className="font-medium">{visits.length} ({visits.filter((v) => v.isGuest).length} Gäste)</div></div>
           <div><div className="text-[8pt] uppercase text-neutral-500">Halbtage</div><div className="font-medium">{day.closedAt ? flagsLabel(day) : "–"}</div></div>
         </div>

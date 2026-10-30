@@ -6,6 +6,7 @@ import { diffLive, formatLiveScore, type LiveRow, type LiveSnapshot } from "@/mo
 type Status = "live" | "reconnecting" | "polling" | "expired" | "gone";
 type Mark = "up" | "upd" | "new";
 
+/** Zeilen pro Spalte; die Zeilenhöhe (eine Textzeile, ca. 5cqh) ist darauf abgestimmt, dass alle 12 in die Fläche passen. */
 const ROWS_PER_COLUMN = 12;
 const PAGE_MS = 12_000;
 const POLL_MS = 10_000;
@@ -184,9 +185,9 @@ export function LiveView({ token, initial, brandColor, logoUrl, showTicker }: { 
               <div className="mt-[1cqh] text-[3cqh] text-white/60">Sobald geschossen wird, erscheint hier die Rangliste.</div>
             </div>
           ) : (
-            <div className={`grid h-full gap-x-[2cqw] ${twoCols ? "grid-cols-2" : "grid-cols-1"}`}>
+            <div className={`grid h-full grid-rows-[minmax(0,1fr)] gap-x-[2cqw] ${twoCols ? "grid-cols-2" : "grid-cols-1"}`}>
               {columns.map((col, ci) => (
-                <ol key={ci} className="grid h-full gap-[0.8cqh]" style={{ gridTemplateRows: `repeat(${ROWS_PER_COLUMN}, minmax(0, 1fr))` }}>
+                <ol key={ci} className="grid h-full min-h-0 gap-[0.8cqh] overflow-hidden" style={{ gridTemplateRows: `repeat(${ROWS_PER_COLUMN}, minmax(0, 1fr))` }}>
                   {col.map((r) => (
                     <LiveRowView key={r.id} r={r} decimals={snap.showDecimals} mark={marks[r.id]} brandColor={brandColor} compact={twoCols} />
                   ))}
@@ -234,28 +235,29 @@ function LiveRowView({ r, decimals, mark, brandColor, compact }: { r: LiveRow; d
   const medal = r.rank === 1 ? "#d4a72c" : r.rank === 2 ? "#b8bcc2" : r.rank === 3 ? "#b07a4a" : null;
   const pct = r.maxShots > 0 ? Math.min(100, (r.shots / r.maxShots) * 100) : 0;
   const markBg = mark === "up" ? "bg-[#1f3a28]" : mark === "new" ? "bg-[#1d2a3d]" : mark === "upd" ? "bg-[#2a2a1c]" : "bg-white/[0.04]";
+  // Eine Zeile pro Schütze: 12 Zeilen müssen in die Fläche passen (je ca. 5cqh hoch).
   return (
-    <li className={`flex min-h-0 items-center gap-[1.2cqw] rounded-[1cqh] px-[1.2cqw] transition-colors duration-700 ${markBg}`}>
+    <li className={`flex min-h-0 items-center gap-[1.2cqw] overflow-hidden rounded-[1cqh] px-[1.2cqw] transition-colors duration-700 ${markBg}`}>
       <span
-        className="flex aspect-square h-[80%] max-h-[6cqh] shrink-0 items-center justify-center rounded-full text-[3cqh] font-bold tabular-nums"
+        className="flex aspect-square h-[80%] max-h-[4.6cqh] shrink-0 items-center justify-center rounded-full text-[2.6cqh] font-bold tabular-nums leading-none"
         style={medal ? { background: medal, color: r.rank === 3 ? "#fff" : "#000" } : { background: "rgba(255,255,255,0.08)" }}
       >
         {r.rank}
       </span>
-      <div className="min-w-0 flex-1">
-        <div className={`truncate font-semibold leading-tight ${compact ? "text-[3cqh]" : "text-[3.6cqh]"}`}>
+      <div className="flex min-w-0 flex-1 items-center gap-[1cqw]">
+        <div className={`min-w-0 truncate font-semibold leading-tight ${compact ? "text-[3cqh]" : "text-[3.6cqh]"}`}>
           {r.name}
           {r.isGuest ? <span className="ml-[0.6cqw] text-[2cqh] font-normal text-white/50">Gast</span> : null}
           {mark === "up" ? <span className="ml-[0.6cqw] text-[2.4cqh] text-[#3ccf6e]" aria-label="aufgestiegen">▲</span> : null}
         </div>
         {!r.finished || r.program ? (
-          <div className="mt-[0.3cqh] flex items-center gap-[0.8cqw] text-[2cqh] text-white/55">
-            {r.program ? <span className="truncate">{r.program}</span> : null}
+          <div className="ml-auto flex min-w-0 shrink-0 items-center gap-[0.8cqw] text-[2cqh] leading-none text-white/55">
+            {r.program ? <span className={`truncate ${compact ? "max-w-[8cqw]" : "max-w-[16cqw]"}`}>{r.program}</span> : null}
             {!r.finished ? (
               <>
                 <span className="shrink-0" style={{ color: brandColor }}>● läuft</span>
                 {r.maxShots > 0 ? (
-                  <span className="relative h-[0.8cqh] w-[8cqw] shrink-0 overflow-hidden rounded-full bg-white/10" aria-label={`${r.shots} von ${r.maxShots} Schüssen`}>
+                  <span className={`relative h-[0.8cqh] shrink-0 overflow-hidden rounded-full bg-white/10 ${compact ? "w-[5cqw]" : "w-[8cqw]"}`} aria-label={`${r.shots} von ${r.maxShots} Schüssen`}>
                     <span className="absolute inset-y-0 left-0 rounded-full" style={{ width: `${pct}%`, background: brandColor }} />
                   </span>
                 ) : null}
@@ -265,7 +267,7 @@ function LiveRowView({ r, decimals, mark, brandColor, compact }: { r: LiveRow; d
           </div>
         ) : null}
       </div>
-      <span className={`shrink-0 font-bold tabular-nums ${compact ? "text-[3.6cqh]" : "text-[4.4cqh]"} ${r.finished ? "" : "text-white/80"}`}>{formatLiveScore(r.total, decimals)}</span>
+      <span className={`shrink-0 font-bold tabular-nums leading-none ${compact ? "text-[3.6cqh]" : "text-[4.4cqh]"} ${r.finished ? "" : "text-white/80"}`}>{formatLiveScore(r.total, decimals)}</span>
     </li>
   );
 }

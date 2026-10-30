@@ -4,7 +4,12 @@ import { DEFAULT_ZONES, OFFICIAL_RULES_HINT, type OfficialKind, type ProgramInpu
  * Vorlage für ein globales Programm. `key` ist ein stabiler Schlüssel für Updates per Seed
  * (Abgleich über den Namen bzw. frühere Namen in `aliases`), auch wenn die Bezeichnung ändert.
  */
-export type ProgramPreset = ProgramInput & { key?: string; aliases?: string[] };
+export type ProgramPreset = ProgramInput & {
+  key?: string;
+  aliases?: string[];
+  /** Früher von dieser Vorlage vorbelegte Bestehensgrenze, die beim Abgleich wieder entfernt wird (nur wenn unverändert). */
+  legacyPassRule?: { passMinScore: number; passMaxZeros: number };
+};
 
 // ---------------------------------------------------------------------------
 // Zonen für taktische Programme (Wertung «ZONES»). Jede Zone hat einen eigenen Punktwert.
@@ -117,11 +122,12 @@ export const PROGRAM_PRESETS: ProgramPreset[] = [
   {
     key: "op-300",
     name: "Gewehr 300 m – Obligatorisch",
-    description: `Bundesprogramm 300 m: 5 Einzelschüsse, 2 Serien à 2 Schuss, 1 Serie à 3 Schuss, 1 Serie à 6 Schuss. Bestehensgrenze vorbelegt (42 Punkte, höchstens 3 Nuller). ${OFFICIAL_RULES_HINT}`,
+    description: `Beispiel für das Bundesprogramm 300 m (Serien und Wertung bitte gemäss den aktuellen Vorgaben anpassen). Bestehensgrenze bitte im Verein passend zur Wertung eintragen. ${OFFICIAL_RULES_HINT}`,
     discipline: "RIFLE",
     officialKind: "OP",
-    passMinScore: 42,
-    passMaxZeros: 3,
+    // Keine vorbelegte Bestehensgrenze: die amtliche Grenze gilt für eine andere Wertung als die Ringwertung dieser Vorlage.
+    // Frühere Versionen haben 42 Punkte / 3 Nuller vorbelegt; presetOfficialUpdate entfernt dieses Paar wieder.
+    legacyPassRule: { passMinScore: 42, passMaxZeros: 3 },
     weaponNote: "Ordonnanzwaffe",
     scoringMode: "RINGS_INT",
     stages: [
@@ -632,14 +638,18 @@ type ExistingProgram = { officialKind: string | null; passMinScore: number | nul
 
 /**
  * Änderungen an einem bestehenden globalen Programm aufgrund der Vorlage, oder null wenn nichts zu tun ist.
- * Idempotent und schonend: amtliche Art und Grenzwerte werden nur gesetzt, solange das Programm
- * noch keine amtliche Art hat. Spätere Anpassungen durch Super-Admins bleiben erhalten.
+ * Idempotent und schonend: die amtliche Art wird nur gesetzt, solange das Programm noch keine hat.
+ * Grenzwerte werden nie gesetzt (sie hängen von der Wertung ab und gehören in die Hand des Super-Admins).
+ * Einzige Ausnahme: eine von früheren Versionen vorbelegte, unveränderte Grenze (legacyPassRule) wird entfernt.
  */
-export function presetOfficialUpdate(existing: ExistingProgram, preset: ProgramPreset): { officialKind: OfficialKind; passMinScore: number | null; passMaxZeros: number | null } | null {
-  if (!preset.officialKind || existing.officialKind) return null;
-  return {
-    officialKind: preset.officialKind,
-    passMinScore: existing.passMinScore ?? preset.passMinScore ?? null,
-    passMaxZeros: existing.passMaxZeros ?? preset.passMaxZeros ?? null,
-  };
+export function presetOfficialUpdate(existing: ExistingProgram, preset: ProgramPreset): { officialKind?: OfficialKind; passMinScore?: null; passMaxZeros?: null } | null {
+  if (!preset.officialKind) return null;
+  const patch: { officialKind?: OfficialKind; passMinScore?: null; passMaxZeros?: null } = {};
+  if (!existing.officialKind) patch.officialKind = preset.officialKind;
+  const legacy = preset.legacyPassRule;
+  if (legacy && existing.passMinScore === legacy.passMinScore && existing.passMaxZeros === legacy.passMaxZeros) {
+    patch.passMinScore = null;
+    patch.passMaxZeros = null;
+  }
+  return Object.keys(patch).length ? patch : null;
 }

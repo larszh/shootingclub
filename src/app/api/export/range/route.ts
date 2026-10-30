@@ -6,7 +6,7 @@ import { todayZurich } from "@/lib/time";
 import { slugify } from "@/lib/utils";
 import { csvResponse, toCsv } from "@/modules/billing/csv";
 import { dayKeyToDbDate, dbDateKey } from "@/modules/range/logic";
-import { fmtTime } from "@/modules/range/format";
+import { fmtTimeOn } from "@/modules/range/format";
 
 export const dynamic = "force-dynamic";
 
@@ -40,7 +40,7 @@ export async function GET(req: NextRequest) {
     });
     const header = ["Datum", "Anlage", "Standdienst", "Geöffnet", "Abgeschlossen", "Vormittag", "Nachmittag", "Abend", "Besuche", "davon Gäste", "Notizen"];
     const rows = days.map((d) => [
-      dbDateKey(d.date), d.resource?.name ?? "Ganze Anlage", d.dutyName ?? "", fmtTime(d.openedAt), d.closedAt ? fmtTime(d.closedAt) : "offen",
+      dbDateKey(d.date), d.resource?.name ?? "Ganze Anlage", d.dutyName ?? "", fmtTimeOn(d.openedAt, dbDateKey(d.date)), d.closedAt ? fmtTimeOn(d.closedAt, dbDateKey(d.date)) : "offen",
       yn(d.usedAm), yn(d.usedPm), yn(d.usedEvening), d.visits.length, d.visits.filter((v) => !v.userId).length, d.notes ?? "",
     ]);
     return csvResponse(toCsv([header, ...rows]), `standbuch-tage-${name}-${year}.csv`);
@@ -60,11 +60,14 @@ export async function GET(req: NextRequest) {
   const hostName = new Map(hosts.map((h) => [h.id, h.name]));
   const weaponName = new Map(weapons.map((w) => [w.id, w.name]));
   const header = ["Datum", "Anlage", "Name", "Gast", "Jahrgang", "Betreut durch", "Ausweis geprüft", "Check-in", "Check-out", "Bahn", "Disziplin", "Vereinswaffe", "Standordnung bestätigt", "Bemerkung"];
-  const rows = visits.map((v) => [
-    v.rangeDay ? dbDateKey(v.rangeDay.date) : "", v.rangeDay?.resource?.name ?? "Ganze Anlage", v.user?.name ?? v.guestName ?? "", yn(!v.userId),
+  const rows = visits.map((v) => {
+    const dayKey = v.rangeDay ? dbDateKey(v.rangeDay.date) : "";
+    return [
+    dayKey, v.rangeDay?.resource?.name ?? "Ganze Anlage", v.user?.name ?? v.guestName ?? "", yn(!v.userId),
     v.guestBirthYear ?? "", v.hostUserId ? (hostName.get(v.hostUserId) ?? "") : "", v.userId ? "" : yn(v.guestIdChecked),
-    fmtTime(v.checkedInAt), v.checkedOutAt ? fmtTime(v.checkedOutAt) : "", v.lane ?? "", v.discipline ?? "",
+    fmtTimeOn(v.checkedInAt, dayKey), v.checkedOutAt ? fmtTimeOn(v.checkedOutAt, dayKey) : "", v.lane ?? "", v.discipline ?? "",
     v.clubWeaponId ? (weaponName.get(v.clubWeaponId) ?? "") : "", yn(!!v.rulesAcceptedAt), v.note ?? "",
-  ]);
+    ];
+  });
   return csvResponse(toCsv([header, ...rows]), `standbuch-besuche-${name}-${year}.csv`);
 }

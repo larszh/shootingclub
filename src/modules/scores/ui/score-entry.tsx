@@ -44,7 +44,7 @@ function tap() {
  *
  * `storageKey`: "s:<matchId>" für Server-Durchgänge, "c:<clientId>" für offline erstellte.
  */
-export function ScoreEntry({ match, storageKey, tenantId, userId, persistView = true, onStatusChange, lockedParticipantIds }: { match: ScoreMatch; storageKey: string; tenantId: string; userId: string; /** Serveransicht in IndexedDB ablegen (false, wenn die Ansicht selbst aus IndexedDB stammt) */ persistView?: boolean; /** Meldet Statuswechsel (z.B. für die Kopfzeile der Offline-Ansicht) */ onStatusChange?: (status: string) => void; /** Amtlich bestätigte Teilnehmer, deren Schüsse hier nicht geändert werden dürfen */ lockedParticipantIds?: string[] }) {
+export function ScoreEntry({ match, storageKey, tenantId, userId, persistView = true, onStatusChange, lockedParticipantIds, refreshOnSave = false }: { match: ScoreMatch; storageKey: string; tenantId: string; userId: string; /** Serveransicht in IndexedDB ablegen (false, wenn die Ansicht selbst aus IndexedDB stammt) */ persistView?: boolean; /** Meldet Statuswechsel (z.B. für die Kopfzeile der Offline-Ansicht) */ onStatusChange?: (status: string) => void; /** Amtlich bestätigte Teilnehmer, deren Schüsse hier nicht geändert werden dürfen */ lockedParticipantIds?: string[]; /** Seite nach gespeicherten Serien neu laden (z.B. Panel «Amtliches Resultat» mit Serverwerten) */ refreshOnSave?: boolean }) {
   const router = useRouter();
   const { online } = useSyncStatus();
   const decimal = match.program.scoringMode === "RINGS_DECIMAL";
@@ -80,6 +80,20 @@ export function ScoreEntry({ match, storageKey, tenantId, userId, persistView = 
   useEffect(() => {
     statusListener.current = onStatusChange;
   }, [onStatusChange]);
+
+  // Nach gespeicherten Serien die Serveransicht nachladen (gebündelt, damit nicht jeder Schuss neu lädt)
+  const refreshTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const scheduleRefresh = useCallback(() => {
+    if (!refreshOnSave || !isServerMatch) return;
+    if (refreshTimer.current) clearTimeout(refreshTimer.current);
+    refreshTimer.current = setTimeout(() => {
+      refreshTimer.current = null;
+      router.refresh();
+    }, 1500);
+  }, [refreshOnSave, isServerMatch, router]);
+  useEffect(() => () => {
+    if (refreshTimer.current) clearTimeout(refreshTimer.current);
+  }, []);
 
   const stage = stages[activeS]!;
   const current = shots[activeP]?.[activeS] ?? [];
@@ -136,6 +150,7 @@ export function ScoreEntry({ match, storageKey, tenantId, userId, persistView = 
           setDirty((d) => (d[ck] !== undefined && d[ck]! <= item.ts ? omit(d, ck) : d));
           setFailed((f) => omit(f, ck));
           setSaved((s) => ({ ...s, [item.participantId]: true }));
+          scheduleRefresh();
         } else {
           // Dauerhafter Fehler (z.B. abgeschlossen, keine Berechtigung): nicht automatisch wiederholen
           if (directPending.current[ck]?.ts === item.ts) delete directPending.current[ck];
@@ -145,7 +160,7 @@ export function ScoreEntry({ match, storageKey, tenantId, userId, persistView = 
         setFailed((f) => ({ ...f, [ck]: "Keine Verbindung" }));
       }
     },
-    [match.id],
+    [match.id, scheduleRefresh],
   );
 
   // Fallback ohne IndexedDB: beim Verlassen sofort senden, bei Wiederverbindung erneut versuchen,
@@ -185,6 +200,7 @@ export function ScoreEntry({ match, storageKey, tenantId, userId, persistView = 
           setDirty((d) => (d[ck] !== undefined && d[ck]! <= op.payload.clientUpdatedAt ? omit(d, ck) : d));
           setFailed((f) => omit(f, ck));
           setSaved((s) => (s[pk] ? s : { ...s, [pk]: true }));
+          scheduleRefresh();
         } else {
           setFailed((f) => ({ ...f, [ck]: ev.result.error ?? "Fehler" }));
         }
@@ -193,7 +209,7 @@ export function ScoreEntry({ match, storageKey, tenantId, userId, persistView = 
         else if (isServerMatch) router.refresh();
       }
     },
-    [storageKey, isServerMatch, router],
+    [storageKey, isServerMatch, router, scheduleRefresh],
   );
   useSyncEvents(onSyncEvent);
 

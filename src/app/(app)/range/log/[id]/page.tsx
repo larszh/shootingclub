@@ -9,7 +9,8 @@ import { requireRangeDuty } from "@/modules/range/guard";
 import { getActiveRules, getRangeDayDetail } from "@/modules/range/queries";
 import { toBoardVisits } from "@/modules/range/board";
 import { reopenDayAction } from "@/modules/range/actions";
-import { dayTitle, flagsLabel, fmtDay, fmtTime } from "@/modules/range/format";
+import { dayTitle, flagsLabel, fmtDay, fmtTimeOn } from "@/modules/range/format";
+import { dbDateKey } from "@/modules/range/logic";
 import { DayCorrection } from "@/modules/range/ui/day-correction";
 
 export const metadata: Metadata = { title: "Standbuch-Tag" };
@@ -35,8 +36,8 @@ export default async function RangeLogDayPage({ params }: { params: Promise<{ id
         action={<LinkButton href={`/range/log/${day.id}/print`} variant="secondary" size="sm" className="h-11" target="_blank" aria-label="Drucken"><Printer className="h-4 w-4" /></LinkButton>}
       />
       <Card className="grid grid-cols-2 gap-3 p-4 text-sm sm:grid-cols-4">
-        <div><div className="text-xs text-ink-3">Geöffnet</div><div className="font-medium">{fmtTime(day.openedAt)}</div></div>
-        <div><div className="text-xs text-ink-3">Abgeschlossen</div><div className="font-medium">{day.closedAt ? fmtTime(day.closedAt) : <Badge tone="accent">offen</Badge>}</div></div>
+        <div><div className="text-xs text-ink-3">Geöffnet</div><div className="font-medium">{fmtTimeOn(day.openedAt, dbDateKey(day.date))}</div></div>
+        <div><div className="text-xs text-ink-3">Abgeschlossen</div><div className="font-medium">{day.closedAt ? fmtTimeOn(day.closedAt, dbDateKey(day.date)) : <Badge tone="accent">offen</Badge>}</div></div>
         <div><div className="text-xs text-ink-3">Besuche</div><div className="font-medium">{visits.length} ({visits.filter((v) => v.isGuest).length} Gäste)</div></div>
         <div><div className="text-xs text-ink-3">Halbtage</div><div className="font-medium">{day.closedAt ? flagsLabel(day) : "–"}</div></div>
       </Card>

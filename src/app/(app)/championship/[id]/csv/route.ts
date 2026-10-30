@@ -44,5 +44,8 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
       e.missingRequired.length ? `nicht klassiert (fehlt: ${e.missingRequired.join(", ")})` : "klassiert",
     ];
   });
-  return csvResponse(toCsv([header, ...rows]), `rangliste-${slugify(c.name) || "meisterschaft"}-${c.year}.csv`);
+  const slug = slugify(c.name) || "meisterschaft";
+  // Jahr nur anhängen, wenn es nicht schon im Namen steht («Jahresmeisterschaft 2026»).
+  const withYear = slug.split("-").includes(String(c.year)) ? slug : `${slug}-${c.year}`;
+  return csvResponse(toCsv([header, ...rows]), `rangliste-${withYear}.csv`);
 }

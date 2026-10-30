@@ -186,7 +186,8 @@ export async function getMatch(ctx: AppContext & { tenant: NonNullable<AppContex
     createdBy: m.createdBy,
     event: m.event,
     createdAt: m.createdAt,
-    canEdit: isCreator || isParticipant || ctx.can("match.viewAll"),
+    // Status ändern (Abschliessen/Wieder öffnen): bei amtlich bestätigten Resultaten nur durch den Schützenmeister
+    canEdit: (isCreator || isParticipant || ctx.can("match.viewAll")) && (!m.participants.some((p) => p.isOfficial) || ctx.can("results.verify")),
     canDelete: isCreator || ctx.can("match.delete"),
     program: {
       id: m.program.id,

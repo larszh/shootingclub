@@ -7,6 +7,7 @@ import { Segmented } from "@/components/ui/controls";
 import { SubmitButton, submitKeepingValues, Spinner } from "@/components/ui/form";
 import { confirmDialog } from "@/components/ui/dialog";
 import { createRulesDraftAction, deleteRulesDraftAction, publishRulesAction, saveRulesDraftAction } from "@/modules/range/actions";
+import { normalizeRulesBody } from "@/modules/range/types";
 import { RulesBody } from "./rules-body";
 import { callAction } from "./action-call";
 
@@ -26,7 +27,7 @@ export function RulesEditor({ draft }: { draft: { id: string; version: number; t
   const [title, setTitle] = useState(draft.title);
   const [body, setBody] = useState(draft.body);
   const [pending, start] = useTransition();
-  const dirty = title !== draft.title || body !== draft.body;
+  const dirty = title.trim() !== draft.title || normalizeRulesBody(body) !== normalizeRulesBody(draft.body);
   const err = state && !state.ok ? state.fieldErrors : undefined;
 
   async function publish() {

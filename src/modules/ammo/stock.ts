@@ -2,6 +2,7 @@
  * Munitionskontrolle: reine Bestandslogik (ohne DB), gemeinsam für Client und Server.
  * Bewegungen werden in Verkaufseinheiten (z.B. Schachteln) gebucht; positiv = Zugang, negativ = Abgang.
  */
+import { formatDateTimeZurich, formatDateZurich } from "@/lib/time";
 
 export const STOCK_KINDS = ["RECEIPT", "ISSUE", "SALE", "RETURN", "INVENTORY", "CORRECTION"] as const;
 export type StockKind = (typeof STOCK_KINDS)[number];
@@ -137,4 +138,12 @@ export function yearSummary(products: SummaryProduct[], inYear: SummaryMovement[
 export function parseSummaryYear(raw: string | null | undefined, currentYear: number) {
   const y = Number(raw);
   return raw && Number.isInteger(y) && y >= 2000 && y <= currentYear ? y : currentYear;
+}
+
+/**
+ * Anzeige des Buchungsdatums: Nur «jetzt» gebuchte Bewegungen (Datum ≈ Erfassungszeit) haben eine echte
+ * Uhrzeit. Rückdatierte Buchungen tragen nur einen Kalendertag (intern Mittag) und werden ohne Zeit gezeigt.
+ */
+export function formatMovementDate(date: Date, createdAt: Date) {
+  return Math.abs(date.getTime() - createdAt.getTime()) < 5 * 60_000 ? formatDateTimeZurich(date) : formatDateZurich(date, { weekday: undefined });
 }

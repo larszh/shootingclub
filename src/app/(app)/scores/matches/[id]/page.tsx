@@ -48,8 +48,8 @@ export default async function MatchPage({ params }: { params: Promise<{ id: stri
         }))
     : [];
   const ruleParts: string[] = [];
-  if (match.program.passMinScore !== null) ruleParts.push(`mind. ${match.program.passMinScore} Punkte`);
-  if (match.program.passMaxZeros !== null) ruleParts.push(`höchstens ${match.program.passMaxZeros} Nuller`);
+  if (match.program.passMinScore !== null) ruleParts.push(`mind. ${match.program.passMinScore} Punkten`);
+  if (match.program.passMaxZeros !== null) ruleParts.push(`höchstens ${match.program.passMaxZeros} Nullern`);
   const ruleText = `${ruleParts.length ? `Bestanden bei ${ruleParts.join(" und ")} (Einstellung im Programm).` : "Keine Bestehensregel im Programm hinterlegt."} ${OFFICIAL_RULES_HINT}`;
   // Amtlich bestätigte Resultate sind für Schützen schreibgeschützt
   const lockedIds = canVerify ? [] : match.participants.filter((p) => p.isOfficial).map((p) => p.id);
@@ -72,7 +72,7 @@ export default async function MatchPage({ params }: { params: Promise<{ id: stri
           <Alert tone="ok"><span className="inline-flex items-center gap-2 font-medium"><Trophy className="h-4 w-4" aria-hidden /> Neue Bestleistung! {fmt(pb.total)} statt bisher {fmt(pb.previousBest ?? 0)}.</span></Alert>
         </div>
       ) : null}
-      <ScoreEntry key={match.status} match={toScoreMatch(match)} storageKey={`s:${match.id}`} tenantId={ctx.tenant.id} userId={ctx.user.id} lockedParticipantIds={lockedIds} />
+      <ScoreEntry key={match.status} match={toScoreMatch(match)} storageKey={`s:${match.id}`} tenantId={ctx.tenant.id} userId={ctx.user.id} lockedParticipantIds={lockedIds} refreshOnSave={!!officialKind} />
       {officialKind && officialRows.length ? (
         <div className="mt-5">
           <OfficialPanel rows={officialRows} canVerify={canVerify} kindLabel={officialKindLabel(officialKind)} ruleText={ruleText} decimal={decimal} />

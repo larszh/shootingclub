@@ -4,6 +4,7 @@ import { formatDateZurich, todayZurich } from "@/lib/time";
 import { slugify } from "@/lib/utils";
 import { formatQrReference } from "@/lib/qr-reference";
 import { adminExportContext, csvAmount, csvResponse, toCsv } from "@/modules/billing/csv";
+import { feeInvoiceTitle } from "@/modules/billing/fee-title";
 import { FEE_INVOICE_STATUS, reminderCount, visiblePaymentNote } from "@/modules/billing/types";
 
 export const dynamic = "force-dynamic";
@@ -25,7 +26,7 @@ export async function GET(req: NextRequest) {
   const header = ["Nummer", "Titel", "Mitglied", "Mitglied-Nr.", "E-Mail", "Kategorie", "Betrag", "Währung", "Status", "Ausgestellt", "Fällig", "Bezahlt am", "QR-Referenz", "Mahnungen", "Letzte Mahnung", "Notiz"];
   const rows = invoices.map((i) => [
     i.number,
-    i.run?.title ?? `Mitgliederbeitrag ${i.year}`,
+    feeInvoiceTitle(i, `Mitgliederbeitrag ${i.year}`),
     i.memberName,
     i.membership?.memberNumber ?? "",
     i.memberEmail ?? "",

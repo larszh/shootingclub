@@ -19,7 +19,7 @@ export function ErsatzPanel({ year, candidates, blocker }: { year: number; candi
   const [pending, start] = useTransition();
   const chosen = useMemo(() => candidates.filter((c) => picked.has(c.userId)), [candidates, picked]);
   const total = chosen.reduce((s, c) => s + c.amountCents, 0);
-  const fmtH = (h: number) => new Intl.NumberFormat("de-CH", { maximumFractionDigits: 2 }).format(h);
+  const fmtH = (h: number) => new Intl.NumberFormat("de-CH", { maximumFractionDigits: 2, useGrouping: false }).format(h);
 
   function toggle(id: string) {
     setPicked((prev) => {

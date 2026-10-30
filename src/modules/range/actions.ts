@@ -79,6 +79,10 @@ async function createVisitOnce(tenantId: string, data: Parameters<typeof db.rang
   }
 }
 
+/** Standbuch vom Vortag: keine neuen Einträge, sonst landen heutige Besuche im alten Buch (Datum, Halbtage). */
+const isStaleDay = (day: { date: Date }) => dbDateKey(day.date) !== todayZurich();
+const STALE_DAY = "Dieses Standbuch ist nicht von heute. Bitte zuerst abschliessen und für heute ein neues Standbuch öffnen.";
+
 // --- Standbuch öffnen / Dienst ----------------------------------------------------------
 
 /** true, wenn die Person eine gültige Qualifikation als Schützenmeister oder Standchef hat. */
@@ -164,6 +168,7 @@ export async function checkInMemberAction(input: { dayId: string; userId: string
   const tenantId = ctx.tenant.id;
   const [day, member] = await Promise.all([openDayOf(tenantId, input.dayId), activeMember(tenantId, input.userId)]);
   if (!day) return fail("Das Standbuch ist nicht offen.");
+  if (isStaleDay(day)) return fail(STALE_DAY);
   if (!member) return fail("Mitglied nicht gefunden oder ausgetreten.");
   const repeat = await db.rangeVisit.findUnique({ where: { clientId: input.clientId }, select: { id: true, tenantId: true } });
   if (repeat) return repeat.tenantId === tenantId ? ok({ id: repeat.id, rulesMissing: false }, `${member.user.name} eingecheckt.`) : fail("Ungültige Anfrage.");
@@ -206,6 +211,7 @@ export async function checkInGuestAction(input: {
   if (g.guestBirthYear !== undefined && !isPlausibleBirthYear(g.guestBirthYear, year)) return fail("Jahrgang unplausibel.", { guestBirthYear: "Jahrgang unplausibel." });
   const day = await openDayOf(tenantId, input.dayId);
   if (!day) return fail("Das Standbuch ist nicht offen.");
+  if (isStaleDay(day)) return fail(STALE_DAY);
   if (g.hostUserId && !(await activeMember(tenantId, g.hostUserId))) return fail("Betreuendes Mitglied nicht gefunden.");
   const rules = g.rulesExplained ? await getActiveRules(tenantId) : null;
   try {
@@ -261,6 +267,7 @@ export async function issueWeaponAction(visitId: string, weaponId: string): Prom
     include: { user: { select: { name: true, birthDate: true } }, rangeDay: { select: { date: true } } },
   });
   if (!v) return fail("Eintrag nicht gefunden oder bereits ausgecheckt.");
+  if (v.rangeDay && isStaleDay(v.rangeDay)) return fail(STALE_DAY);
   if (await findOpenLoanForVisit(tenantId, v)) return fail("Diese Person hat bereits eine Vereinswaffe.");
   const today = todayZurich();
   const year = Number(today.slice(0, 4));
@@ -328,8 +335,11 @@ export async function closeDayAction(dayId: string, input: { usedAm: boolean; us
     if (await findOpenLoanForVisit(tenantId, v)) return fail("Es sind noch Vereinswaffen ausgegeben. Bitte zuerst zurücknehmen (Auschecken mit Schusszahl).");
   }
   const now = new Date();
+  // Standbuch vom Vortag: offene Besuche höchstens bis Ende jenes Tages, nicht über Nacht bis jetzt.
+  const endOfDay = zurichToUtc(dbDateKey(day.date), "23:59");
+  const autoOut = now > endOfDay ? endOfDay : now;
   await db.$transaction([
-    db.rangeVisit.updateMany({ where: { tenantId, rangeDayId: day.id, checkedOutAt: null }, data: { checkedOutAt: now } }),
+    db.rangeVisit.updateMany({ where: { tenantId, rangeDayId: day.id, checkedOutAt: null }, data: { checkedOutAt: autoOut } }),
     db.rangeDay.updateMany({ where: { id: day.id, tenantId, closedAt: null }, data: { closedAt: now, usedAm: parsed.data.usedAm, usedPm: parsed.data.usedPm, usedEvening: parsed.data.usedEvening, notes: parsed.data.notes } }),
   ]);
   const flags = [parsed.data.usedAm && "Vormittag", parsed.data.usedPm && "Nachmittag", parsed.data.usedEvening && "Abend"].filter(Boolean).join(", ") || "keine Halbtage";
@@ -403,13 +413,20 @@ export async function selfCheckInAction(input: { dayId: string; clientId: string
   const userId = ctx.user.id;
   // Wiederholung derselben Anfrage (Doppeltipp, Verbindungsabbruch) → bestehender Eintrag.
   const byClient = await db.rangeVisit.findUnique({ where: { clientId: input.clientId }, select: { id: true, tenantId: true, userId: true } });
-  if (byClient) return byClient.tenantId === tenantId && byClient.userId === userId ? ok({ id: byClient.id }, "Du bist eingecheckt.") : fail("Ungültige Anfrage.");
+  if (byClient) {
+    if (byClient.tenantId !== tenantId || byClient.userId !== userId) return fail("Ungültige Anfrage.");
+    revalidate(); // Antwort ging evtl. verloren: Seite soll den Check-in anzeigen.
+    return ok({ id: byClient.id }, "Du bist eingecheckt.");
+  }
   if (!(await activeMember(tenantId, userId))) return fail("Nur aktive Mitglieder können sich einchecken.");
   const day = await openDayOf(tenantId, input.dayId);
   if (!day) return fail("Der Stand ist nicht (mehr) offen.");
-  if (dbDateKey(day.date) !== todayZurich()) return fail("Dieses Standbuch ist nicht von heute. Bitte beim Standdienst melden.");
+  if (isStaleDay(day)) return fail("Dieses Standbuch ist nicht von heute. Bitte beim Standdienst melden.");
   const open = await db.rangeVisit.findFirst({ where: { tenantId, userId, rangeDayId: day.id, checkedOutAt: null }, select: { id: true } });
-  if (open) return ok({ id: open.id }, "Du bist bereits eingecheckt.");
+  if (open) {
+    revalidate(); // z.B. zweiter Tab oder Check-in durch den Standdienst: Seite aktualisieren.
+    return ok({ id: open.id }, "Du bist bereits eingecheckt.");
+  }
   const rules = await getActiveRules(tenantId);
   let acceptedAt: Date | null = null;
   if (rules) {
@@ -440,7 +457,10 @@ export async function selfCheckOutAction(visitId: string): Promise<ActionResult>
   if (!idSchema.safeParse(visitId).success) return fail("Ungültige Anfrage.");
   const v = await db.rangeVisit.findFirst({ where: { id: visitId, tenantId: ctx.tenant.id, userId: ctx.user.id }, select: { id: true, checkedOutAt: true, clubWeaponId: true, userId: true, guestName: true } });
   if (!v) return fail("Eintrag nicht gefunden.");
-  if (v.checkedOutAt) return ok(undefined, "Bereits ausgecheckt.");
+  if (v.checkedOutAt) {
+    revalidate();
+    return ok(undefined, "Bereits ausgecheckt.");
+  }
   if (await findOpenLoanForVisit(ctx.tenant.id, v)) return fail("Bitte die Vereinswaffe beim Standdienst zurückgeben. Er checkt dich dann aus.");
   await db.rangeVisit.updateMany({ where: { id: v.id, tenantId: ctx.tenant.id, checkedOutAt: null }, data: { checkedOutAt: new Date() } });
   revalidate();
