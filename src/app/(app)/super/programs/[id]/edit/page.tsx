@@ -15,7 +15,7 @@ export default async function SuperEditProgramPage({ params }: { params: Promise
   return (
     <div>
       <PageHeader title="Globales Programm bearbeiten" back={{ href: "/super/programs", label: "Globale Programme" }} />
-      <ProgramForm scope="global" initial={{ id: p.id, name: p.name, description: p.description, discipline: p.discipline, weaponNote: p.weaponNote, scoringMode: p.scoringMode, stages: parseStages(p.stagesJson) }} />
+      <ProgramForm scope="global" initial={{ id: p.id, name: p.name, description: p.description, discipline: p.discipline, weaponNote: p.weaponNote, scoringMode: p.scoringMode, stages: parseStages(p.stagesJson), officialKind: p.officialKind, passMinScore: p.passMinScore, passMaxZeros: p.passMaxZeros }} />
     </div>
   );
 }

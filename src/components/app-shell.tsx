@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Home, Target, Crosshair, Menu, CalendarDays, Megaphone, MessageCircle, FolderOpen, Package, Wallet, Settings, Users, FileUp, House, History, Server } from "lucide-react";
+import { Home, Target, Crosshair, Menu, CalendarDays, Megaphone, MessageCircle, FolderOpen, Package, Wallet, Settings, Users, FileUp, House, History, Server, BadgeCheck, Trophy, Tv, DoorOpen, HandHelping, GraduationCap, Shield } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { TenantLogo } from "@/components/logo";
 import { Avatar } from "@/components/avatar";
@@ -17,7 +17,19 @@ type NavItem = {
   modules?: ModuleKey[];
   /** Weitere Pfade, unter denen der Eintrag als aktiv gilt */
   alsoActive?: string[];
+  /** Gruppe in der Desktop-Seitenleiste (ohne = Hauptliste oben) */
+  group?: NavGroup;
+  /** Abweichende Beschriftung in der Seitenleiste (Tableiste nutzt label) */
+  sideLabel?: string;
+  /** Nur sichtbar mit dieser Berechtigung (aus ShellAdmin) */
+  requires?: keyof ShellAdmin;
 };
+
+type NavGroup = "schiessen" | "verein";
+const GROUPS: { key: NavGroup; label: string }[] = [
+  { key: "schiessen", label: "Schiessen" },
+  { key: "verein", label: "Verein" },
+];
 
 /**
  * Reihenfolge = Priorität. Mobil passen nur die ersten vier aktiven Einträge plus «Mehr» in die
@@ -28,17 +40,27 @@ type NavItem = {
  * sind mobil unter «Mehr» erreichbar, auf dem Desktop immer in der Seitenleiste.
  * «Zahlungen» bündelt Beiträge, Reservations- und Munitionsrechnungen und ersetzt den früheren
  * Eintrag «Beiträge» (der unter «Mehr» weiterhin direkt erreichbar ist).
+ * Die Module der Welle B (Bundesübungen, Meisterschaft, Live-Rangliste, Standbetrieb, Helfer, Kurse,
+ * Vereinswaffen) stehen bewusst hinten: mobil unter «Mehr», auf dem Desktop in den Gruppen
+ * «Schiessen» und «Verein».
  */
 const NAV: NavItem[] = [
   { href: "/", label: "Start", icon: Home },
-  { href: "/scores", label: "Schiessen", icon: Crosshair, modules: ["scores"] },
+  { href: "/scores", label: "Schiessen", sideLabel: "Resultate", icon: Crosshair, modules: ["scores"], group: "schiessen" },
   { href: "/chat", label: "Chat", icon: MessageCircle, modules: ["chat"] },
   { href: "/events", label: "Anlässe", icon: Megaphone, modules: ["events"] },
   { href: "/bookings", label: "Buchen", icon: CalendarDays, modules: ["bookings"] },
-  { href: "/targets", label: "Scheiben", icon: Target, modules: ["targets"] },
+  { href: "/targets", label: "Scheiben", icon: Target, modules: ["targets"], group: "schiessen" },
   { href: "/files", label: "Dateien", icon: FolderOpen, modules: ["files"] },
   { href: "/ammo", label: "Munition", icon: Package, modules: ["ammo"] },
   { href: "/payments", label: "Zahlungen", icon: Wallet, modules: ["billing", "bookings", "ammo"], alsoActive: ["/billing"] },
+  { href: "/federal", label: "Bundesübungen", icon: BadgeCheck, modules: ["federal"], group: "schiessen" },
+  { href: "/championship", label: "Meisterschaft", sideLabel: "Jahresmeisterschaft", icon: Trophy, modules: ["championship"], group: "schiessen" },
+  { href: "/admin/live", label: "Live", sideLabel: "Live-Rangliste", icon: Tv, modules: ["scores"], group: "schiessen", requires: "live" },
+  { href: "/range", label: "Stand", sideLabel: "Standbetrieb", icon: DoorOpen, modules: ["range"], group: "verein" },
+  { href: "/shifts", label: "Helfer", sideLabel: "Helfereinsätze", icon: HandHelping, modules: ["shifts"], group: "verein" },
+  { href: "/courses", label: "Kurse", icon: GraduationCap, modules: ["courses"], group: "verein" },
+  { href: "/weapons", label: "Waffen", sideLabel: "Vereinswaffen", icon: Shield, modules: ["weapons"], group: "verein", requires: "weapons" },
   // Verwaltung und Verzeichnis liegen mobil unter «Mehr» (Tableiste bleibt bei 5 Einträgen).
   { href: "/me", label: "Mehr", icon: Menu, alsoActive: ["/admin", "/members", "/super", "/help"] },
 ];
@@ -51,6 +73,8 @@ export type ShellAdmin = {
   membersManage?: boolean; // members.manage: Import, Haushalte
   audit?: boolean; // audit.view
   system?: boolean; // Super-Admin
+  live?: boolean; // match.viewAll oder events.manage: Live-Ranglisten
+  weapons?: boolean; // weapons.loan: Vereinswaffen
 };
 
 function adminLinks(a: ShellAdmin | null | undefined): NavItem[] {
@@ -86,13 +110,15 @@ export function AppShell({
   admin?: ShellAdmin | null;
 }) {
   const pathname = usePathname();
-  const items = NAV.filter((n) => !n.modules || n.modules.some((m) => enabledModules.includes(m)));
+  const items = NAV.filter((n) => (!n.modules || n.modules.some((m) => enabledModules.includes(m))) && (!n.requires || !!admin?.[n.requires]));
   const matches = (href: string) => (href === "/" ? pathname === "/" : pathname === href || pathname.startsWith(href + "/"));
   const isActive = (href: string) => matches(href) || (NAV.find((n) => n.href === href)?.alsoActive ?? []).some(matches);
   // Tableiste: höchstens 5 Einträge, sonst werden die Beschriftungen auf schmalen Geräten abgeschnitten.
   // Überzählige Module sind unter «Mehr» erreichbar (Liste auf /me und Desktop-Seitenleiste).
   const MAX_TABS = 5;
-  const tabs = items.length > MAX_TABS ? [...items.filter((n) => n.href !== "/me").slice(0, MAX_TABS - 1), items.find((n) => n.href === "/me")!] : items;
+  // Verwaltungsseiten (z.B. Live-Rangliste) nie als eigener Tab, sie liegen mobil unter «Mehr».
+  const tabCandidates = items.filter((n) => !n.href.startsWith("/admin"));
+  const tabs = tabCandidates.length > MAX_TABS ? [...tabCandidates.filter((n) => n.href !== "/me").slice(0, MAX_TABS - 1), tabCandidates.find((n) => n.href === "/me")!] : tabCandidates;
   const overflowActive = tabs.length < items.length && items.some((n) => !tabs.includes(n) && isActive(n.href));
   const isTabActive = (href: string) => isActive(href) || (href === "/me" && overflowActive);
   const chatOn = chatUnread !== null && items.some((n) => n.href === "/chat");
@@ -101,7 +127,21 @@ export function AppShell({
   const title = tenant?.name ?? "Standchef";
   const admins = adminLinks(admin);
   // Für die Verwaltung: längster passender Link ist aktiv (/admin/members/import nicht zusätzlich /admin)
-  const activeAdmin = admins.filter((n) => matches(n.href)).sort((a, b) => b.href.length - a.href.length)[0]?.href;
+  // Beansprucht ein Hauptmenü-Eintrag unter /admin (z.B. /admin/live) den Pfad, ist kein Verwaltungslink aktiv.
+  const navClaimsAdminPath = items.some((n) => n.href.startsWith("/admin") && matches(n.href));
+  const activeAdmin = navClaimsAdminPath ? undefined : admins.filter((n) => matches(n.href)).sort((a, b) => b.href.length - a.href.length)[0]?.href;
+
+  // Längster passender Eintrag gewinnt (/admin/live ist kein Verwaltungs-«Mehr»).
+  const sideLink = (n: NavItem) => {
+    const active = isActive(n.href) && !(n.href === "/me" && (activeAdmin || navClaimsAdminPath));
+    return (
+      <Link key={n.href} href={n.href} aria-current={active ? "page" : undefined}
+        className={cn("flex items-center gap-3 rounded-control px-3 h-11 text-[15px] font-medium transition-colors", active ? "bg-accent-soft text-accent" : "text-ink-2 hover:bg-surface-2")}>
+        <n.icon className="h-5 w-5" /> <span className="flex-1">{n.sideLabel ?? n.label}</span>
+        {n.href === "/chat" && chatOn ? <ChatUnreadBadge initial={chatUnread ?? 0} /> : null}
+      </Link>
+    );
+  };
 
   return (
     <div className="min-h-dvh md:flex">
@@ -116,14 +156,15 @@ export function AppShell({
         </Link>
         <div className="mx-5 mb-3 h-0.5 rounded-full brand-gradient opacity-80" aria-hidden />
         <nav className="flex-1 px-3 space-y-0.5 overflow-y-auto" aria-label="Hauptnavigation">
-          {items.map((n) => {
-            const active = isActive(n.href) && !(n.href === "/me" && activeAdmin);
+          {items.filter((n) => !n.group).map(sideLink)}
+          {GROUPS.map((g) => {
+            const list = items.filter((n) => n.group === g.key);
+            if (!list.length) return null;
             return (
-              <Link key={n.href} href={n.href} aria-current={active ? "page" : undefined}
-                className={cn("flex items-center gap-3 rounded-control px-3 h-11 text-[15px] font-medium transition-colors", active ? "bg-accent-soft text-accent" : "text-ink-2 hover:bg-surface-2")}>
-                <n.icon className="h-5 w-5" /> <span className="flex-1">{n.label}</span>
-                {n.href === "/chat" && chatOn ? <ChatUnreadBadge initial={chatUnread ?? 0} /> : null}
-              </Link>
+              <div key={g.key} role="group" aria-label={g.label}>
+                <div className="px-3 pb-1 pt-5 text-[11px] font-semibold uppercase tracking-wider text-ink-3">{g.label}</div>
+                {list.map(sideLink)}
+              </div>
             );
           })}
           {admins.length ? (

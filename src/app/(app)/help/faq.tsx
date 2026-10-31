@@ -32,7 +32,7 @@ export function Faq({ entries, isAdmin }: { entries: FaqEntry[]; isAdmin: boolea
 
   const groups: Array<{ key: "member" | "admin"; title: string }> = [
     { key: "member", title: "Für Mitglieder" },
-    { key: "admin", title: "Für Admins & Vorstand" },
+    { key: "admin", title: "Für Leitung & Vorstand" },
   ];
   const searching = query.trim().length > 0;
 
@@ -73,7 +73,7 @@ export function Faq({ entries, isAdmin }: { entries: FaqEntry[]; isAdmin: boolea
             options={[
               { value: "all", label: "Alle" },
               { value: "member", label: "Mitglieder" },
-              { value: "admin", label: "Admins" },
+              { value: "admin", label: "Leitung" },
             ]}
           />
         ) : null}

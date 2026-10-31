@@ -140,7 +140,7 @@ export async function issueOrder(tenantId: string, orderId: string, issuedById: 
         });
         if (claimed.count === 0) throw new AmmoError("Diese Bestellung wurde bereits bearbeitet.");
 
-        // Bestand abbuchen: nur Produkte mit geführtem Bestand, nie unter null.
+        // Bestand abbuchen: nur Produkte mit geführtem Bestand, nie unter null; Verkauf im Bestandsjournal (SALE).
         const perProduct = new Map<string, number>();
         for (const it of order.items) if (it.productId) perProduct.set(it.productId, (perProduct.get(it.productId) ?? 0) + it.quantity);
         for (const [productId, qty] of perProduct) {
@@ -148,6 +148,10 @@ export async function issueOrder(tenantId: string, orderId: string, issuedById: 
           if (!p || p.stockUnits === null) continue;
           const res = await tx.ammoProduct.updateMany({ where: { id: productId, tenantId, stockUnits: { gte: qty } }, data: { stockUnits: { decrement: qty } } });
           if (res.count === 0) throw new AmmoError(`Zu wenig an Lager: «${p.name}» (noch ${p.stockUnits}).`);
+          // Munitionskontrolle: jeder Bestandsabgang erscheint im Journal (gleiche Transaktion).
+          await tx.ammoStockMovement.create({
+            data: { tenantId, productId, kind: "SALE", units: -qty, date: now, orderId: order.id, source: invoiceNumber ? `Rechnung ${invoiceNumber}` : "Ausgabe ohne Rechnung", createdById: issuedById },
+          });
         }
         return { id: order.id, tenantId, invoiceNumber, reference: null as string | null };
       });

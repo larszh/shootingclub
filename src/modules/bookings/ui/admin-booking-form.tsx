@@ -3,7 +3,7 @@
 import { useActionState, useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { Banknote, Check, ChevronLeft, ChevronRight, FileText, Gift, Info, Search } from "lucide-react";
 import { adminCreateBookingAction } from "@/modules/bookings/actions";
-import { fetchAdminSlotsAction, type SlotDto } from "@/modules/bookings/slot-actions";
+import { fetchAdminSlotsAction, type SlotDto, type SlotsResult } from "@/modules/bookings/slot-actions";
 import { formatDuration, type DurationOption } from "@/modules/bookings/types";
 import { basePriceFor, maxPersonsFor, wholeResourceLabel } from "@/modules/bookings/pricing";
 import { PersonsStepper } from "./persons-stepper";
@@ -55,6 +55,7 @@ export function AdminBookingForm({ members, resources, durationOptions, currency
   const [query, setQuery] = useState("");
   const [slots, setSlots] = useState<SlotDto[] | null>(null);
   const [slotError, setSlotError] = useState<string | null>(null);
+  const [windowInfo, setWindowInfo] = useState<Pick<SlotsResult, "windowHint" | "outsideWindow" | "windowOverride"> | null>(null);
   const [time, setTime] = useState<string | null>(initial.time ?? null);
   const [payment, setPayment] = useState<Payment>("INVOICE");
   const [loading, start] = useTransition();
@@ -67,6 +68,7 @@ export function AdminBookingForm({ members, resources, durationOptions, currency
     if (id !== requestId.current) return;
     setSlots(r.slots);
     setSlotError(r.error ?? null);
+      setWindowInfo(r);
     setTime((t) => (t && r.slots.some((x) => x.time === t && x.available) ? t : null));
   });
   const update = (patch: Partial<typeof sel>) => {
@@ -89,6 +91,7 @@ export function AdminBookingForm({ members, resources, durationOptions, currency
       if (cancelled || id !== requestId.current) return;
       setSlots(r.slots);
       setSlotError(r.error ?? null);
+      setWindowInfo(r);
     });
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -210,6 +213,12 @@ export function AdminBookingForm({ members, resources, durationOptions, currency
               </div>
             )}
             {tooFew ? <p className="mt-2 text-xs text-ink-3">Durchgestrichene Zeiten: Nicht genug Plätze frei für {sel.persons === 1 ? "1 Person" : `${sel.persons} Personen`}.</p> : null}
+            {!loading && !slotError && windowInfo?.windowHint ? (
+              <p className="mt-2 rounded-control bg-surface-2 px-3 py-2 text-xs text-ink-2">
+                {windowInfo.windowHint}.
+                {windowInfo.windowOverride ? " Zeiten ausserhalb sind für die Verwaltung buchbar und erhalten einen Vermerk." : windowInfo.outsideWindow ? " Zeiten ausserhalb sind durchgestrichen." : ""}
+              </p>
+            ) : null}
           </div>
           <p className="mt-2 text-xs text-ink-3">Als Verwaltung gelten Vorlauf und Vorausbuchung nicht. Öffnungszeiten, Sperrzeiten und Plätze werden beachtet.</p>
         </Card>

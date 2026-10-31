@@ -4,6 +4,9 @@ import { sendDueMails } from "@/lib/mail/sender";
 import { runCleanup } from "./cleanup";
 import { purgeDeletedTenants } from "@/modules/core/tenant-purge";
 import { backfillMatchTotals } from "@/modules/scores/sync";
+import { runShiftReminders } from "@/modules/shifts/service";
+import { runWeaponReminders } from "@/modules/weapons/service";
+import { runFederalReminders } from "@/modules/federal/service";
 
 const MIN = 60_000;
 const HOUR = 60 * MIN;
@@ -13,7 +16,12 @@ const DAY = 24 * HOUR;
  * Erinnerungs-Hooks: Funktionen anderer Module, die stündlich laufen und selbst entscheiden,
  * ob etwas fällig ist (z.B. Mails mit dedupeKey). Neue Hooks hier eintragen.
  */
-const REMINDER_HOOKS: Array<{ name: string; fn: () => Promise<unknown> }> = [];
+const REMINDER_HOOKS: Array<{ name: string; fn: () => Promise<unknown> }> = [
+  // Jeder Hook dedupliziert selbst (Audit-Marker «<modul>.reminder»), stündlicher Aufruf ist sicher.
+  { name: "shifts", fn: () => runShiftReminders() }, // 07–22 Uhr: Schicht in 24 h, Unterbesetzung, ablaufende Qualifikationen
+  { name: "weapons", fn: () => runWeaponReminders() }, // ab 08 Uhr: überfällige Ausleihen, Meldefristen Minderjährige, Wartung
+  { name: "federal", fn: () => runFederalReminders() }, // Fristen 14/3 Tage vorher, Vorabend-Erinnerung Obligatorisch
+];
 
 /** Alle Plattform-Jobs registrieren. Wird vom Runner einmal pro Prozess aufgerufen. */
 export function registerDefaultJobs() {

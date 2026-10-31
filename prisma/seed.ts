@@ -2,12 +2,19 @@ import "dotenv/config";
 import bcrypt from "bcryptjs";
 import { PrismaClient } from "../src/generated/prisma/client";
 import { PrismaMariaDb } from "@prisma/adapter-mariadb";
-import { PROGRAM_PRESETS } from "../src/modules/scores/presets";
+import { PROGRAM_PRESETS, presetNames, presetOfficialUpdate } from "../src/modules/scores/presets";
+import { recomputeProgramPasses } from "../src/modules/scores/pass-recompute";
 import { TARGET_PRESETS } from "../src/modules/targets/presets";
 import { seedDemoEvents } from "../src/modules/events/seed";
 import { seedDemoFiles } from "../src/modules/files/seed";
 import { seedDemoChat } from "../src/modules/chat/seed";
-import { seedDemoAmmo } from "../src/modules/ammo/seed";
+import { seedDemoAmmo, seedDemoAmmoStock } from "../src/modules/ammo/seed";
+import { seedDemoFederal } from "../src/modules/federal/seed";
+import { seedDemoRange } from "../src/modules/range/seed";
+import { seedDemoWeapons } from "../src/modules/weapons/seed";
+import { seedDemoShifts } from "../src/modules/shifts/seed";
+import { seedDemoCourses } from "../src/modules/courses/seed";
+import { seedDemoChampionship } from "../src/modules/championship/seed";
 
 const u = new URL(process.env.DATABASE_URL ?? "mysql://standchef:standchef@127.0.0.1:3306/standchef");
 const db = new PrismaClient({
@@ -15,19 +22,40 @@ const db = new PrismaClient({
 });
 
 /**
- * Globale Programme und Scheiben anlegen, die noch fehlen (Abgleich über den Namen).
- * Idempotent: bestehende Einträge, auch von Admins geänderte, bleiben unverändert.
+ * Globale Programme und Scheiben anlegen, die noch fehlen (Abgleich über den Namen bzw. frühere Namen).
+ * Idempotent: bestehende Einträge, auch von Admins geänderte, bleiben unverändert. Einzige Ausnahme:
+ * Vorlagen mit amtlicher Art (Obligatorisch, Feldschiessen) setzen die Art bei bestehenden globalen
+ * Programmen, solange diese noch keine haben, und entfernen eine früher vorbelegte, unveränderte
+ * Bestehensgrenze bzw. Beschreibung (siehe presetOfficialUpdate) und bewerten danach die amtlichen
+ * Resultate neu. Eigene Grenzwerte und Beschreibungen bleiben unverändert.
  */
 async function seedPresets(createdById: string | null) {
   let programs = 0;
+  let updated = 0;
   for (const p of PROGRAM_PRESETS) {
-    const exists = await db.program.findFirst({ where: { tenantId: null, name: p.name } });
-    if (exists) continue;
+    const exists = await db.program.findFirst({ where: { tenantId: null, name: { in: presetNames(p) } }, orderBy: { createdAt: "asc" } });
+    if (exists) {
+      const patch = presetOfficialUpdate(exists, p);
+      if (patch) {
+        const saved = await db.program.update({ where: { id: exists.id }, data: patch });
+        updated++;
+        // Bestehensgrenze entfernt: bereits bestätigte Resultate dürfen nicht weiter als «bestanden» gelten.
+        if ("passMinScore" in patch || "passMaxZeros" in patch) {
+          const n = await recomputeProgramPasses(db, saved.id, saved);
+          if (n) console.log(`Vorlagen: ${n} amtliche Resultate von «${saved.name}» neu bewertet.`);
+        }
+      }
+      continue;
+    }
     await db.program.create({
-      data: { tenantId: null, createdById, name: p.name, description: p.description ?? null, discipline: p.discipline, weaponNote: p.weaponNote ?? null, scoringMode: p.scoringMode, stagesJson: JSON.stringify(p.stages) },
+      data: {
+        tenantId: null, createdById, name: p.name, description: p.description ?? null, discipline: p.discipline, weaponNote: p.weaponNote ?? null, scoringMode: p.scoringMode, stagesJson: JSON.stringify(p.stages),
+        officialKind: p.officialKind ?? null, passMinScore: p.passMinScore ?? null, passMaxZeros: p.passMaxZeros ?? null,
+      },
     });
     programs++;
   }
+  if (updated) console.log(`Vorlagen: ${updated} globale Programme abgeglichen (amtliche Art / Bestehensgrenze / Beschreibung).`);
 
   let targets = 0;
   for (const t of TARGET_PRESETS) {
@@ -120,6 +148,19 @@ async function main() {
     await seedDemoFiles(db, demo.id, anna.id);
     await seedDemoChat(db, demo.id, [anna.id, beat.id, admin.id]);
     await seedDemoAmmo(db, demo.id);
+
+    // Welle B: Bundesübungen, Standbetrieb, Vereinswaffen, Helfereinsätze, Kurse, Jahresmeisterschaft (idempotent)
+    for (const moduleKey of ["federal", "range", "weapons", "shifts", "courses", "championship"] as const) {
+      await db.tenantModule.upsert({ where: { tenantId_moduleKey: { tenantId: demo.id, moduleKey } }, update: { enabled: true }, create: { tenantId: demo.id, moduleKey, enabled: true } });
+    }
+    const demoUsers = [anna.id, beat.id, admin.id]; // erste Person = Standchef / Kursleitung
+    await seedDemoFederal(db, demo.id, demoUsers);
+    await seedDemoShifts(db, demo.id, demoUsers);
+    await seedDemoRange(db, demo.id, demoUsers);
+    await seedDemoWeapons(db, demo.id, demoUsers);
+    await seedDemoAmmoStock(db, demo.id, [anna.id]);
+    await seedDemoCourses(db, demo.id, demoUsers);
+    await seedDemoChampionship(db, demo.id, demoUsers);
     console.log("Demo-Verein: Beitrittscode DEMO42 · anna@example.ch / beat@example.ch (Passwort demo1234)");
   }
 

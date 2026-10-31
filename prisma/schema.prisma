@@ -145,6 +145,7 @@ model Tenant {
   ammoMovements      AmmoStockMovement[]
   courses            Course[]
   liveBoards         LiveBoard[]
+  federalYears       FederalYear[]
 }
 
 model Membership {
@@ -1497,4 +1498,23 @@ model LiveBoard {
   tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
   @@index([tenantId])
+}
+
+// ---------------------------------------------------------------------------
+// Bundesübungen: Fristen und Notizen pro Jahr
+// ---------------------------------------------------------------------------
+
+model FederalYear {
+  id                   String    @id @default(cuid())
+  tenantId             String
+  year                 Int
+  registrationDeadline DateTime? @db.Date // Meldung der Schiesstage (z.B. via SAT-Admin)
+  shootingDeadline     DateTime? @db.Date // letzter Tag für das Obligatorisch
+  reportDeadline       DateTime? @db.Date // Abschluss/Meldung der Resultate
+  notes                String?   @db.Text
+  updatedAt            DateTime  @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, year])
 }

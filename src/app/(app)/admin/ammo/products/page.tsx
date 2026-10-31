@@ -20,6 +20,7 @@ export default async function AmmoProductsPage() {
         products={products.map((p) => ({
           id: p.id, name: p.name, caliber: p.caliber, manufacturer: p.manufacturer, description: p.description, unitLabel: p.unitLabel,
           roundsPerUnit: p.roundsPerUnit, priceCents: p.priceCents, stockUnits: p.stockUnits, isActive: p.isActive, sortOrder: p.sortOrder, reserved: p.reserved,
+          fundingType: p.fundingType,
         }))}
       />
     </div>

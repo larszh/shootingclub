@@ -2,17 +2,19 @@
 
 import { useActionState, useEffect, useId, useRef, useState, useTransition } from "react";
 import { Eye, EyeOff, PackagePlus, Pencil, Trash2, X } from "lucide-react";
-import { Alert, Badge, Button, Card, EmptyState, Field, Input, SectionTitle, Textarea } from "@/components/ui";
+import { Alert, Badge, Button, Card, EmptyState, Field, Input, SectionTitle, Select, Textarea } from "@/components/ui";
 import { SubmitButton, submitKeepingValues } from "@/components/ui/form";
 import { confirmDialog } from "@/components/ui/dialog";
 import { toast } from "@/lib/ui-feedback";
 import { formatMoney } from "@/lib/money";
 import { adjustStockAction, deleteProductAction, saveProductAction, setProductActiveAction } from "@/modules/ammo/actions";
 import { CALIBER_SUGGESTIONS, groupByCaliber, UNIT_SUGGESTIONS } from "@/modules/ammo/types";
+import { FUNDING, FUNDING_TYPES, fundingInfo } from "@/modules/ammo/stock";
 
 export type AdminProduct = {
   id: string; name: string; caliber: string; manufacturer: string | null; description: string | null; unitLabel: string;
   roundsPerUnit: number; priceCents: number; stockUnits: number | null; isActive: boolean; sortOrder: number; reserved: number;
+  fundingType: string;
 };
 
 export function ProductManager({ products, currency }: { products: AdminProduct[]; currency: string }) {
@@ -62,6 +64,11 @@ export function ProductManager({ products, currency }: { products: AdminProduct[
             <Field label="Bestand (optional)" hint="Leer = nicht geführt" error={err?.stockUnits}><Input name="stockUnits" inputMode="numeric" defaultValue={editing?.stockUnits ?? ""} /></Field>
             <Field label="Reihenfolge" error={err?.sortOrder}><Input name="sortOrder" inputMode="numeric" defaultValue={editing?.sortOrder ?? 0} /></Field>
           </div>
+          <Field label="Finanzierung" hint="Für die Jahresübersicht der Munitionskontrolle (Bund gratis, subventioniert, kommerziell)." error={err?.fundingType}>
+            <Select name="fundingType" defaultValue={editing?.fundingType ?? "COMMERCIAL"}>
+              {FUNDING_TYPES.map((f) => <option key={f} value={f}>{FUNDING[f].label}</option>)}
+            </Select>
+          </Field>
           <Field label="Beschreibung (optional)" error={err?.description}><Textarea name="description" defaultValue={editing?.description ?? ""} maxLength={2000} rows={2} /></Field>
           <label className="flex min-h-11 items-center gap-3">
             <input type="checkbox" name="isActive" value="on" defaultChecked={editing?.isActive ?? true} className="h-5 w-5 accent-[var(--ink)]" />
@@ -85,6 +92,7 @@ export function ProductManager({ products, currency }: { products: AdminProduct[
           </section>
         ))
       )}
+      {products.length ? <p className="text-xs text-ink-3">Zugang wird als Wareneingang, Abgang als Korrektur im Bestandsjournal gebucht. Wareneingänge mit Herkunft und Lieferschein, Abgaben am Stand und Inventur: unter «Bestand».</p> : null}
     </div>
   );
 }
@@ -121,6 +129,7 @@ function ProductRow({ p, currency, onEdit }: { p: AdminProduct; currency: string
           <div className="flex flex-wrap items-center gap-2 font-medium">
             {p.name}
             {!p.isActive ? <Badge tone="outline">ausgeblendet</Badge> : null}
+            {p.fundingType !== "COMMERCIAL" ? <Badge tone="accent">{fundingInfo(p.fundingType).short}</Badge> : null}
             {p.stockUnits !== null && p.stockUnits - p.reserved <= 0 ? <Badge tone="danger">ausverkauft</Badge> : null}
           </div>
           <div className="text-xs text-ink-3">

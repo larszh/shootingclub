@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { Eye, EyeOff, Globe } from "lucide-react";
 import { Badge, Card } from "@/components/ui";
-import { disciplineLabel, formatDistances, scoringModeLabel } from "@/modules/scores/types";
+import { disciplineLabel, formatDistances, officialKindLabel, scoringModeLabel } from "@/modules/scores/types";
 import type { ProgramView } from "@/modules/scores/queries";
 import { FavoriteButton } from "./favorite-button";
 import { cn } from "@/lib/utils";
@@ -23,6 +23,7 @@ export function ProgramCard({ program, href, showHidden, usage }: { program: Pro
             <Badge tone="outline">{formatDistances(p.totals.distances)}</Badge>
             <Badge tone="outline">{p.totals.shots} Schuss</Badge>
             <Badge tone="outline">{p.stages.length} {p.stages.length === 1 ? "Serie" : "Serien"}</Badge>
+            {p.officialKind ? <Badge tone="accent">{officialKindLabel(p.officialKind)}</Badge> : null}
             {usage ? <Badge tone="accent">{usage}× geschossen</Badge> : null}
           </div>
           {p.description ? <p className="mt-2 text-sm text-ink-3 line-clamp-2">{p.description}</p> : null}

@@ -1,6 +1,29 @@
 import type { TargetInput } from "./types";
 
 /**
+ * Armbrust-Scheiben (Disziplin «CROSSBOW»). Die `id` ist stabil und ändert sich nie; der Seed
+ * erkennt Vorlagen am Namen, darum Namen ebenfalls nicht umbenennen.
+ * Masse sind angenähert (nachempfunden, keine offiziellen Scheiben) – bitte mit dem aktuellen Reglement prüfen.
+ */
+export const CROSSBOW_TARGET_PRESETS: ReadonlyArray<{ id: string; discipline: "CROSSBOW"; target: TargetInput }> = [
+  {
+    id: "crossbow-10m-rings",
+    discipline: "CROSSBOW",
+    target: { name: "Armbrust 10 m", description: "Ringscheibe 1–10 für Armbrust 10 m, nachempfunden. Masse angenähert (ca. 60 mm), bitte mit dem aktuellen Reglement prüfen.", subject: "RINGS_10", paperSizes: ["A4", "A5", "A6"], params: { diameterMm: 60, numbers: true, blackFrom: 4 }, sharedWithTenant: false },
+  },
+  {
+    id: "crossbow-30m-rings",
+    discipline: "CROSSBOW",
+    target: { name: "Armbrust 30 m", description: "Ringscheibe 1–10 für Armbrust 30 m, nachempfunden. Masse angenähert (ca. 120 mm), bitte mit dem aktuellen Reglement prüfen.", subject: "RINGS_10", paperSizes: ["A4", "A5"], params: { diameterMm: 120, numbers: true, blackFrom: 5 }, sharedWithTenant: false },
+  },
+];
+
+/** Stabile ID einer Armbrust-Vorlage anhand ihres Namens (z.B. für Programme mit Disziplin «Armbrust»). */
+export function crossbowPresetId(name: string): string | null {
+  return CROSSBOW_TARGET_PRESETS.find((p) => p.target.name === name)?.id ?? null;
+}
+
+/**
  * Globale Scheibenvorlagen (Seed). Der Seed legt fehlende Vorlagen anhand des
  * Namens an – neue Einträge erscheinen beim nächsten Seed automatisch.
  * Bestehende Namen nicht umbenennen, sonst entstehen Duplikate.
@@ -75,5 +98,8 @@ export const TARGET_PRESETS: TargetInput[] = [
   { name: "Bewegung simuliert nach rechts", description: "Ist-Position und zwei Vorhalte-Positionen, zwei Bahnen. Für Ausbildung und Training, abstrakte Darstellung.", subject: "TAC_MOVER", paperSizes: ["A4", "A5"], params: { variant: "right", count: 3, rows: 2, legend: true }, sharedWithTenant: false },
   { name: "Verdrehte Figur Profil/halb", description: "Eine Figur im Profil, eine halb gedreht – schmale Trefferzone. Für Ausbildung und Training, abstrakte Darstellung.", subject: "TAC_TURNED", paperSizes: ["A4", "A5", "A6"], params: { variant: "mixed", count: 2, numbers: true, legend: true }, sharedWithTenant: false },
   { name: "Low-Light dunkel", description: "Fast schwarzes Blatt mit dünnen weissen Umrissen. Achtung: braucht viel Toner. Für Ausbildung und Training, abstrakte Darstellung.", subject: "TAC_LOW_LIGHT", paperSizes: ["A4", "A5", "A6"], params: { variant: "dark", count: 3, numbers: true, legend: true }, sharedWithTenant: false },
+  // --- Armbrust (nachempfunden, Masse angenähert – bitte prüfen) ----------
+  ...CROSSBOW_TARGET_PRESETS.map((p) => p.target),
+
   { name: "Kontrast minimal", description: "Nur feine graue Linien – wenig Kontrast und kaum Tinte. Für Ausbildung und Training, abstrakte Darstellung.", subject: "TAC_LOW_LIGHT", paperSizes: ["A4", "A5", "A6"], params: { variant: "minimal", count: 3, numbers: true, legend: true }, sharedWithTenant: false },
 ];

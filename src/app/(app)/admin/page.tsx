@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { CalendarDays, CreditCard, FileUp, FolderOpen, History, Home, Mail, Megaphone, Package, Server, Users, Wallet } from "lucide-react";
+import { Award, Boxes, CalendarDays, ClipboardList, Clock, CreditCard, FileUp, FolderOpen, HandHelping, History, Home, Mail, Megaphone, Package, Server, Settings2, Trophy, Tv, Users, Wallet } from "lucide-react";
 import { requirePermission } from "@/lib/tenant";
 import { MODULES } from "@/lib/modules";
 import { db } from "@/lib/db";
@@ -65,6 +65,40 @@ export default async function AdminPage() {
         </Link>
       ) : null}
 
+      {ctx.hasModule("ammo") && ctx.can("ammo.manage") ? (
+        <AdminRow href="/admin/ammo/stock" icon={<Boxes className="h-5 w-5 text-ink-2" aria-hidden />} label="Munitionskontrolle" hint="Bestand & Inventur" />
+      ) : null}
+
+      {ctx.hasModule("range") && ctx.can("range.manage") ? (
+        <>
+          <SectionTitle>Standbetrieb</SectionTitle>
+          <div className="grid grid-cols-3 gap-2.5">
+            <AdminTile href="/admin/range" icon={<Settings2 className="h-5 w-5" aria-hidden />} label="Übersicht" />
+            <AdminTile href="/admin/range/rules" icon={<ClipboardList className="h-5 w-5" aria-hidden />} label="Standordnung" />
+            <AdminTile href="/admin/range/times" icon={<Clock className="h-5 w-5" aria-hidden />} label="Schiesszeiten" />
+          </div>
+        </>
+      ) : null}
+
+      {(ctx.hasModule("shifts") && ctx.can("shifts.manage")) || ctx.can("qualifications.manage") || (ctx.hasModule("scores") && (ctx.can("match.viewAll") || ctx.can("events.manage"))) || (ctx.hasModule("championship") && ctx.can("championship.manage")) ? (
+        <SectionTitle>Helfer, Ausbildung & Wettkampf</SectionTitle>
+      ) : null}
+      {ctx.hasModule("shifts") && ctx.can("shifts.manage") ? (
+        <>
+          <AdminRow href="/admin/shifts" icon={<HandHelping className="h-5 w-5 text-ink-2" aria-hidden />} label="Helfereinsätze planen" />
+          <AdminRow href="/admin/shifts/settings" icon={<Settings2 className="h-5 w-5 text-ink-2" aria-hidden />} label="Arbeitsstunden & Ersatzabgabe" hint="Einstellungen" />
+        </>
+      ) : null}
+      {ctx.can("qualifications.manage") ? (
+        <AdminRow href="/admin/qualifications" icon={<Award className="h-5 w-5 text-ink-2" aria-hidden />} label="Qualifikationen" hint="Schützenmeister, J+S, Erste Hilfe" />
+      ) : null}
+      {ctx.hasModule("championship") && ctx.can("championship.manage") ? (
+        <AdminRow href="/championship" icon={<Trophy className="h-5 w-5 text-ink-2" aria-hidden />} label="Jahresmeisterschaft einrichten" />
+      ) : null}
+      {ctx.hasModule("scores") && (ctx.can("match.viewAll") || ctx.can("events.manage")) ? (
+        <AdminRow href="/admin/live" icon={<Tv className="h-5 w-5 text-ink-2" aria-hidden />} label="Live-Rangliste" hint="Bildschirm im Schützenhaus" />
+      ) : null}
+
       {ctx.can("audit.view") ? (
         <Link href="/admin/audit" className="block press mt-2.5">
           <Card className="p-4 flex items-center gap-3 hover:border-ink/30"><History className="h-5 w-5 text-ink-2" aria-hidden /><span className="flex-1 font-medium">Protokoll</span><span className="text-sm text-ink-3">Wer hat was geändert</span></Card>
@@ -89,6 +123,14 @@ export default async function AdminPage() {
       <SectionTitle>Stammdaten</SectionTitle>
       <TenantSettingsForm tenant={{ name: tenant.name, kind: tenant.kind, city: tenant.city, canton: tenant.canton, description: tenant.description, website: tenant.website, defaultLocale: tenant.defaultLocale, replyToEmail: tenant.replyToEmail }} />
     </div>
+  );
+}
+
+function AdminRow({ href, icon, label, hint }: { href: string; icon: React.ReactNode; label: string; hint?: string }) {
+  return (
+    <Link href={href} className="block press mt-2.5">
+      <Card className="p-4 flex items-center gap-3 hover:border-ink/30">{icon}<span className="flex-1 font-medium">{label}</span>{hint ? <span className="text-sm text-ink-3">{hint}</span> : null}</Card>
+    </Link>
   );
 }
 

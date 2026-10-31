@@ -10,7 +10,13 @@ export type ModuleKey =
   | "billing"
   | "files"
   | "chat"
-  | "ammo";
+  | "ammo"
+  | "federal"
+  | "range"
+  | "weapons"
+  | "shifts"
+  | "courses"
+  | "championship";
 
 export type ModuleDefinition = {
   key: ModuleKey;
@@ -26,7 +32,7 @@ export const MODULES: ModuleDefinition[] = [
   {
     key: "scores",
     name: "Punkteerfassung",
-    description: "Programme definieren, Resultate erfassen, Wettkämpfe mit Vereinskollegen oder Gästen.",
+    description: "Programme definieren, Resultate erfassen, Wettkämpfe mit Vereinskollegen oder Gästen, Live-Rangliste für den Bildschirm im Schützenhaus.",
     href: "/scores",
     status: "ready",
     defaultEnabled: true,
@@ -82,8 +88,56 @@ export const MODULES: ModuleDefinition[] = [
   {
     key: "ammo",
     name: "Munition",
-    description: "Munition im Verein bestellen und ausgeben, Abrechnung nur auf Rechnung mit QR-Rechnung.",
+    description: "Munition im Verein bestellen und ausgeben, Abrechnung nur auf Rechnung mit QR-Rechnung, Bestandeskontrolle mit Inventur und Jahresübersicht.",
     href: "/ammo",
+    status: "ready",
+    defaultEnabled: false,
+  },
+  {
+    key: "federal",
+    name: "Bundesübungen",
+    description: "Obligatorisch und Feldschiessen: amtliche Resultate bestätigen, Verbliebene, Fristen, Export für SAT-Admin, Schiessnachweis.",
+    href: "/federal",
+    status: "ready",
+    defaultEnabled: false,
+  },
+  {
+    key: "range",
+    name: "Standbetrieb",
+    description: "Standbuch mit Check-in, Gäste, Standordnung, bewilligte Schiesszeiten und Halbtage-Kontingent, Vorfälle.",
+    href: "/range",
+    status: "ready",
+    defaultEnabled: false,
+  },
+  {
+    key: "weapons",
+    name: "Vereinswaffen",
+    description: "Inventar der Vereinswaffen mit Ausleihe, Schusszähler und Wartung.",
+    href: "/weapons",
+    status: "ready",
+    defaultEnabled: false,
+  },
+  {
+    key: "shifts",
+    name: "Helfereinsätze",
+    description: "Schichtplan für Anlässe und Standdienst, Arbeitsstunden-Konto mit Ersatzabgabe, Qualifikationen.",
+    href: "/shifts",
+    status: "ready",
+    defaultEnabled: false,
+  },
+  {
+    key: "courses",
+    name: "Kurse",
+    description: "Jungschützenkurs, J+S, Ausbildung und Qualifikationsschiessen mit Präsenz und Pflichtprogrammen.",
+    href: "/courses",
+    status: "ready",
+    defaultEnabled: false,
+  },
+  {
+    key: "championship",
+    name: "Jahresmeisterschaft",
+    description: "Vereinsmeisterschaft mit Streichresultaten, Pflichtprogrammen, Kategorien und Rangliste für die GV.",
+    href: "/championship",
     status: "ready",
     defaultEnabled: false,
   },

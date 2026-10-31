@@ -7,6 +7,8 @@ import { fail, ok, type ActionResult } from "@/lib/action-result";
 import { parseMoneyToCents } from "@/lib/money";
 import { requireAmmo, requireAmmoAdmin } from "./guard";
 import { AmmoError, createOrder, issueOrder } from "./service";
+import { bookStock } from "./stock-service";
+import { audit } from "@/lib/audit";
 import { orderLinesSchema, orderNoteSchema, productSchema, settingsSchema, type OrderLineInput } from "./types";
 
 const revalidate = () => {
@@ -83,6 +85,7 @@ export async function saveProductAction(_prev: ActionResult | null, fd: FormData
     stockUnits: fd.get("stockUnits") ?? "",
     isActive: fd.get("isActive") !== "off",
     sortOrder: fd.get("sortOrder") || 0,
+    fundingType: fd.get("fundingType") || "COMMERCIAL",
   });
   if (!parsed.success) {
     const issue = parsed.error.issues[0];
@@ -91,24 +94,48 @@ export async function saveProductAction(_prev: ActionResult | null, fd: FormData
   }
   const p = parsed.data;
   const data = { ...p, manufacturer: p.manufacturer ?? null, description: p.description ?? null };
-  if (id) {
-    // Bestand nie blind überschreiben: Ausgaben, Stornos und Zu-/Abgänge ändern ihn, während das Formular offen ist.
-    // Unverändertes Feld → Bestand bleibt unangetastet; geändertes Feld → nur, wenn der geladene Wert noch stimmt.
-    const { stockUnits, ...rest } = data;
-    const loaded = fd.has("stockUnitsLoaded") ? parseLoadedStock(fd.get("stockUnitsLoaded")) : undefined;
-    const stockChanged = loaded !== undefined && stockUnits !== loaded;
-    const res = await db.ammoProduct.updateMany({
-      where: { id, tenantId: ctx.tenant.id, ...(stockChanged ? { stockUnits: loaded } : {}) },
-      data: stockChanged ? data : rest,
-    });
-    if (res.count === 0) {
-      const exists = stockChanged && (await db.ammoProduct.count({ where: { id, tenantId: ctx.tenant.id } })) > 0;
-      if (!exists) return fail("Produkt nicht gefunden.");
-      const msg = "Der Bestand hat sich inzwischen geändert. Bitte «Bearbeiten» neu öffnen oder den Bestand mit Zugang/Abgang korrigieren.";
-      return fail(msg, { stockUnits: msg });
+  const tenantId = ctx.tenant.id;
+  try {
+    if (id) {
+      // Bestand nie blind überschreiben: Ausgaben, Stornos und Zu-/Abgänge ändern ihn, während das Formular offen ist.
+      // Unverändertes Feld → Bestand bleibt unangetastet; geändertes Feld → nur, wenn der geladene Wert noch stimmt,
+      // und die Differenz erscheint als Korrektur im Bestandsjournal.
+      const { stockUnits, ...rest } = data;
+      const loaded = fd.has("stockUnitsLoaded") ? parseLoadedStock(fd.get("stockUnitsLoaded")) : undefined;
+      const stockChanged = loaded !== undefined && stockUnits !== loaded;
+      const result = await db.$transaction(async (tx) => {
+        const res = await tx.ammoProduct.updateMany({
+          where: { id, tenantId, ...(stockChanged ? { stockUnits: loaded } : {}) },
+          data: stockChanged ? data : rest,
+        });
+        if (res.count === 0) return "conflict" as const;
+        const diff = stockChanged ? (stockUnits ?? 0) - (loaded ?? 0) : 0;
+        if (stockChanged && diff !== 0) {
+          await tx.ammoStockMovement.create({
+            data: {
+              tenantId, productId: id, kind: "CORRECTION", units: diff, createdById: ctx.user.id,
+              note: stockUnits === null ? "Bestand nicht mehr geführt (Sortiment)" : loaded === null ? "Bestand erfasst (Sortiment)" : "Bestand im Sortiment geändert",
+            },
+          });
+        }
+        return "ok" as const;
+      });
+      if (result === "conflict") {
+        const exists = stockChanged && (await db.ammoProduct.count({ where: { id, tenantId } })) > 0;
+        if (!exists) return fail("Produkt nicht gefunden.");
+        const msg = "Der Bestand hat sich inzwischen geändert. Bitte «Bearbeiten» neu öffnen oder den Bestand mit Zugang/Abgang korrigieren.";
+        return fail(msg, { stockUnits: msg });
+      }
+    } else {
+      await db.$transaction(async (tx) => {
+        const created = await tx.ammoProduct.create({ data: { ...data, tenantId }, select: { id: true } });
+        if (data.stockUnits) {
+          await tx.ammoStockMovement.create({ data: { tenantId, productId: created.id, kind: "CORRECTION", units: data.stockUnits, createdById: ctx.user.id, note: "Anfangsbestand" } });
+        }
+      });
     }
-  } else {
-    await db.ammoProduct.create({ data: { ...data, tenantId: ctx.tenant.id } });
+  } catch (e) {
+    return handle(e);
   }
   revalidate();
   return ok(undefined, id ? "Produkt gespeichert." : "Produkt angelegt.");
@@ -139,25 +166,26 @@ export async function deleteProductAction(id: string): Promise<ActionResult> {
   return ok(undefined, "Produkt gelöscht.");
 }
 
-/** Bestand korrigieren: delta > 0 = Zugang, delta < 0 = Abgang. Nie unter null. Ohne geführten Bestand: setzt ihn. */
+/**
+ * Schnellbuchung im Sortiment: delta > 0 = Wareneingang, delta < 0 = Korrektur (Abgang). Nie unter null.
+ * Ohne geführten Bestand setzt ein Zugang den Bestand. Jede Buchung erscheint im Bestandsjournal.
+ */
 export async function adjustStockAction(id: string, delta: number): Promise<ActionResult<{ stockUnits: number }>> {
   const ctx = await requireAmmoAdmin();
   if (!idSchema.safeParse(id).success || !Number.isInteger(delta) || delta === 0 || Math.abs(delta) > 1_000_000) return fail("Ungültige Menge.");
-  const p = await db.ammoProduct.findFirst({ where: { id, tenantId: ctx.tenant.id }, select: { stockUnits: true } });
-  if (!p) return fail("Produkt nicht gefunden.");
-  if (p.stockUnits === null) {
-    if (delta < 0) return fail("Für dieses Produkt wird kein Bestand geführt.");
-    await db.ammoProduct.updateMany({ where: { id, tenantId: ctx.tenant.id, stockUnits: null }, data: { stockUnits: delta } });
-  } else {
-    const res = await db.ammoProduct.updateMany({
-      where: { id, tenantId: ctx.tenant.id, ...(delta < 0 ? { stockUnits: { gte: -delta } } : {}) },
-      data: { stockUnits: { increment: delta } },
-    });
-    if (res.count === 0) return fail("Der Bestand kann nicht unter null fallen.");
+  try {
+    const res = await db.$transaction((tx) =>
+      bookStock(tx, {
+        tenantId: ctx.tenant.id, productId: id, kind: delta > 0 ? "RECEIPT" : "CORRECTION", units: delta, createdById: ctx.user.id,
+        source: delta > 0 ? "Sortiment (Schnellbuchung)" : null, note: delta < 0 ? "Abgang (Sortiment)" : null,
+      }),
+    );
+    await audit({ tenantId: ctx.tenant.id, actorId: ctx.user.id, action: "ammo.stock.adjust", entity: "AmmoProduct", entityId: id, detail: `${delta > 0 ? "+" : ""}${delta}` });
+    revalidate();
+    return ok({ stockUnits: res.stockUnits }, delta > 0 ? `Zugang ${delta} gebucht.` : `Abgang ${-delta} gebucht.`);
+  } catch (e) {
+    return handle(e);
   }
-  const fresh = await db.ammoProduct.findUnique({ where: { id }, select: { stockUnits: true } });
-  revalidate();
-  return ok({ stockUnits: fresh?.stockUnits ?? 0 }, delta > 0 ? `Zugang ${delta} gebucht.` : `Abgang ${-delta} gebucht.`);
 }
 
 // --- Bestellung (Mitglied) -----------------------------------------------------------
@@ -264,7 +292,12 @@ export async function cancelOrderAction(id: string, opts?: { restock?: boolean }
       if (opts?.restock) {
         for (const it of order.items) {
           if (!it.productId) continue;
-          await tx.ammoProduct.updateMany({ where: { id: it.productId, tenantId, stockUnits: { not: null } }, data: { stockUnits: { increment: it.quantity } } });
+          const back = await tx.ammoProduct.updateMany({ where: { id: it.productId, tenantId, stockUnits: { not: null } }, data: { stockUnits: { increment: it.quantity } } });
+          if (back.count > 0) {
+            await tx.ammoStockMovement.create({
+              data: { tenantId, productId: it.productId, kind: "RETURN", units: it.quantity, orderId: order.id, source: order.invoiceNumber ? `Storno Rechnung ${order.invoiceNumber}` : "Storno", createdById: ctx.user.id },
+            });
+          }
         }
         return "Rücknahme gebucht, Bestand zurückgebucht, Rechnung storniert.";
       }

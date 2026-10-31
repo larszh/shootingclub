@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { Bell, BookUser, CalendarDays, ChevronRight, CreditCard, FileUp, FolderOpen, History, Home, KeyRound, LogOut, Mail, Megaphone, MessageCircle, Package, Server, Settings, Shield, ShieldCheck, Target, Users, BarChart3, Wallet } from "lucide-react";
+import { Bell, BookUser, CalendarDays, ChevronRight, CreditCard, FileUp, FolderOpen, History, Home, KeyRound, LogOut, Mail, Megaphone, MessageCircle, Package, Server, Settings, Shield, ShieldCheck, Target, Users, BarChart3, Wallet, BadgeCheck, Trophy, Tv, DoorOpen, HandHelping, GraduationCap, Award, Boxes, Clock } from "lucide-react";
 import { getAppContext } from "@/lib/tenant";
 import { db } from "@/lib/db";
 import { logoutAction } from "@/modules/core/auth-actions";
@@ -25,6 +25,16 @@ export default async function MePage() {
   const canManageMembers = ctx.tenant ? ctx.can("members.manage") : false;
   const canAudit = ctx.tenant ? ctx.can("audit.view") : false;
   const paymentsOn = ctx.hasModule("billing") || ctx.hasModule("bookings") || ctx.hasModule("ammo");
+  // Welle B: Schiessen und Verein (nur aktive Module und passende Rechte)
+  const can = (p: Parameters<typeof ctx.can>[0]) => (ctx.tenant ? ctx.can(p) : false);
+  const canLive = ctx.hasModule("scores") && (can("match.viewAll") || can("events.manage"));
+  const canWeapons = ctx.hasModule("weapons") && can("weapons.loan");
+  const shootingOn = ctx.hasModule("federal") || ctx.hasModule("championship") || canLive;
+  const clubOn = ctx.hasModule("range") || ctx.hasModule("shifts") || ctx.hasModule("courses") || canWeapons;
+  const adminRange = ctx.hasModule("range") && can("range.manage");
+  const adminShifts = ctx.hasModule("shifts") && can("shifts.manage");
+  const adminQuali = can("qualifications.manage") || canViewMembers;
+  const adminStock = ctx.hasModule("ammo") && canManageAmmo;
 
   const profile = await db.user.findUniqueOrThrow({ where: { id: ctx.user.id }, select: { phone: true, birthDate: true } });
   const memberships = await db.membership.findMany({
@@ -73,7 +83,28 @@ export default async function MePage() {
             {ctx.hasModule("scores") ? <Row href="/scores/stats" icon={<BarChart3 className="h-4 w-4" />} label="Meine Statistik" /> : null}
             <Row href="/members" icon={<BookUser className="h-4 w-4" />} label="Mitgliederverzeichnis" />
           </Card>
-          {canManage || canManageAmmo || canViewMembers || canAudit ? (
+          {shootingOn ? (
+            <>
+              <SectionTitle>Schiessen</SectionTitle>
+              <Card className="animate-rise divide-y divide-line overflow-hidden">
+                {ctx.hasModule("federal") ? <Row href="/federal" icon={<BadgeCheck className="h-4 w-4" />} label="Bundesübungen" hint="Obligatorisch, Feldschiessen, Schiessnachweis" /> : null}
+                {ctx.hasModule("championship") ? <Row href="/championship" icon={<Trophy className="h-4 w-4" />} label="Jahresmeisterschaft" /> : null}
+                {canLive ? <Row href="/admin/live" icon={<Tv className="h-4 w-4" />} label="Live-Rangliste" hint="Für den Bildschirm im Schützenhaus" /> : null}
+              </Card>
+            </>
+          ) : null}
+          {clubOn ? (
+            <>
+              <SectionTitle>Verein</SectionTitle>
+              <Card className="animate-rise divide-y divide-line overflow-hidden">
+                {ctx.hasModule("range") ? <Row href="/range" icon={<DoorOpen className="h-4 w-4" />} label="Standbetrieb" hint="Heute am Stand, Check-in, Standordnung" /> : null}
+                {ctx.hasModule("shifts") ? <Row href="/shifts" icon={<HandHelping className="h-4 w-4" />} label="Helfereinsätze" hint="Schichten und Arbeitsstunden" /> : null}
+                {ctx.hasModule("courses") ? <Row href="/courses" icon={<GraduationCap className="h-4 w-4" />} label="Kurse" /> : null}
+                {canWeapons ? <Row href="/weapons" icon={<Shield className="h-4 w-4" />} label="Vereinswaffen" /> : null}
+              </Card>
+            </>
+          ) : null}
+          {canManage || canManageAmmo || canViewMembers || canAudit || adminRange || adminShifts || adminQuali ? (
             <>
               <SectionTitle>Verwaltung</SectionTitle>
               <Card className="animate-rise divide-y divide-line overflow-hidden">
@@ -87,6 +118,10 @@ export default async function MePage() {
                 {canManage && ctx.hasModule("billing") ? <Row href="/admin/billing" icon={<CreditCard className="h-4 w-4" />} label="Mitgliederbeiträge verwalten" /> : null}
                 {canManage && ctx.hasModule("files") ? <Row href="/admin/files" icon={<FolderOpen className="h-4 w-4" />} label="Dateiablage & Speicherort" /> : null}
                 {canManageAmmo && ctx.hasModule("ammo") ? <Row href="/admin/ammo" icon={<Package className="h-4 w-4" />} label="Munition verwalten" /> : null}
+                {adminStock ? <Row href="/admin/ammo/stock" icon={<Boxes className="h-4 w-4" />} label="Munitionskontrolle" hint="Bestand, Inventur, Jahresübersicht" /> : null}
+                {adminRange ? <Row href="/admin/range" icon={<Clock className="h-4 w-4" />} label="Standordnung & Schiesszeiten" /> : null}
+                {adminShifts ? <Row href="/admin/shifts" icon={<HandHelping className="h-4 w-4" />} label="Einsätze & Arbeitsstunden" /> : null}
+                {adminQuali ? <Row href="/admin/qualifications" icon={<Award className="h-4 w-4" />} label="Qualifikationen" /> : null}
                 {canAudit ? <Row href="/admin/audit" icon={<History className="h-4 w-4" />} label="Protokoll" /> : null}
               </Card>
             </>

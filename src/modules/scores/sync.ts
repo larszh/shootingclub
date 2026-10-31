@@ -2,6 +2,7 @@ import "server-only";
 import { z } from "zod";
 import { revalidatePath } from "next/cache";
 import { db } from "@/lib/db";
+import { audit } from "@/lib/audit";
 import { MODULES } from "@/lib/modules";
 import { can, type Permission } from "@/lib/permissions";
 import type { CurrentUser } from "@/lib/auth";
@@ -10,6 +11,7 @@ import { MAX_STAGE_PENALTIES, parseStages, sanitizeShots, stageEntryLimit, stage
 import type { MatchView } from "./queries";
 import { participantTotals, totalsChanged } from "./totals";
 import { clampClientTime } from "./sync-time";
+import { evaluatePass, type PassRule } from "./official";
 
 /**
  * Server-Logik für Durchgänge, gemeinsam genutzt von den Server Actions und der
@@ -255,6 +257,14 @@ export async function backfillMatchTotals(scope: { tenantId?: string; programId?
   return n;
 }
 
+/** «Bestanden» eines amtlichen Resultats nach einer Korrektur durch den Schützenmeister neu berechnen. */
+export async function refreshOfficialPass(participantId: string, rule: PassRule): Promise<void> {
+  const p = await db.matchParticipant.findUnique({ where: { id: participantId }, select: { total: true, zeros: true, isOfficial: true, passed: true } });
+  if (!p || !p.isOfficial) return;
+  const passed = evaluatePass(p, rule);
+  if (passed !== p.passed) await db.matchParticipant.update({ where: { id: participantId }, data: { passed } });
+}
+
 // ---------------------------------------------------------------------------
 // Serie speichern (last-write-wins über clientUpdatedAt)
 // ---------------------------------------------------------------------------
@@ -285,6 +295,14 @@ export async function saveStageResultCore(
     ? match.participants.find((p) => p.sortOrder === Number(input.participantKey))
     : match.participants.find((p) => p.id === input.participantKey);
   if (!participant) return coreFail("Teilnehmer nicht gefunden", "not_found");
+  // Amtlich bestätigte Resultate sind für Schützen schreibgeschützt; nur wer Resultate bestätigen darf, kann sie korrigieren.
+  if (participant.isOfficial && !actor.can("results.verify")) {
+    return coreFail("Amtlich bestätigtes Resultat: Änderungen nur durch den Schützenmeister (zuerst «Bestätigung aufheben»).", "official_locked");
+  }
+  // Amtliche Programme: Schüsse anderer Teilnehmer erfasst nur, wer den Durchgang erstellt hat oder Resultate bestätigen darf.
+  if (match.program.officialKind && participant.userId !== actor.userId && !loaded.isCreator && !actor.can("results.verify")) {
+    return coreFail("Amtliches Programm: Schüsse anderer Teilnehmer erfasst nur, wer den Durchgang erstellt hat, oder der Schützenmeister.", "forbidden");
+  }
 
   const stages = parseStages(match.program.stagesJson);
   const stage = stages[input.stageIndex];
@@ -331,6 +349,7 @@ export async function saveStageResultCore(
     return { ok: true, total: current?.total ?? total, ignored: true, matchId: match.id };
   }
   await recomputeMatchTotals(match.id, participant.id);
+  if (participant.isOfficial) await refreshOfficialPass(participant.id, match.program);
   revalidatePath(`/scores/matches/${match.id}`);
   return { ok: true, total, ignored: false, matchId: match.id };
 }
@@ -352,6 +371,11 @@ export async function setMatchStatusCore(actor: ScoreActor, raw: z.input<typeof 
   const loaded = await loadMatchForActor(actor, parsed.data);
   if (!loaded.ok) return loaded;
   const { match } = loaded;
+  // Mit amtlich bestätigten Resultaten zählt der Status für den Schiessnachweis: nur der Schützenmeister ändert ihn.
+  const hasOfficial = match.participants.some((p) => p.isOfficial);
+  if (hasOfficial && !actor.can("results.verify") && match.status !== parsed.data.status) {
+    return coreFail("Der Durchgang enthält amtlich bestätigte Resultate: Status ändern nur durch den Schützenmeister.", "official_locked");
+  }
   const clientUpdatedAt = clampClientTime(parsed.data.clientUpdatedAt);
   const neverChanged = match.updatedAt.getTime() - match.createdAt.getTime() <= STATUS_UNCHANGED_MS;
   if (!neverChanged && clientUpdatedAt.getTime() < match.updatedAt.getTime()) {
@@ -371,6 +395,16 @@ export async function setMatchStatusCore(actor: ScoreActor, raw: z.input<typeof 
     if (res.count === 0) return attempt < 3 ? setMatchStatusCore(actor, raw, attempt + 1) : coreFail("Status wurde gleichzeitig geändert", "conflict", true);
     // Sicherheitsnetz: beim Abschliessen alle Totale aus den Serien nachführen
     if (finished) await recomputeMatchTotals(match.id);
+    if (hasOfficial && match.status !== parsed.data.status) {
+      await audit({
+        tenantId: match.tenantId,
+        actorId: actor.userId,
+        action: finished ? "results.match.finish" : "results.match.reopen",
+        entity: "Match",
+        entityId: match.id,
+        detail: `${match.title ?? match.program.name} · ${finished ? "abgeschlossen" : "wieder geöffnet"} (mit amtlich bestätigten Resultaten)`,
+      });
+    }
   }
   revalidatePath(`/scores/matches/${match.id}`);
   revalidatePath("/scores");

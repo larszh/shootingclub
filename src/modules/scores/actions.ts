@@ -8,6 +8,13 @@ import { requireModule, requirePermission, requireSuperAdmin } from "@/lib/tenan
 import { fail, ok, type ActionResult } from "@/lib/action-result";
 import { programInputSchema, type ProgramInput } from "./types";
 import { createMatchCore, saveStageResultCore, setMatchStatusCore } from "./sync";
+import { passRuleChanged, recomputeProgramPasses } from "./pass-recompute";
+
+function emptyToNull(v: FormDataEntryValue | null) {
+  if (v === null) return null;
+  const s = String(v).trim().replace(",", ".");
+  return s === "" ? null : s;
+}
 
 function parseProgramForm(formData: FormData) {
   const raw = {
@@ -17,6 +24,9 @@ function parseProgramForm(formData: FormData) {
     weaponNote: formData.get("weaponNote") || undefined,
     scoringMode: formData.get("scoringMode"),
     stages: JSON.parse(String(formData.get("stagesJson") ?? "[]")),
+    officialKind: formData.get("officialKind") || null,
+    passMinScore: emptyToNull(formData.get("passMinScore")),
+    passMaxZeros: emptyToNull(formData.get("passMaxZeros")),
   };
   return programInputSchema.safeParse(raw);
 }
@@ -29,6 +39,9 @@ function programData(input: ProgramInput) {
     weaponNote: input.weaponNote ?? null,
     scoringMode: input.scoringMode,
     stagesJson: JSON.stringify(input.stages),
+    officialKind: input.officialKind ?? null,
+    passMinScore: input.passMinScore ?? null,
+    passMaxZeros: input.passMaxZeros ?? null,
   };
 }
 
@@ -47,7 +60,9 @@ export async function saveProgramAction(_prev: ActionResult | null, formData: Fo
     if (id) {
       const existing = await db.program.findUnique({ where: { id } });
       if (!existing || existing.tenantId !== null) return fail("Nicht gefunden");
-      await db.program.update({ where: { id }, data: programData(parsed.data) });
+      const data = programData(parsed.data);
+      await db.program.update({ where: { id }, data });
+      if (passRuleChanged(existing, data)) await recomputeProgramPasses(db, id, data);
     } else {
       await db.program.create({ data: { ...programData(parsed.data), tenantId: null, createdById: user.id } });
     }
@@ -60,7 +75,9 @@ export async function saveProgramAction(_prev: ActionResult | null, formData: Fo
   if (id) {
     const existing = await db.program.findUnique({ where: { id } });
     if (!existing || existing.tenantId !== ctx.tenant.id) return fail("Nicht gefunden");
-    await db.program.update({ where: { id }, data: programData(parsed.data) });
+    const data = programData(parsed.data);
+    await db.program.update({ where: { id }, data });
+    if (passRuleChanged(existing, data)) await recomputeProgramPasses(db, id, data);
   } else {
     await db.program.create({ data: { ...programData(parsed.data), tenantId: ctx.tenant.id, createdById: ctx.user.id } });
   }
@@ -191,6 +208,9 @@ export async function deleteMatchAction(matchId: string): Promise<ActionResult> 
   const loaded = await loadEditableMatch(matchId);
   if (!loaded.ok) return fail(loaded.error);
   if (!loaded.isCreator && !loaded.ctx.can("match.delete")) return fail("Keine Berechtigung");
+  if (loaded.match.participants.some((p) => p.isOfficial)) {
+    return fail("Der Durchgang enthält amtlich bestätigte Resultate. Bitte zuerst die Bestätigungen aufheben (Schützenmeister).");
+  }
   await db.match.delete({ where: { id: matchId } });
   revalidatePath("/scores");
   redirect("/scores");
@@ -217,6 +237,9 @@ export async function copyProgramToTenantAction(programId: string, opts?: { hide
       weaponNote: src.weaponNote,
       scoringMode: src.scoringMode,
       stagesJson: src.stagesJson,
+      officialKind: src.officialKind,
+      passMinScore: src.passMinScore,
+      passMaxZeros: src.passMaxZeros,
     },
   });
   if (opts?.hideOriginal) {
@@ -250,6 +273,9 @@ export async function duplicateProgramAction(programId: string): Promise<ActionR
       weaponNote: src.weaponNote,
       scoringMode: src.scoringMode,
       stagesJson: src.stagesJson,
+      officialKind: src.officialKind,
+      passMinScore: src.passMinScore,
+      passMaxZeros: src.passMaxZeros,
     },
   });
   revalidatePath("/scores");

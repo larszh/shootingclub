@@ -21,10 +21,13 @@ export type ProgramView = {
   favorite: boolean;
   isArchived: boolean;
   updatedAt: Date;
+  officialKind: string | null;
+  passMinScore: number | null;
+  passMaxZeros: number | null;
 };
 
 function toView(
-  p: { id: string; name: string; description: string | null; discipline: string; weaponNote: string | null; scoringMode: string; stagesJson: string; tenantId: string | null; isArchived: boolean; updatedAt: Date },
+  p: { id: string; name: string; description: string | null; discipline: string; weaponNote: string | null; scoringMode: string; stagesJson: string; tenantId: string | null; isArchived: boolean; updatedAt: Date; officialKind: string | null; passMinScore: number | null; passMaxZeros: number | null },
   hidden: boolean,
   favorite: boolean,
 ): ProgramView {
@@ -43,6 +46,9 @@ function toView(
     favorite,
     isArchived: p.isArchived,
     updatedAt: p.updatedAt,
+    officialKind: p.officialKind,
+    passMinScore: p.passMinScore,
+    passMaxZeros: p.passMaxZeros,
   };
 }
 
@@ -161,6 +167,7 @@ export async function getMatch(ctx: AppContext & { tenant: NonNullable<AppContex
     include: {
       program: true,
       createdBy: { select: { id: true, name: true } },
+      event: { select: { id: true, title: true } },
       participants: { include: { user: { select: { id: true, name: true, avatarPath: true, updatedAt: true } }, results: true }, orderBy: { sortOrder: "asc" } },
     },
   });
@@ -177,7 +184,10 @@ export async function getMatch(ctx: AppContext & { tenant: NonNullable<AppContex
     status: m.status,
     locationNote: m.locationNote,
     createdBy: m.createdBy,
-    canEdit: isCreator || isParticipant || ctx.can("match.viewAll"),
+    event: m.event,
+    createdAt: m.createdAt,
+    // Status ändern (Abschliessen/Wieder öffnen): bei amtlich bestätigten Resultaten nur durch den Schützenmeister
+    canEdit: (isCreator || isParticipant || ctx.can("match.viewAll")) && (!m.participants.some((p) => p.isOfficial) || ctx.can("results.verify")),
     canDelete: isCreator || ctx.can("match.delete"),
     program: {
       id: m.program.id,
@@ -186,9 +196,19 @@ export async function getMatch(ctx: AppContext & { tenant: NonNullable<AppContex
       scoringMode: m.program.scoringMode,
       stages,
       totals: programTotals(stages, m.program.scoringMode),
+      officialKind: m.program.officialKind,
+      passMinScore: m.program.passMinScore,
+      passMaxZeros: m.program.passMaxZeros,
     },
     participants: m.participants.map((p) => ({
       id: p.id,
+      total: p.total,
+      zeros: p.zeros,
+      isOfficial: p.isOfficial,
+      attempt: p.attempt,
+      passed: p.passed,
+      verifiedById: p.verifiedById,
+      verifiedAt: p.verifiedAt,
       userId: p.userId,
       name: p.user?.name ?? p.guestName ?? "Gast",
       isGuest: !p.userId,

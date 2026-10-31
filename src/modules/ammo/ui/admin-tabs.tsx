@@ -8,6 +8,7 @@ const TABS = [
   { href: "/admin/ammo", label: "Bestellungen" },
   { href: "/admin/ammo/counter", label: "Ausgabe" },
   { href: "/admin/ammo/products", label: "Sortiment" },
+  { href: "/admin/ammo/stock", label: "Bestand" },
   { href: "/admin/ammo/settings", label: "Einstellungen" },
 ];
 

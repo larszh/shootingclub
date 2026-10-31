@@ -1,6 +1,6 @@
 # Standchef
 
-**Die App für Schiessvereine und Schiessanlagen in der Schweiz.** Punkteerfassung, Zielscheiben zum Drucken, Anlässe, Reservationen, Mitgliederbeiträge, Dateiablage, Chat und Munitionsverkauf, Vereinsverwaltung mit Mandanten (Tenants) und Rollen. Modular aufgebaut, mobile-first, ohne Verbandsbindung.
+**Die App für Schiessvereine und Schiessanlagen in der Schweiz.** Punkteerfassung, Zielscheiben zum Drucken, Anlässe, Reservationen, Mitgliederbeiträge, Dateiablage, Chat und Munitionsverkauf, Bundesübungen, Standbetrieb, Vereinswaffen, Helfereinsätze, Kurse, Jahresmeisterschaft und Live-Rangliste, Vereinsverwaltung mit Mandanten (Tenants) und Rollen. Modular aufgebaut, mobile-first, ohne Verbandsbindung.
 
 > Der *Standchef* führt den Betrieb am Schiessstand: einteilen, organisieren, Resultate führen, abrechnen. Genau das macht die App für den Verein. Domain: standchef.ch
 
@@ -28,7 +28,7 @@ Nach dem Demo-Seed:
 | anna@example.ch | demo1234 | Admin Demo-Verein |
 | beat@example.ch | demo1234 | Mitglied Demo-Verein |
 
-Beitrittscode Demo-Verein: `DEMO42`. Im Demo-Verein sind alle Module aktiv, inklusive Dateiablage (Beispielordner), Chat (Gruppe «Vorstand» und eine Direktnachricht) und Munition (Beispielsortiment). Ohne Seed wird das allererste registrierte Konto automatisch Super-Admin.
+Beitrittscode Demo-Verein: `DEMO42`. Im Demo-Verein sind alle Module aktiv, inklusive Dateiablage (Beispielordner), Chat (Gruppe «Vorstand» und eine Direktnachricht) und Munition (Beispielsortiment mit Bestandesjournal), dazu Beispieldaten für Bundesübungen, Standbetrieb (Standordnung, Schiesszeiten, Standbücher), Vereinswaffen, Helfereinsätze mit Qualifikationen, Kurse und Jahresmeisterschaft mit Live-Rangliste. Der Seed ist idempotent und kann mehrfach laufen. Ohne Seed wird das allererste registrierte Konto automatisch Super-Admin.
 
 Weitere Befehle: `npm test` (Vitest, reine Funktionen), `npm run typecheck`, `npm run lint`, `npm run build`, `npm run db:deploy` (Migrationen in Produktion), `npm run db:studio`.
 
@@ -67,7 +67,15 @@ src/
     files/        Dateiablage: types, queries, service (Rechteprüfung pro Ordner), actions, seed, ui/
     chat/         Chat: types, service, queries, actions, bus (In-Process), api, seed, ui/ (Stream-Client, Outbox)
     ammo/         Munition: types, service (Bestand, Ausgabe, Rechnungsnummer, QR-Referenz), queries, actions,
-                  payments (markAmmoInvoicePaid), render, seed, ui/
+                  payments (markAmmoInvoicePaid), render, seed, ui/; stock* (Munitionskontrolle: Journal, Inventur)
+    federal/      Bundesübungen: types (rein), queries, service (shootingDaysForUser, runFederalReminders), actions, seed
+    range/        Standbetrieb: logic (rein), queries (listShootingDaysFromVisits), actions, booking-window, seed, ui/
+    weapons/      Vereinswaffen: logic (rein), service (createWeaponLoan, returnWeaponLoan, runWeaponReminders), seed, ui/
+    shifts/       Helfereinsätze: logic (rein), queries, service (runShiftReminders), actions, seed, ui/
+    qualifications/  Qualifikationen: service (QUALIFICATION_KINDS, hasValidQualification, grantQualification)
+    courses/      Kurse und Qualifikationsschiessen: logic (rein), queries, actions, seed, ui/
+    championship/ Jahresmeisterschaft: ranking (rein), queries, actions, seed, ui/
+    live/         Live-Rangliste: logic (rein), service (öffentlicher Snapshot), admin, actions, ui/
   app/
     (auth)/       login (+ 2FA), register, forgot-/reset-/set-password, invite/[token]
     (app)/        eingeloggter Bereich mit App-Shell (Tab-Bar mobil, Sidebar Desktop)
@@ -80,6 +88,12 @@ src/
       files/      Dateiablage mit Ordnern
       chat/       Unterhaltungen, neue Nachricht, neue Gruppe
       ammo/       Munition bestellen, eigene Bestellungen
+      federal/    Bundesübungen, Schiessnachweis
+      range/      Heute am Stand, Check-in, Standordnung, Standbuch, Kontingent, Vorfälle
+      weapons/    Vereinswaffen (weapons.loan), Ausleihen
+      shifts/     Helfereinsätze (Offen, Meine, Stunden), .ics pro Schicht
+      courses/    Kurse, Teilnehmende, Kurstage, Resultate, Qualifikationsschiessen
+      championship/  Jahresmeisterschaft, Rangliste, Mitglied-Detail, CSV
       members/    Mitgliederverzeichnis
       me/         Profil, Darstellung, Kalender-Abo; security/ (Passwort, 2FA, Sitzungen),
                   notifications/ (Sprache, Push/E-Mail), privacy/ (Export, Konto löschen)
@@ -92,7 +106,11 @@ src/
       admin/billing/   Übersicht und Jahreslauf, Mitglieder, Kategorien, Rechnungsprofil, Bankimport
       admin/payments/  Offene Posten über alle Bereiche, CSV-Export (admin/payments/export)
       admin/files/     Speicherort und Limits der Dateiablage
-      admin/ammo/      Bestellungen, Ausgabe an der Theke, Sortiment, Einstellungen
+      admin/ammo/      Bestellungen, Ausgabe an der Theke, Sortiment, Einstellungen, Bestand (Munitionskontrolle)
+      admin/range/     Standordnung, Schiesszeiten und Kontingent
+      admin/shifts/    Einsatzplanung, Stunden und Ersatzabgabe, Einstellungen
+      admin/qualifications/  Qualifikationen der Mitglieder
+      admin/live/      Live-Ranglisten verwalten
       super/      Super-Admin: Tenants (inkl. Löschen/Wiederherstellen), Benutzer, globale Programme/Scheiben,
                   audit/ (alle Vereine), system/ (Mail-Warteschlange, Jobs)
     offline/      Ersatzseite ohne Empfang (Service Worker)
@@ -101,13 +119,21 @@ src/
     billing/invoices/[id]/print       Druckbare Beitragsrechnung (optional als Zahlungserinnerung)
     admin/billing/runs/[id]/print     Sammeldruck eines Jahreslaufs
     ammo/[id]/invoice                 Druckbare Munitionsrechnung mit QR-Zahlteil
+    federal/print, federal/nachweis/print     SAT-Admin-Liste, Bestätigung Schiesstätigkeit
+    range/{qr,quota/print,log/[id]/print,incidents/[id]/print}   QR-Plakat, Jahresbericht, Standbuch, Vorfall
+    weapons/loans/[id]/receipt        Ausleihquittung
+    courses/[id]/{print,certificate}, courses/qualifications/certificate/[id]   Kursliste, Kursausweis, Qualifikationsnachweis
+    championship/[id]/print           GV-Rangliste
+    admin/ammo/stock/{inventory,year}/print   Inventur-Differenzbericht, Jahresübersicht Munition
+    live/[token]                      Öffentliche Live-Rangliste (ohne Anmeldung, geheimer Link)
+    api/live/[token]{,/stream,/logo}  Live-Rangliste: JSON, Server-Sent Events, Logo
     api/files/[id]                    Hochgeladene Dateien (mit Rechteprüfung)
     api/documents/{upload,[id]}       Dateiablage und Chat-Anhänge (Upload, Abruf mit Rechteprüfung)
     api/chat/{stream,unread,[id]/…}   Chat: Server-Sent Events, Ungelesen-Zähler, Nachrichten, Lesestand, Anhänge
     api/avatars/{user,tenant}/[id]    Profilbilder und Vereinslogos
     api/targets/[id]/svg              Scheiben als SVG
     api/ical/{tenant,me,event}        iCal-Abos und Einzeltermine
-    api/export/{scores,bookings,billing,events,ammo}  CSV-Exporte
+    api/export/{scores,bookings,billing,events,ammo,federal,range,weapons,courses}  CSV-Exporte
     api/offline/snapshot              Offline-Snapshot des aktiven Vereins
     api/sync                          Übertragung der Offline-Outbox
     api/payments/stripe/[tenantId]    Stripe-Webhook pro Tenant
@@ -127,7 +153,7 @@ Ein Benutzer kann in beliebig vielen Tenants (Verein, Anlage, Gruppe) Mitglied s
 | Super-Admin (global) | alles; globale Programme/Scheiben, Tenants und Benutzer verwalten |
 | OWNER | wie ADMIN, zusätzlich Inhaber ernennen |
 | ADMIN | Mitglieder, Rollen, Module, Tenant-Programme/-Scheiben, verstecken/anzeigen |
-| TRAINER | alle Durchgänge im Tenant sehen |
+| TRAINER | alle Durchgänge im Tenant sehen; amtliche Resultate bestätigen, Standdienst, Vereinswaffen ausleihen, Kurse führen |
 | MEMBER | eigene Durchgänge, Favoriten, eigene Scheiben hochladen |
 
 Rechte sind in `src/lib/permissions.ts` zentral definiert (`can(actor, permission)`).
@@ -136,7 +162,7 @@ Rechte sind in `src/lib/permissions.ts` zentral definiert (`can(actor, permissio
 
 Registry in `src/lib/modules.ts`. Jedes Modul ist pro Tenant ein-/ausschaltbar (`TenantModule`). Neue Module: Eintrag in der Registry, Routen unter `src/app/(app)/<key>`, Logik unter `src/modules/<key>`.
 
-**Navigation** (`src/components/app-shell.tsx`): Reihenfolge Start, Schiessen, Chat, Anlässe, Buchen, Scheiben, Dateien, Munition, Zahlungen. Die Tab-Leiste auf dem Handy zeigt höchstens fünf Einträge: die ersten vier aktiven plus «Mehr». Vorne steht, was man am Stand und unterwegs am häufigsten braucht (Resultate erfassen, Nachrichten, Termine, Reservieren). Alles Weitere ist unter «Mehr» (`/me`) aufgelistet und auf dem Desktop immer in der Seitenleiste. Der Ungelesen-Zähler des Chats hängt am Chat-Tab oder, wenn der Chat unter «Mehr» liegt, an «Mehr».
+**Navigation** (`src/components/app-shell.tsx`): Reihenfolge Start, Schiessen, Chat, Anlässe, Buchen, Scheiben, Dateien, Munition, Zahlungen, danach die Module der Welle B. Auf dem Desktop gruppiert die Seitenleiste in «Schiessen» (Resultate, Scheiben, Bundesübungen, Jahresmeisterschaft, Live-Rangliste) und «Verein» (Standbetrieb, Helfereinsätze, Kurse, Vereinswaffen); Vereinswaffen und Live-Rangliste erscheinen nur mit dem nötigen Recht. Die Tab-Leiste auf dem Handy zeigt höchstens fünf Einträge: die ersten vier aktiven plus «Mehr». Vorne steht, was man am Stand und unterwegs am häufigsten braucht (Resultate erfassen, Nachrichten, Termine, Reservieren). Alles Weitere ist unter «Mehr» (`/me`) aufgelistet und auf dem Desktop immer in der Seitenleiste. Der Ungelesen-Zähler des Chats hängt am Chat-Tab oder, wenn der Chat unter «Mehr» liegt, an «Mehr».
 
 **Punkteerfassung** (`scores`)
 - Programme mit Waffe, Wertungsmodus (Ringe ganz, Ringe Zehntel, Treffer/Fehler) und beliebig vielen Serien/Stationen (Distanz, Schusszahl, Max-Ring, Zeit, Anschlag, Scheibe, Hinweis). Passt vom 300-m-Stand bis zum Indoor-Parcours mit Hindernissen.
@@ -206,19 +232,33 @@ Registry in `src/lib/modules.ts`. Jedes Modul ist pro Tenant ein-/ausschaltbar (
 - Profil mit Telefon und Geburtsdatum; **Sicherheit** (`/me/security`): Passwort ändern, Zwei-Faktor-Anmeldung (TOTP mit QR-Code, 8 Wiederherstellungscodes), aktive Sitzungen beenden. Passwort vergessen per E-Mail-Link.
 - **Benachrichtigungen & Sprache** (`/me/notifications`): Sprache DE/FR/IT, Push auf diesem Gerät, pro Thema (Chat, Mitteilungen, Reservationen, Rechnungen, Anlässe, Erinnerungen, System) Push und E-Mail ein/aus. Benachrichtigt wird bei neuen Chatnachrichten (nur wenn nicht online), Mitteilungen, Absagen von Anlässen, Reservationsstatus und Rechnungen.
 - **Datenschutz** (`/me/privacy`): alle eigenen Daten als ZIP, Konto löschen (pseudonymisiert; Rechnungen und Resultate bleiben dem Verein erhalten).
+  Der Export umfasst auch die Daten der Welle-B-Module (Standbesuche, bestätigte Standordnungen, Qualifikationen, Kursteilnahmen mit Präsenz und Resultaten, Waffenausleihen, Helfereinsätze, Arbeitsstunden, gemeldete Vorfälle, Standdienste).
+  Beim Löschen werden die Kopien von Personendaten anonymisiert: Name und Kontaktdaten in verknüpften Kursteilnahmen, der Name im Standdienst (`RangeDay.dutyName`), der Ausleihername bei Mitglieder-Ausleihen und Qualifikationsnummern.
+  Bewusst erhalten bleiben (mit pseudonymisiertem Konto): Waffenausleihen samt Datum, Schusszahl und Meldefrist (Nachweis der Abgabe von Vereinswaffen, Waffengesetz/kantonale Vorgaben – bitte mit dem Kanton prüfen), Standbuch und Vorfälle (Nachweis des Standbetriebs) sowie Kurs-, Präsenz- und Qualifikationsresultate (Kursnachweis/NDS, Ranglisten). Die Aufbewahrungsfrist legt der Verein fest.
+
+**Vereinsbetrieb (Welle B)** – alle Module pro Verein einschaltbar. Grenzwerte, Fristen und Regeln sind einstellbar und nie als Tatsache hinterlegt («Werte bitte mit den aktuellen Vorgaben (VBS/SSV/Kanton) prüfen»). Die App unterstützt Schützenmeister und Standchef, ersetzt aber nicht deren Verantwortung. AHV-Nummern werden nicht gespeichert.
+- **Bundesübungen** (`/federal`, Recht `results.verify`): amtliche Art pro Programm (OP/FS/QUAL) mit Mindestpunkten und Nullern, «Amtlich bestätigen» mit Versuchsnummer und Sperre gegen spätere Änderungen, Durchgang zum Obligatorisch-Anlass, Verbliebene, Fristen pro Jahr, SAT-Admin-Export (CSV, Druckliste), Schiessnachweis (`/federal/nachweis`). Nach dem Update einmal `npm run db:seed:presets` ausführen (setzt die amtliche Art der globalen Vorlagen).
+- **Standbetrieb** (`/range`, `range.duty` / `range.manage`): Standbuch mit Standchef und Übergabe, QR-Check-in (`/range/qr`) mit Bestätigung der Standordnung, Gäste, Vereinswaffen am Stand, Tagesabschluss mit Schiesshalbtagen, bewilligte Schiesszeiten (prüfen auch Reservationen) und Kontingent, Vorfälle, Jahresbericht, CSV.
+- **Vereinswaffen** (`/weapons`, `weapons.loan` / `weapons.manage`): Inventar, Ausleihe mit Quittung, Rückgabe mit Schusszähler, Wartung, Meldefrist bei Minderjährigen. **Munitionskontrolle** (`/admin/ammo/stock`): Journal aller Bewegungen (Verkäufe automatisch), Inventur, Jahresübersicht nach Finanzierung.
+- **Helfereinsätze** (`/shifts`, `shifts.manage`): Schichten zu Anlässen und Standdienst, Ein-/Austragen mit Platzsperre, Arbeitsstunden-Konto, Ersatzabgabe als QR-Rechnung. **Qualifikationen** (`/admin/qualifications`) mit Ablaufwarnung, genutzt von Standbetrieb, Schichten und Kursen.
+- **Kurse** (`/courses`, `courses.manage`): Jungschützenkurs, J+S, Ausbildung; Teilnehmende mit CSV-Import, Kurstage mit Präsenz am Handy, Präsenz-CSV für die NDS, Pflichtprogramme, Kursausweis; Qualifikationsschiessen.
+- **Jahresmeisterschaft** (`/championship`, `championship.manage`): Programme mit Gewichtung und Streichresultaten, Kategorien mit Bonus, «Mein Stand», Veröffentlichen, GV-Druck, CSV.
+- **Live-Rangliste** (`/admin/live`): öffentlicher Vollbild-Link `/live/[token]` für den Bildschirm im Schützenhaus, Aktualisierung per Server-Sent Events. nginx darf `/api/live/*/stream` nicht puffern (wie `/api/chat/stream`).
+- **Startseite**: Karten «Stand heute», «Meine nächste Schicht», «Obligatorisch» und «Meisterschaft: mein Rang», sobald das Modul aktiv ist. Anlässe vom Typ Obligatorisch verlinken auf Bundesübungen, Anlässe mit Schichten auf «Helfer gesucht».
+- **Erinnerungen** (stündlicher Job `reminders`, `REMINDER_HOOKS`): Schichten (24 h vorher, Unterbesetzung, ablaufende Qualifikationen), Vereinswaffen (überfällige Ausleihen, Meldefristen, Wartung), Bundesübungen (Fristen, Vorabend des Obligatorisch). Jede Erinnerung wird über einen Protokolleintrag höchstens einmal verschickt.
 
 **Betrieb & Nachvollziehbarkeit**
 - **Protokoll** (Audit-Log) für Rollenwechsel, Löschungen, Importe, Exporte und Einstellungen: pro Verein unter `/admin/audit` (mit CSV und Vereinsarchiv als ZIP für Inhaber), für Super-Admins über alle Vereine unter `/super/audit`.
 - **Vereine löschen** mit 30 Tagen Frist und «Wiederherstellen»; danach entfernt ein täglicher Job Daten und Dateien endgültig.
 - **System** (`/super/system`): SMTP-Status, Mail-Warteschlange, fehlgeschlagene Mails erneut senden, Testmail, Job-Übersicht mit «Jetzt ausführen».
-- **Hintergrund-Jobs** (`src/lib/jobs`): Mailversand (30 s), Aufräumen (stündlich), Erinnerungen (stündlich), Vereinslöschung und Totale nachtragen (täglich). Jeder Job ist über eine DB-Sperre gegen Doppelausführung geschützt; ausgelegt auf eine PM2-Instanz.
+- **Hintergrund-Jobs** (`src/lib/jobs`): Mailversand (30 s), Aufräumen (stündlich), Erinnerungen (stündlich: Schichten, Vereinswaffen, Bundesübungen), Vereinslöschung und Totale nachtragen (täglich). Jeder Job ist über eine DB-Sperre gegen Doppelausführung geschützt; ausgelegt auf eine PM2-Instanz.
 - **Healthcheck** `GET /api/health` (`{"ok":true}` / HTTP 503) für Deploy und Monitoring; `scripts/deploy.sh` sichert die Datenbank vor jeder Migration.
 
 ### Offline-Betrieb & App-Installation (PWA)
 
 Standchef lässt sich auf dem Startbildschirm installieren (Teilen → «Zum Home-Bildschirm» bzw. «App installieren») und funktioniert im Schiessstand auch ohne Empfang.
 
-- **Service Worker** (`public/sw.js`): Besuchte Seiten bleiben offline verfügbar (Netz zuerst, sonst Cache). Statische Dateien kommen aus dem Cache, Profilbilder und Scheiben werden im Hintergrund aufgefrischt. Ohne gespeicherte Seite erscheint `/offline`. Nie gecacht: Server Actions, `/api/sync`, Zahlungen, Login. Beim Abmelden werden benutzerbezogene Caches und Offline-Daten gelöscht. Bei Änderungen an `sw.js` die Konstante `VERSION` erhöhen; die App zeigt dann «Neue Version verfügbar – Aktualisieren».
+- **Service Worker** (`public/sw.js`): Besuchte Seiten bleiben offline verfügbar (Netz zuerst, sonst Cache). Statische Dateien kommen aus dem Cache, Profilbilder und Scheiben werden im Hintergrund aufgefrischt. Ohne gespeicherte Seite erscheint `/offline`. Nie gecacht: Server Actions, `/api/sync`, Zahlungen, Login, Live-Rangliste (`/live`). Beim Abmelden werden benutzerbezogene Caches und Offline-Daten gelöscht. Bei Änderungen an `sw.js` die Konstante `VERSION` erhöhen; die App zeigt dann «Neue Version verfügbar – Aktualisieren».
 - **Offline-Daten** (`src/lib/offline/`, IndexedDB `standchef-offline`): Snapshot des aktiven Vereins (Programme, Mitglieder, offene Durchgänge, `GET /api/offline/snapshot`) und eine Outbox mit ausstehenden Operationen.
 - **Punkteerfassung offline**: Jeder Schuss wird sofort auf dem Gerät gespeichert und über `POST /api/sync` übertragen, sobald Empfang da ist (beim Wiederverbinden, beim Zurückkehren in die App, alle 60 s und per Background Sync). Gleichzeitige Änderungen: die jüngste gewinnt (`MatchResult.clientUpdatedAt`).
 - **Durchgang offline starten**: entsteht lokal mit einer Client-ID (`Match.clientId`), wird später idempotent erstellt; die Offline-Ansicht wechselt danach automatisch zur normalen Seite.

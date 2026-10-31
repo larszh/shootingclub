@@ -3,7 +3,7 @@
 import { useActionState, useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { ChevronLeft, ChevronRight, Clock, CreditCard, FileText, Info, MapPin, Tag, Users } from "lucide-react";
 import { createBookingAction } from "@/modules/bookings/actions";
-import { fetchSlotsAction, type SlotDto } from "@/modules/bookings/slot-actions";
+import { fetchSlotsAction, type SlotDto, type SlotsResult } from "@/modules/bookings/slot-actions";
 import { formatDuration, resourceKindLabel, type DurationOption } from "@/modules/bookings/types";
 import { basePriceFor, maxPersonsFor, wholeResourceLabel } from "@/modules/bookings/pricing";
 import { PersonsStepper } from "./persons-stepper";
@@ -54,6 +54,7 @@ export function BookingWizard({ resources, settings, today, prefill }: { resourc
   const flatFrom = settings.personPricing && option?.flatFromPersons && option.flatPriceCents !== undefined && option.flatFromPersons <= maxPersons ? option.flatFromPersons : null;
   const [slots, setSlots] = useState<SlotDto[] | null>(null);
   const [slotError, setSlotError] = useState<string | null>(null);
+  const [windowInfo, setWindowInfo] = useState<Pick<SlotsResult, "windowHint" | "outsideWindow" | "windowOverride"> | null>(null);
   const [time, setTime] = useState<string | null>(null);
   const [loading, start] = useTransition();
   const [paymentMethod, setPaymentMethod] = useState<"INVOICE" | "ONLINE">(settings.allowOnline ? "ONLINE" : "INVOICE");
@@ -67,6 +68,7 @@ export function BookingWizard({ resources, settings, today, prefill }: { resourc
       if (id !== requestId.current) return;
       setSlots(r.slots);
       setSlotError(r.error ?? null);
+      setWindowInfo(r);
       setTime((t) => (t && r.slots.some((x) => x.time === t && x.available) ? t : null));
     });
   };
@@ -97,6 +99,7 @@ export function BookingWizard({ resources, settings, today, prefill }: { resourc
       if (cancelled || id !== requestId.current) return;
       setSlots(r.slots);
       setSlotError(r.error ?? null);
+      setWindowInfo(r);
       if (prefill && prefill.resourceId === sel.resourceId && prefill.date === sel.date) {
         const slot = r.slots.find((x) => x.time === prefill.time);
         if (slot?.available) {
@@ -224,6 +227,12 @@ export function BookingWizard({ resources, settings, today, prefill }: { resourc
               </div>
             )}
             {tooFew ? <p className="mt-2 flex items-center gap-1.5 text-xs text-ink-3"><Users className="h-3.5 w-3.5" aria-hidden /> Durchgestrichene Zeiten: Nicht genug Plätze frei für {persons === 1 ? "1 Person" : `${persons} Personen`}{flatFrom && persons >= flatFrom && settings.flatExclusive ? ` (Pauschale belegt ${wholeResourceLabel(resource?.kind ?? "OTHER")})` : ""}.</p> : null}
+            {!loading && !slotError && windowInfo?.windowHint ? (
+              <p className="mt-2 rounded-control bg-surface-2 px-3 py-2 text-xs text-ink-2">
+                {windowInfo.windowHint}.
+                {windowInfo.windowOverride ? " Zeiten ausserhalb sind für die Verwaltung buchbar und erhalten einen Vermerk." : windowInfo.outsideWindow ? " Zeiten ausserhalb sind durchgestrichen." : ""}
+              </p>
+            ) : null}
           </div>
         </Card>
       </section>

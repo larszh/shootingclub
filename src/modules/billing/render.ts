@@ -4,12 +4,14 @@ import { getT, getTenantLocale } from "@/lib/i18n";
 import { dueDateInDays } from "@/modules/billing/dates";
 import { getBillingProfile, profileToCreditor, type BillingProfileView } from "./profile";
 import { ensureReference } from "./reference";
+import { feeInvoiceTitle, isStandaloneFeeInvoice } from "./fee-title";
 import type { InvoiceDocumentProps } from "@/components/invoice-document";
 
 type Inv = {
   id: string; tenantId: string; reference: string | null;
   number: string; issuedAt: Date; dueAt: Date; status: string; currency: string; amountCents: number; year: number;
   memberName: string; memberEmail: string | null; memberAddress: string | null; categoryName: string; remindedAt: Date | null;
+  runId?: string | null; membershipId?: string | null;
   run?: { title: string; note: string | null } | null;
   membership?: { memberNumber: string | null } | null;
 };
@@ -35,7 +37,7 @@ export async function buildFeeInvoiceDocument(inv: Inv, tenantId: string, tenant
   const creditor = profileToCreditor(profile, tenantName);
   const { street, zip, city } = splitMemberAddress(inv.memberAddress);
   const title = opts?.reminder ? t("invoice.reminder") : t("invoice.title");
-  const feeLabel = inv.run?.title ?? t("invoice.annualFeeYear", { year: inv.year });
+  const feeLabel = feeInvoiceTitle(inv, t("invoice.annualFeeYear", { year: inv.year }));
   const purpose = `${feeLabel} ${inv.number}`;
   const reference = inv.status === "OPEN" && profile.qrIban ? await ensureReference("FEE", inv, profile.iban) : inv.reference;
   const qr = inv.status === "OPEN"
@@ -51,7 +53,7 @@ export async function buildFeeInvoiceDocument(inv: Inv, tenantId: string, tenant
     currency: inv.currency,
     payee: creditor,
     debtor: { name: inv.memberName, email: inv.memberEmail, street, zip, city, memberNumber: inv.membership?.memberNumber ?? null },
-    lines: [{ label: feeLabel, sublabel: inv.categoryName, amountCents: inv.amountCents }],
+    lines: [{ label: feeLabel, sublabel: isStandaloneFeeInvoice(inv) ? null : inv.categoryName, amountCents: inv.amountCents }],
     totalCents: inv.amountCents,
     intro: opts?.reminder ? t("invoice.reminderIntro", { number: inv.number }) : null,
     note: inv.run?.note ?? null,

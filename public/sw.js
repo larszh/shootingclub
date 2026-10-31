@@ -12,7 +12,7 @@
  * src/lib/offline/idb.ts übereinstimmen.
  */
 
-const VERSION = "2026-10-29.2";
+const VERSION = "2026-10-29.3";
 const DATA_VERSION = "v1"; // nur erhöhen, wenn sich das Format gecachter Seiten ändert
 
 const PRECACHE = `sc-precache-${VERSION}`;
@@ -40,7 +40,7 @@ const NAV_TIMEOUT = 6000;
 const PAGE_FRESH_MS = 60_000; // CACHE_PAGE: jüngere gecachte Seiten nicht erneut laden
 
 // Nie über den Service Worker cachen
-const NEVER = [/^\/api\/sync(\/|$)/, /^\/api\/payments(\/|$)/, /^\/api\/offline(\/|$)/, /^\/login(\/|$)/, /^\/register(\/|$)/, /^\/sw\.js$/];
+const NEVER = [/^\/api\/sync(\/|$)/, /^\/api\/payments(\/|$)/, /^\/api\/offline(\/|$)/, /^\/login(\/|$)/, /^\/register(\/|$)/, /^\/live(\/|$)/, /^\/sw\.js$/];
 const AUTH_PAGES = [/^\/login(\/|$)/, /^\/register(\/|$)/];
 
 // ---------------------------------------------------------------------------

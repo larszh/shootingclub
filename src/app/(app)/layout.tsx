@@ -53,6 +53,8 @@ export default async function AppLayout({ children }: { children: React.ReactNod
           membersManage: ctx.can("members.manage"),
           audit: ctx.can("audit.view"),
           system: ctx.user.isSuperAdmin,
+          live: ctx.can("match.viewAll") || ctx.can("events.manage"),
+          weapons: ctx.can("weapons.loan"),
         }}
       >
         {ctx.tenant?.deletedAt ? (
