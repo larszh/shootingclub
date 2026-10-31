@@ -8,6 +8,7 @@ import { requireModule, requirePermission, requireSuperAdmin } from "@/lib/tenan
 import { fail, ok, type ActionResult } from "@/lib/action-result";
 import { programInputSchema, type ProgramInput } from "./types";
 import { createMatchCore, saveStageResultCore, setMatchStatusCore } from "./sync";
+import { passRuleChanged, recomputeProgramPasses } from "./pass-recompute";
 
 function emptyToNull(v: FormDataEntryValue | null) {
   if (v === null) return null;
@@ -59,7 +60,9 @@ export async function saveProgramAction(_prev: ActionResult | null, formData: Fo
     if (id) {
       const existing = await db.program.findUnique({ where: { id } });
       if (!existing || existing.tenantId !== null) return fail("Nicht gefunden");
-      await db.program.update({ where: { id }, data: programData(parsed.data) });
+      const data = programData(parsed.data);
+      await db.program.update({ where: { id }, data });
+      if (passRuleChanged(existing, data)) await recomputeProgramPasses(db, id, data);
     } else {
       await db.program.create({ data: { ...programData(parsed.data), tenantId: null, createdById: user.id } });
     }
@@ -72,7 +75,9 @@ export async function saveProgramAction(_prev: ActionResult | null, formData: Fo
   if (id) {
     const existing = await db.program.findUnique({ where: { id } });
     if (!existing || existing.tenantId !== ctx.tenant.id) return fail("Nicht gefunden");
-    await db.program.update({ where: { id }, data: programData(parsed.data) });
+    const data = programData(parsed.data);
+    await db.program.update({ where: { id }, data });
+    if (passRuleChanged(existing, data)) await recomputeProgramPasses(db, id, data);
   } else {
     await db.program.create({ data: { ...programData(parsed.data), tenantId: ctx.tenant.id, createdById: ctx.user.id } });
   }

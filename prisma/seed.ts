@@ -3,6 +3,7 @@ import bcrypt from "bcryptjs";
 import { PrismaClient } from "../src/generated/prisma/client";
 import { PrismaMariaDb } from "@prisma/adapter-mariadb";
 import { PROGRAM_PRESETS, presetNames, presetOfficialUpdate } from "../src/modules/scores/presets";
+import { recomputeProgramPasses } from "../src/modules/scores/pass-recompute";
 import { TARGET_PRESETS } from "../src/modules/targets/presets";
 import { seedDemoEvents } from "../src/modules/events/seed";
 import { seedDemoFiles } from "../src/modules/files/seed";
@@ -25,7 +26,8 @@ const db = new PrismaClient({
  * Idempotent: bestehende Einträge, auch von Admins geänderte, bleiben unverändert. Einzige Ausnahme:
  * Vorlagen mit amtlicher Art (Obligatorisch, Feldschiessen) setzen die Art bei bestehenden globalen
  * Programmen, solange diese noch keine haben, und entfernen eine früher vorbelegte, unveränderte
- * Bestehensgrenze (siehe presetOfficialUpdate). Eigene Grenzwerte bleiben unverändert.
+ * Bestehensgrenze bzw. Beschreibung (siehe presetOfficialUpdate) und bewerten danach die amtlichen
+ * Resultate neu. Eigene Grenzwerte und Beschreibungen bleiben unverändert.
  */
 async function seedPresets(createdById: string | null) {
   let programs = 0;
@@ -35,8 +37,13 @@ async function seedPresets(createdById: string | null) {
     if (exists) {
       const patch = presetOfficialUpdate(exists, p);
       if (patch) {
-        await db.program.update({ where: { id: exists.id }, data: patch });
+        const saved = await db.program.update({ where: { id: exists.id }, data: patch });
         updated++;
+        // Bestehensgrenze entfernt: bereits bestätigte Resultate dürfen nicht weiter als «bestanden» gelten.
+        if ("passMinScore" in patch || "passMaxZeros" in patch) {
+          const n = await recomputeProgramPasses(db, saved.id, saved);
+          if (n) console.log(`Vorlagen: ${n} amtliche Resultate von «${saved.name}» neu bewertet.`);
+        }
       }
       continue;
     }
@@ -48,7 +55,7 @@ async function seedPresets(createdById: string | null) {
     });
     programs++;
   }
-  if (updated) console.log(`Vorlagen: ${updated} globale Programme abgeglichen (amtliche Art / Bestehensgrenze).`);
+  if (updated) console.log(`Vorlagen: ${updated} globale Programme abgeglichen (amtliche Art / Bestehensgrenze / Beschreibung).`);
 
   let targets = 0;
   for (const t of TARGET_PRESETS) {

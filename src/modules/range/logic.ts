@@ -220,6 +220,31 @@ export function checkWithinWindows(windows: WindowRule[], resourceId: string | n
   return { ok: false, reason: "Die Zeit liegt ausserhalb der bewilligten Schiesszeiten.", allowed };
 }
 
+/** Grund für Zeiten im Buchungsraster, die ausserhalb der bewilligten Schiesszeiten liegen. */
+export const OUTSIDE_WINDOW_REASON = "Ausserhalb der Schiesszeiten";
+
+/**
+ * Zeiten im Buchungsraster gegen die Schiesszeiten prüfen, damit Mitglieder nur Zeiten sehen, die sie
+ * auch buchen können (dieselbe Regel wie beim Buchen, siehe createBookingAction).
+ * `block`: Zeiten ausserhalb werden gesperrt (Mitglieder); sonst bleiben sie wählbar (Verwaltung, mit Vermerk).
+ * `hint`: lesbare Schiesszeiten des Tages, null wenn keine Fenster gelten.
+ */
+export function applyWindowsToSlots<T extends { startsAt: Date; endsAt: Date; available: boolean; reason?: string }>(
+  windows: WindowRule[], resourceId: string, dateStr: string, slots: T[], block: boolean,
+): { slots: T[]; hint: string | null; outside: number } {
+  const relevant = applicableWindows(windows, resourceId);
+  if (!relevant.length) return { slots, hint: null, outside: 0 };
+  const weekday = new Date(`${dateStr}T12:00:00Z`).getUTCDay();
+  let outside = 0;
+  const out = slots.map((s) => {
+    if (checkWithinWindows(relevant, resourceId, s.startsAt, s.endsAt).ok) return s;
+    outside++;
+    if (!block || !s.available) return s;
+    return { ...s, available: false, reason: OUTSIDE_WINDOW_REASON };
+  });
+  return { slots: out, hint: `Bewilligte Schiesszeiten: ${describeDayWindows(relevant, weekday)}`, outside };
+}
+
 // --- Alter -------------------------------------------------------------------------------
 
 /** Alter, das jemand mit Jahrgang `birthYear` im Jahr `year` erreicht (Geburtstag evtl. noch nicht vorbei). */

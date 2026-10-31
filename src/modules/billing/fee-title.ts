@@ -16,3 +16,8 @@ export function feeInvoiceTitle(
   if (isStandaloneFeeInvoice(f) && f.categoryName.trim()) return f.categoryName;
   return annualFallback;
 }
+
+/** Bereichsbezeichnung einer Beitragsrechnung: Einzelrechnungen (z.B. Ersatzabgabe) sind kein Mitgliederbeitrag. */
+export function feeInvoiceSourceLabel(f: { runId?: string | null; membershipId?: string | null }): string {
+  return isStandaloneFeeInvoice(f) ? "Vereinsrechnung" : "Mitgliederbeitrag";
+}

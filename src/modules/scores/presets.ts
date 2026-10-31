@@ -9,6 +9,8 @@ export type ProgramPreset = ProgramInput & {
   aliases?: string[];
   /** Früher von dieser Vorlage vorbelegte Bestehensgrenze, die beim Abgleich wieder entfernt wird (nur wenn unverändert). */
   legacyPassRule?: { passMinScore: number; passMaxZeros: number };
+  /** Frühere Beschreibungen dieser Vorlage; eine unveränderte wird beim Abgleich durch die aktuelle ersetzt. */
+  legacyDescriptions?: string[];
 };
 
 // ---------------------------------------------------------------------------
@@ -128,6 +130,7 @@ export const PROGRAM_PRESETS: ProgramPreset[] = [
     // Keine vorbelegte Bestehensgrenze: die amtliche Grenze gilt für eine andere Wertung als die Ringwertung dieser Vorlage.
     // Frühere Versionen haben 42 Punkte / 3 Nuller vorbelegt; presetOfficialUpdate entfernt dieses Paar wieder.
     legacyPassRule: { passMinScore: 42, passMaxZeros: 3 },
+    legacyDescriptions: ["Bundesprogramm 300 m: 5 Einzelschüsse, 2 Serien à 2 Schuss, 1 Serie à 3 Schuss, 1 Serie à 6 Schuss."],
     weaponNote: "Ordonnanzwaffe",
     scoringMode: "RINGS_INT",
     stages: [
@@ -146,6 +149,7 @@ export const PROGRAM_PRESETS: ProgramPreset[] = [
     officialKind: "OP",
     passMinScore: null,
     passMaxZeros: null,
+    legacyDescriptions: ["Bundesprogramm Pistole 25 m: 5 Einzelschüsse, 2 Serien à 5 Schuss, 1 Serie à 5 Schuss (Schnellfeuer)."],
     weaponNote: "Ordonnanzpistole",
     scoringMode: "RINGS_INT",
     stages: [
@@ -634,22 +638,29 @@ export function presetNames(p: ProgramPreset): string[] {
   return [p.name, ...(p.aliases ?? [])];
 }
 
-type ExistingProgram = { officialKind: string | null; passMinScore: number | null; passMaxZeros: number | null };
+type ExistingProgram = { officialKind: string | null; passMinScore: number | null; passMaxZeros: number | null; description?: string | null };
+
+export type PresetProgramPatch = { officialKind?: OfficialKind; passMinScore?: null; passMaxZeros?: null; description?: string };
 
 /**
  * Änderungen an einem bestehenden globalen Programm aufgrund der Vorlage, oder null wenn nichts zu tun ist.
  * Idempotent und schonend: die amtliche Art wird nur gesetzt, solange das Programm noch keine hat.
  * Grenzwerte werden nie gesetzt (sie hängen von der Wertung ab und gehören in die Hand des Super-Admins).
- * Einzige Ausnahme: eine von früheren Versionen vorbelegte, unveränderte Grenze (legacyPassRule) wird entfernt.
+ * Ausnahmen: eine von früheren Versionen vorbelegte, unveränderte Grenze (legacyPassRule) wird entfernt,
+ * und eine unveränderte frühere Beschreibung (legacyDescriptions) wird durch die aktuelle ersetzt.
  */
-export function presetOfficialUpdate(existing: ExistingProgram, preset: ProgramPreset): { officialKind?: OfficialKind; passMinScore?: null; passMaxZeros?: null } | null {
+export function presetOfficialUpdate(existing: ExistingProgram, preset: ProgramPreset): PresetProgramPatch | null {
   if (!preset.officialKind) return null;
-  const patch: { officialKind?: OfficialKind; passMinScore?: null; passMaxZeros?: null } = {};
+  const patch: PresetProgramPatch = {};
   if (!existing.officialKind) patch.officialKind = preset.officialKind;
   const legacy = preset.legacyPassRule;
   if (legacy && existing.passMinScore === legacy.passMinScore && existing.passMaxZeros === legacy.passMaxZeros) {
     patch.passMinScore = null;
     patch.passMaxZeros = null;
+  }
+  const current = existing.description?.trim();
+  if (preset.description && current && current !== preset.description && (preset.legacyDescriptions ?? []).some((d) => d.trim() === current)) {
+    patch.description = preset.description;
   }
   return Object.keys(patch).length ? patch : null;
 }

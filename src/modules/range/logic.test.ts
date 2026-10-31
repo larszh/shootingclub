@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { zurichToUtc } from "../../lib/time";
 import {
-  ageInYear, ageOn, applicableWindows, checkWithinWindows, countHalfDays, dayKeyToDbDate, describeDayWindows, formatMinutes,
+  OUTSIDE_WINDOW_REASON, ageInYear, ageOn, applicableWindows, applyWindowsToSlots, checkWithinWindows, countHalfDays, dayKeyToDbDate, describeDayWindows, formatMinutes,
   halfDayFlagsFromIntervals, halfDayFlagsFromVisits, halfDaysByMonth, isPlausibleBirthYear, mergeHalfDaysByDate, mergeWindows,
   minorStatusFromBirthYear, parseTimeToMinutes, quotaStatus, type QuotaDay, type WindowRule,
 } from "./logic";
@@ -109,6 +109,22 @@ describe("Schiesszeiten", () => {
     if (!r.ok) expect(r.allowed).toBe("Mi 18:00–20:00");
     expect(checkWithinWindows(windows, "r2", zurichToUtc("2026-03-04", "18:00"), zurichToUtc("2026-03-04", "19:00")).ok).toBe(false);
     expect(checkWithinWindows(windows, "r2", zurichToUtc("2026-03-07", "08:30"), zurichToUtc("2026-03-07", "10:00")).ok).toBe(false);
+  });
+  it("Buchungsraster: Zeiten ausserhalb für Mitglieder gesperrt, für die Verwaltung wählbar", () => {
+    const slot = (d: string, from: string, to: string, available = true) => ({ time: from, startsAt: zurichToUtc(d, from), endsAt: zurichToUtc(d, to), available, reason: available ? undefined : "Belegt" });
+    const day = [slot("2026-03-04", "17:00", "18:00"), slot("2026-03-04", "18:00", "19:00"), slot("2026-03-04", "19:00", "20:00", false), slot("2026-03-04", "19:30", "20:30")];
+    const member = applyWindowsToSlots(windows, "r1", "2026-03-04", day, true);
+    expect(member.slots.map((s) => [s.time, s.available, s.reason])).toEqual([
+      ["17:00", false, OUTSIDE_WINDOW_REASON], ["18:00", true, undefined], ["19:00", false, "Belegt"], ["19:30", false, OUTSIDE_WINDOW_REASON],
+    ]);
+    expect(member.hint).toBe("Bewilligte Schiesszeiten: Mi 18:00–20:00");
+    expect(member.outside).toBe(2);
+    const admin = applyWindowsToSlots(windows, "r1", "2026-03-04", day, false);
+    expect(admin.slots.filter((s) => s.available).map((s) => s.time)).toEqual(["17:00", "18:00", "19:30"]);
+    // Tag ohne Fenster bei eingeschränkter Ressource: alles gesperrt; ohne Fenster für die Ressource: unverändert
+    expect(applyWindowsToSlots(windows, "r2", "2026-03-04", day, true).slots.every((s) => !s.available)).toBe(true);
+    expect(applyWindowsToSlots(windows, "r2", "2026-03-04", day, true).hint).toBe("Bewilligte Schiesszeiten: Mi: keine Schiesszeit");
+    expect(applyWindowsToSlots([], "r1", "2026-03-04", day, true)).toEqual({ slots: day, hint: null, outside: 0 });
   });
   it("Fenster einer anderen Ressource gelten nicht", () => {
     expect(applicableWindows(windows, "r2")).toHaveLength(2);

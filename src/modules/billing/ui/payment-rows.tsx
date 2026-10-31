@@ -6,7 +6,7 @@ import { formatMoney } from "@/lib/money";
 import { formatDateZurich } from "@/lib/time";
 import { formatIban, formatQrReference } from "@/lib/qr-reference";
 import { cn } from "@/lib/utils";
-import { PAYMENT_SOURCE_LABEL, PAYMENT_STATUS_LABEL, type PaymentItem, type PaymentSource } from "../overview";
+import { PAYMENT_STATUS_LABEL, paymentItemSourceLabel, type PaymentItem, type PaymentSource } from "../overview";
 
 /** Gemeinsame Darstellung der Zahlungsübersicht (Mitglied und Verwaltung). Ohne Client-State. */
 
@@ -57,7 +57,7 @@ export function OpenPaymentCard({ item, payee }: { item: PaymentItem; payee: Pay
         <div className="min-w-0 flex-1">
           <div className="font-semibold leading-snug">{item.title}</div>
           <div className="text-xs text-ink-3">
-            {[item.number, PAYMENT_SOURCE_LABEL[item.source], item.detail].filter(Boolean).join(" · ")}
+            {[item.number, paymentItemSourceLabel(item), item.detail].filter(Boolean).join(" · ")}
           </div>
           {due ? <div className={cn("mt-0.5 text-xs font-medium", item.overdue ? "text-danger" : "text-ink-2")}>{due}</div> : null}
         </div>
@@ -113,7 +113,7 @@ export function OpenPaymentCard({ item, payee }: { item: PaymentItem; payee: Pay
 export function PaymentRow({ item, showMember }: { item: PaymentItem; showMember?: boolean }) {
   const st = item.overdue ? { label: "Überfällig", tone: "danger" as const } : PAYMENT_STATUS_LABEL[item.status];
   const due = dueText(item);
-  const sub = [showMember ? item.memberName : null, item.number, PAYMENT_SOURCE_LABEL[item.source], showMember ? null : item.detail].filter(Boolean).join(" · ");
+  const sub = [showMember ? item.memberName : null, item.number, paymentItemSourceLabel(item), showMember ? null : item.detail].filter(Boolean).join(" · ");
   return (
     <Link
       href={item.href}

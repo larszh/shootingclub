@@ -55,6 +55,13 @@ describe("presetOfficialUpdate", () => {
     expect(presetOfficialUpdate({ officialKind: null, passMinScore: 45, passMaxZeros: null }, op)).toEqual({ officialKind: "OP" });
   });
 
+  it("ersetzt nur eine unveränderte frühere Beschreibung", () => {
+    const old = op.legacyDescriptions![0]!;
+    expect(presetOfficialUpdate({ officialKind: "OP", passMinScore: null, passMaxZeros: null, description: old }, op)).toEqual({ description: op.description });
+    expect(presetOfficialUpdate({ officialKind: "OP", passMinScore: null, passMaxZeros: null, description: "Eigener Text" }, op)).toBeNull();
+    expect(presetOfficialUpdate({ officialKind: "OP", passMinScore: null, passMaxZeros: null, description: op.description }, op)).toBeNull();
+  });
+
   it("ändert nichts bei Vorlagen ohne amtliche Art", () => {
     const free = PROGRAM_PRESETS.find((p) => !p.officialKind)!;
     expect(presetOfficialUpdate({ officialKind: null, passMinScore: null, passMaxZeros: null }, free)).toBeNull();

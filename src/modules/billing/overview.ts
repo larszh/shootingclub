@@ -7,7 +7,7 @@ import { ensureAmmoReference } from "@/modules/ammo/service";
 import { getBillingProfile, type BillingProfileView } from "./profile";
 import { ensureReference } from "./reference";
 import { isOverdue } from "./dates";
-import { feeInvoiceTitle, isStandaloneFeeInvoice } from "./fee-title";
+import { feeInvoiceSourceLabel, feeInvoiceTitle, isStandaloneFeeInvoice } from "./fee-title";
 
 /**
  * Zahlungsübersicht über alle Quellen: Mitgliederbeiträge (FeeInvoice), Reservations-Rechnungen
@@ -19,8 +19,9 @@ type TenantCtx = AppContext & { tenant: ActiveTenant };
 
 export type PaymentSource = "FEE" | "BOOKING" | "ONLINE" | "AMMO";
 
+/** Bezeichnung eines Bereichs (Filter, Gruppen). FEE umfasst auch Einzelrechnungen wie die Ersatzabgabe. */
 export const PAYMENT_SOURCE_LABEL: Record<PaymentSource, string> = {
-  FEE: "Mitgliederbeitrag",
+  FEE: "Beiträge & Abgaben",
   BOOKING: "Reservation",
   ONLINE: "Online-Zahlung",
   AMMO: "Munition",
@@ -32,6 +33,8 @@ export type PaymentGroup = "open" | "paid" | "other";
 export type PaymentItem = {
   key: string;
   source: PaymentSource;
+  /** Bezeichnung des einzelnen Postens (z.B. «Mitgliederbeitrag» oder «Vereinsrechnung»); fehlt sie, gilt die des Bereichs. */
+  sourceLabel?: string;
   id: string;
   number: string;
   title: string;
@@ -51,6 +54,11 @@ export type PaymentItem = {
   /** Druckansicht in neuem Tab öffnen (Rechnungen), Detailseite in der App sonst */
   external: boolean;
 };
+
+/** Bezeichnung eines einzelnen Postens für Listen und Exporte. */
+export function paymentItemSourceLabel(item: Pick<PaymentItem, "source" | "sourceLabel">): string {
+  return item.sourceLabel ?? PAYMENT_SOURCE_LABEL[item.source];
+}
 
 export const PAYMENT_STATUS_LABEL: Record<PaymentItem["status"], { label: string; tone: "warn" | "ok" | "outline" | "neutral" | "danger" }> = {
   OPEN: { label: "Offen", tone: "warn" },
@@ -160,7 +168,7 @@ export async function listMyPayments(ctx: TenantCtx, now: Date): Promise<MyPayme
     // Ohne QR-IBAN keine (veraltete) Referenz zeigen, die Bank würde sie zurückweisen.
     const reference = !qrIban ? null : status === "OPEN" ? await ensureReference("FEE", f, qrIban) : f.reference;
     items.push({
-      key: `FEE:${f.id}`, source: "FEE", id: f.id, number: f.number,
+      key: `FEE:${f.id}`, source: "FEE", sourceLabel: feeInvoiceSourceLabel(f), id: f.id, number: f.number,
       title: feeInvoiceTitle(f, `Mitgliederbeitrag ${f.year}`), detail: isStandaloneFeeInvoice(f) ? null : f.categoryName, memberName: null,
       amountCents: f.amountCents, currency: f.currency, status, group: groupOf(status),
       issuedAt: f.issuedAt, dueAt: f.dueAt, paidAt: f.paidAt,
@@ -297,7 +305,7 @@ export async function listOpenItems(ctx: TenantCtx, now: Date): Promise<OpenItem
   const ref = (r: string | null) => (profile.qrIban ? r : null);
   const items: PaymentItem[] = [
     ...fees.map<PaymentItem>((f) => ({
-      key: `FEE:${f.id}`, source: "FEE", id: f.id, number: f.number,
+      key: `FEE:${f.id}`, source: "FEE", sourceLabel: feeInvoiceSourceLabel(f), id: f.id, number: f.number,
       title: feeInvoiceTitle(f, `Mitgliederbeitrag ${f.year}`), detail: isStandaloneFeeInvoice(f) ? null : f.categoryName, memberName: f.memberName,
       amountCents: f.amountCents, currency: f.currency, status: "OPEN", group: "open",
       issuedAt: f.issuedAt, dueAt: f.dueAt, paidAt: null, overdue: isOverdue(f.dueAt, now), reference: ref(f.reference),

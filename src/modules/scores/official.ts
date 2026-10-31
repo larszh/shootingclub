@@ -5,7 +5,7 @@
  * Die Grenzwerte (Mindestpunkte, Nuller) stammen immer aus dem Programm und sind vom Verein bzw.
  * Super-Admin einstellbar. Die App ersetzt die Prüfung durch die verantwortliche Person nicht.
  */
-import { zurichParts } from "@/lib/time";
+import { zurichParts } from "../../lib/time";
 
 export type PassRule = { passMinScore: number | null | undefined; passMaxZeros: number | null | undefined };
 

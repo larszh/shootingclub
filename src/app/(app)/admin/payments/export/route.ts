@@ -6,7 +6,7 @@ import { formatQrReference } from "@/lib/qr-reference";
 import { slugify } from "@/lib/utils";
 import { csvAmount, csvResponse, toCsv } from "@/modules/billing/csv";
 import { nowDate } from "@/modules/billing/dates";
-import { anyPaymentModule, listOpenItems, PAYMENT_SOURCE_LABEL } from "@/modules/billing/overview";
+import { anyPaymentModule, listOpenItems, paymentItemSourceLabel } from "@/modules/billing/overview";
 
 export const dynamic = "force-dynamic";
 
@@ -29,7 +29,7 @@ export async function GET(req: NextRequest) {
 
   const header = ["Bereich", "Nummer", "Titel", "Mitglied", "Betrag", "Währung", "Ausgestellt", "Fällig", "Überfällig", "QR-Referenz"];
   const rows = items.map((i) => [
-    PAYMENT_SOURCE_LABEL[i.source],
+    paymentItemSourceLabel(i),
     i.number,
     i.title,
     i.memberName ?? "",
