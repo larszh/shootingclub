@@ -1,13 +1,11 @@
 import "server-only";
 import { db } from "@/lib/db";
-import { getActiveProvider, PaymentError } from "./payments";
+import { appUrl } from "@/lib/mail";
+import { getActiveProvider, PaymentError } from "@/lib/payments";
+import { beginCheckout, refreshPaymentStatus, settleByProviderRef, settlePayment } from "@/lib/payments/settle";
 import { formatDateTimeZurich } from "@/lib/time";
 
 type BookingLike = { id: string; tenantId: string; totalCents: number; currency: string; startsAt: Date; resourceId: string };
-
-function appUrl() {
-  return (process.env.APP_URL ?? "http://localhost:3000").replace(/\/$/, "");
-}
 
 export async function startOnlinePayment(b: BookingLike, customerEmail?: string): Promise<{ ok: true; redirectUrl: string } | { ok: false; error: string }> {
   const settings = await db.bookingSettings.findUnique({ where: { tenantId: b.tenantId } });
@@ -15,20 +13,22 @@ export async function startOnlinePayment(b: BookingLike, customerEmail?: string)
   if (!provider) return { ok: false, error: "Online-Zahlung ist für diesen Verein nicht eingerichtet." };
   const resource = await db.resource.findUnique({ where: { id: b.resourceId }, select: { name: true } });
   try {
-    const result = await provider.createCheckout({
-      bookingId: b.id,
+    const { redirectUrl, paymentData } = await beginCheckout(provider, { kind: "BOOKING", bookingId: b.id }, {
+      tenantId: b.tenantId,
       amountCents: b.totalCents,
       currency: b.currency,
+      reference: b.id,
       description: `Reservation ${resource?.name ?? ""} ${formatDateTimeZurich(b.startsAt)}`.trim(),
-      successUrl: `${appUrl()}/bookings/${b.id}/return`,
-      cancelUrl: `${appUrl()}/bookings/${b.id}?cancelled=1`,
+      successUrl: appUrl(`/bookings/${b.id}/return`),
+      cancelUrl: appUrl(`/bookings/${b.id}?cancelled=1`),
       customerEmail,
+      metadata: { bookingId: b.id },
     });
     await db.$transaction([
-      db.payment.create({ data: { bookingId: b.id, provider: provider.key, providerRef: result.providerRef, status: "PENDING", amountCents: b.totalCents, currency: b.currency } }),
+      db.payment.create({ data: paymentData }),
       db.booking.update({ where: { id: b.id }, data: { paymentStatus: "PENDING" } }),
     ]);
-    return { ok: true, redirectUrl: result.redirectUrl };
+    return { ok: true, redirectUrl };
   } catch (e) {
     const msg = e instanceof PaymentError ? e.message : "Zahlungsanbieter nicht erreichbar.";
     console.error("Checkout fehlgeschlagen:", e);
@@ -45,40 +45,15 @@ export async function verifyBookingPayment(bookingId: string) {
   if (!payment) return { status: b.paymentStatus };
   const provider = await getActiveProvider(b.tenantId, payment.provider);
   if (!provider) return { status: b.paymentStatus };
-  try {
-    const v = await provider.verify(payment.providerRef);
-    if (v.status === "PAID") {
-      await markPaymentPaid(payment.id, v.details);
-      return { status: "PAID" as const };
-    }
-    if (v.status === "FAILED") {
-      await db.$transaction([
-        db.payment.update({ where: { id: payment.id }, data: { status: "FAILED", detailsJson: JSON.stringify(v.details ?? null) } }),
-        db.booking.update({ where: { id: b.id }, data: { paymentStatus: "FAILED" } }),
-      ]);
-      return { status: "FAILED" as const };
-    }
-    return { status: "PENDING" as const };
-  } catch (e) {
-    console.error("Zahlungsprüfung fehlgeschlagen:", e);
-    return { status: "PENDING" as const, error: e instanceof Error ? e.message : String(e) };
-  }
+  const r = await refreshPaymentStatus(payment.id);
+  return r.error ? { status: r.status, error: r.error } : { status: r.status };
 }
 
+/** Zahlung als bezahlt verbuchen (Betrag und Währung aus der Payment-Zeile, z.B. für Tests/Admin). */
 export async function markPaymentPaid(paymentId: string, details?: unknown) {
-  const p = await db.payment.findUnique({ where: { id: paymentId }, include: { booking: { select: { status: true, adminNote: true } } } });
-  if (!p || p.status === "PAID") return;
-  const now = new Date();
-  // Zahlung nach (automatischer) Stornierung: Geld ist eingegangen, Platz aber nicht mehr reserviert.
-  const lateNote = ["CANCELLED", "REJECTED"].includes(p.booking.status) ? "Zahlung nach Stornierung eingegangen – Rückerstattung prüfen." : null;
-  await db.$transaction([
-    db.payment.update({ where: { id: paymentId }, data: { status: "PAID", detailsJson: JSON.stringify(details ?? null) } }),
-    db.booking.update({
-      where: { id: p.bookingId },
-      data: { paymentStatus: "PAID", paidAt: now, ...(lateNote ? { adminNote: [p.booking.adminNote, lateNote].filter(Boolean).join(" ").slice(-191) } : {}) },
-    }),
-  ]);
-  if (lateNote) console.warn(`Zahlung ${paymentId} für stornierte Buchung ${p.bookingId} eingegangen.`);
+  const p = await db.payment.findUnique({ where: { id: paymentId }, select: { amountCents: true, currency: true } });
+  if (!p) return;
+  await settlePayment(paymentId, p, details);
 }
 
 /**
@@ -91,12 +66,5 @@ export async function markPaidByProviderRef(
   paid: { amountCents: number | null; currency: string | null },
   details?: unknown,
 ) {
-  const p = await db.payment.findFirst({ where: { providerRef, provider: scope.provider, booking: { tenantId: scope.tenantId } } });
-  if (!p) return false;
-  if (paid.amountCents !== p.amountCents || (paid.currency ?? "").toUpperCase() !== p.currency.toUpperCase()) {
-    console.warn(`Zahlung ${p.id}: Betrag/Währung aus Webhook (${paid.amountCents} ${paid.currency}) passt nicht zu ${p.amountCents} ${p.currency}.`);
-    return false;
-  }
-  await markPaymentPaid(p.id, details);
-  return true;
+  return (await settleByProviderRef(scope, providerRef, paid, details)) === "PAID";
 }
