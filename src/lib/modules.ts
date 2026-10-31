@@ -16,7 +16,8 @@ export type ModuleKey =
   | "weapons"
   | "shifts"
   | "courses"
-  | "championship";
+  | "championship"
+  | "kiosk";
 
 export type ModuleDefinition = {
   key: ModuleKey;
@@ -138,6 +139,14 @@ export const MODULES: ModuleDefinition[] = [
     name: "Jahresmeisterschaft",
     description: "Vereinsmeisterschaft mit Streichresultaten, Pflichtprogrammen, Kategorien und Rangliste für die GV.",
     href: "/championship",
+    status: "ready",
+    defaultEnabled: false,
+  },
+  {
+    key: "kiosk",
+    name: "Schützenstube",
+    description: "Konsumationen in der Schützenstube aufschreiben und gesammelt mit QR-Rechnung verrechnen.",
+    href: "/kiosk",
     status: "ready",
     defaultEnabled: false,
   },
