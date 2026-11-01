@@ -15,6 +15,11 @@ import { seedDemoWeapons } from "../src/modules/weapons/seed";
 import { seedDemoShifts } from "../src/modules/shifts/seed";
 import { seedDemoCourses } from "../src/modules/courses/seed";
 import { seedDemoChampionship } from "../src/modules/championship/seed";
+import { seedDemoAccounting } from "../src/modules/accounting/seed";
+import { seedDemoEmbed } from "../src/modules/embed/seed";
+import { seedDemoSharing } from "../src/modules/sharing/seed";
+import { seedDemoKiosk } from "../src/modules/kiosk/seed";
+import { seedDemoScoreImport } from "../src/modules/scores/import/seed";
 
 const u = new URL(process.env.DATABASE_URL ?? "mysql://standchef:standchef@127.0.0.1:3306/standchef");
 const db = new PrismaClient({
@@ -161,6 +166,14 @@ async function main() {
     await seedDemoAmmoStock(db, demo.id, [anna.id]);
     await seedDemoCourses(db, demo.id, demoUsers);
     await seedDemoChampionship(db, demo.id, demoUsers);
+
+    // Welle C: Schützenstube, Partner-Anlagen, Website-Widgets, Buchhaltung, Resultat-Import (idempotent)
+    await db.tenantModule.upsert({ where: { tenantId_moduleKey: { tenantId: demo.id, moduleKey: "kiosk" } }, update: { enabled: true }, create: { tenantId: demo.id, moduleKey: "kiosk", enabled: true } });
+    await seedDemoKiosk(db, demo.id, demoUsers);
+    await seedDemoSharing(db, demo.id, [anna.id, beat.id]); // Anna Admin, Beat Mitglied im Partnerverein
+    await seedDemoEmbed(db, demo.id, demoUsers);
+    await seedDemoAccounting(db, demo.id, demoUsers);
+    await seedDemoScoreImport(db, demo.id, demoUsers); // nach seedPresets (braucht ein globales Programm)
     console.log("Demo-Verein: Beitrittscode DEMO42 · anna@example.ch / beat@example.ch (Passwort demo1234)");
   }
 

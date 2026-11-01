@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { FileText, Printer, Settings } from "lucide-react";
+import { CreditCard, FileText, Printer, Settings } from "lucide-react";
 import { requireModule } from "@/lib/tenant";
 import { Badge, Card, EmptyState, LinkButton, PageHeader, SectionTitle } from "@/components/ui";
 import { listMyFeeInvoices } from "@/modules/billing/queries";
@@ -12,12 +12,15 @@ import { CopyField } from "@/modules/billing/ui/copy-field";
 import { formatMoney } from "@/lib/money";
 import { formatDateZurich } from "@/lib/time";
 import { formatIban, formatQrReference } from "@/lib/qr-reference";
+import { getOnlineFeeProviderKey } from "@/modules/billing/payments";
+import { canPayFeeInvoiceOnline, feeInvoicePayPath } from "@/lib/payments/logic";
+import { providerLabel, providerMethods } from "@/lib/payments/catalog";
 
 export const metadata: Metadata = { title: "Mitgliederbeiträge" };
 
 export default async function BillingPage() {
   const ctx = await requireModule("billing");
-  const [all, profile] = await Promise.all([listMyFeeInvoices(ctx), getBillingProfile(ctx.tenant.id, ctx.tenant.name)]);
+  const [all, profile, onlineProvider] = await Promise.all([listMyFeeInvoices(ctx), getBillingProfile(ctx.tenant.id, ctx.tenant.name), getOnlineFeeProviderKey(ctx.tenant.id)]);
   const canManage = ctx.can("tenant.manage");
   // Offene Rechnungen erhalten bei QR-IBAN ihre Referenz (ältere Rechnungen werden nachgeführt).
   const open = await ensureReferences("FEE", all.filter((i) => i.status === "OPEN"), ctx.tenant.id);
@@ -32,7 +35,11 @@ export default async function BillingPage() {
         <>
           <Card className="animate-rise p-4 mb-4 bg-accent-soft/40 border-accent/20">
             <div className="text-sm font-medium">{open.length === 1 ? "Eine offene Rechnung" : `${open.length} offene Rechnungen`} · {formatMoney(openTotal, open[0]!.currency)}</div>
-            <p className="text-xs text-ink-3 mt-0.5">Am einfachsten: QR-Rechnung öffnen und mit der Banking- oder TWINT-App scannen. Oder die Angaben unten antippen, um sie ins E-Banking zu kopieren.</p>
+            <p className="text-xs text-ink-3 mt-0.5">
+              {onlineProvider
+                ? `Am einfachsten: «Online bezahlen» antippen (${providerMethods(onlineProvider)} über ${providerLabel(onlineProvider)}). Oder QR-Rechnung öffnen und mit der Banking-App scannen.`
+                : "Am einfachsten: QR-Rechnung öffnen und mit der Banking- oder TWINT-App scannen. Oder die Angaben unten antippen, um sie ins E-Banking zu kopieren."}
+            </p>
           </Card>
           <div className="stagger space-y-3">
             {open.map((i) => (
@@ -59,6 +66,9 @@ export default async function BillingPage() {
                 ) : (
                   <p className="text-xs text-ink-3">Die Zahlungsangaben stehen auf der Rechnung.</p>
                 )}
+                {canPayFeeInvoiceOnline(i, onlineProvider) ? (
+                  <LinkButton href={feeInvoicePayPath(i.id)} prefetch={false} className="w-full"><CreditCard className="h-4 w-4" aria-hidden /> Online bezahlen</LinkButton>
+                ) : null}
                 <LinkButton href={`/billing/invoices/${i.id}/print`} target="_blank" variant="secondary" className="w-full"><Printer className="h-4 w-4" /> QR-Rechnung öffnen</LinkButton>
               </Card>
             ))}

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildJournal, cleanText, feeInvoiceKind, journalTotals, summarizeAccounts, type InvoiceDoc, type PaymentDoc } from "./journal";
+import { buildJournal, cleanText, feeInvoiceKind, isPaidOnline, journalTotals, summarizeAccounts, type InvoiceDoc, type JournalEntry, type PaymentDoc } from "./journal";
 import { ACCOUNT_LABEL, DEFAULT_ACCOUNTS } from "./types";
 
 const A = DEFAULT_ACCOUNTS;
@@ -9,9 +9,13 @@ function invoice(p: Partial<InvoiceDoc> = {}): InvoiceDoc {
   return {
     type: "invoice", source: "FEE", id: "inv1", number: "MB-2026-001", kind: "fee", label: "Mitgliederbeitrag 2026 Aktiv",
     amountCents: 12000, currency: "CHF", issuedAt: new Date("2026-02-01T09:00:00Z"), status: "OPEN",
-    paidAt: null, cancelledAt: null, onlinePayments: [], ...p,
+    paidAt: null, paidOnline: false, refundedAt: null, cancelledAt: null, onlinePayments: [], ...p,
   };
 }
+
+const rows = (e: JournalEntry[]) => e.map((x) => [x.date, x.debit, x.credit, x.type]);
+const balanceSum = (e: JournalEntry[]) => summarizeAccounts(e, A, ACCOUNT_LABEL).reduce((acc, x) => acc + x.balanceCents, 0);
+const balanceOf = (e: JournalEntry[], account: string) => summarizeAccounts(e, A, ACCOUNT_LABEL).find((x) => x.account === account)?.balanceCents ?? 0;
 
 describe("feeInvoiceKind", () => {
   it("erkennt Ersatzabgabe, Kiosk und Beitrag", () => {
@@ -19,6 +23,8 @@ describe("feeInvoiceKind", () => {
     expect(feeInvoiceKind("  ersatzabgabe", false)).toBe("workfee");
     expect(feeInvoiceKind("Ersatzabgabe", true)).toBe("kiosk");
     expect(feeInvoiceKind("Aktivmitglied", false)).toBe("fee");
+    // Rückfall über die Bezeichnung (nach dem Freigeben stornierter Kiosk-Rechnungen)
+    expect(feeInvoiceKind("Schützenstube Oktober 2026", false)).toBe("kiosk");
   });
 });
 
@@ -69,15 +75,58 @@ describe("buildJournal", () => {
 
   it("Online bezahlte Rechnung: Zahlung aus Payment, nicht doppelt aus paidAt; Rückerstattung zurück", () => {
     const e = buildJournal([invoice({
-      status: "PAID", paidAt: new Date("2026-02-03T10:00:00Z"),
+      status: "PAID", paidAt: new Date("2026-02-03T10:00:00Z"), paidOnline: true,
       onlinePayments: [{ id: "p1", provider: "STRIPE", amountCents: 12000, currency: "CHF", paidAt: new Date("2026-02-03T10:00:00Z"), refundedAt: new Date("2026-02-20T10:00:00Z") }],
     })], A, YEAR);
-    expect(e.map((x) => [x.date, x.debit, x.credit, x.type])).toEqual([
+    expect(rows(e)).toEqual([
       ["2026-02-01", "1100", "3000", "issue"],
       ["2026-02-03", "1020", "1100", "payment"],
-      ["2026-02-20", "1100", "1020", "refund"],
+      ["2026-02-20", "3000", "1020", "refund"],
     ]);
     expect(e[1]!.text).toContain("Online-Zahlung Stripe");
+    // Nach Zahlung und Rückerstattung bleibt nichts offen: Debitoren, Ertrag und Bank auf null
+    expect(["1100", "3000", "1020"].map((k) => balanceOf(e, k))).toEqual([0, 0, 0]);
+  });
+
+  it("doppelt bezahlt (Bank und online): beide Zahlungen, Guthaben auf Debitoren", () => {
+    const e = buildJournal([invoice({
+      status: "PAID", paidAt: new Date("2026-02-05T10:00:00Z"), paidOnline: false,
+      onlinePayments: [{ id: "p1", provider: "WORLDLINE", amountCents: 12000, currency: "CHF", paidAt: new Date("2026-02-06T10:00:00Z"), refundedAt: null }],
+    })], A, YEAR);
+    expect(rows(e)).toEqual([
+      ["2026-02-01", "1100", "3000", "issue"],
+      ["2026-02-05", "1020", "1100", "payment"],
+      ["2026-02-06", "1020", "1100", "payment"],
+    ]);
+    expect(balanceOf(e, "1100")).toBe(-12000);
+  });
+
+  it("per Bank bezahlte, später erstattete Rechnung (Reservation): Ertrag an Bank", () => {
+    const e = buildJournal([invoice({ source: "BOOKING", kind: "booking", status: "PAID", paidAt: new Date("2026-02-04T10:00:00Z"), refundedAt: new Date("2026-03-01T10:00:00Z") })], A, YEAR);
+    expect(rows(e)).toEqual([
+      ["2026-02-01", "1100", "3400", "issue"],
+      ["2026-02-04", "1020", "1100", "payment"],
+      ["2026-03-01", "3400", "1020", "refund"],
+    ]);
+    expect(["1100", "3400", "1020"].map((k) => balanceOf(e, k))).toEqual([0, 0, 0]);
+  });
+
+  it("online bezahlt, storniert und erstattet: Guthaben wird ausbezahlt (Debitoren an Bank)", () => {
+    const e = buildJournal([invoice({
+      status: "CANCELLED", cancelledAt: new Date("2026-02-10T10:00:00Z"),
+      onlinePayments: [{ id: "p1", provider: "STRIPE", amountCents: 12000, currency: "CHF", paidAt: new Date("2026-02-03T10:00:00Z"), refundedAt: new Date("2026-02-12T10:00:00Z") }],
+    })], A, YEAR);
+    expect(rows(e)).toEqual([
+      ["2026-02-01", "1100", "3000", "issue"],
+      ["2026-02-03", "1020", "1100", "payment"],
+      ["2026-02-10", "3000", "1100", "reversal"],
+      ["2026-02-12", "1100", "1020", "refund"],
+    ]);
+    expect(["1100", "3000", "1020"].map((k) => balanceOf(e, k))).toEqual([0, 0, 0]);
+  });
+
+  it("Rückerstattung nur bei bezahlter Rechnung", () => {
+    expect(buildJournal([invoice({ refundedAt: new Date("2026-03-01T10:00:00Z") })], A, YEAR).map((x) => x.type)).toEqual(["issue"]);
   });
 
   it("Online-Zahlung ohne Rechnung: Bank an Reservationen", () => {
@@ -121,6 +170,16 @@ describe("buildJournal", () => {
   });
 });
 
+describe("isPaidOnline", () => {
+  it("nur wenn die Verbuchung nahe beim Bezahlt-Datum liegt", () => {
+    const paid = new Date("2026-02-03T10:00:00Z");
+    expect(isPaidOnline(paid, [new Date("2026-02-03T10:00:01Z")])).toBe(true);
+    expect(isPaidOnline(paid, [new Date("2026-02-04T10:00:00Z")])).toBe(false);
+    expect(isPaidOnline(null, [paid])).toBe(false);
+    expect(isPaidOnline(paid, [])).toBe(false);
+  });
+});
+
 describe("summarizeAccounts", () => {
   it("Saldo pro Konto: Soll minus Haben, sortiert", () => {
     const entries = buildJournal([
@@ -137,7 +196,7 @@ describe("summarizeAccounts", () => {
     ]);
     expect(s.find((x) => x.account === "1100")).toMatchObject({ debitCents: 23000, creditCents: 12000, names: ["Debitoren"] });
     // Doppelte Buchhaltung: Summe aller Salden ist null
-    expect(s.reduce((acc, x) => acc + x.balanceCents, 0)).toBe(0);
+    expect(balanceSum(entries)).toBe(0);
     expect(journalTotals(entries)).toEqual([{ currency: "CHF", cents: 35000 }]);
   });
 

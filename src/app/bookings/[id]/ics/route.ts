@@ -5,6 +5,7 @@ import { getAppContext } from "@/lib/tenant";
 import { slugify } from "@/lib/utils";
 import { formatDuration, BOOKING_STATUS } from "@/modules/bookings/types";
 import { personsSuffix } from "@/modules/bookings/pricing";
+import { bookingAccess } from "@/modules/sharing/logic";
 
 export const dynamic = "force-dynamic";
 
@@ -44,8 +45,10 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
   const ctx = await getAppContext();
   if (!ctx.tenant || !ctx.hasModule("bookings")) return new NextResponse("Nicht gefunden", { status: 404 });
   const { id } = await params;
+  if (!id || id.length > 40) return new NextResponse("Nicht gefunden", { status: 404 });
   const b = await db.booking.findUnique({ where: { id }, include: { resource: { select: { name: true } }, tenant: { select: { name: true, city: true } }, user: { select: { name: true } } } });
-  if (!b || b.tenantId !== ctx.tenant.id || (b.userId !== user.id && !ctx.can("tenant.manage"))) return new NextResponse("Nicht gefunden", { status: 404 });
+  // Besitzer und Verwaltung des Eigentümers; bei Partnerbuchungen zusätzlich nur das buchende Mitglied.
+  if (!b || !bookingAccess(b, { userId: user.id, activeTenantId: ctx.tenant.id, canManageActive: ctx.can("tenant.manage") })) return new NextResponse("Nicht gefunden", { status: 404 });
 
   const appUrl = (process.env.APP_URL ?? "https://standchef.ch").replace(/\/$/, "");
   const cancelled = b.status === "CANCELLED" || b.status === "REJECTED";

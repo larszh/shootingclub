@@ -44,16 +44,23 @@ Details im README.
 - **Integration**: Navigation mit Gruppen «Schiessen» und «Verein», Statuskarten auf der Startseite, Querverweise im Anlass (Obligatorisch, Helfer gesucht), Erinnerungen über `REMINDER_HOOKS` (Schichten, Vereinswaffen, Bundesübungen), Demo-Daten für alle Module, FAQ.
 - **Offen aus Welle B**: Feldschiessen-Auszeichnungen (Kranz/Karte) mit Limitentabelle; Einstellungen pro Verein für Waffen-Meldefristen und Sperrgrund als eigene Felder (braucht Schema-Erweiterung); Pro-rata-Arbeitsstunden bei Eintritt im Lauf des Jahres; Vor- und Nachname getrennt für den SAT-Export.
 
+### Welle C: Anbindungen (erledigt)
+- **Online-Zahlung** (`src/lib/payments`): gemeinsame Anbieterschicht für Reservationen und Beiträge; neu **Payrexx** (TWINT, PostFinance, Karte) mit signierten API-Aufrufen und Webhook `/api/payments/payrexx/[tenantId]`, der den Status immer beim Anbieter nachliest. Beitragsrechnungen (Jahresbeitrag, Ersatzabgabe, Schützenstube) sind online bezahlbar (`/billing/invoices/[id]/pay`), Verbuchung genau einmal und nur bei passendem Betrag. **Munition bleibt bewusst nur per Rechnung** (Vorgaben der Anbieter).
+- **Buchhaltung** (`/admin/accounting`): Kontenplan nach KMU-Kontenrahmen, Journal aus Beiträgen, Reservationen, Munition und Online-Zahlungen (inkl. Storno, Rückerstattung, Doppelzahlung), Export für Banana (.txt), bexio (CSV) und als generisches CSV.
+- **Resultat-Import** (`/scores/import`): Assistent für Meyton, SIUS, ShotMarker und CSV (Vorlagen, bitte mit eigener Exportdatei prüfen), Namensabgleich mit Mitgliedern, Prüfung gegen das Programm, Schutz vor Doppelimport.
+- **Website-Widgets und iCal** (`/admin/embed`, öffentlich `/embed/[token]/…`): Kalender, Schiesszeiten, signierte Ranglisten und Jahresmeisterschaft als iframe; iCal mit Zeitzone Europe/Zurich, abgesagten Terminen, Kursen und Helfereinsätzen im persönlichen Abo.
+- **Gemeinsame Anlagen**: Anlagen mit Partnervereinen teilen (Partnertarif, Pause, Widerruf), Buchung durch Partnermitglieder nach den Regeln des Eigentümers, Bericht und CSV pro Partnerverein (`/admin/bookings/partners`).
+- **Schützenstube** (`/kiosk`): Theke für Tablets mit Offline-Warteschlange, «Meine Konsumationen», Sortiment, periodische Abrechnung als Beitragsrechnung, Kasse pro Tag, CSV.
+- **Integration**: Navigation, Verwaltungslinks, «Online bezahlen» auf der Startseite, FAQ, Demo-Daten, Datenexport und Kontolöschung inkl. Schützenstube.
+- **Offen aus Welle C**: Live-Test mit einer Payrexx-Testinstanz vor dem Einsatz; Gebühren der Zahlungsanbieter und Barverkäufe der Schützenstube werden nicht automatisch gebucht; Rückerstattungen nur von Hand im Backoffice des Anbieters; X/Y-Trefferlage beim Import wird nicht gespeichert; Partner-Rechnungen erscheinen nicht unter «Zahlungen» des Gastvereins.
+
 ## Nächste Wellen
 
-### Welle C: Anbindungen
-- **TWINT / Payrexx** (über Zahlungsanbieter) für Beiträge, Reservationen und Munition (ausser Gratis-Bundesmunition).
-- **Buchhaltung**: Export der Buchungen (Beiträge, Reservationen, Munition) für Banana und bexio.
-- **Elektronische Trefferanzeige**: Import von Resultaten aus Meyton und SIUS (CSV), später Polytronic.
-- **iCal-Verbesserungen und Widgets**: einbettbare Termine, Ranglisten und Reservationskalender für die Vereinswebsite.
-- **Gemeinsame Anlagen**: mehrere Vereine teilen eine Schiessanlage (Belegung, Kosten, Standbetrieb).
-- **Kantonalverband**: Ansicht über mehrere Vereine (z.B. Obligatorisch-Statistik, Meldungen).
-- **Weitere Übersetzungen** (FR/IT für die Module der Welle B und die Admin-Seiten).
+### Welle D
+- **Übersetzungen der Mitgliederseiten** (FR/IT): Zahlungen, Anlässe, Reservationen, Chat, Punkteerfassung, Schützenstube, danach Login/Registrierung und Admin-Seiten.
+- **Kantonalverband**: Ansicht über mehrere Vereine (z.B. Obligatorisch-Statistik, Meldungen, Jahresmeisterschaft).
+- **bexio-API**: Buchungen und Debitoren direkt übertragen statt CSV-Import.
+- **Live-Import aus elektronischen Trefferanzeigen**: Resultate während des Schiessens übernehmen (Meyton/SIUS-Schnittstelle, später Polytronic), angebunden an die Live-Rangliste.
 
 ### Mehrsprachigkeit, nächste Schritte
 1. App-Shell und /me übersetzen, `<html lang>` aus `getRequestLocale()`.
@@ -71,7 +78,7 @@ Details im README.
 - **Programm-Import/-Export** als JSON, damit Vereine Programme tauschen können.
 - **Scheiben-Druck**: Vektor-PDF serverseitig (z.B. mit `pdf-lib`) statt Browser-Druck.
 - **Reservationen, nächste Schritte**: Wiederkehrende Buchungen (jeden Dienstag), Serienbuchung für Trainer, E-Mail-Bestätigung und Erinnerung, automatische Rückerstattung bei Storno (Stripe-Refund-API), Gästebuchungen ohne Konto mit Bezahlung, Preisregeln nach Rolle (Mitglieder gratis, Gäste zahlen) und Tageszeit (Nebenzeiten günstiger).
-- **Mitgliederbeiträge, nächste Schritte**: Rechnung als PDF-Anhang per E-Mail, Online-Zahlung der Beitragsrechnung über den Zahlungsanbieter des Vereins, Teilzahlungen, Familienrabatte, pro-rata-Beitrag bei Austritt. Beitragsübersicht zählt Haushaltsmitglieder ohne eigene Rechnung noch als «nicht verrechnet».
+- **Mitgliederbeiträge, nächste Schritte**: Rechnung als PDF-Anhang per E-Mail, Teilzahlungen, Familienrabatte, pro-rata-Beitrag bei Austritt. Beitragsübersicht zählt Haushaltsmitglieder ohne eigene Rechnung noch als «nicht verrechnet».
 - **Mitgliedernummern** numerisch sortieren (heute Textsortierung: «10» vor «9»).
 
 ### Technik

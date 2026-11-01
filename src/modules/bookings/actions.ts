@@ -5,19 +5,19 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { db } from "@/lib/db";
 import { requireModule, requirePermission } from "@/lib/tenant";
-import { encryptJson, decryptJson } from "@/lib/crypto";
 import { fail, ok, type ActionResult } from "@/lib/action-result";
 import { zurichToUtc } from "@/lib/time";
 import { parseMoneyToCents } from "@/lib/money";
-import type { Prisma } from "@/generated/prisma/client";
-import { getBookingSettings, getResource, getSlotsForDay, expireUnpaidOnlineBookings, type BookingSettingsView, type ResourceView } from "./queries";
+import { getBookingSettings, getResource, getSlotsForDay, expireUnpaidOnlineBookings } from "./queries";
 import { maxPersonsFor, planRequest, quotePrice } from "./pricing";
-import { isCalendarDate, PERSONS_LIMIT, PROVIDER_FIELDS, providerKeys, resourceSchema, settingsSchema, type DurationOption, type PaymentProviderKey } from "./types";
+import { isCalendarDate, PERSONS_LIMIT, resourceSchema, settingsSchema, type DurationOption } from "./types";
 import { ensureInvoiceForBooking } from "./invoice";
 import { startOnlinePayment } from "./payment-flow";
-import { notify, tenantUserIdsWithRole } from "@/lib/notify";
-import { formatDateTime } from "@/lib/i18n/core";
+import { notifyBooking } from "./notify";
+import { createBookingIfFree, SLOT_TAKEN } from "./create";
 import { checkBookingWindow, windowRejectMessage } from "@/modules/range/booking-window";
+import { bookingAccess, guestMayCancel } from "@/modules/sharing/logic";
+import { audit } from "@/lib/audit";
 
 /** Hinweis bei Reservationen der Verwaltung ausserhalb der bewilligten Schiesszeiten (Modul «range»). */
 const OUTSIDE_WINDOW_NOTE = "Achtung: ausserhalb der bewilligten Schiesszeiten";
@@ -31,81 +31,11 @@ async function requireBookingsAdmin() {
 
 
 // ---------------------------------------------------------------------------
-// Benachrichtigungen (nie blockierend: Fehler werden in notify() abgefangen)
-// ---------------------------------------------------------------------------
-
-type BookingNotice = "pending" | "confirmed" | "rejected" | "cancelled" | "created";
-
-async function notifyBooking(bookingId: string, notice: BookingNotice, actor: { id: string; name: string }) {
-  const b = await db.booking.findUnique({
-    where: { id: bookingId },
-    select: { id: true, tenantId: true, userId: true, startsAt: true, resource: { select: { name: true } }, user: { select: { name: true } } },
-  });
-  if (!b) return;
-  const date = formatDateTime(b.startsAt, "de");
-  const resource = b.resource.name;
-  if (notice === "pending") {
-    const admins = (await tenantUserIdsWithRole(b.tenantId, ["OWNER", "ADMIN"])).filter((id) => id !== actor.id);
-    const name = b.user?.name ?? actor.name;
-    await notify({
-      tenantId: b.tenantId,
-      userIds: admins,
-      topic: "bookings",
-      title: "Neue Reservationsanfrage",
-      body: `${name} möchte ${resource} am ${date} reservieren.`,
-      url: "/admin/bookings",
-      tag: `booking:${b.id}`,
-      i18n: { title: "notify.booking.pending.title", body: "notify.booking.pending.body", vars: { name, resource, date }, localeVars: (locale) => ({ date: formatDateTime(b.startsAt, locale) }) },
-      dedupeKey: `booking-pending:${b.id}`,
-    });
-    return;
-  }
-  if (!b.userId || b.userId === actor.id) return;
-  const de: Record<Exclude<BookingNotice, "pending">, [string, string]> = {
-    confirmed: ["Reservation bestätigt", `Deine Reservation «${resource}» am ${date} ist bestätigt.`],
-    rejected: ["Reservation abgelehnt", `Deine Reservation «${resource}» am ${date} wurde leider abgelehnt.`],
-    cancelled: ["Reservation storniert", `${actor.name} hat die Reservation «${resource}» am ${date} storniert.`],
-    created: ["Neue Reservation für dich", `Für dich wurde «${resource}» am ${date} reserviert.`],
-  };
-  await notify({
-    tenantId: b.tenantId,
-    userIds: [b.userId],
-    topic: "bookings",
-    title: de[notice][0],
-    body: de[notice][1],
-    url: `/bookings/${b.id}`,
-    tag: `booking:${b.id}`,
-    i18n: { title: `notify.booking.${notice}.title`, body: `notify.booking.${notice}.body`, vars: { name: actor.name, resource, date }, localeVars: (locale) => ({ date: formatDateTime(b.startsAt, locale) }) },
-    dedupeKey: `booking-${notice}:${b.id}`,
-  });
-}
-
-// ---------------------------------------------------------------------------
 // Mitglieder
 // ---------------------------------------------------------------------------
 
-const SLOT_TAKEN = "Dieser Termin wurde soeben vergeben. Bitte eine andere Zeit wählen.";
-
 function personsLimitError(max: number) {
   return `Höchstens ${max} ${max === 1 ? "Person" : "Personen"} pro Buchung.`;
-}
-
-/**
- * Prüft die Verfügbarkeit erneut und legt die Buchung im selben Schritt an. Die Ressourcen-Zeile
- * wird dafür gesperrt, damit parallele Anfragen die Kapazität nicht gemeinsam überschreiten.
- * Liefert null, wenn der Termin inzwischen belegt ist.
- */
-async function createBookingIfFree(
-  slotQuery: { tenantId: string; resource: ResourceView; settings: BookingSettingsView; date: string; time: string; durationMinutes: number; requestedUnits: number; bypassLimits?: boolean },
-  data: Prisma.BookingUncheckedCreateInput,
-) {
-  const { tenantId, resource, settings, date, time, durationMinutes, requestedUnits, bypassLimits } = slotQuery;
-  return db.$transaction(async (tx) => {
-    await tx.$queryRaw`SELECT id FROM \`Resource\` WHERE id = ${resource.id} FOR UPDATE`;
-    const slots = await getSlotsForDay(tenantId, resource, settings, date, durationMinutes, { bypassLimits, client: tx, requestedUnits });
-    if (!slots.find((s) => s.time === time)?.available) return null;
-    return tx.booking.create({ data });
-  });
 }
 
 const createBookingSchema = z.object({
@@ -205,15 +135,19 @@ export async function createBookingAction(_prev: ActionResult | null, formData: 
 
 export async function cancelBookingAction(bookingId: string): Promise<ActionResult> {
   const ctx = await requireModule("bookings");
+  if (typeof bookingId !== "string" || !bookingId || bookingId.length > 40) return fail("Nicht gefunden");
   const b = await db.booking.findUnique({ where: { id: bookingId } });
-  if (!b || b.tenantId !== ctx.tenant.id) return fail("Nicht gefunden");
-  const isAdmin = ctx.can("tenant.manage");
-  if (b.userId !== ctx.user.id && !isAdmin) return fail("Keine Berechtigung");
+  if (!b) return fail("Nicht gefunden");
+  // Gemeinsame Anlage: das Mitglied eines Partnervereins storniert die eigene Buchung beim Eigentümer.
+  const access = bookingAccess(b, { userId: ctx.user.id, activeTenantId: ctx.tenant.id, canManageActive: ctx.can("tenant.manage") });
+  if (!access) return fail("Nicht gefunden");
+  const isAdmin = access === "admin" || (access === "owner" && ctx.can("tenant.manage"));
   if (!["PENDING", "CONFIRMED"].includes(b.status)) return fail("Buchung ist bereits beendet.");
   if (!isAdmin) {
-    const settings = await getBookingSettings(ctx.tenant.id);
-    const hoursAhead = (b.startsAt.getTime() - Date.now()) / 3_600_000;
-    if (hoursAhead < settings.cancellationHours) return fail(`Stornierung nur bis ${settings.cancellationHours} Stunden vor Beginn möglich.`);
+    // Regeln des Vereins, dem die Anlage gehört (bei Partnerbuchungen der Eigentümer).
+    const settings = await getBookingSettings(b.tenantId);
+    const allowed = guestMayCancel(b, settings.cancellationHours);
+    if (!allowed.ok) return fail(allowed.error);
   }
   const refundNote = b.paymentStatus === "PAID" ? "Rückerstattung prüfen." : null;
   // Offene Zahlungen entfallen mit der Stornierung; bezahlte bleiben sichtbar (Rückerstattung).
@@ -222,6 +156,7 @@ export async function cancelBookingAction(bookingId: string): Promise<ActionResu
     db.booking.update({ where: { id: bookingId }, data: { status: "CANCELLED", cancelledAt: new Date(), paymentStatus, adminNote: refundNote ? [b.adminNote, refundNote].filter(Boolean).join(" ").slice(-191) : b.adminNote } }),
     db.invoice.updateMany({ where: { bookingId, status: "OPEN" }, data: { status: "CANCELLED" } }),
   ]);
+  if (access === "guest") void audit({ tenantId: b.tenantId, actorId: ctx.user.id, actorName: ctx.user.name, action: "booking.partner.cancel", entity: "Booking", entityId: b.id, detail: `Storniert durch Mitglied eines Partnervereins (${ctx.tenant.name})` });
   // Storniert die Verwaltung eine fremde Buchung, wird das Mitglied informiert
   if (b.userId && b.userId !== ctx.user.id) void notifyBooking(bookingId, "cancelled", ctx.user).catch(() => undefined);
   revalidatePath("/bookings");
@@ -637,32 +572,5 @@ export async function adminCreateBookingAction(_prev: ActionResult | null, formD
 // Admin: Zahlungsanbieter
 // ---------------------------------------------------------------------------
 
-export async function saveProviderConfigAction(_prev: ActionResult | null, formData: FormData): Promise<ActionResult> {
-  const ctx = await requireBookingsAdmin();
-  const provider = String(formData.get("provider") ?? "");
-  if (!(providerKeys as readonly string[]).includes(provider)) return fail("Unbekannter Anbieter");
-  const fields = PROVIDER_FIELDS[provider as PaymentProviderKey];
-  const existing = await db.paymentProviderConfig.findUnique({ where: { tenantId_provider: { tenantId: ctx.tenant.id, provider } } });
-  const current = existing ? decryptJson<Record<string, string>>(existing.credentialsEnc) : {};
-  const next: Record<string, string> = { ...current };
-  for (const f of fields) {
-    const v = String(formData.get(f.key) ?? "").trim();
-    // Geheime Felder: leer lassen = bestehenden Wert behalten
-    if (v === "" && f.secret && current[f.key]) continue;
-    if (v !== "") next[f.key] = v;
-    else delete next[f.key];
-  }
-  const missing = fields.filter((f) => !f.options && !next[f.key] && !(provider === "STRIPE" && f.key === "webhookSecret"));
-  const enabled = formData.get("enabled") === "on";
-  if (enabled && missing.length) return fail(`Fehlende Angaben: ${missing.map((m) => m.label).join(", ")}`);
-  await db.paymentProviderConfig.upsert({
-    where: { tenantId_provider: { tenantId: ctx.tenant.id, provider } },
-    create: { tenantId: ctx.tenant.id, provider, enabled, credentialsEnc: encryptJson(next) },
-    update: { enabled, credentialsEnc: encryptJson(next) },
-  });
-  if (!enabled) {
-    await db.bookingSettings.updateMany({ where: { tenantId: ctx.tenant.id, onlineProvider: provider }, data: { onlineProvider: "NONE", allowOnline: false } });
-  }
-  revalidatePath("/admin/bookings");
-  return ok(undefined, "Gespeichert.");
-}
+// Zugangsdaten der Zahlungsanbieter: savePaymentProviderAction in src/lib/payments/actions.ts
+// (gemeinsam für Reservationen und Beiträge, inkl. Payrexx).

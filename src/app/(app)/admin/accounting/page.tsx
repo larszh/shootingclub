@@ -197,7 +197,9 @@ export default async function AccountingPage({ searchParams }: { searchParams: P
           <li>Rechnung ausgestellt: Soll Debitoren ({accounts.receivableAccount}) / Haben Ertrag (Beiträge {accounts.feeAccount}, Ersatzabgabe {accounts.workFeeAccount}, Reservationen {accounts.bookingAccount}, Munition {accounts.ammoAccount}).</li>
           <li>Rechnung bezahlt (auch online): Soll Bank ({accounts.bankAccount}) / Haben Debitoren am Zahlungsdatum.</li>
           <li>Rechnung storniert: Gegenbuchung Soll Ertrag / Haben Debitoren.</li>
-          <li>Reservation direkt online bezahlt (ohne Rechnung): Soll Bank / Haben Reservationen; eine Rückerstattung wird zurückgebucht.</li>
+          <li>Doppelt bezahlt (Bank und online): beide Zahlungen werden gebucht, das Guthaben steht auf Debitoren, bis ihr es zurückzahlt.</li>
+          <li>Rückerstattung (Reservation als «Erstattet» markiert): Soll Ertrag / Haben Bank am Tag der Markierung; bei stornierter Rechnung Soll Debitoren / Haben Bank.</li>
+          <li>Reservation direkt online bezahlt (ohne Rechnung): Soll Bank / Haben Reservationen.</li>
           <li>Rechnungen der Schützenstube gehen auf das Beitragskonto ({accounts.feeAccount}). Munition ist nie online bezahlbar, nur per Rechnung.</li>
         </ul>
       </Card>

@@ -8,6 +8,7 @@ const TABS = [
   { href: "/admin/bookings", label: "Übersicht" },
   { href: "/admin/bookings/calendar", label: "Kalender" },
   { href: "/admin/bookings/resources", label: "Ressourcen" },
+  { href: "/admin/bookings/partners", label: "Partnervereine" },
   { href: "/admin/bookings/settings", label: "Einstellungen" },
   { href: "/admin/bookings/payments", label: "Zahlungsanbieter" },
 ];

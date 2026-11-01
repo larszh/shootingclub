@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { Bell, BookUser, CalendarDays, ChevronRight, CreditCard, FileUp, FolderOpen, History, Home, KeyRound, LogOut, Mail, Megaphone, MessageCircle, Package, Server, Settings, Shield, ShieldCheck, Target, Users, BarChart3, Wallet, BadgeCheck, Trophy, Tv, DoorOpen, HandHelping, GraduationCap, Award, Boxes, Clock } from "lucide-react";
+import { Bell, BookUser, CalendarDays, ChevronRight, CreditCard, FileUp, FolderOpen, History, Home, KeyRound, LogOut, Mail, Megaphone, MessageCircle, Package, Server, Settings, Shield, ShieldCheck, Target, Users, BarChart3, Wallet, BadgeCheck, Trophy, Tv, DoorOpen, HandHelping, GraduationCap, Award, Boxes, Clock, Coffee, FileInput, BookOpenCheck, Code2, Handshake } from "lucide-react";
 import { getAppContext } from "@/lib/tenant";
 import { db } from "@/lib/db";
 import { logoutAction } from "@/modules/core/auth-actions";
@@ -29,8 +29,14 @@ export default async function MePage() {
   const can = (p: Parameters<typeof ctx.can>[0]) => (ctx.tenant ? ctx.can(p) : false);
   const canLive = ctx.hasModule("scores") && (can("match.viewAll") || can("events.manage"));
   const canWeapons = ctx.hasModule("weapons") && can("weapons.loan");
-  const shootingOn = ctx.hasModule("federal") || ctx.hasModule("championship") || canLive;
-  const clubOn = ctx.hasModule("range") || ctx.hasModule("shifts") || ctx.hasModule("courses") || canWeapons;
+  const canScoreImport = ctx.hasModule("scores") && (can("match.viewAll") || can("tenant.programs.manage"));
+  const kioskOn = ctx.hasModule("kiosk");
+  const shootingOn = ctx.hasModule("federal") || ctx.hasModule("championship") || canLive || canScoreImport;
+  const clubOn = ctx.hasModule("range") || ctx.hasModule("shifts") || ctx.hasModule("courses") || canWeapons || kioskOn;
+  // Welle C: Buchhaltung, Website-Widgets, Schützenstube, Partner-Anlagen
+  const adminAccounting = can("accounting.export");
+  const adminKiosk = kioskOn && can("kiosk.manage");
+  const adminPartners = canManage && ctx.hasModule("bookings");
   const adminRange = ctx.hasModule("range") && can("range.manage");
   const adminShifts = ctx.hasModule("shifts") && can("shifts.manage");
   const adminQuali = can("qualifications.manage") || canViewMembers;
@@ -90,6 +96,7 @@ export default async function MePage() {
                 {ctx.hasModule("federal") ? <Row href="/federal" icon={<BadgeCheck className="h-4 w-4" />} label="Bundesübungen" hint="Obligatorisch, Feldschiessen, Schiessnachweis" /> : null}
                 {ctx.hasModule("championship") ? <Row href="/championship" icon={<Trophy className="h-4 w-4" />} label="Jahresmeisterschaft" /> : null}
                 {canLive ? <Row href="/admin/live" icon={<Tv className="h-4 w-4" />} label="Live-Rangliste" hint="Für den Bildschirm im Schützenhaus" /> : null}
+                {canScoreImport ? <Row href="/scores/import" icon={<FileInput className="h-4 w-4" />} label="Resultat-Import" hint="Meyton, SIUS, ShotMarker oder CSV" /> : null}
               </Card>
             </>
           ) : null}
@@ -101,10 +108,15 @@ export default async function MePage() {
                 {ctx.hasModule("shifts") ? <Row href="/shifts" icon={<HandHelping className="h-4 w-4" />} label="Helfereinsätze" hint="Schichten und Arbeitsstunden" /> : null}
                 {ctx.hasModule("courses") ? <Row href="/courses" icon={<GraduationCap className="h-4 w-4" />} label="Kurse" /> : null}
                 {canWeapons ? <Row href="/weapons" icon={<Shield className="h-4 w-4" />} label="Vereinswaffen" /> : null}
+                {kioskOn ? (
+                  can("kiosk.sell")
+                    ? <Row href="/kiosk" icon={<Coffee className="h-4 w-4" />} label="Schützenstube" hint="Theke und meine Konsumationen" />
+                    : <Row href="/kiosk/me" icon={<Coffee className="h-4 w-4" />} label="Meine Konsumationen" hint="Schützenstube" />
+                ) : null}
               </Card>
             </>
           ) : null}
-          {canManage || canManageAmmo || canViewMembers || canAudit || adminRange || adminShifts || adminQuali ? (
+          {canManage || canManageAmmo || canViewMembers || canAudit || adminRange || adminShifts || adminQuali || adminAccounting || adminKiosk ? (
             <>
               <SectionTitle>Verwaltung</SectionTitle>
               <Card className="animate-rise divide-y divide-line overflow-hidden">
@@ -122,6 +134,10 @@ export default async function MePage() {
                 {adminRange ? <Row href="/admin/range" icon={<Clock className="h-4 w-4" />} label="Standordnung & Schiesszeiten" /> : null}
                 {adminShifts ? <Row href="/admin/shifts" icon={<HandHelping className="h-4 w-4" />} label="Einsätze & Arbeitsstunden" /> : null}
                 {adminQuali ? <Row href="/admin/qualifications" icon={<Award className="h-4 w-4" />} label="Qualifikationen" /> : null}
+                {adminPartners ? <Row href="/admin/bookings/partners" icon={<Handshake className="h-4 w-4" />} label="Partner-Anlagen" hint="Anlagen teilen, Abrechnung pro Partnerverein" /> : null}
+                {adminKiosk ? <Row href="/admin/kiosk" icon={<Coffee className="h-4 w-4" />} label="Schützenstube verwalten" hint="Sortiment, Abrechnung, Kasse" /> : null}
+                {adminAccounting ? <Row href="/admin/accounting" icon={<BookOpenCheck className="h-4 w-4" />} label="Buchhaltung" hint="Export für Banana & bexio" /> : null}
+                {canManage ? <Row href="/admin/embed" icon={<Code2 className="h-4 w-4" />} label="Website-Widgets" hint="Kalender, Zeiten, Ranglisten" /> : null}
                 {canAudit ? <Row href="/admin/audit" icon={<History className="h-4 w-4" />} label="Protokoll" /> : null}
               </Card>
             </>

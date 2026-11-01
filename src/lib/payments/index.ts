@@ -1,7 +1,7 @@
 import "server-only";
 import { db } from "@/lib/db";
 import { decryptJson } from "@/lib/crypto";
-import { isProviderKey, type PaymentProviderKey } from "./catalog";
+import { isProviderKey, PROVIDER_FIELDS, type PaymentProviderKey } from "./catalog";
 import { StripeProvider, type StripeCredentials } from "./stripe";
 import { WorldlineProvider, type WorldlineCredentials } from "./worldline";
 import { SumUpProvider, type SumUpCredentials } from "./sumup";
@@ -60,6 +60,26 @@ export async function listEnabledProviderKeys(tenantId: string): Promise<Payment
 
 export async function listProviderConfigs(tenantId: string) {
   return db.paymentProviderConfig.findMany({ where: { tenantId }, select: { provider: true, enabled: true, updatedAt: true } });
+}
+
+/**
+ * Konfigurationen für die Verwaltung: Status und nur die nicht geheimen Werte (z.B. Instanzname),
+ * damit das Formular vorausgefüllt werden kann. Geheime Felder verlassen den Server nie.
+ */
+export async function listProviderConfigsForAdmin(tenantId: string) {
+  const rows = await db.paymentProviderConfig.findMany({ where: { tenantId } });
+  return rows.filter((r) => isProviderKey(r.provider)).map((r) => {
+    const key = r.provider as PaymentProviderKey;
+    let creds: Record<string, string> = {};
+    try {
+      creds = decryptJson<Record<string, string>>(r.credentialsEnc);
+    } catch {
+      creds = {};
+    }
+    const values: Record<string, string> = {};
+    for (const f of PROVIDER_FIELDS[key]) if (!f.secret && typeof creds[f.key] === "string") values[f.key] = creds[f.key]!;
+    return { provider: key, enabled: r.enabled, updatedAt: r.updatedAt, values };
+  });
 }
 
 export async function getStripeForWebhook(tenantId: string) {

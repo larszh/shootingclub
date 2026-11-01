@@ -45,6 +45,7 @@ export async function collectPersonalData(userId: string) {
   const [
     user, memberships, participations, bookings, feeInvoices, ammoOrders, rsvps, messages, files, prefs, pushCount, sessionCount,
     rangeVisits, guestsHosted, rulesAcceptances, qualifications, courseParticipations, weaponLoans, shiftAssignments, workLogs, incidentsReported, rangeDuties,
+    kioskEntries,
   ] = await Promise.all([
     db.user.findUnique({
       where: { id: userId },
@@ -156,8 +157,20 @@ export async function collectPersonalData(userId: string) {
       select: { date: true, dutyName: true, openedAt: true, closedAt: true, tenant: { select: { name: true } } },
       orderBy: { date: "desc" },
     }),
+    // Eigene Konsumationen in der Schützenstube (nicht die als Thekenperson erfassten fremden Einträge)
+    db.kioskEntry.findMany({
+      where: { userId },
+      select: { productName: true, quantity: true, unitPriceCents: true, totalCents: true, paidCash: true, billedInvoiceId: true, createdAt: true, tenant: { select: { name: true } } },
+      orderBy: { createdAt: "desc" },
+      take: 50_000,
+    }),
   ]);
   if (!user) return null;
+  const kioskInvoiceIds = [...new Set(kioskEntries.map((k) => k.billedInvoiceId).filter((id): id is string => !!id))];
+  const kioskInvoices = kioskInvoiceIds.length
+    ? await db.feeInvoice.findMany({ where: { id: { in: kioskInvoiceIds }, userId }, select: { id: true, number: true } })
+    : [];
+  const kioskInvoiceNumber = new Map(kioskInvoices.map((i) => [i.id, i.number]));
   const day = (d: Date | null | undefined) => (d ? d.toISOString().slice(0, 10) : null);
 
   return {
@@ -219,6 +232,11 @@ export async function collectPersonalData(userId: string) {
     workLogs: workLogs.map((w) => ({ club: w.tenant.name, date: day(w.date), hours: w.hours, description: w.description, approvedAt: iso(w.approvedAt) })),
     incidentsReported: incidentsReported.map((i) => ({ club: i.tenant.name, occurredAt: iso(i.occurredAt), kind: i.kind, severity: i.severity, location: i.location, description: i.description, status: i.status })),
     rangeDuties: rangeDuties.map((r) => ({ club: r.tenant.name, date: day(r.date), name: r.dutyName, openedAt: iso(r.openedAt), closedAt: iso(r.closedAt) })),
+    kioskEntries: kioskEntries.map((k) => ({
+      club: k.tenant.name, at: iso(k.createdAt), product: k.productName, quantity: k.quantity, unitPrice: chf(k.unitPriceCents), total: chf(k.totalCents),
+      status: k.paidCash ? "BAR" : k.billedInvoiceId ? "VERRECHNET" : "OFFEN",
+      invoiceNumber: k.billedInvoiceId ? (kioskInvoiceNumber.get(k.billedInvoiceId) ?? null) : null,
+    })),
   };
 }
 
@@ -235,7 +253,8 @@ export async function buildPersonalExportZip(userId: string): Promise<Uint8Array
     "Profil, Mitgliedschaften, Resultate, Reservationen, Rechnungen (Beiträge, Reservationen, Munition),",
     "Anmeldungen zu Anlässen, deine Chat-Nachrichten (nur Text), die Liste deiner hochgeladenen Dateien,",
     "Standbesuche und betreute Gäste, akzeptierte Standordnungen, Qualifikationen, Kurse (Präsenz, Resultate),",
-    "Waffenausleihen, Helfereinsätze und Arbeitsstunden, gemeldete Vorfälle und Standdienste.",
+    "Waffenausleihen, Helfereinsätze und Arbeitsstunden, gemeldete Vorfälle, Standdienste",
+    "und deine Konsumationen in der Schützenstube.",
     "",
     "Die Dateien selbst kannst du in der Dateiablage deines Vereins herunterladen.",
   ].join("\r\n");
@@ -285,6 +304,9 @@ export async function pseudonymizeUser(userId: string): Promise<{ email: string;
     select: { id: true, adminNote: true },
   });
   const futureBookingIds = futureBookings.map((b) => b.id);
+  // Schützenstube: verrechnete und bar bezahlte Einträge sind Buchhaltungsbelege und bleiben
+  // (ohne Personendaten, nur die pseudonymisierte userId). Offene, nie verrechnete Einträge
+  // lassen sich nach der Löschung nicht mehr abrechnen und werden entfernt.
   const cancelNote = "Automatisch storniert: Konto gelöscht.";
 
   await db.$transaction([
@@ -321,6 +343,7 @@ export async function pseudonymizeUser(userId: string): Promise<{ email: string;
     db.rangeDay.updateMany({ where: { dutyUserId: userId }, data: { dutyName: DELETED_USER_NAME } }),
     db.qualification.updateMany({ where: { userId }, data: { number: null, note: null } }),
     db.rangeVisit.updateMany({ where: { userId }, data: { note: null } }),
+    db.kioskEntry.deleteMany({ where: { userId, billedInvoiceId: null, paidCash: false } }),
     db.user.update({
       where: { id: userId },
       data: {
@@ -383,7 +406,7 @@ const dt = (d: Date | null | undefined) => (d ? d.toISOString().replace("T", " "
 export async function buildTenantArchiveFiles(tenantId: string): Promise<Record<string, string>> {
   const [
     tenant, members, participants, events, bookings, feeInvoices, ammoOrders, files,
-    rangeVisits, rangeDays, qualifications, courseParticipants, weaponLoans, shiftAssignments, workLogs, incidents,
+    rangeVisits, rangeDays, qualifications, courseParticipants, weaponLoans, shiftAssignments, workLogs, incidents, kioskEntries,
   ] = await Promise.all([
     db.tenant.findUnique({ where: { id: tenantId }, select: { name: true, slug: true, city: true, canton: true, createdAt: true } }),
     db.membership.findMany({
@@ -466,8 +489,23 @@ export async function buildTenantArchiveFiles(tenantId: string): Promise<Record<
       select: { occurredAt: true, kind: true, severity: true, location: true, description: true, persons: true, measures: true, status: true },
       orderBy: { occurredAt: "desc" },
     }),
+    db.kioskEntry.findMany({
+      where: { tenantId },
+      select: { createdAt: true, userId: true, guestName: true, productName: true, quantity: true, unitPriceCents: true, totalCents: true, paidCash: true, billedInvoiceId: true },
+      orderBy: { createdAt: "desc" },
+      take: 100_000,
+    }),
   ]);
   if (!tenant) return {};
+  // KioskEntry hat keine Relation zu User/FeeInvoice: Namen und Rechnungsnummern nachschlagen.
+  const kioskUserIds = [...new Set(kioskEntries.map((k) => k.userId).filter((id): id is string => !!id))];
+  const kioskInvoiceIds = [...new Set(kioskEntries.map((k) => k.billedInvoiceId).filter((id): id is string => !!id))];
+  const [kioskUsers, kioskInvoices] = await Promise.all([
+    kioskUserIds.length ? db.user.findMany({ where: { id: { in: kioskUserIds } }, select: { id: true, name: true } }) : Promise.resolve([]),
+    kioskInvoiceIds.length ? db.feeInvoice.findMany({ where: { id: { in: kioskInvoiceIds }, tenantId }, select: { id: true, number: true } }) : Promise.resolve([]),
+  ]);
+  const kioskUserName = new Map(kioskUsers.map((u) => [u.id, u.name]));
+  const kioskInvoiceNumber = new Map(kioskInvoices.map((i) => [i.id, i.number]));
 
   const out: Record<string, string> = {};
   out["mitglieder.csv"] = toCsv([
@@ -551,6 +589,13 @@ export async function buildTenantArchiveFiles(tenantId: string): Promise<Record<
   out["vorfaelle.csv"] = toCsv([
     ["Zeitpunkt", "Art", "Schwere", "Ort", "Beschreibung", "Beteiligte", "Massnahmen", "Status"],
     ...incidents.map((i) => [dt(i.occurredAt), i.kind, i.severity, i.location, i.description, i.persons, i.measures, i.status]),
+  ]);
+  out["schuetzenstube.csv"] = toCsv([
+    ["Zeitpunkt", "Person", "Gast", "Produkt", "Menge", "Einzelpreis", "Total", "Status", "Rechnung"],
+    ...kioskEntries.map((k) => [
+      dt(k.createdAt), k.userId ? (kioskUserName.get(k.userId) ?? "") : "", k.guestName, k.productName, k.quantity, chf(k.unitPriceCents), chf(k.totalCents),
+      k.paidCash ? "bar" : k.billedInvoiceId ? "verrechnet" : "offen", k.billedInvoiceId ? (kioskInvoiceNumber.get(k.billedInvoiceId) ?? "") : "",
+    ]),
   ]);
   out["LIESMICH.txt"] = [
     `Vereinsarchiv ${tenant.name} (${tenant.slug})`,

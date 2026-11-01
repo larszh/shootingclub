@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { Award, Boxes, CalendarDays, ClipboardList, Clock, CreditCard, FileUp, FolderOpen, HandHelping, History, Home, Mail, Megaphone, Package, Server, Settings2, Trophy, Tv, Users, Wallet } from "lucide-react";
+import { Award, BookOpenCheck, Boxes, CalendarDays, ClipboardList, Clock, Code2, Coffee, CreditCard, FileInput, FileUp, FolderOpen, Handshake, HandHelping, History, Home, Mail, Megaphone, Package, Server, Settings2, Trophy, Tv, Users, Wallet } from "lucide-react";
 import { requirePermission } from "@/lib/tenant";
 import { MODULES } from "@/lib/modules";
 import { db } from "@/lib/db";
@@ -43,6 +43,9 @@ export default async function AdminPage() {
           <Card className="p-4 flex items-center gap-3 hover:border-ink/30"><CalendarDays className="h-5 w-5 text-ink-2" aria-hidden /><span className="flex-1 font-medium">Reservationen verwalten</span></Card>
         </Link>
       ) : null}
+      {ctx.hasModule("bookings") ? (
+        <AdminRow href="/admin/bookings/partners" icon={<Handshake className="h-5 w-5 text-ink-2" aria-hidden />} label="Partner-Anlagen" hint="Teilen & Abrechnung" />
+      ) : null}
       {ctx.hasModule("billing") ? (
         <Link href="/admin/billing" className="block press mt-2.5">
           <Card className="p-4 flex items-center gap-3 hover:border-ink/30"><CreditCard className="h-5 w-5 text-ink-2" aria-hidden /><span className="flex-1 font-medium">Mitgliederbeiträge verwalten</span></Card>
@@ -68,6 +71,13 @@ export default async function AdminPage() {
       {ctx.hasModule("ammo") && ctx.can("ammo.manage") ? (
         <AdminRow href="/admin/ammo/stock" icon={<Boxes className="h-5 w-5 text-ink-2" aria-hidden />} label="Munitionskontrolle" hint="Bestand & Inventur" />
       ) : null}
+      {ctx.hasModule("kiosk") && ctx.can("kiosk.manage") ? (
+        <AdminRow href="/admin/kiosk" icon={<Coffee className="h-5 w-5 text-ink-2" aria-hidden />} label="Schützenstube" hint="Sortiment & Abrechnung" />
+      ) : null}
+      {ctx.can("accounting.export") ? (
+        <AdminRow href="/admin/accounting" icon={<BookOpenCheck className="h-5 w-5 text-ink-2" aria-hidden />} label="Buchhaltung" hint="Export für Banana & bexio" />
+      ) : null}
+      <AdminRow href="/admin/embed" icon={<Code2 className="h-5 w-5 text-ink-2" aria-hidden />} label="Website-Widgets" hint="Kalender & Ranglisten" />
 
       {ctx.hasModule("range") && ctx.can("range.manage") ? (
         <>
@@ -80,7 +90,7 @@ export default async function AdminPage() {
         </>
       ) : null}
 
-      {(ctx.hasModule("shifts") && ctx.can("shifts.manage")) || ctx.can("qualifications.manage") || (ctx.hasModule("scores") && (ctx.can("match.viewAll") || ctx.can("events.manage"))) || (ctx.hasModule("championship") && ctx.can("championship.manage")) ? (
+      {(ctx.hasModule("shifts") && ctx.can("shifts.manage")) || ctx.can("qualifications.manage") || (ctx.hasModule("scores") && (ctx.can("match.viewAll") || ctx.can("events.manage") || ctx.can("tenant.programs.manage"))) || (ctx.hasModule("championship") && ctx.can("championship.manage")) ? (
         <SectionTitle>Helfer, Ausbildung & Wettkampf</SectionTitle>
       ) : null}
       {ctx.hasModule("shifts") && ctx.can("shifts.manage") ? (
@@ -97,6 +107,9 @@ export default async function AdminPage() {
       ) : null}
       {ctx.hasModule("scores") && (ctx.can("match.viewAll") || ctx.can("events.manage")) ? (
         <AdminRow href="/admin/live" icon={<Tv className="h-5 w-5 text-ink-2" aria-hidden />} label="Live-Rangliste" hint="Bildschirm im Schützenhaus" />
+      ) : null}
+      {ctx.hasModule("scores") && (ctx.can("match.viewAll") || ctx.can("tenant.programs.manage")) ? (
+        <AdminRow href="/scores/import" icon={<FileInput className="h-5 w-5 text-ink-2" aria-hidden />} label="Resultat-Import" hint="Meyton, SIUS, ShotMarker, CSV" />
       ) : null}
 
       {ctx.can("audit.view") ? (

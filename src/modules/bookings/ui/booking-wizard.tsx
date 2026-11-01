@@ -4,6 +4,8 @@ import { useActionState, useEffect, useMemo, useRef, useState, useTransition } f
 import { ChevronLeft, ChevronRight, Clock, CreditCard, FileText, Info, MapPin, Tag, Users } from "lucide-react";
 import { createBookingAction } from "@/modules/bookings/actions";
 import { fetchSlotsAction, type SlotDto, type SlotsResult } from "@/modules/bookings/slot-actions";
+import { createGuestBookingAction, fetchGuestSlotsAction } from "@/modules/sharing/actions";
+import { applyPriceFactorCents, partnerRateLabel } from "@/modules/sharing/logic";
 import { formatDuration, resourceKindLabel, type DurationOption } from "@/modules/bookings/types";
 import { basePriceFor, maxPersonsFor, wholeResourceLabel } from "@/modules/bookings/pricing";
 import { PersonsStepper } from "./persons-stepper";
@@ -12,7 +14,13 @@ import { SubmitButton, Spinner } from "@/components/ui/form";
 import { formatMoney } from "@/lib/money";
 import { cn } from "@/lib/utils";
 
-type ResourceDto = { id: string; name: string; kind: string; capacity: number; maxPersons: number | null; description: string | null; durationOptions: DurationOption[] | null };
+type ResourceDto = {
+  id: string; name: string; kind: string; capacity: number; maxPersons: number | null; description: string | null; durationOptions: DurationOption[] | null;
+  /** Gemeinsame Anlage: Preisfaktor des Partnervereins in Prozent (Standard 100). */
+  priceFactorPercent?: number;
+  /** Gemeinsame Anlage: Hinweis des Eigentümers. */
+  shareNote?: string | null;
+};
 type SettingsDto = {
   currency: string; durationOptions: DurationOption[]; allowInvoice: boolean; allowOnline: boolean; onlineProvider: string; approvalRequired: boolean;
   lastMinuteDiscountPercent: number; lastMinuteWindowHours: number; maxAdvanceDays: number; cancellationHours: number;
@@ -30,8 +38,14 @@ function weekdayLabel(dateStr: string) {
 
 export type WizardPrefill = { resourceId: string; duration: number; date: string; time: string; persons?: number };
 
-export function BookingWizard({ resources, settings, today, prefill }: { resources: ResourceDto[]; settings: SettingsDto; today: string; prefill?: WizardPrefill | null }) {
-  const [state, action] = useActionState(createBookingAction, null);
+/**
+ * Reservations-Assistent. Mit `shared` bucht ein Mitglied eine Anlage eines Partnervereins:
+ * Zeiten und Buchung laufen über die Gast-Actions (Freigabe wird serverseitig geprüft), bezahlt wird per Rechnung.
+ */
+export function BookingWizard({ resources, settings, today, prefill, shared }: { resources: ResourceDto[]; settings: SettingsDto; today: string; prefill?: WizardPrefill | null; shared?: { ownerName: string } | null }) {
+  const [state, action] = useActionState(shared ? createGuestBookingAction : createBookingAction, null);
+  const fetchSlots = shared ? fetchGuestSlotsAction : fetchSlotsAction;
+  const factorFor = (rid: string) => resources.find((r) => r.id === rid)?.priceFactorPercent ?? 100;
   const optionsFor = (rid: string) => resources.find((r) => r.id === rid)?.durationOptions ?? settings.durationOptions;
   const maxFor = (rid: string) => {
     const r = resources.find((x) => x.id === rid);
@@ -51,6 +65,9 @@ export function BookingWizard({ resources, settings, today, prefill }: { resourc
   const options = optionsFor(resourceId);
   const maxPersons = maxFor(resourceId);
   const option = options.find((o) => o.minutes === duration) ?? null;
+  const factor = factorFor(resourceId);
+  /** Anzeigepreis mit Partnertarif (gleiche Rundung wie auf dem Server). */
+  const fp = (cents: number) => (factor === 100 ? cents : applyPriceFactorCents(cents, factor));
   const flatFrom = settings.personPricing && option?.flatFromPersons && option.flatPriceCents !== undefined && option.flatFromPersons <= maxPersons ? option.flatFromPersons : null;
   const [slots, setSlots] = useState<SlotDto[] | null>(null);
   const [slotError, setSlotError] = useState<string | null>(null);
@@ -64,7 +81,7 @@ export function BookingWizard({ resources, settings, today, prefill }: { resourc
   const load = (next: typeof sel) => {
     start(async () => {
       const id = ++requestId.current;
-      const r = await fetchSlotsAction(next.resourceId, next.date, next.duration, next.persons);
+      const r = await fetchSlots(next.resourceId, next.date, next.duration, next.persons);
       if (id !== requestId.current) return;
       setSlots(r.slots);
       setSlotError(r.error ?? null);
@@ -95,7 +112,7 @@ export function BookingWizard({ resources, settings, today, prefill }: { resourc
     if (!sel.resourceId) return;
     let cancelled = false;
     const id = ++requestId.current;
-    fetchSlotsAction(sel.resourceId, sel.date, sel.duration, sel.persons).then((r) => {
+    fetchSlots(sel.resourceId, sel.date, sel.duration, sel.persons).then((r) => {
       if (cancelled || id !== requestId.current) return;
       setSlots(r.slots);
       setSlotError(r.error ?? null);
@@ -148,9 +165,17 @@ export function BookingWizard({ resources, settings, today, prefill }: { resourc
               className={cn("press text-left rounded-card border p-3.5 transition-colors", resourceId === r.id ? "border-ink bg-surface" : "border-line bg-surface hover:border-ink/30")}>
               <div className="flex items-center gap-2"><MapPin className="h-4 w-4 text-ink-3" /><span className="font-medium">{r.name}</span></div>
               <div className="text-xs text-ink-3 mt-0.5">{resourceKindLabel(r.kind)}{r.capacity > 1 ? ` · ${r.capacity} Plätze` : ""}{r.description ? ` · ${r.description}` : ""}</div>
+              {shared && (r.priceFactorPercent ?? 100) !== 100 ? <div className="text-xs text-ink-2 mt-0.5">{partnerRateLabel(r.priceFactorPercent ?? 100)}</div> : null}
+              {shared && r.shareNote ? <div className="text-xs text-ink-3 mt-0.5 italic">«{r.shareNote}»</div> : null}
             </button>
           ))}
         </div>
+        {shared ? (
+          <p className="mt-2 flex items-start gap-1.5 rounded-control bg-surface-2 px-3 py-2 text-xs text-ink-2">
+            <Info className="h-3.5 w-3.5 mt-0.5 shrink-0" aria-hidden />
+            <span>Anlage von {shared.ownerName}. Es gelten deren Öffnungszeiten und Regeln; die Rechnung stellt {shared.ownerName}.</span>
+          </p>
+        ) : null}
       </section>
 
       {/* 2 Dauer */}
@@ -160,7 +185,7 @@ export function BookingWizard({ resources, settings, today, prefill }: { resourc
           {options.map((o) => (
             <button key={o.minutes} type="button" onClick={() => setDuration(o.minutes)}
               className={cn("press h-11 rounded-control px-4 text-sm font-medium border", duration === o.minutes ? "bg-ink text-bg border-ink" : "bg-surface border-line text-ink-2")}>
-              {formatDuration(o.minutes)}<span className={cn("ml-2 text-xs", duration === o.minutes ? "text-bg/70" : "text-ink-3")}>{(() => { const c = basePriceFor(o, persons, settings.personPricing).baseCents; return c ? formatMoney(c, settings.currency) : "gratis"; })()}</span>
+              {formatDuration(o.minutes)}<span className={cn("ml-2 text-xs", duration === o.minutes ? "text-bg/70" : "text-ink-3")}>{(() => { const c = fp(basePriceFor(o, persons, settings.personPricing).baseCents); return c ? formatMoney(c, settings.currency) : "gratis"; })()}</span>
             </button>
           ))}
         </div>
@@ -177,13 +202,13 @@ export function BookingWizard({ resources, settings, today, prefill }: { resourc
             <PersonsStepper value={persons} max={maxPersons} onChange={setPersons} />
             {settings.personPricing && option ? (
               <p className="text-center text-xs text-ink-3">
-                {(() => { const bp = basePriceFor(option, persons, true); return bp.isFlatRate ? `Pauschalpreis ${formatMoney(bp.baseCents, settings.currency)}` : bp.perPersonCents !== null ? `${persons} × ${formatMoney(bp.perPersonCents, settings.currency)} = ${formatMoney(bp.baseCents, settings.currency)}` : `${formatMoney(bp.baseCents, settings.currency)} für ${persons === 1 ? "1 Person" : `${persons} Personen`}`; })()}
+                {(() => { const bp = basePriceFor(option, persons, true); return factor !== 100 ? `${formatMoney(fp(bp.baseCents), settings.currency)} für ${persons === 1 ? "1 Person" : `${persons} Personen`} · ${partnerRateLabel(factor)}` : bp.isFlatRate ? `Pauschalpreis ${formatMoney(bp.baseCents, settings.currency)}` : bp.perPersonCents !== null ? `${persons} × ${formatMoney(bp.perPersonCents, settings.currency)} = ${formatMoney(bp.baseCents, settings.currency)}` : `${formatMoney(bp.baseCents, settings.currency)} für ${persons === 1 ? "1 Person" : `${persons} Personen`}`; })()}
               </p>
             ) : null}
             {flatFrom ? (
               <p className={cn("flex items-start gap-1.5 rounded-control px-3 py-2 text-xs", persons >= flatFrom ? "bg-accent-soft text-ink" : "bg-surface-2 text-ink-2")}>
                 <Info className="h-3.5 w-3.5 mt-0.5 shrink-0" aria-hidden />
-                <span>Ab {flatFrom} Personen gilt der Pauschalpreis{settings.flatExclusive ? ` für ${wholeResourceLabel(resource?.kind ?? "OTHER")}` : ""} ({formatMoney(option!.flatPriceCents!, settings.currency)}).</span>
+                <span>Ab {flatFrom} Personen gilt der Pauschalpreis{settings.flatExclusive ? ` für ${wholeResourceLabel(resource?.kind ?? "OTHER")}` : ""} ({formatMoney(fp(option!.flatPriceCents!), settings.currency)}).</span>
               </p>
             ) : null}
           </Card>
@@ -266,7 +291,7 @@ export function BookingWizard({ resources, settings, today, prefill }: { resourc
               ))}
             </div>
           ) : needsPayment && payChoices.length === 1 ? (
-            <p className="text-sm text-ink-3">{payChoices[0] === "ONLINE" ? "Bezahlung online direkt nach der Buchung." : "Du erhältst eine Rechnung."}</p>
+            <p className="text-sm text-ink-3">{payChoices[0] === "ONLINE" ? "Bezahlung online direkt nach der Buchung." : shared ? `Du erhältst eine Rechnung von ${shared.ownerName}.` : "Du erhältst eine Rechnung."}</p>
           ) : null}
           <Field label="Bemerkung (optional)"><Input name="note" placeholder="z.B. Training mit Gästen" maxLength={191} /></Field>
           <p className="text-xs text-ink-3">

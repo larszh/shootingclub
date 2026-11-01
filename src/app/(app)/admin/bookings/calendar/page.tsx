@@ -1,7 +1,8 @@
 import Link from "next/link";
-import { Ban, ChevronLeft, ChevronRight, Clock, Plus } from "lucide-react";
+import { Ban, ChevronLeft, ChevronRight, Clock, Handshake, Plus } from "lucide-react";
 import { requirePermission } from "@/lib/tenant";
-import { Card, EmptyState, LinkButton, PageHeader } from "@/components/ui";
+import { Badge, Card, EmptyState, LinkButton, PageHeader } from "@/components/ui";
+import { partnerNameMap } from "@/modules/sharing/queries";
 import { Avatar, userAvatarUrl } from "@/components/avatar";
 import { AdminBookingTabs } from "@/modules/bookings/ui/admin-tabs";
 import { listCalendarItems, listResources } from "@/modules/bookings/queries";
@@ -25,7 +26,9 @@ export default async function BookingCalendarPage({ searchParams }: { searchPara
   const [resources, items] = await Promise.all([listResources(ctx.tenant.id, { includeInactive: true }), listCalendarItems(ctx.tenant.id, from, to)]);
   const used = new Set(items.bookings.map((b) => b.resourceId));
   const shown = resources.filter((r) => r.isActive || used.has(r.id)).map((r) => ({ id: r.id, name: r.name }));
-  const week = buildWeek(monday, shown, items.bookings, items.blocks);
+  const partners = await partnerNameMap(items.bookings.map((b) => b.viaTenantId));
+  const bookings = items.bookings.map((b) => ({ ...b, partner: b.viaTenantId ? partners[b.viaTenantId] ?? "Partnerverein" : null }));
+  const week = buildWeek(monday, shown, bookings, items.blocks);
   const sunday = addDays(monday, 6);
   const range = `${monday.slice(8, 10)}.${monday.slice(5, 7)}. – ${sunday.slice(8, 10)}.${sunday.slice(5, 7)}.${sunday.slice(0, 4)}`;
 
@@ -43,6 +46,7 @@ export default async function BookingCalendarPage({ searchParams }: { searchPara
           <span className="inline-flex items-center gap-1"><span className="h-2.5 w-2.5 rounded-full bg-ok" /> bestätigt</span>
           <span className="inline-flex items-center gap-1"><Clock className="h-3 w-3 text-warn" aria-hidden /> Freigabe offen</span>
           <span className="hidden sm:inline-flex items-center gap-1"><span className="h-2.5 w-2.5 rounded-full bg-ink-3" /> gesperrt</span>
+          {bookings.some((b) => b.partner) ? <span className="inline-flex items-center gap-1"><Handshake className="h-3 w-3" aria-hidden /> Partnerverein</span> : null}
         </div>
       </div>
 
@@ -129,6 +133,7 @@ function Item({ it }: { it: CalendarCellItem }) {
         <span className="truncate text-ink-2">{it.name}</span>
         {it.unpaid ? <span className="ml-auto h-1.5 w-1.5 shrink-0 rounded-full bg-accent" title="nicht bezahlt"><span className="sr-only">nicht bezahlt</span></span> : null}
       </div>
+      {it.partner ? <div className="mt-0.5 truncate text-[10px] font-medium text-ink-3" title={`Partnerverein ${it.partner}`}><Handshake className="mr-0.5 inline h-3 w-3" aria-hidden />{it.partner}</div> : null}
     </Link>
   );
 }
@@ -146,7 +151,7 @@ function AgendaRow({ it, resourceName }: { it: CalendarCellItem; resourceName: s
     <Link href={`/bookings/${it.id}`} className="flex items-center gap-3 px-4 py-3 hover:bg-surface-2 min-h-14">
       <Avatar name={it.name} src={it.user ? userAvatarUrl(it.user) : null} size={36} tone={it.user ? "soft" : "guest"} />
       <div className="min-w-0 flex-1">
-        <div className="font-medium truncate">{it.name}</div>
+        <div className="font-medium truncate">{it.name}{it.partner ? <Badge tone="outline" className="ml-1.5 align-middle">{it.partner}</Badge> : null}</div>
         <div className="text-xs text-ink-3 truncate"><span className="tabular-nums">{it.time}</span> · {resourceName}{personsShort(it) ? ` · ${personsShort(it)}` : ""}{it.note ? ` · «${it.note}»` : ""}</div>
       </div>
       {it.status === "PENDING"

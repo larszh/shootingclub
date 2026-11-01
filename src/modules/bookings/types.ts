@@ -1,5 +1,6 @@
 import { z } from "zod";
 import type { TFunction } from "@/lib/i18n/core";
+import { providerKeys } from "@/lib/payments/catalog";
 
 export const RESOURCE_KINDS = [
   { key: "RANGE", label: "Schiessanlage / Stand" },
@@ -12,36 +13,9 @@ export function resourceKindLabel(k: string) {
   return RESOURCE_KINDS.find((x) => x.key === k)?.label ?? k;
 }
 
-export const PAYMENT_PROVIDERS = [
-  { key: "STRIPE", label: "Stripe", hint: "Kreditkarte, TWINT (via Stripe), Apple/Google Pay. Zugangsdaten aus dem Stripe-Dashboard." },
-  { key: "WORLDLINE", label: "Worldline (Saferpay)", hint: "Schweizer Zahlungsseite mit TWINT, PostFinance, Karten. Zugangsdaten aus dem Saferpay-Backoffice." },
-  { key: "SUMUP", label: "SumUp", hint: "Online-Checkout von SumUp. API-Key und Händlercode aus dem SumUp-Dashboard." },
-] as const;
-export type PaymentProviderKey = (typeof PAYMENT_PROVIDERS)[number]["key"];
-export const providerKeys = PAYMENT_PROVIDERS.map((p) => p.key) as [PaymentProviderKey, ...PaymentProviderKey[]];
-export function providerLabel(k: string) {
-  return PAYMENT_PROVIDERS.find((p) => p.key === k)?.label ?? k;
-}
-
-/** Felder, die pro Provider verschlüsselt gespeichert werden. */
-export const PROVIDER_FIELDS: Record<PaymentProviderKey, Array<{ key: string; label: string; secret?: boolean; hint?: string; options?: string[] }>> = {
-  STRIPE: [
-    { key: "secretKey", label: "Secret Key", secret: true, hint: "sk_live_… oder sk_test_…" },
-    { key: "webhookSecret", label: "Webhook Signing Secret", secret: true, hint: "whsec_… (optional, empfohlen). Endpoint: /api/payments/stripe/<tenant-id>" },
-  ],
-  WORLDLINE: [
-    { key: "customerId", label: "Customer ID" },
-    { key: "terminalId", label: "Terminal ID" },
-    { key: "apiUsername", label: "API-Benutzer (JSON API)" },
-    { key: "apiPassword", label: "API-Passwort", secret: true },
-    { key: "environment", label: "Umgebung", options: ["test", "live"] },
-  ],
-  SUMUP: [
-    { key: "apiKey", label: "API Key (Secret)", secret: true, hint: "sup_sk_…" },
-    { key: "merchantCode", label: "Händlercode (Merchant Code)" },
-  ],
-};
-
+// Zahlungsanbieter: gemeinsamer Katalog für Reservationen und Beiträge (inkl. Payrexx/TWINT).
+export { PAYMENT_PROVIDERS, providerKeys, providerLabel, PROVIDER_FIELDS } from "@/lib/payments/catalog";
+export type { PaymentProviderKey } from "@/lib/payments/catalog";
 export const BOOKING_STATUS: Record<string, { label: string; tone: "neutral" | "accent" | "ok" | "warn" | "outline" }> = {
   PENDING: { label: "Wartet auf Freigabe", tone: "warn" },
   CONFIRMED: { label: "Bestätigt", tone: "ok" },

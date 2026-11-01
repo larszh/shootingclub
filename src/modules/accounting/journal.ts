@@ -6,10 +6,12 @@ import type { AccountKey, AccountPlan } from "./types";
  *
  * Regeln (Buchungssatz «Soll / Haben»):
  * - Rechnung ausgestellt (issuedAt): Debitoren / Ertragskonto
- * - Rechnung bezahlt (paidAt): Bank / Debitoren
- *   Wurde die Rechnung online bezahlt (Payment), entsteht die Zahlungsbuchung aus jeder Online-Zahlung
- *   am Zahlungsdatum; das Bezahlt-Datum der Rechnung wird dann nicht zusätzlich gebucht (sonst doppelt).
- *   Online-Zahlung erstattet: Debitoren / Bank am Erstattungsdatum.
+ * - Rechnung bezahlt (Bank, Schalter, paidAt): Bank / Debitoren
+ * - Online-Zahlung zur Rechnung: Bank / Debitoren am Zahlungsdatum, je Zahlung. Hat die Online-Zahlung die
+ *   Rechnung auf «bezahlt» gesetzt (paidOnline), wird das Bezahlt-Datum nicht zusätzlich gebucht; ging
+ *   das Geld doppelt ein (Bank und online), erscheinen beide Zahlungen.
+ * - Rückerstattung: Ertragskonto / Bank (Ertrag und Geld zurück). Ist die Rechnung storniert, hat die
+ *   Gegenbuchung den Ertrag schon aufgehoben; dann Debitoren / Bank (Guthaben ausbezahlt).
  * - Rechnung nach Ausstellung storniert (cancelledAt): Ertragskonto / Debitoren (Gegenbuchung)
  * - Online-Zahlung ohne Rechnung (Reservation direkt bezahlt): Bank / Ertragskonto,
  *   Rückerstattung: Ertragskonto / Bank
@@ -78,7 +80,12 @@ export type InvoiceDoc = {
   currency: string;
   issuedAt: Date | null;
   status: "OPEN" | "PAID" | "CANCELLED";
+  /** Bezahlt-Datum der Rechnung (Bank, Schalter oder online) */
   paidAt: Date | null;
+  /** true, wenn eine der Online-Zahlungen die Rechnung bezahlt gesetzt hat (paidAt nicht doppelt buchen) */
+  paidOnline: boolean;
+  /** Rückerstattung einer nicht online bezahlten Rechnung (z.B. Reservation per Bank bezahlt, danach erstattet) */
+  refundedAt: Date | null;
   cancelledAt: Date | null;
   onlinePayments: OnlinePayment[];
 };
@@ -128,12 +135,26 @@ export function providerLabel(p: string) {
 
 /** Art einer Beitragsrechnung: Ersatzabgabe an der Bezeichnung, Kiosk an der Verknüpfung mit Konsumationen. */
 export function feeInvoiceKind(categoryName: string, isKiosk: boolean): RevenueKind {
-  if (isKiosk) return "kiosk";
-  if (categoryName.trim().toLowerCase().startsWith("ersatzabgabe")) return "workfee";
+  const name = categoryName.trim().toLowerCase();
+  // Bezeichnung «Schützenstube …» als Rückfall: nach dem Freigeben einer stornierten Rechnung fehlt die Verknüpfung.
+  if (isKiosk || name.startsWith("schützenstube")) return "kiosk";
+  if (name.startsWith("ersatzabgabe")) return "workfee";
   return "fee";
 }
 
 const day = (d: Date) => zurichParts(d).dateStr;
+
+/** Höchster Abstand zwischen Verbuchung der Online-Zahlung und Bezahlt-Datum der Rechnung (gleiche Transaktion). */
+export const ONLINE_SETTLE_WINDOW_MS = 10 * 60_000;
+
+/**
+ * Hat eine Online-Zahlung die Rechnung bezahlt gesetzt? Beim Verbuchen setzt der Zahlungsdienst das
+ * Bezahlt-Datum der Rechnung im selben Schritt; liegt es weit weg, wurde die Rechnung anders bezahlt.
+ */
+export function isPaidOnline(invoicePaidAt: Date | null, paymentSettledAt: Date[]) {
+  if (!invoicePaidAt) return false;
+  return paymentSettledAt.some((t) => Math.abs(t.getTime() - invoicePaidAt.getTime()) <= ONLINE_SETTLE_WINDOW_MS);
+}
 
 export type JournalOptions = { from: string; to: string };
 
@@ -164,18 +185,20 @@ export function buildJournal(docs: JournalDocument[], accounts: AccountPlan, opt
     if (d.amountCents <= 0 || !d.issuedAt) continue;
     const label = `${d.number} ${d.label}`;
     const money = { amountCents: d.amountCents, currency: d.currency };
+    // Rückerstattung: bei stornierter Rechnung ist der Ertrag schon zurückgebucht (Guthaben auf Debitoren).
+    const refundDebit = d.status === "CANCELLED" ? debtors : revenue;
 
     push({ ...base, ...money, type: "issue", date: day(d.issuedAt), text: `Rechnung ${label}`, debit: debtors, credit: revenue });
 
-    if (d.onlinePayments.length) {
-      for (const p of d.onlinePayments) {
-        const via = `Online-Zahlung ${providerLabel(p.provider)}`;
-        const pm = { amountCents: p.amountCents, currency: p.currency };
-        push({ ...base, ...pm, type: "payment", date: day(p.paidAt), text: `${via} ${label}`, debit: bank, credit: debtors });
-        if (p.refundedAt) push({ ...base, ...pm, type: "refund", date: day(p.refundedAt), text: `Rückerstattung ${via} ${label}`, debit: debtors, credit: bank });
-      }
-    } else if (d.status === "PAID") {
+    for (const p of d.onlinePayments) {
+      const via = `Online-Zahlung ${providerLabel(p.provider)}`;
+      const pm = { amountCents: p.amountCents, currency: p.currency };
+      push({ ...base, ...pm, type: "payment", date: day(p.paidAt), text: `${via} ${label}`, debit: bank, credit: debtors });
+      if (p.refundedAt) push({ ...base, ...pm, type: "refund", date: day(p.refundedAt), text: `Rückerstattung ${via} ${label}`, debit: refundDebit, credit: bank });
+    }
+    if (d.status === "PAID" && !d.paidOnline) {
       push({ ...base, ...money, type: "payment", date: day(d.paidAt ?? d.issuedAt), text: `Zahlung ${label}`, debit: bank, credit: debtors });
+      if (d.refundedAt) push({ ...base, ...money, type: "refund", date: day(d.refundedAt), text: `Rückerstattung ${label}`, debit: refundDebit, credit: bank });
     }
 
     if (d.status === "CANCELLED") {

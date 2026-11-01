@@ -1,5 +1,5 @@
 import { notFound } from "next/navigation";
-import { requireModule } from "@/lib/tenant";
+import { requireTenant } from "@/lib/tenant";
 import { getBooking, getBookingSettings } from "@/modules/bookings/queries";
 import { getBillingProfile, profileToCreditor } from "@/modules/billing/profile";
 import { ensureReference } from "@/modules/billing/reference";
@@ -14,14 +14,19 @@ import { PrintButton } from "@/components/print-button";
 export const metadata = { title: "Rechnung" };
 
 export default async function InvoicePage({ params }: { params: Promise<{ id: string }> }) {
-  const ctx = await requireModule("bookings");
+  // Kein requireModule: das Mitglied eines Partnervereins soll seine Rechnung auch dann öffnen können,
+  // wenn der eigene Verein das Modul später ausschaltet. Im eigenen Verein gilt das Modul weiterhin.
+  const ctx = await requireTenant();
   const { id } = await params;
   const b = await getBooking(ctx, id);
-  if (!b || !b.invoice) notFound();
-  const [s, profile, locale] = await Promise.all([getBookingSettings(ctx.tenant.id), getBillingProfile(ctx.tenant.id, ctx.tenant.name), getTenantLocale(ctx.tenant.id)]);
+  if (!b || !b.invoice || (!b.isGuest && !ctx.hasModule("bookings"))) notFound();
+  // Rechnungssteller ist immer der Verein, dem die Anlage gehört (auch bei Buchungen über einen
+  // Partnerverein). getBooking lässt dabei nur das buchende Mitglied und die Verwaltung des Eigentümers zu.
+  const issuer = b.tenant;
+  const [s, profile, locale] = await Promise.all([getBookingSettings(issuer.id), getBillingProfile(issuer.id, issuer.name), getTenantLocale(issuer.id)]);
   const t = getT(locale);
   const inv = b.invoice;
-  const creditor = profileToCreditor(profile, ctx.tenant.name);
+  const creditor = profileToCreditor(profile, issuer.name);
   // Ältere Rechnungen erhalten bei QR-IBAN jetzt ihre Referenz (wird gespeichert).
   const reference = inv.status === "OPEN" && profile.qrIban ? await ensureReference("BOOKING", inv, profile.iban) : null;
   const debtor = b.user ? { name: b.user.name, street: b.user.street, zip: b.user.zip, city: b.user.city } : null;

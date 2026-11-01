@@ -2,7 +2,7 @@ import "server-only";
 import { db } from "@/lib/db";
 import { addDays, formatDateZurich, zurichToUtc } from "@/lib/time";
 import { feeInvoiceTitle, isStandaloneFeeInvoice } from "@/modules/billing/fee-title";
-import { buildJournal, feeInvoiceKind, journalTotals, summarizeAccounts, type JournalDocument, type OnlinePayment } from "./journal";
+import { buildJournal, feeInvoiceKind, isPaidOnline, journalTotals, ONLINE_SETTLE_WINDOW_MS, summarizeAccounts, type JournalDocument, type OnlinePayment } from "./journal";
 import { ACCOUNT_LABEL, toAccountPlan, type AccountPlan } from "./types";
 
 /**
@@ -26,19 +26,36 @@ const PAYMENT_DONE = ["PAID", "REFUNDED"];
 type PaymentRow = { id: string; provider: string; status: string; amountCents: number; currency: string; createdAt: Date; updatedAt: Date };
 
 /**
- * Online-Zahlung normalisieren. Zahlungsdatum: Bezahlt-Datum des Belegs (falls bekannt), sonst
- * letzte Änderung (PAID) bzw. Erstellung (REFUNDED). Erstattet: letzte Änderung der Zahlung.
+ * Online-Zahlung normalisieren. Zahlungsdatum: Verbuchung (letzte Änderung, PAID wird danach nicht mehr
+ * geändert) bzw. Erstellung bei REFUNDED. Erstattet: letzte Änderung der Zahlung (REFUNDED) oder das
+ * Erstattungsdatum der Reservation (`refundedAt`), denn erstattet wird heute auf der Reservation.
  */
-function toOnlinePayment(p: PaymentRow, docPaidAt: Date | null): OnlinePayment {
+function toOnlinePayment(p: PaymentRow, refundedAt: Date | null = null): OnlinePayment {
   const refunded = p.status === "REFUNDED";
   return {
     id: p.id,
     provider: p.provider,
     amountCents: p.amountCents,
     currency: p.currency,
-    paidAt: docPaidAt ?? (refunded ? p.createdAt : p.updatedAt),
-    refundedAt: refunded ? p.updatedAt : null,
+    paidAt: refunded ? p.createdAt : p.updatedAt,
+    refundedAt: refunded ? p.updatedAt : refundedAt,
   };
+}
+
+/** Hat eine dieser Zahlungen die Rechnung bezahlt gesetzt? (siehe isPaidOnline) */
+function paidByOnline(invoicePaidAt: Date | null, payments: PaymentRow[]) {
+  if (!invoicePaidAt) return false;
+  const t = invoicePaidAt.getTime();
+  return payments.some((p) =>
+    p.status === "PAID"
+      ? isPaidOnline(invoicePaidAt, [p.updatedAt])
+      : t >= p.createdAt.getTime() - ONLINE_SETTLE_WINDOW_MS && t <= p.updatedAt.getTime() + ONLINE_SETTLE_WINDOW_MS,
+  );
+}
+
+/** Erstattungsdatum einer Reservation (paymentStatus REFUNDED; es gibt keine eigene Spalte). */
+function bookingRefundedAt(b: { paymentStatus: string; updatedAt: Date }) {
+  return b.paymentStatus === "REFUNDED" ? b.updatedAt : null;
 }
 
 function invoiceStatus(s: string): "OPEN" | "PAID" | "CANCELLED" {
@@ -74,7 +91,7 @@ export async function loadJournalDocuments(tenantId: string, from: string, to: s
         id: true, number: true, amountCents: true, currency: true, status: true, issuedAt: true, paidAt: true,
         booking: {
           select: {
-            startsAt: true, cancelledAt: true, updatedAt: true, resource: { select: { name: true } },
+            startsAt: true, cancelledAt: true, updatedAt: true, paymentStatus: true, resource: { select: { name: true } },
             payments: { where: { status: { in: PAYMENT_DONE } }, select: paymentSelect, orderBy: { createdAt: "asc" } },
           },
         },
@@ -85,9 +102,9 @@ export async function loadJournalDocuments(tenantId: string, from: string, to: s
         status: { in: PAYMENT_DONE },
         booking: { tenantId, invoice: { is: null } },
         createdAt: { lt: end },
-        OR: [{ updatedAt: touched }, { booking: { paidAt: touched } }],
+        OR: [{ updatedAt: touched }, { booking: { updatedAt: touched } }],
       },
-      select: { ...paymentSelect, booking: { select: { id: true, startsAt: true, paidAt: true, resource: { select: { name: true } } } } },
+      select: { ...paymentSelect, booking: { select: { id: true, startsAt: true, paymentStatus: true, updatedAt: true, resource: { select: { name: true } } } } },
     }),
     db.ammoOrder.findMany({
       where: {
@@ -122,18 +139,24 @@ export async function loadJournalDocuments(tenantId: string, from: string, to: s
     docs.push({
       type: "invoice", source: "FEE", id: f.id, number: f.number, kind, label,
       amountCents: f.amountCents, currency: f.currency, issuedAt: f.issuedAt, status: invoiceStatus(f.status),
-      paidAt: f.paidAt, cancelledAt: f.status === "CANCELLED" ? f.updatedAt : null,
-      onlinePayments: f.payments.map((p) => toOnlinePayment(p, p.status === "PAID" ? f.paidAt : null)),
+      paidAt: f.paidAt, paidOnline: paidByOnline(f.paidAt, f.payments), refundedAt: null,
+      cancelledAt: f.status === "CANCELLED" ? f.updatedAt : null,
+      onlinePayments: f.payments.map((p) => toOnlinePayment(p)),
     });
   }
 
   for (const i of bookingInvoices) {
+    const refundedAt = bookingRefundedAt(i.booking);
+    const onlinePaid = i.booking.payments.some((p) => p.status === "PAID");
     docs.push({
       type: "invoice", source: "BOOKING", id: i.id, number: i.number, kind: "booking",
       label: `Reservation ${i.booking.resource.name} ${shortDate(i.booking.startsAt)}`,
       amountCents: i.amountCents, currency: i.currency, issuedAt: i.issuedAt, status: invoiceStatus(i.status),
-      paidAt: i.paidAt, cancelledAt: i.status === "CANCELLED" ? (i.booking.cancelledAt ?? i.booking.updatedAt) : null,
-      onlinePayments: i.booking.payments.map((p) => toOnlinePayment(p, p.status === "PAID" ? i.paidAt : null)),
+      paidAt: i.paidAt, paidOnline: paidByOnline(i.paidAt, i.booking.payments),
+      // Erstattung gilt für die Online-Zahlungen; ohne solche für die per Bank bezahlte Rechnung.
+      refundedAt: onlinePaid ? null : refundedAt,
+      cancelledAt: i.status === "CANCELLED" ? (i.booking.cancelledAt ?? i.booking.updatedAt) : null,
+      onlinePayments: i.booking.payments.map((p) => toOnlinePayment(p, refundedAt)),
     });
   }
 
@@ -142,7 +165,7 @@ export async function loadJournalDocuments(tenantId: string, from: string, to: s
     docs.push({
       type: "payment", source: "ONLINE", id: p.id, number: `ONL-${p.id.slice(-8).toUpperCase()}`, kind: "booking",
       label: `Reservation ${p.booking.resource.name} ${shortDate(p.booking.startsAt)}`,
-      payment: toOnlinePayment(p, p.status === "PAID" ? p.booking.paidAt : null),
+      payment: toOnlinePayment(p, bookingRefundedAt(p.booking)),
     });
   }
 
@@ -153,7 +176,7 @@ export async function loadJournalDocuments(tenantId: string, from: string, to: s
       type: "invoice", source: "AMMO", id: o.id, number: o.invoiceNumber, kind: "ammo", label: "Munition",
       amountCents: o.totalCents, currency: o.currency, issuedAt: o.invoiceIssuedAt,
       status: cancelled ? "CANCELLED" : o.paymentStatus === "PAID" ? "PAID" : "OPEN",
-      paidAt: o.paidAt, cancelledAt: cancelled ? o.updatedAt : null,
+      paidAt: o.paidAt, paidOnline: false, refundedAt: null, cancelledAt: cancelled ? o.updatedAt : null,
       // Munition ist nie online bezahlbar (Anbieter-AGB), nur per Rechnung.
       onlinePayments: [],
     });

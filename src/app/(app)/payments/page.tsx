@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { Settings, Wallet } from "lucide-react";
+import { CreditCard, Settings, Wallet } from "lucide-react";
 import { requireTenant } from "@/lib/tenant";
 import { Card, EmptyState, LinkButton, LinkTabs, PageHeader, SectionTitle, StatCard } from "@/components/ui";
 import { anyPaymentModule, listMyPayments } from "@/modules/billing/overview";
@@ -73,12 +73,24 @@ export default async function PaymentsPage({ searchParams }: { searchParams: Pro
       {showOpen && open.length ? (
         <>
           <p className="mt-4 text-sm text-ink-2">
-            Am einfachsten: QR-Rechnung öffnen und mit der Banking- oder TWINT-App scannen. Oder IBAN und Referenz kopieren und im E-Banking einfügen.
+            {data.onlineFeeProvider && open.some((i) => i.payOnlineHref)
+              ? `Beiträge und Vereinsrechnungen kannst du direkt online bezahlen (${data.onlineFeeMethods ?? "Karte"} über ${data.onlineFeeProvider}). Sonst: QR-Rechnung öffnen und mit der Banking-App scannen.`
+              : "Am einfachsten: QR-Rechnung öffnen und mit der Banking- oder TWINT-App scannen. Oder IBAN und Referenz kopieren und im E-Banking einfügen."}
           </p>
           <div className="stagger mt-3 space-y-3">
-            {open.map((i) => (
-              <OpenPaymentCard key={i.key} item={i} payee={payee} />
-            ))}
+            {open.map((i) =>
+              // Online-Zahlung nur für Beitragsrechnungen (FeeInvoice), nie für Munition.
+              i.payOnlineHref && i.source === "FEE" ? (
+                <div key={i.key} className="space-y-2">
+                  <OpenPaymentCard item={i} payee={payee} />
+                  <LinkButton href={i.payOnlineHref} prefetch={false} className="w-full" aria-label={`${i.title} ${i.number} online bezahlen`}>
+                    <CreditCard className="h-4 w-4" aria-hidden /> Online bezahlen
+                  </LinkButton>
+                </div>
+              ) : (
+                <OpenPaymentCard key={i.key} item={i} payee={payee} />
+              ),
+            )}
           </div>
         </>
       ) : null}

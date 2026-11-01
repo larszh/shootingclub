@@ -9,24 +9,28 @@ export const PAYMENT_PROVIDERS = [
     key: "PAYREXX",
     label: "Payrexx",
     hint: "Schweizer Zahlungsseite mit TWINT, PostFinance, Karten, Apple/Google Pay. Instanzname und API-Secret aus dem Payrexx-Backend.",
-    fees: "Payrexx verrechnet je nach Abo und Zahlart eine Transaktionsgebühr (meist 1–3 %, bei Karten plus Fixbetrag) und je nach Abo eine Monatsgebühr.",
+    methods: "TWINT, PostFinance, Karte",
+    fees: "Payrexx verrechnet je nach Abo und Zahlart eine Transaktionsgebühr (meist 1–3 %, bei Karten plus Fixbetrag) und je nach Abo eine Monatsgebühr. Zuschläge für Zahlende im Payrexx-Backend ausgeschaltet lassen: sonst weicht der bezahlte Betrag von der Rechnung ab und die Zahlung wird nicht automatisch verbucht.",
   },
   {
     key: "STRIPE",
     label: "Stripe",
     hint: "Kreditkarte, TWINT (via Stripe), Apple/Google Pay. Zugangsdaten aus dem Stripe-Dashboard.",
+    methods: "Karte, TWINT, Apple/Google Pay",
     fees: "Stripe verrechnet pro Zahlung eine Gebühr je nach Zahlart (Prozentsatz plus Fixbetrag), ohne Monatsgebühr.",
   },
   {
     key: "WORLDLINE",
     label: "Worldline (Saferpay)",
     hint: "Schweizer Zahlungsseite mit TWINT, PostFinance, Karten. Zugangsdaten aus dem Saferpay-Backoffice.",
+    methods: "TWINT, PostFinance, Karte",
     fees: "Worldline verrechnet Gebühren gemäss Vertrag (Transaktionsgebühr je Zahlart, oft mit Monatsgebühr).",
   },
   {
     key: "SUMUP",
     label: "SumUp",
     hint: "Online-Checkout von SumUp. API-Key und Händlercode aus dem SumUp-Dashboard.",
+    methods: "Karte",
     fees: "SumUp verrechnet pro Online-Zahlung eine prozentuale Gebühr, ohne Monatsgebühr.",
   },
 ] as const;
@@ -40,6 +44,11 @@ export function isProviderKey(v: unknown): v is PaymentProviderKey {
 
 export function providerLabel(k: string) {
   return PAYMENT_PROVIDERS.find((p) => p.key === k)?.label ?? k;
+}
+
+/** Kurzbeschreibung der Zahlarten für Mitglieder (z.B. «TWINT, PostFinance, Karte»). */
+export function providerMethods(k: string) {
+  return PAYMENT_PROVIDERS.find((p) => p.key === k)?.methods ?? "Karte";
 }
 
 export function providerFees(k: string) {
