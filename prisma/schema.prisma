@@ -66,6 +66,8 @@ model User {
   workLogs          WorkLog[]                @relation("WorkLogUser")
   rangeVisits       RangeVisit[]             @relation("RangeVisitUser")
   weaponLoans       WeaponLoan[]             @relation("WeaponLoanUser")
+  bookingSeries     BookingSeries[]
+  associationAdmins AssociationAdmin[]
 }
 
 model Session {
@@ -94,6 +96,7 @@ model Tenant {
   website       String?
   calendarToken String?   @unique // geheimer Token für öffentlichen iCal-Feed (Anlässe)
   defaultLocale String    @default("de") // de | fr | it – Sprache für Rechnungen, Mails, Druck
+  joinApproval  Boolean   @default(false) // Beitritt per Code erst nach Freigabe durch Admin (Membership.status PENDING)
   replyToEmail  String? // Antwortadresse für Mails des Vereins
   embedToken    String?   @unique // geheimer Token für Widgets auf der Vereinswebsite
   deletedAt     DateTime? // Löschung beantragt (Soft-Delete); endgültig gelöscht nach purgeAfter
@@ -152,32 +155,38 @@ model Tenant {
   scoreImports       ScoreImport[]
   kioskProducts      KioskProduct[]
   kioskEntries       KioskEntry[]
+  feeInvoiceMembers  FeeInvoiceMember[]
+  awardLimits        AwardLimit[]
+  weaponSettings     WeaponSettings?
+  associations       AssociationMember[]
+  bookingSeries      BookingSeries[]
 }
 
 model Membership {
-  id                     String       @id @default(cuid())
+  id                     String             @id @default(cuid())
   userId                 String
   tenantId               String
-  role                   String       @default("MEMBER") // OWNER | ADMIN | TRAINER | MEMBER
+  role                   String             @default("MEMBER") // OWNER | ADMIN | TRAINER | MEMBER
   feeCategoryId          String?
   feeAmountOverrideCents Int? // individueller Beitrag, überschreibt die Kategorie
   memberNumber           String?
-  status                 String       @default("ACTIVE") // ACTIVE | PASSIVE | HONORARY | JUNIOR | SUPPORTER | LEFT
-  joinedAt               DateTime?    @db.Date
-  leftAt                 DateTime?    @db.Date
+  status                 String             @default("ACTIVE") // ACTIVE | PASSIVE | HONORARY | JUNIOR | SUPPORTER | LEFT | PENDING (Beitritt wartet auf Freigabe, kein Zugang)
+  joinedAt               DateTime?          @db.Date
+  leftAt                 DateTime?          @db.Date
   licenseNumber          String? // Swiss-Shooting-Lizenznummer, vom Verein selbst erfasst
   householdId            String?
   guardianName           String? // gesetzliche Vertretung bei Minderjährigen
   guardianEmail          String?
   guardianPhone          String?
-  adminNote              String?      @db.Text // nur für Vorstand sichtbar
-  workHoursExempt        Boolean      @default(false)
-  createdAt              DateTime     @default(now())
-  user                   User         @relation(fields: [userId], references: [id], onDelete: Cascade)
-  tenant                 Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  feeCategory            FeeCategory? @relation(fields: [feeCategoryId], references: [id], onDelete: SetNull)
-  household              Household?   @relation(fields: [householdId], references: [id], onDelete: SetNull)
+  adminNote              String?            @db.Text // nur für Vorstand sichtbar
+  workHoursExempt        Boolean            @default(false)
+  createdAt              DateTime           @default(now())
+  user                   User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tenant                 Tenant             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  feeCategory            FeeCategory?       @relation(fields: [feeCategoryId], references: [id], onDelete: SetNull)
+  household              Household?         @relation(fields: [householdId], references: [id], onDelete: SetNull)
   feeInvoices            FeeInvoice[]
+  coveredByInvoices      FeeInvoiceMember[]
 
   @@unique([userId, tenantId])
   @@index([tenantId])
@@ -222,6 +231,7 @@ model Program {
   matches              Match[]
   championshipPrograms ChampionshipProgram[]
   qualificationRules   QualificationRule[]
+  awardLimits          AwardLimit[]
 
   @@index([tenantId])
 }
@@ -416,6 +426,7 @@ model Resource {
   shootingWindows ShootingWindow[]
   shootingQuotas  ShootingQuota[]
   shares          ResourceShare[]
+  bookingSeries   BookingSeries[]
 
   @@index([tenantId])
 }
@@ -462,15 +473,47 @@ model Booking {
   confirmedAt     DateTime?
   cancelledAt     DateTime?
   paidAt          DateTime?
+  refundedAt      DateTime? // Online-Zahlung zurückerstattet (paymentStatus REFUNDED)
+  seriesId        String? // gehört zu einer Serienbuchung
+  reminderSentAt  DateTime? // Erinnerungsmail verschickt
+
+  tenant   Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  resource Resource       @relation(fields: [resourceId], references: [id], onDelete: Cascade)
+  user     User?          @relation(fields: [userId], references: [id], onDelete: SetNull)
+  payments Payment[]
+  invoice  Invoice?
+  series   BookingSeries? @relation(fields: [seriesId], references: [id], onDelete: SetNull)
+
+  @@index([tenantId, startsAt])
+  @@index([resourceId, startsAt])
+  @@index([userId])
+  @@index([seriesId])
+}
+
+// Wiederkehrende Reservation (z.B. jeden Dienstag 18–20 Uhr); erzeugt einzelne Booking-Zeilen mit seriesId
+model BookingSeries {
+  id         String   @id @default(cuid())
+  tenantId   String
+  resourceId String
+  userId     String?
+  weekdays   String // CSV ISO-Wochentage 1=Mo … 7=So, z.B. "2" oder "1,3"
+  startTime  String // HH:mm, Europe/Zurich
+  endTime    String // HH:mm, Europe/Zurich
+  fromDate   DateTime @db.Date
+  untilDate  DateTime @db.Date
+  persons    Int      @default(1)
+  note       String?
+  status     String   @default("ACTIVE") // ACTIVE | CANCELLED
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
 
   tenant   Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   resource Resource  @relation(fields: [resourceId], references: [id], onDelete: Cascade)
   user     User?     @relation(fields: [userId], references: [id], onDelete: SetNull)
-  payments Payment[]
-  invoice  Invoice?
+  bookings Booking[]
 
-  @@index([tenantId, startsAt])
-  @@index([resourceId, startsAt])
+  @@index([tenantId, status])
+  @@index([resourceId])
   @@index([userId])
 }
 
@@ -521,6 +564,7 @@ model Invoice {
   currency    String
   reference   String? // QR-Referenz (27 Stellen) bei QR-IBAN, sonst null
   paidAt      DateTime?
+  cancelledAt DateTime?
 
   tenant  Tenant  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   booking Booking @relation(fields: [bookingId], references: [id], onDelete: Cascade)
@@ -607,19 +651,38 @@ model FeeInvoice {
   paidAt        DateTime?
   paymentNote   String?
   remindedAt    DateTime?
+  cancelledAt   DateTime?
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
 
-  tenant     Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  run        FeeRun?      @relation(fields: [runId], references: [id], onDelete: SetNull)
-  membership Membership?  @relation(fields: [membershipId], references: [id], onDelete: SetNull)
-  user       User?        @relation(fields: [userId], references: [id], onDelete: SetNull)
-  category   FeeCategory? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  tenant     Tenant             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  run        FeeRun?            @relation(fields: [runId], references: [id], onDelete: SetNull)
+  membership Membership?        @relation(fields: [membershipId], references: [id], onDelete: SetNull)
+  user       User?              @relation(fields: [userId], references: [id], onDelete: SetNull)
+  category   FeeCategory?       @relation(fields: [categoryId], references: [id], onDelete: SetNull)
   payments   Payment[]
+  members    FeeInvoiceMember[]
 
   @@unique([tenantId, number])
   @@index([tenantId, year, status])
   @@index([userId])
+}
+
+// Mitglieder, die eine (Haushalts-)Beitragsrechnung abdeckt
+model FeeInvoiceMember {
+  id           String   @id @default(cuid())
+  invoiceId    String
+  membershipId String
+  tenantId     String
+  createdAt    DateTime @default(now())
+
+  invoice    FeeInvoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  membership Membership @relation(fields: [membershipId], references: [id], onDelete: Cascade)
+  tenant     Tenant     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([invoiceId, membershipId])
+  @@index([membershipId])
+  @@index([tenantId])
 }
 
 // ---------------------------------------------------------------------------
@@ -860,6 +923,7 @@ model AmmoOrder {
   paymentStatus   String    @default("UNPAID") // UNPAID | PAID | CANCELLED
   paidAt          DateTime?
   paymentNote     String?
+  cancelledAt     DateTime?
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
 
@@ -1105,6 +1169,7 @@ model WorkHoursSettings {
   requiredHours           Float    @default(0)
   ratePerMissingHourCents Int      @default(0) // Ersatzabgabe pro fehlende Stunde
   appliesToStatuses       String   @default("ACTIVE") // CSV aus Membership.status
+  proRata                 Boolean  @default(false) // Soll anteilig bei Ein-/Austritt im Jahr
   updatedAt               DateTime @updatedAt
 
   tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
@@ -1323,6 +1388,7 @@ model ClubWeapon {
   serviceEveryShots Int?
   nextServiceAt     DateTime? @db.Date
   notes             String?   @db.Text
+  blockReason       String? // Grund bei status BLOCKED
   createdAt         DateTime  @default(now())
   updatedAt         DateTime  @updatedAt
 
@@ -1547,6 +1613,8 @@ model AccountingSettings {
   ammoAccount        String   @default("3200") // Munitionsverkauf
   workFeeAccount     String   @default("3010") // Ersatzabgabe Arbeitsstunden
   feesExpenseAccount String   @default("6940") // Zahlungsgebühren
+  cashAccount        String   @default("1000") // Kasse (Barzahlungen)
+  kioskAccount       String   @default("3600") // Ertrag Schützenstube
   updatedAt          DateTime @updatedAt
 
   tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
@@ -1623,4 +1691,85 @@ model KioskEntry {
 
   @@index([tenantId, createdAt])
   @@index([userId, billedInvoiceId])
+}
+
+// ---------------------------------------------------------------------------
+// Welle D: Auszeichnungslimiten, Waffen-Einstellungen, Kantonalverband
+// ---------------------------------------------------------------------------
+
+// Kranz-/Auszeichnungslimite pro Programm, Jahr und Kategorie (z.B. Feldschiessen E, U21, Veteran)
+model AwardLimit {
+  id        String   @id @default(cuid())
+  tenantId  String
+  programId String
+  year      Int
+  category  String // Alters-/Leistungskategorie, frei (z.B. "E", "U21", "V", "SV")
+  minScore  Float // gleiche Einheit wie MatchParticipant.total
+  award     String // z.B. "Kranz", "Anerkennungskarte"
+  sort      Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tenant  Tenant  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  program Program @relation(fields: [programId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, programId, year])
+  @@index([programId])
+}
+
+model WeaponSettings {
+  id                       String   @id @default(cuid())
+  tenantId                 String   @unique
+  minorReportDays          Int      @default(30) // Meldefrist Ausleihe an Minderjährige (DEFAULT_MINOR_REPORT_DAYS)
+  serviceEveryShotsDefault Int? // Standard-Wartungsintervall für neue Waffen
+  createdAt                DateTime @default(now())
+  updatedAt                DateTime @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+}
+
+// Kantonal-/Regionalverband: vereinsübergreifende Sicht. Verwaltung durch Super-Admin und AssociationAdmin
+// (ausserhalb der Tenant-Rollen).
+model Association {
+  id        String    @id @default(cuid())
+  name      String
+  code      String    @unique @db.VarChar(8) // Beitrittscode für Vereine
+  region    String? // z.B. Kanton
+  createdAt DateTime  @default(now())
+  deletedAt DateTime?
+
+  members AssociationMember[]
+  admins  AssociationAdmin[]
+}
+
+model AssociationMember {
+  id            String    @id @default(cuid())
+  associationId String
+  tenantId      String
+  status        String    @default("PENDING") // PENDING | APPROVED | REVOKED
+  shareNames    Boolean   @default(false) // Namen der Schützen teilen (sonst nur Zahlen)
+  consentAt     DateTime? // Zustimmung des Vereins zur Datenweitergabe
+  approvedAt    DateTime?
+  revokedAt     DateTime?
+  createdAt     DateTime  @default(now())
+
+  association Association @relation(fields: [associationId], references: [id], onDelete: Cascade)
+  tenant      Tenant      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([associationId, tenantId])
+  @@index([tenantId])
+}
+
+model AssociationAdmin {
+  id            String   @id @default(cuid())
+  associationId String
+  userId        String
+  role          String   @default("ADMIN") // ADMIN | VIEWER
+  createdAt     DateTime @default(now())
+
+  association Association @relation(fields: [associationId], references: [id], onDelete: Cascade)
+  user        User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([associationId, userId])
+  @@index([userId])
 }

@@ -8,6 +8,10 @@ import it from "./it";
 import * as extraPlatform from "./extra/platform";
 import * as extraMembers from "./extra/members";
 import * as extraOps from "./extra/ops";
+import * as extraShell from "./extra/shell";
+import * as extraMoney from "./extra/money";
+import * as extraShooting from "./extra/shooting";
+import * as extraBookings from "./extra/bookings";
 
 import { DEFAULT_LOCALE, INTL_LOCALE, LOCALES, normalizeLocale, type Locale } from "./locales";
 
@@ -45,7 +49,10 @@ export function mergeDicts(base: Record<Locale, Dict>, extras: ExtraDict[]): Rec
 
 const DICTS: Record<Locale, Dict> = mergeDicts(
   { de, fr, it },
-  [pickExtra(extraPlatform), pickExtra(extraMembers), pickExtra(extraOps)],
+  [
+    pickExtra(extraPlatform), pickExtra(extraMembers), pickExtra(extraOps),
+    pickExtra(extraShell), pickExtra(extraMoney), pickExtra(extraShooting), pickExtra(extraBookings),
+  ],
 );
 
 /** Ersetzt {name}-Platzhalter. Unbekannte Platzhalter bleiben stehen. */
