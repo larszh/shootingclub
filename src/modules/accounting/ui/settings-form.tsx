@@ -6,15 +6,28 @@ import { saveAccountingSettingsAction } from "@/modules/accounting/actions";
 import { ACCOUNT_FIELDS, DEFAULT_ACCOUNTS, type AccountPlan } from "@/modules/accounting/types";
 import { Alert, Button, Card, Field, Input } from "@/components/ui";
 import { SubmitButton, submitKeepingValues } from "@/components/ui/form";
+import type { ActionResult } from "@/lib/action-result";
+
+type FormState = { result: ActionResult<AccountPlan> | null; okCount: number };
 
 export function AccountingSettingsForm({ accounts }: { accounts: AccountPlan }) {
-  const [state, action, pending] = useActionState(saveAccountingSettingsAction, null);
+  // okCount zählt erfolgreiche Aktionen: Der Remount-Key darf nicht nur von den Werten abhängen,
+  // sonst bleibt ein geleertes Feld nach "Standard wiederherstellen" leer, wenn der gespeicherte
+  // Plan schon dem Standard entsprach (gleiche Werte → gleicher Key → kein Remount).
+  const [{ result: state, okCount }, action, pending] = useActionState(
+    async (prev: FormState, formData: FormData): Promise<FormState> => {
+      const result = await saveAccountingSettingsAction(prev.result, formData);
+      return { result, okCount: result.ok ? prev.okCount + 1 : prev.okCount };
+    },
+    { result: null, okCount: 0 },
+  );
   const values = state?.ok && state.data ? state.data : accounts;
   const errors = state && !state.ok ? state.fieldErrors ?? {} : {};
   return (
     <Card className="animate-rise p-4">
-      {/* key: nach dem Zurücksetzen die neuen Werte anzeigen */}
-      <form key={JSON.stringify(values)} onSubmit={submitKeepingValues(action)} className="space-y-4">
+      {/* key: nach jedem Erfolg (Speichern/Zurücksetzen) neu aufbauen und die gespeicherten Werte zeigen;
+          bei Validierungsfehlern bleibt der Key gleich, damit die Eingaben erhalten bleiben */}
+      <form key={okCount} onSubmit={submitKeepingValues(action)} className="space-y-4">
         <p className="text-sm text-ink-2">
           Vorschlag nach dem Schweizer KMU-Kontenrahmen. Passt die Nummern an euren Kontenplan in Banana oder bexio an; jedes Konto muss dort existieren, sonst lehnt der Import die Buchung ab.
         </p>
