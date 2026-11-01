@@ -5,6 +5,7 @@ import { createHash, createHmac, randomBytes, timingSafeEqual } from "node:crypt
 import bcrypt from "bcryptjs";
 import { db } from "@/lib/db";
 import { describeUserAgent } from "@/lib/user-agent";
+import { accessStatusWhere } from "@/lib/membership-access";
 
 const SESSION_COOKIE = "standchef_session";
 const SESSION_DAYS = 30;

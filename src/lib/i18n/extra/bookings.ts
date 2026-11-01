@@ -5,4 +5,5 @@ const fr: Record<string, string> = {};
 
 const it: Record<string, string> = {};
 
-export default { de, fr, it };
+const dict = { de, fr, it };
+export default dict;

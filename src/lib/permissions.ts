@@ -33,6 +33,7 @@ export type Permission =
   | "ammo.manage" // Munition: Einstellungen, Sortiment, Ausgabe, Rechnungen
   | "members.view" // Mitgliederliste mit Kontaktdaten sehen
   | "members.manage" // Mitgliederdaten, Import, Haushalte, Einladungen
+  | "members.approve" // Beitrittsgesuche (Membership.status PENDING) freigeben oder ablehnen
   | "audit.view" // Protokoll der Änderungen im Verein
   | "results.verify" // amtliche Resultate bestätigen (Schützenmeister)
   | "range.duty" // Standdienst: Standbuch öffnen, Check-in, Gäste
@@ -45,7 +46,8 @@ export type Permission =
   | "qualifications.manage" // Qualifikationen erfassen und bestätigen
   | "kiosk.sell" // Konsumationen in der Schützenstube erfassen
   | "kiosk.manage" // Sortiment, Preise, Abrechnung der Schützenstube
-  | "accounting.export"; // Buchhaltungsexport, Kontenplan
+  | "accounting.export" // Buchhaltungsexport, Kontenplan
+  | "bookings.series"; // Serienbuchungen (wiederkehrende Reservationen) für Trainings anlegen
 
 const PERMISSION_MIN_ROLE: Record<Permission, TenantRole> = {
   "tenant.manage": "ADMIN",
@@ -61,6 +63,7 @@ const PERMISSION_MIN_ROLE: Record<Permission, TenantRole> = {
   "ammo.manage": "ADMIN",
   "members.view": "TRAINER",
   "members.manage": "ADMIN",
+  "members.approve": "ADMIN",
   "audit.view": "ADMIN",
   "results.verify": "TRAINER",
   "range.duty": "TRAINER",
@@ -74,7 +77,11 @@ const PERMISSION_MIN_ROLE: Record<Permission, TenantRole> = {
   "kiosk.sell": "TRAINER",
   "kiosk.manage": "ADMIN",
   "accounting.export": "ADMIN",
+  "bookings.series": "TRAINER",
 };
+
+// Kantonalverband (Association) liegt ausserhalb der Tenant-Rollen: Zugriff haben Super-Admins
+// und Benutzer mit einem AssociationAdmin-Eintrag (role ADMIN | VIEWER), siehe prisma/schema.prisma.
 
 export type Actor = { isSuperAdmin: boolean; role: string | null };
 
