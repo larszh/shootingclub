@@ -23,11 +23,16 @@ export function bananaCell(v: string) {
   return /^[=+\-@]/.test(s) && !/^-?\d+([.,]\d+)?$/.test(s) ? `'${s}` : s;
 }
 
-/** Banana «Buchungen importieren» (Textdatei mit Spaltenüberschriften), Datum TT.MM.JJJJ. */
+/**
+ * Banana «Buchungen importieren» (Textdatei mit Spaltenüberschriften). Banana ordnet die Spalten über
+ * die internen Spaltennamen der Tabelle Buchungen zu (Date, Doc, Description, AccountDebit,
+ * AccountCredit, Amount), nicht über die deutschen Anzeigenamen; Datum im Format JJJJ-MM-TT.
+ */
+export const BANANA_HEADER = ["Date", "Doc", "Description", "AccountDebit", "AccountCredit", "Amount"] as const;
+
 export function renderBanana(entries: JournalEntry[]) {
-  const header = ["Datum", "Beleg", "Beschreibung", "KtSoll", "KtHaben", "Betrag"];
-  const rows = entries.map((e) => [formatDateCh(e.date), e.doc, e.text, e.debit, e.credit, formatAmount(e.amountCents)].map(bananaCell).join("\t"));
-  return [header.join("\t"), ...rows].join("\r\n") + "\r\n";
+  const rows = entries.map((e) => [e.date, e.doc, e.text, e.debit, e.credit, formatAmount(e.amountCents)].map(bananaCell).join("\t"));
+  return [BANANA_HEADER.join("\t"), ...rows].join("\r\n") + "\r\n";
 }
 
 /** bexio: CSV für den manuellen Import (Zuordnung der Spalten in bexio wählen). */

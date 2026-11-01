@@ -7,6 +7,7 @@ import { db } from "@/lib/db";
 import { requireModule, requirePermission } from "@/lib/tenant";
 import { fail, ok, type ActionResult } from "@/lib/action-result";
 import { audit } from "@/lib/audit";
+import { THROTTLE, clientIp, throttle } from "@/lib/auth";
 import { notify, tenantUserIdsWithRole } from "@/lib/notify";
 import { checkBookingWindow, windowRejectMessage } from "@/modules/range/booking-window";
 import { expireUnpaidOnlineBookings, getSlotsForDay } from "@/modules/bookings/queries";
@@ -17,7 +18,7 @@ import { ensureInvoiceForBooking } from "@/modules/bookings/invoice";
 import { notifyBooking } from "@/modules/bookings/notify";
 import type { SlotsResult } from "@/modules/bookings/slot-actions";
 import { applyPriceFactor, partnerLookupKeys, partnerRateLabel, PRICE_FACTOR_MAX, PRICE_FACTOR_MIN } from "./logic";
-import { resolveGuestShare } from "./queries";
+import { resolveGuestShare, tenantModuleEnabled } from "./queries";
 import { guestSlots } from "./service";
 
 /** Verwaltung des Eigentümers mit aktivem Modul «Reservationen». */
@@ -62,12 +63,19 @@ export async function saveResourceShareAction(_prev: ActionResult | null, formDa
   if (!resource || resource.tenantId !== ctx.tenant.id) return fail("Ressource nicht gefunden.");
   const keys = partnerLookupKeys(partner);
   if (!keys) return fail("Bitte den Kurznamen (z.B. sg-musterhausen) oder den Beitrittscode des Partnervereins angeben.");
+  // Die Suche akzeptiert Beitrittscodes: gleiches Budget wie beim Beitreten, damit sich Codes nicht durchprobieren lassen.
+  const limited =
+    throttle(`share-partner-user:${ctx.user.id}`, THROTTLE.joinCode.limit, THROTTLE.joinCode.windowMs) ??
+    throttle(`share-partner-tenant:${ctx.tenant.id}`, THROTTLE.joinCode.limit, THROTTLE.joinCode.windowMs) ??
+    throttle(`share-partner-ip:${await clientIp()}`, THROTTLE.joinCode.limit, THROTTLE.joinCode.windowMs);
+  if (limited) return fail(limited);
   const guest = await db.tenant.findFirst({
     where: { deletedAt: null, OR: [{ slug: keys.slug }, { joinCode: keys.joinCode }, { joinCode: keys.joinCodeRaw }] },
     select: { id: true, name: true },
   });
   if (!guest) return fail("Kein Verein mit diesem Kurznamen oder Beitrittscode gefunden.");
   if (guest.id === ctx.tenant.id) return fail("Die Anlage gehört bereits deinem Verein.");
+  const guestHasBookings = await tenantModuleEnabled(guest.id, "bookings");
 
   const existing = await db.resourceShare.findUnique({ where: { resourceId_guestTenantId: { resourceId, guestTenantId: guest.id } } });
   const data = { canBook, priceFactorPercent, note: note ?? null };
@@ -87,14 +95,17 @@ export async function saveResourceShareAction(_prev: ActionResult | null, formDa
       userIds: admins,
       topic: "bookings",
       title: "Neue gemeinsame Anlage",
-      body: `${ctx.tenant.name} teilt «${resource.name}» mit eurem Verein${canBook ? ". Eure Mitglieder können sie unter «Reservationen» buchen" : ""}${priceFactorPercent !== 100 ? ` (Tarif ${priceFactorPercent} %)` : ""}.`,
-      url: "/bookings",
+      body: canBook && !guestHasBookings
+        ? `${ctx.tenant.name} teilt «${resource.name}» mit eurem Verein. Aktiviert zuerst unter «Verein» das Modul «Reservationen», dann können eure Mitglieder sie buchen${priceFactorPercent !== 100 ? ` (Tarif ${priceFactorPercent} %)` : ""}.`
+        : `${ctx.tenant.name} teilt «${resource.name}» mit eurem Verein${canBook ? ". Eure Mitglieder können sie unter «Reservationen» buchen" : ""}${priceFactorPercent !== 100 ? ` (Tarif ${priceFactorPercent} %)` : ""}.`,
+      url: canBook && !guestHasBookings ? "/admin" : "/bookings",
       tag: `share:${share.id}`,
       dedupeKey: `share-create:${share.id}`,
     }).catch(() => undefined);
   }
   revalidateShares(resourceId);
-  return ok(undefined, existing ? `Freigabe für ${guest.name} aktualisiert.` : `Mit ${guest.name} geteilt.`);
+  const moduleHint = canBook && !guestHasBookings ? ` Hinweis: Bei ${guest.name} ist das Modul «Reservationen» noch aus; die Mitglieder können erst buchen, wenn der Verein es einschaltet.` : "";
+  return ok(undefined, `${existing ? `Freigabe für ${guest.name} aktualisiert.` : `Mit ${guest.name} geteilt.`}${moduleHint}`);
 }
 
 /** Buchungen für einen Partnerverein pausieren oder wieder erlauben. */

@@ -25,7 +25,7 @@ export const ACCOUNT_FIELDS: Array<{ key: AccountKey; label: string; hint: strin
   { key: "receivableAccount", label: "Debitoren", hint: "Forderungen aus Rechnungen (KMU 1100). Rechnung ausgestellt: Soll Debitoren, bezahlt: Haben Debitoren." },
   { key: "feeAccount", label: "Mitgliederbeiträge", hint: "Ertrag aus Jahresbeiträgen und Vereinsrechnungen (KMU 3000). Auch Rechnungen der Schützenstube (Kiosk) werden hier gebucht." },
   { key: "workFeeAccount", label: "Ersatzabgabe Arbeitsstunden", hint: "Ertrag aus Rechnungen, deren Bezeichnung mit «Ersatzabgabe» beginnt (Vorschlag 3010)." },
-  { key: "bookingAccount", label: "Standmiete / Reservationen", hint: "Ertrag aus Reservationsrechnungen und Online-Zahlungen von Reservationen (Vorschlag 3400)." },
+  { key: "bookingAccount", label: "Standmiete / Reservationen", hint: "Ertrag aus Reservationsrechnungen sowie Online- und Barzahlungen von Reservationen (Vorschlag 3400)." },
   { key: "ammoAccount", label: "Munitionsverkauf", hint: "Ertrag aus Munitionsrechnungen (Vorschlag 3200). Munition wird nur per Rechnung verkauft, nie online." },
   { key: "feesExpenseAccount", label: "Zahlungsgebühren", hint: "Aufwand für Gebühren der Zahlungsanbieter (KMU 6940). Die Anbieter melden die Gebühren nicht einzeln; bucht sie anhand der Abrechnung von Stripe, Worldline oder SumUp manuell." },
 ];
@@ -62,7 +62,7 @@ export const EXPORT_FORMATS: Array<{ key: ExportFormat; label: string; hint: str
   {
     key: "banana",
     label: "Banana Buchhaltung",
-    hint: "Textdatei mit Tabulatoren (Datum, Beleg, Beschreibung, KtSoll, KtHaben, Betrag). In Banana: Aktionen › In Buchhaltung importieren › Buchungen › Textdatei mit Spaltenüberschriften. Prüft vor dem Import die Spaltenzuordnung und ob die Kontonummern im Kontenplan existieren.",
+    hint: "Textdatei mit Tabulatoren und den Banana-Spaltennamen (Date, Doc, Description, AccountDebit, AccountCredit, Amount), Datum im Format JJJJ-MM-TT. In Banana: Aktionen › In Buchhaltung importieren › Buchungen › Textdatei mit Spaltenüberschriften. Prüft vor dem Import, ob die Kontonummern im Kontenplan existieren.",
     extension: "txt",
   },
   {

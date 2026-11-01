@@ -227,6 +227,31 @@ export function canUndo(createdAt: Date, now: Date = new Date()) {
   return age >= -60_000 && age <= UNDO_WINDOW_MS;
 }
 
+/** Wie lange eine offline gespeicherte Erfassung ihren Erfassungszeitpunkt behält. */
+export const MAX_OFFLINE_AGE_MS = 7 * 86_400_000;
+
+/**
+ * Buchungszeitpunkt einer Erfassung: der Zeitpunkt am Gerät (offline gespeichert, später gesendet),
+ * sofern plausibel (nicht in der Zukunft, höchstens 7 Tage alt); sonst jetzt.
+ * Leichte Uhrabweichungen des Geräts in die Zukunft werden auf jetzt gekappt.
+ */
+export function saleTime(soldAtMs: number | null | undefined, now: Date = new Date()): Date {
+  const n = now.getTime();
+  if (typeof soldAtMs !== "number" || !Number.isFinite(soldAtMs)) return now;
+  if (soldAtMs > n + 5 * 60_000 || soldAtMs < n - MAX_OFFLINE_AGE_MS) return now;
+  return new Date(Math.min(soldAtMs, n));
+}
+
+/**
+ * Markierung in FeeInvoice.paymentNote: die Einträge dieser stornierten Rechnung wurden wieder
+ * freigegeben (und ggf. neu verrechnet). Eine so markierte Rechnung darf nicht mehr reaktiviert
+ * oder als bezahlt markiert werden, sonst wären die Konsumationen doppelt verrechnet.
+ */
+export const KIOSK_RELEASED_NOTE = "Schützenstube: Einträge freigegeben";
+export function isKioskReleasedNote(paymentNote: string | null | undefined) {
+  return (paymentNote ?? "").includes(KIOSK_RELEASED_NOTE);
+}
+
 /** clientId der n-ten Position einer Erfassung (eindeutig in KioskEntry.clientId). */
 export function lineClientId(batchId: string, index: number) {
   return `${batchId}:${index}`;

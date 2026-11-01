@@ -44,7 +44,10 @@ export async function listScoreImports(tenantId: string, limit = 30): Promise<Sc
   }));
 }
 
-/** Früherer Import derselben Datei (gleicher SHA-256) im Verein. */
+/**
+ * Früherer Import derselben Datei (gleicher SHA-256) im Verein. `matches` leer = alle damals
+ * erstellten Durchgänge wurden gelöscht: der Eintrag sperrt dann nicht mehr (siehe `isStaleImport`).
+ */
 export async function findPreviousImport(tenantId: string, fileHash: string) {
   const prev = await db.scoreImport.findUnique({ where: { tenantId_fileHash: { tenantId, fileHash } } });
   if (!prev) return null;
@@ -53,3 +56,8 @@ export async function findPreviousImport(tenantId: string, fileHash: string) {
   return { id: prev.id, fileName: prev.fileName, createdAt: prev.createdAt, matches };
 }
 export type PreviousImport = NonNullable<Awaited<ReturnType<typeof findPreviousImport>>>;
+
+/** Alle Durchgänge des früheren Imports gelöscht: dieselbe Datei darf erneut importiert werden. */
+export function isStaleImport(prev: PreviousImport): boolean {
+  return prev.matches.length === 0;
+}

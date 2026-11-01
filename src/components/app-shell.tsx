@@ -95,7 +95,7 @@ function adminLinks(a: ShellAdmin | null | undefined, modules: ModuleKey[]): Nav
     out.push({ href: "/admin/members/households", label: "Haushalte", icon: House });
   }
   if (a.settings && on("bookings")) out.push({ href: "/admin/bookings/partners", label: "Partner-Anlagen", icon: Handshake });
-  if (a.kiosk && on("kiosk")) out.push({ href: "/admin/kiosk", label: "Schützenstube", icon: Coffee });
+  if (a.kiosk && on("kiosk")) out.push({ href: "/admin/kiosk", label: "Schützenstube verwalten", icon: Coffee });
   if (a.accounting) out.push({ href: "/admin/accounting", label: "Buchhaltung", icon: BookOpenCheck });
   if (a.settings) out.push({ href: "/admin/embed", label: "Website-Widgets", icon: Code2 });
   if (a.audit) out.push({ href: "/admin/audit", label: "Protokoll", icon: History });

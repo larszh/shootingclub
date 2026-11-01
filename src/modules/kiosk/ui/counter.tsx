@@ -90,7 +90,8 @@ export function KioskCounter({ tenantId, members, recentIds, products, recent, c
 
   const send = useCallback(async (p: Pending): Promise<"ok" | "offline" | "error"> => {
     try {
-      const r = await recordEntriesAction(p.input);
+      // Ältere Warteschlangen-Einträge ohne soldAt: Zeitpunkt der lokalen Speicherung mitsenden.
+      const r = await recordEntriesAction({ ...p.input, soldAt: p.input.soldAt ?? p.at });
       if (!r.ok) {
         toast.error(`${p.label}: ${r.error}`);
         return "error";
@@ -150,6 +151,14 @@ export function KioskCounter({ tenantId, members, recentIds, products, recent, c
     setError(null);
   }
 
+  /** Kundschaft wählen: Mitglieder starten immer «auf Rechnung», Gäste zahlen bar. */
+  function choose(c: Customer | null) {
+    setCustomer(c);
+    setPaidCash(c?.kind === "guest");
+    setGuestName("");
+    setError(null);
+  }
+
   function add(id: string, delta: number) {
     setQty((s) => ({ ...s, [id]: Math.max(0, Math.min(MAX_QUANTITY, (s[id] ?? 0) + delta)) }));
   }
@@ -162,11 +171,12 @@ export function KioskCounter({ tenantId, members, recentIds, products, recent, c
     const isGuest = customer.kind === "guest";
     const label = isGuest ? (guestName.trim() ? `Gast ${guestName.trim()}` : "Gast") : member?.name ?? "Mitglied";
     const batchId = uuid();
+    const at = nowMs();
     const p: Pending = {
       batchId,
       label,
-      at: nowMs(),
-      input: { batchId, userId: isGuest ? null : customer.userId, guestName: isGuest ? guestName.trim().slice(0, 80) : undefined, paidCash: isGuest ? true : paidCash, lines },
+      at,
+      input: { batchId, userId: isGuest ? null : customer.userId, guestName: isGuest ? guestName.trim().slice(0, 80) : undefined, paidCash: isGuest ? true : paidCash, soldAt: at, lines },
     };
     // Zuerst lokal sichern: geht die Verbindung unterwegs verloren, wird später übertragen.
     const list = [...readOutbox(outboxKey), p];
@@ -253,7 +263,7 @@ export function KioskCounter({ tenantId, members, recentIds, products, recent, c
             <Search className="pointer-events-none absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-ink-3" aria-hidden />
             <Input type="search" value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Mitglied suchen (Name oder Nr.)" aria-label="Mitglied suchen" className="h-14 pl-12 text-lg" />
           </div>
-          <Button type="button" size="lg" variant="secondary" className="h-14" onClick={() => { setCustomer({ kind: "guest" }); setPaidCash(true); }}>
+          <Button type="button" size="lg" variant="secondary" className="h-14" onClick={() => choose({ kind: "guest" })}>
             <Banknote className="h-5 w-5" /> Gast bar
           </Button>
         </div>
@@ -261,7 +271,7 @@ export function KioskCounter({ tenantId, members, recentIds, products, recent, c
         {hits.length ? (
           <div className="stagger grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4">
             {hits.map((m) => (
-              <button key={m.userId} type="button" onClick={() => setCustomer({ kind: "member", userId: m.userId })}
+              <button key={m.userId} type="button" onClick={() => choose({ kind: "member", userId: m.userId })}
                 className="press flex min-h-16 items-center gap-3 rounded-card border border-line bg-surface px-3 py-2 text-left hover:bg-surface-2">
                 <Avatar name={m.name} src={m.avatarUrl} size={40} tone="soft" />
                 <span className="min-w-0 flex-1">
@@ -281,7 +291,7 @@ export function KioskCounter({ tenantId, members, recentIds, products, recent, c
 
   // ---------------------------------------------------------------- Produkte
   return (
-    <div>
+    <div className="@container">
       {status}
       <Card className="mb-3 flex flex-wrap items-center gap-3 p-3">
         {member ? <Avatar name={member.name} src={member.avatarUrl} size={48} tone="soft" /> : <span className="flex h-12 w-12 items-center justify-center rounded-full bg-warn/20 text-warn"><UserRound className="h-5 w-5" /></span>}
@@ -295,23 +305,26 @@ export function KioskCounter({ tenantId, members, recentIds, products, recent, c
             <Input value={guestName} onChange={(e) => setGuestName(e.target.value)} maxLength={80} placeholder="Gast (Name optional)" aria-label="Name des Gasts (optional)" />
           )}
         </div>
-        <Button type="button" variant="secondary" onClick={() => { setCustomer(null); setError(null); }}><ArrowLeft className="h-4 w-4" /> Wechseln</Button>
+        <Button type="button" variant="secondary" onClick={() => choose(null)}><ArrowLeft className="h-4 w-4" /> Wechseln</Button>
       </Card>
 
-      <div className="md:grid md:grid-cols-[1fr_20rem] md:items-start md:gap-4">
-        <div>
+      {/* Breite nach dem eigenen Platz (Container), nicht nach dem Bildschirm: daneben stehen Seitenleiste und Warenkorb. */}
+      <div className="@2xl:grid @2xl:grid-cols-[minmax(0,1fr)_18rem] @2xl:items-start @2xl:gap-4">
+        <div className="min-w-0">
           {groups.length ? groups.map((g) => (
             <section key={g.category}>
               <SectionTitle>{g.category}</SectionTitle>
-              <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4">
+              <div className="grid grid-cols-[repeat(auto-fill,minmax(min(9.5rem,100%),1fr))] gap-2">
                 {g.items.map((p) => {
                   const n = qty[p.id] ?? 0;
                   return (
                     <button key={p.id} type="button" onClick={() => add(p.id, 1)} aria-label={`${p.name}, ${formatMoney(p.priceCents, currency)}${n ? `, ${n} gewählt` : ""}`}
-                      className={cn("press relative flex min-h-24 flex-col justify-between rounded-card border-2 bg-surface p-3 text-left hover:bg-surface-2", n ? "border-ink" : "border-line")}>
-                      <span className="text-[17px] font-semibold leading-snug">{p.name}</span>
-                      <span className="text-sm tabular-nums text-ink-2">{formatMoney(p.priceCents, currency)}</span>
-                      {n ? <span className="absolute right-2 top-2 inline-flex h-8 min-w-8 items-center justify-center rounded-full bg-ink px-2 text-sm font-semibold tabular-nums text-bg">{n}</span> : null}
+                      className={cn("press flex min-h-24 min-w-0 flex-col justify-between gap-2 rounded-card border-2 bg-surface p-3 text-left hover:bg-surface-2", n ? "border-ink" : "border-line")}>
+                      <span className="hyphens-auto text-[17px] font-semibold leading-snug break-words">{p.name}</span>
+                      <span className="flex min-h-8 items-center justify-between gap-2">
+                        <span className="text-sm tabular-nums text-ink-2">{formatMoney(p.priceCents, currency)}</span>
+                        {n ? <span className="inline-flex h-8 min-w-8 shrink-0 items-center justify-center rounded-full bg-ink px-2 text-sm font-semibold tabular-nums text-bg">{n}</span> : null}
+                      </span>
                     </button>
                   );
                 })}
@@ -320,7 +333,7 @@ export function KioskCounter({ tenantId, members, recentIds, products, recent, c
           )) : <EmptyState icon={<NotebookPen className="h-5 w-5" />} title="Kein Sortiment" text="Die Verwaltung legt die Produkte unter «Schützenstube verwalten → Sortiment» an." />}
         </div>
 
-        <div className="sticky bottom-24 z-10 mt-4 md:bottom-auto md:top-4 md:mt-11">
+        <div className="sticky bottom-24 z-10 mt-4 md:bottom-4 @2xl:bottom-auto @2xl:top-4 @2xl:mt-11">
           <Card className="space-y-3 p-4 shadow-lg">
             {lines.length ? (
               <ul className="max-h-[40vh] space-y-2 overflow-y-auto">

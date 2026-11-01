@@ -9,6 +9,9 @@ import {
   onlinePaymentNote,
   settlementDecision,
   sourceAllowsOnlinePayment,
+  paymentDetailsJson,
+  paymentReviewBadge,
+  paymentReviewFromDetails,
 } from "./logic";
 
 describe("Munition nie online", () => {
@@ -70,5 +73,24 @@ describe("canPayFeeInvoiceOnline", () => {
     expect(canPayFeeInvoiceOnline({ ...inv, status: "PAID" }, "PAYREXX")).toBe(false);
     expect(canPayFeeInvoiceOnline({ ...inv, amountCents: 0 }, "PAYREXX")).toBe(false);
     expect(canPayFeeInvoiceOnline({ ...inv, currency: "USD" }, "PAYREXX")).toBe(false);
+  });
+});
+
+describe("Prüfhinweis an der Zahlung", () => {
+  it("liest den Hinweis aus detailsJson und ignoriert reine Anbieterdaten", () => {
+    const json = paymentDetailsJson({ id: 7 }, { kind: "REFUND", note: "Doppelt bezahlt" });
+    expect(paymentReviewFromDetails(json)).toEqual({ kind: "REFUND", note: "Doppelt bezahlt" });
+    expect(paymentReviewFromDetails(paymentDetailsJson({ id: 7 }))).toBeNull();
+    expect(paymentReviewFromDetails("kein json")).toBeNull();
+    expect(paymentReviewFromDetails(null)).toBeNull();
+  });
+
+  it("zeigt «Rückerstattung prüfen» nur bei bezahlten, «Betrag weicht ab» nur bei offenen Zahlungen", () => {
+    const refund = paymentDetailsJson(null, { kind: "REFUND", note: "x" });
+    const mismatch = paymentDetailsJson(null, { kind: "AMOUNT_MISMATCH", note: "y" });
+    expect(paymentReviewBadge({ status: "PAID", detailsJson: refund })?.label).toBe("Rückerstattung prüfen");
+    expect(paymentReviewBadge({ status: "PENDING", detailsJson: mismatch })?.label).toBe("Betrag weicht ab");
+    expect(paymentReviewBadge({ status: "PAID", detailsJson: mismatch })).toBeNull();
+    expect(paymentReviewBadge({ status: "FAILED", detailsJson: refund })).toBeNull();
   });
 });

@@ -1,6 +1,7 @@
 import "server-only";
 import { db } from "@/lib/db";
 import { feeInvoiceTitle } from "@/modules/billing/fee-title";
+import { paymentReviewBadge } from "./logic";
 
 export type TenantPaymentKind = "BOOKING" | "FEE";
 
@@ -17,6 +18,8 @@ export type TenantPaymentRow = {
   title: string;
   memberName: string | null;
   href: string | null;
+  /** Prüfhinweis (Rückerstattung prüfen / Betrag weicht ab), sonst null. */
+  review: { label: string; tone: "warn" | "accent" } | null;
 };
 
 /** Alle Online-Zahlungen des Vereins (Reservationen und Beitragsrechnungen), neueste zuerst. */
@@ -53,6 +56,7 @@ export async function listTenantPayments(tenantId: string, opts?: { kind?: Tenan
       title: fee ? `${feeInvoiceTitle(fee, `Mitgliederbeitrag ${fee.year}`)} · ${fee.number}` : b ? `Reservation ${b.resource.name}` : "Zahlung",
       memberName: fee ? fee.memberName : b ? b.user?.name ?? "Gast" : null,
       href: fee ? `/billing/invoices/${fee.id}/print` : b ? `/bookings/${b.id}` : null,
+      review: paymentReviewBadge(p),
     };
   });
 }

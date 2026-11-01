@@ -4,7 +4,7 @@ import { requirePermission } from "@/lib/tenant";
 import { todayZurich } from "@/lib/time";
 import { formatMoney } from "@/lib/money";
 import { plural } from "@/lib/utils";
-import { Alert, Button, Card, EmptyState, Field, Input, LinkButton, LinkTabs, PageHeader, SectionTitle, Select, StatCard } from "@/components/ui";
+import { Alert, Button, buttonClasses, Card, EmptyState, Field, Input, LinkTabs, PageHeader, SectionTitle, Select, StatCard } from "@/components/ui";
 import { getAccountingJournal } from "@/modules/accounting/queries";
 import { ENTRY_TYPE_LABEL, KIND_LABEL, type AccountSummary } from "@/modules/accounting/journal";
 import { formatDateCh, MONTH_NAMES, resolvePeriod, type PeriodKind, type PeriodParams } from "@/modules/accounting/period";
@@ -122,9 +122,10 @@ export default async function AccountingPage({ searchParams }: { searchParams: P
               <div className="font-medium">{f.label}</div>
               <p className="mt-0.5 text-xs text-ink-3">{f.hint}</p>
             </div>
-            <LinkButton href={exportQuery(f.key)} variant="secondary" prefetch={false} className="shrink-0">
+            {/* Einfacher Link statt next/link: der Router würde die Export-Route zuerst als RSC abrufen (doppelter Export im Protokoll). */}
+            <a href={exportQuery(f.key)} download className={buttonClasses("secondary", "md", "shrink-0")}>
               <Download className="h-4 w-4" aria-hidden /> .{f.extension}
-            </LinkButton>
+            </a>
           </div>
         ))}
       </Card>
@@ -137,7 +138,7 @@ export default async function AccountingPage({ searchParams }: { searchParams: P
           className="mt-6"
           icon={<BookOpenCheck className="h-5 w-5" />}
           title="Keine Buchungen in dieser Periode"
-          text="Buchungen entstehen aus Beitrags-, Reservations- und Munitionsrechnungen sowie Online-Zahlungen. Wählt eine andere Periode."
+          text="Buchungen entstehen aus Beitrags-, Reservations- und Munitionsrechnungen sowie Online- und Barzahlungen von Reservationen. Wählt eine andere Periode."
         />
       ) : (
         <>
@@ -200,6 +201,7 @@ export default async function AccountingPage({ searchParams }: { searchParams: P
           <li>Doppelt bezahlt (Bank und online): beide Zahlungen werden gebucht, das Guthaben steht auf Debitoren, bis ihr es zurückzahlt.</li>
           <li>Rückerstattung (Reservation als «Erstattet» markiert): Soll Ertrag / Haben Bank am Tag der Markierung; bei stornierter Rechnung Soll Debitoren / Haben Bank.</li>
           <li>Reservation direkt online bezahlt (ohne Rechnung): Soll Bank / Haben Reservationen.</li>
+          <li>Reservation bar vor Ort bezahlt (ohne Rechnung): Soll Bank ({accounts.bankAccount}) / Haben Reservationen ({accounts.bookingAccount}) am Zahlungsdatum; erstattet: Gegenbuchung.</li>
           <li>Rechnungen der Schützenstube gehen auf das Beitragskonto ({accounts.feeAccount}). Munition ist nie online bezahlbar, nur per Rechnung.</li>
         </ul>
       </Card>

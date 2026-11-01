@@ -81,14 +81,24 @@ export function resizeScriptSnippet(appOrigin: string) {
 export const CHILD_RESIZE_SCRIPT = `(function(){if(window.parent===window)return;var last=0;function send(){var h=Math.ceil(document.documentElement.getBoundingClientRect().height);if(h!==last){last=h;window.parent.postMessage({type:"${RESIZE_MESSAGE}",height:h},"*");}}if(window.ResizeObserver){new ResizeObserver(send).observe(document.documentElement);}window.addEventListener("load",send);send();})();`;
 
 /**
- * Erlaubte frame-ancestors aus EMBED_FRAME_ANCESTORS (Leerzeichen-getrennt). Unzulässige Einträge
- * werden verworfen (Schutz gegen Header-Injection); ohne gültigen Eintrag gilt «*».
+ * Erlaubte frame-ancestors aus EMBED_FRAME_ANCESTORS (Leerzeichen- oder Komma-getrennt, ein
+ * abschliessender «/» wird entfernt). Unzulässige Einträge werden verworfen (Schutz gegen
+ * Header-Injection) und an onInvalid gemeldet. Nur ohne Wert gilt «*»; ist ein Wert gesetzt, aber
+ * kein Eintrag gültig, gilt «'self'» (fail closed). Die eigene Origin ('self') ist immer erlaubt
+ * (Live-Vorschau unter /admin/embed), ausser bei «'none'».
  */
-export function frameAncestors(raw: string | null | undefined) {
-  const ok = (raw ?? "")
-    .split(/\s+/)
+export function frameAncestors(raw: string | null | undefined, onInvalid?: (entries: string[]) => void) {
+  const entries = (raw ?? "")
+    .split(/[\s,]+/)
     .filter(Boolean)
-    .filter((s) => /^(\*|'self'|'none'|https?:\/\/(\*\.)?[a-z0-9.-]+(:\d{1,5})?|(\*\.)?[a-z0-9-]+(\.[a-z0-9-]+)+(:\d{1,5})?)$/i.test(s));
+    .map((s) => (/^https?:\/\//i.test(s) ? s.replace(/\/+$/, "") : s));
+  if (!entries.length) return "*";
+  const valid = (s: string) =>
+    /^(\*|'self'|'none'|https?:\/\/(\*\.)?[a-z0-9.-]+(:\d{1,5})?|(\*\.)?[a-z0-9-]+(\.[a-z0-9-]+)+(:\d{1,5})?)$/i.test(s);
+  const ok = entries.filter(valid);
+  const bad = entries.filter((s) => !valid(s));
+  if (bad.length) onInvalid?.(bad);
   if (ok.includes("'none'")) return "'none'";
-  return ok.length ? ok.join(" ") : "*";
+  if (ok.includes("*")) return "*";
+  return ["'self'", ...ok.filter((s) => s !== "'self'")].join(" ");
 }

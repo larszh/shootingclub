@@ -3,7 +3,7 @@ import { db } from "@/lib/db";
 import { appUrl } from "@/lib/mail";
 import { getActiveProvider, isProviderKey, PaymentError, type PaymentProviderKey } from "@/lib/payments";
 import { beginCheckout, refreshPaymentStatus } from "@/lib/payments/settle";
-import { canPayFeeInvoiceOnline, feeInvoiceReturnPath, PENDING_STALE_MINUTES } from "@/lib/payments/logic";
+import { canPayFeeInvoiceOnline, feeInvoiceReturnPath, paymentReviewFromDetails, PENDING_STALE_MINUTES } from "@/lib/payments/logic";
 import { feeInvoiceTitle } from "./fee-title";
 
 /**
@@ -73,18 +73,26 @@ export async function startFeeInvoicePayment(viewer: Viewer, invoiceId: string):
   }
 }
 
-export type FeePayStatus = { status: "PAID" | "PENDING" | "FAILED" | "NONE" | "CANCELLED"; error?: string };
+/**
+ * REFUND_REVIEW: die Online-Zahlung ist eingegangen, die Rechnung war aber bereits bezahlt oder
+ * storniert – der Verein prüft die Rückerstattung. `needsReview`: Betrag passt nicht (nicht weiter abfragen).
+ */
+export type FeePayStatus = { status: "PAID" | "PENDING" | "FAILED" | "NONE" | "CANCELLED" | "REFUND_REVIEW"; error?: string; needsReview?: boolean };
 
 /** Letzte Online-Zahlung einer eigenen Rechnung beim Anbieter prüfen und verbuchen. */
 export async function verifyFeeInvoicePayment(viewer: Viewer, invoiceId: string): Promise<FeePayStatus> {
   const inv = await loadOwnInvoice(viewer, invoiceId);
   if (!inv) return { status: "NONE" };
-  if (inv.status === "PAID") return { status: "PAID" };
-  const payment = await db.payment.findFirst({ where: { feeInvoiceId: inv.id }, orderBy: { createdAt: "desc" } });
-  if (!payment) return { status: inv.status === "CANCELLED" ? "CANCELLED" : "NONE" };
-  if (payment.status === "PAID") return { status: "PAID" };
-  const r = await refreshPaymentStatus(payment.id);
-  return r;
+  let payment = await db.payment.findFirst({ where: { feeInvoiceId: inv.id }, orderBy: { createdAt: "desc" }, select: { id: true, status: true, detailsJson: true } });
+  if (!payment) return { status: inv.status === "PAID" ? "PAID" : inv.status === "CANCELLED" ? "CANCELLED" : "NONE" };
+  // Bereits (z.B. per Bank) bezahlt und kein laufender Checkout: nicht beim Anbieter nachfragen.
+  if (inv.status === "PAID" && payment.status !== "PAID" && payment.status !== "PENDING") return { status: "PAID" };
+  if (payment.status !== "PAID") {
+    const r = await refreshPaymentStatus(payment.id);
+    if (r.status !== "PAID") return inv.status === "PAID" ? { status: "PAID" } : r;
+    payment = (await db.payment.findUnique({ where: { id: payment.id }, select: { id: true, status: true, detailsJson: true } })) ?? payment;
+  }
+  return paymentReviewFromDetails(payment.detailsJson)?.kind === "REFUND" ? { status: "REFUND_REVIEW" } : { status: "PAID" };
 }
 
 /** Online-Zahlungen einer Rechnung (für Detailansichten). */

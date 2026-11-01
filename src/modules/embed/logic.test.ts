@@ -29,7 +29,13 @@ describe("embed logic", () => {
 
   it("frame-ancestors aus der Umgebung, unzulässige Werte verworfen", () => {
     expect(frameAncestors(undefined)).toBe("*");
-    expect(frameAncestors("https://www.sv-muster.ch https://*.muster.ch")).toBe("https://www.sv-muster.ch https://*.muster.ch");
+    expect(frameAncestors("")).toBe("*");
+    expect(frameAncestors("https://www.sv-muster.ch https://*.muster.ch")).toBe("'self' https://www.sv-muster.ch https://*.muster.ch");
+    expect(frameAncestors("https://www.sv-muster.ch/,https://muster.ch")).toBe("'self' https://www.sv-muster.ch https://muster.ch");
+    expect(frameAncestors("'none' https://a.ch")).toBe("'none'");
+    const bad: string[][] = [];
+    expect(frameAncestors("https://www.sv-müster.ch", (b) => bad.push(b))).toBe("'self'");
+    expect(bad).toEqual([["https://www.sv-müster.ch"]]);
     expect(frameAncestors("https://a.ch; script-src *")).toBe("*");
     expect(frameAncestors("'self' evil\r\nX: y")).toBe("'self'");
   });

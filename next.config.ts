@@ -4,7 +4,8 @@ import { frameAncestors } from "./src/modules/embed/logic";
 /**
  * Widgets für Vereinswebsites (/embed/…) dürfen auf fremden Seiten eingebettet werden.
  * Erlaubte Seiten über EMBED_FRAME_ANCESTORS (z.B. "https://www.sv-muster.ch https://*.muster.ch"),
- * Standard «*». Wird beim Build gelesen (next.config), Änderungen brauchen einen neuen Build.
+ * Standard «*» (nur wenn leer). Ungültige Einträge werden beim Build gewarnt; ohne gültigen Eintrag
+ * gilt «'self'». Wird beim Build gelesen (next.config), Änderungen brauchen einen neuen Build.
  */
 const EMBED_CSP = [
   "default-src 'none'",
@@ -13,7 +14,9 @@ const EMBED_CSP = [
   "img-src 'self' data:",
   "base-uri 'none'",
   "form-action 'none'",
-  `frame-ancestors ${frameAncestors(process.env.EMBED_FRAME_ANCESTORS)}`,
+  `frame-ancestors ${frameAncestors(process.env.EMBED_FRAME_ANCESTORS, (bad) =>
+    console.warn(`[standchef] EMBED_FRAME_ANCESTORS: ungültige Einträge ignoriert: ${bad.map((b) => JSON.stringify(b)).join(", ")}`),
+  )}`,
 ].join("; ");
 
 const nextConfig: NextConfig = {

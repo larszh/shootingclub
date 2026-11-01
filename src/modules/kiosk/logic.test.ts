@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-  canUndo, cartTotal, cashByDay, groupByCategory, groupForBilling, invoiceCategoryName, invoiceYear, isBatchId, isDayKey, lineClientId, normalizeCart,
+  KIOSK_RELEASED_NOTE, MAX_OFFLINE_AGE_MS, canUndo, cartTotal, isKioskReleasedNote, saleTime, cashByDay, groupByCategory, groupForBilling, invoiceCategoryName, invoiceYear, isBatchId, isDayKey, lineClientId, normalizeCart,
   periodDays, periodLabel, periodPresets, periodToUtcRange, resolvePeriod, sumCents, validatePeriod,
 } from "./logic";
 
@@ -132,5 +132,29 @@ describe("Erfassung", () => {
     expect(isBatchId("short")).toBe(false);
     expect(isBatchId("bad id with spaces")).toBe(false);
     expect(lineClientId("abcdefgh", 2)).toBe("abcdefgh:2");
+  });
+});
+
+describe("Offline-Erfassungen", () => {
+  const now = new Date("2026-11-01T09:00:00Z");
+  it("übernimmt den Erfassungszeitpunkt am Gerät", () => {
+    const sold = Date.parse("2026-10-31T21:00:00Z");
+    expect(saleTime(sold, now).toISOString()).toBe("2026-10-31T21:00:00.000Z");
+  });
+  it("fällt auf jetzt zurück, wenn kein oder ein unplausibler Zeitpunkt kommt", () => {
+    expect(saleTime(undefined, now)).toBe(now);
+    expect(saleTime(now.getTime() - MAX_OFFLINE_AGE_MS - 1, now)).toBe(now);
+    expect(saleTime(now.getTime() + 10 * 60_000, now)).toBe(now);
+  });
+  it("kappt leichte Uhrabweichung in die Zukunft", () => {
+    expect(saleTime(now.getTime() + 30_000, now).getTime()).toBe(now.getTime());
+  });
+});
+
+describe("Freigabe stornierter Rechnungen", () => {
+  it("erkennt die Markierung in der Zahlungsnotiz", () => {
+    expect(isKioskReleasedNote(`Gemahnt: 1×\n${KIOSK_RELEASED_NOTE} 01.11.2026`)).toBe(true);
+    expect(isKioskReleasedNote("Online (Payrexx)")).toBe(false);
+    expect(isKioskReleasedNote(null)).toBe(false);
   });
 });

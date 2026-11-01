@@ -141,6 +141,19 @@ describe("buildJournal", () => {
     expect(r.map((x) => `${x.debit}/${x.credit}/${x.type}`)).toEqual(["1020/3400/payment", "3400/1020/refund"]);
   });
 
+  it("Barzahlung ohne Rechnung: Bank an Reservationen, Erstattung als Gegenbuchung", () => {
+    const p: PaymentDoc = {
+      type: "payment", source: "CASH", id: "bk1", number: "BAR-ABCDEF12", kind: "booking", label: "Reservation Stand 1 31.10.2026",
+      payment: { id: "bk1", provider: "CASH", amountCents: 2160, currency: "CHF", paidAt: new Date("2026-10-31T10:00:00Z"), refundedAt: null },
+    };
+    const e = buildJournal([p], A, YEAR);
+    expect(e).toHaveLength(1);
+    expect(e[0]).toMatchObject({ date: "2026-10-31", debit: "1020", credit: "3400", amountCents: 2160, doc: "BAR-ABCDEF12", source: "CASH", type: "payment" });
+    expect(e[0]!.text).toBe("Barzahlung Reservation Stand 1 31.10.2026");
+    const r = buildJournal([{ ...p, payment: { ...p.payment, refundedAt: new Date("2026-11-02T10:00:00Z") } }], A, YEAR);
+    expect(r.map((x) => `${x.debit}/${x.credit}/${x.type}`)).toEqual(["1020/3400/payment", "3400/1020/refund"]);
+  });
+
   it("filtert nach Periode (beide Grenzen inklusive)", () => {
     const doc = invoice({ issuedAt: new Date("2025-12-20T10:00:00Z"), status: "PAID", paidAt: new Date("2026-01-01T00:30:00Z") });
     const e = buildJournal([doc], A, { from: "2026-01-01", to: "2026-01-31" });

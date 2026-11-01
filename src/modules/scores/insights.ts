@@ -22,8 +22,12 @@ function summarize(results: ResultRow[], stages: Stage[], scoringMode: string) {
   // Strafen ohne Schuss (z.B. Verfahrensfehler) sind keine Schüsse
   const shots = shotsPerStage.reduce((a, s, i) => a + firedShots(stages[i]!, s, scoringMode), 0);
   const last = stages.length ? byIdx.get(stages.length - 1)?.total ?? 0 : 0;
+  // Punkte nur aus Serien mit gespeicherten Schüssen: nur mit Total importierte Serien zählen weder Punkte
+  // noch Schüsse zum Schnitt pro Schuss.
+  const shotTotal = round1(results.reduce((a, r) => (safeJson<number[]>(r.shotsJson, []).length ? a + r.total : a), 0));
   return {
     total,
+    shotTotal,
     shots,
     shotsPerStage,
     stageTotals: stages.map((_, i) => round1(byIdx.get(i)?.total ?? 0)),
@@ -213,6 +217,7 @@ export async function getProgramProgress(ctx: Ctx, programId: string, userId = c
   const bestRow = rows.find((r) => r.s.total === best);
   const points: ProgressPoint[] = rows.map(({ p, s }) => ({ matchId: p.match.id, date: p.match.date, total: s.total, isBest: p.match.id === bestRow?.p.match.id }));
   const shots = rows.reduce((a, r) => a + r.s.shots, 0);
+  const shotPoints = rows.reduce((a, r) => a + r.s.shotTotal, 0);
   return {
     program: { id: program.id, name: program.name, scoringMode: program.scoringMode, max: program.totals.max, shotsPerMatch: program.totals.shots },
     decimal: program.scoringMode === "RINGS_DECIMAL",
@@ -223,7 +228,7 @@ export async function getProgramProgress(ctx: Ctx, programId: string, userId = c
     bestMatchId: bestRow?.p.match.id ?? null,
     avg: totals.length ? round1(totals.reduce((a, b) => a + b, 0) / totals.length) : 0,
     last: totals.length ? totals[totals.length - 1]! : 0,
-    avgPerShot: shots ? Math.round((totals.reduce((a, b) => a + b, 0) / shots) * 100) / 100 : 0,
+    avgPerShot: shots ? Math.round((shotPoints / shots) * 100) / 100 : 0,
   };
 }
 export type ProgramProgress = NonNullable<Awaited<ReturnType<typeof getProgramProgress>>>;
@@ -264,7 +269,7 @@ export async function getUserScoreStats(ctx: Ctx) {
   });
 
   const stagesCache = new Map<string, Stage[]>();
-  const byProgram = new Map<string, ProgramStat & { sum: number; sumShots: number }>();
+  const byProgram = new Map<string, ProgramStat & { sum: number; sumShots: number; sumShotPoints: number }>();
   const byDistance = new Map<number, { shots: number; ringShots: number; ringSum: number; hitShots: number; hits: number }>();
   let totalShots = 0;
 
@@ -315,11 +320,13 @@ export async function getUserScoreStats(ctx: Ctx) {
         shots: s.shots,
         sum: s.total,
         sumShots: s.shots,
+        sumShotPoints: s.shotTotal,
       });
     } else {
       cur.count += 1;
       cur.sum += s.total;
       cur.sumShots += s.shots;
+      cur.sumShotPoints += s.shotTotal;
       cur.shots += s.shots;
       if (s.total > cur.best) {
         cur.best = s.total;
@@ -332,7 +339,7 @@ export async function getUserScoreStats(ctx: Ctx) {
   }
 
   const programs: ProgramStat[] = [...byProgram.values()]
-    .map(({ sum, sumShots, ...rest }) => ({ ...rest, avg: round1(sum / rest.count), avgPerShot: sumShots ? Math.round((sum / sumShots) * 100) / 100 : 0 }))
+    .map(({ sum, sumShots, sumShotPoints, ...rest }) => ({ ...rest, avg: round1(sum / rest.count), avgPerShot: sumShots ? Math.round((sumShotPoints / sumShots) * 100) / 100 : 0 }))
     .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name, "de-CH"));
 
   const distances: DistanceStat[] = [...byDistance.entries()]

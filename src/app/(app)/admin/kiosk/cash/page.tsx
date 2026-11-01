@@ -22,7 +22,7 @@ export default async function KioskCashPage() {
     <div>
       <PageHeader title="Kasse" subtitle="Barverkäufe pro Tag (Tagesabschluss)" back={{ href: "/admin/kiosk", label: "Schützenstube" }} />
       <div className="mb-4 grid grid-cols-2 gap-3">
-        <StatCard label="Heute bar" value={formatMoney(todayRow?.totalCents ?? 0, cur)} hint={`${todayRow?.count ?? 0} Einträge`} tone={todayRow ? "accent" : "neutral"} />
+        <StatCard label="Heute bar" value={formatMoney(todayRow?.totalCents ?? 0, cur)} hint={`${todayRow?.count ?? 0} ${todayRow?.count === 1 ? "Eintrag" : "Einträge"}`} tone={todayRow ? "accent" : "neutral"} />
         <StatCard label="Letzte 14 Tage" value={formatMoney(sum14, cur)} hint={`${days.length} Tage mit Barverkauf`} />
       </div>
       {days.length ? days.map((d) => (

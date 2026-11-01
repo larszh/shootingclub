@@ -28,7 +28,8 @@ export function AccountingSettingsForm({ accounts }: { accounts: AccountPlan }) 
         {state && !state.ok ? <Alert>{state.error}</Alert> : state?.ok && state.message ? <Alert tone="ok">{state.message}</Alert> : null}
         <div className="flex flex-wrap gap-2">
           <SubmitButton pending={pending}>Kontenplan speichern</SubmitButton>
-          <Button type="submit" name="intent" value="reset" variant="secondary" disabled={pending}>
+          {/* formNoValidate: der Ausweg aus einem unvollständigen Formular, die Felder zählen beim Zurücksetzen nicht */}
+          <Button type="submit" name="intent" value="reset" variant="secondary" disabled={pending} formNoValidate>
             <RotateCcw className="h-4 w-4" aria-hidden /> Standard wiederherstellen
           </Button>
         </div>

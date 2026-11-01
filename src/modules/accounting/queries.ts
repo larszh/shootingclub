@@ -4,6 +4,7 @@ import { addDays, formatDateZurich, zurichToUtc } from "@/lib/time";
 import { feeInvoiceTitle, isStandaloneFeeInvoice } from "@/modules/billing/fee-title";
 import { buildJournal, feeInvoiceKind, isPaidOnline, journalTotals, ONLINE_SETTLE_WINDOW_MS, summarizeAccounts, type JournalDocument, type OnlinePayment } from "./journal";
 import { ACCOUNT_LABEL, toAccountPlan, type AccountPlan } from "./types";
+import { eventKey, loadAccountingEventDates } from "./events";
 
 /**
  * Lädt die Belege eines Vereins für den Buchhaltungsexport und normalisiert sie für buildJournal.
@@ -53,9 +54,14 @@ function paidByOnline(invoicePaidAt: Date | null, payments: PaymentRow[]) {
   );
 }
 
-/** Erstattungsdatum einer Reservation (paymentStatus REFUNDED; es gibt keine eigene Spalte). */
-function bookingRefundedAt(b: { paymentStatus: string; updatedAt: Date }) {
-  return b.paymentStatus === "REFUNDED" ? b.updatedAt : null;
+type EventDates = Map<string, Date>;
+
+/**
+ * Erstattungsdatum einer Reservation (paymentStatus REFUNDED). Es gibt keine eigene Spalte: Datum aus dem
+ * protokollierten Statuswechsel (siehe events.ts), nur ohne Eintrag (ältere Daten) die letzte Änderung.
+ */
+function bookingRefundedAt(b: { id: string; paymentStatus: string; updatedAt: Date }, events: EventDates) {
+  return b.paymentStatus === "REFUNDED" ? (events.get(eventKey("refund", "Booking", b.id)) ?? b.updatedAt) : null;
 }
 
 function invoiceStatus(s: string): "OPEN" | "PAID" | "CANCELLED" {
@@ -68,7 +74,7 @@ export async function loadJournalDocuments(tenantId: string, from: string, to: s
   const { start, end } = periodBounds(from, to);
   const touched = { gte: start };
 
-  const [fees, bookingInvoices, onlineBookingPayments, ammo] = await Promise.all([
+  const [fees, bookingInvoices, onlineBookingPayments, ammo, cashBookings] = await Promise.all([
     db.feeInvoice.findMany({
       where: {
         tenantId,
@@ -91,7 +97,7 @@ export async function loadJournalDocuments(tenantId: string, from: string, to: s
         id: true, number: true, amountCents: true, currency: true, status: true, issuedAt: true, paidAt: true,
         booking: {
           select: {
-            startsAt: true, cancelledAt: true, updatedAt: true, paymentStatus: true, resource: { select: { name: true } },
+            id: true, startsAt: true, cancelledAt: true, updatedAt: true, paymentStatus: true, resource: { select: { name: true } },
             payments: { where: { status: { in: PAYMENT_DONE } }, select: paymentSelect, orderBy: { createdAt: "asc" } },
           },
         },
@@ -115,6 +121,31 @@ export async function loadJournalDocuments(tenantId: string, from: string, to: s
       },
       select: { id: true, invoiceNumber: true, invoiceIssuedAt: true, totalCents: true, currency: true, status: true, paymentStatus: true, paidAt: true, updatedAt: true },
     }),
+    // Reservationen «Bar / vor Ort»: gelten beim Erfassen als bezahlt, ohne Rechnung und ohne Online-Zahlung.
+    db.booking.findMany({
+      where: {
+        tenantId,
+        paymentMethod: "CASH",
+        paymentStatus: { in: PAYMENT_DONE },
+        totalCents: { gt: 0 },
+        invoice: { is: null },
+        createdAt: { lt: end },
+        OR: [{ paidAt: touched }, { updatedAt: touched }],
+      },
+      select: { id: true, startsAt: true, paidAt: true, createdAt: true, updatedAt: true, totalCents: true, currency: true, paymentStatus: true, resource: { select: { name: true } } },
+    }),
+  ]);
+
+  // Storno- und Erstattungsdaten aus dem Protokoll statt aus updatedAt (siehe events.ts).
+  const refundedBookingIds = [
+    ...bookingInvoices.filter((i) => i.booking.paymentStatus === "REFUNDED").map((i) => i.booking.id),
+    ...onlineBookingPayments.flatMap((p) => (p.booking?.paymentStatus === "REFUNDED" ? [p.booking.id] : [])),
+    ...cashBookings.filter((b) => b.paymentStatus === "REFUNDED").map((b) => b.id),
+  ];
+  const events = await loadAccountingEventDates(tenantId, [
+    { entity: "FeeInvoice", ids: fees.filter((f) => f.status === "CANCELLED").map((f) => f.id) },
+    { entity: "AmmoOrder", ids: ammo.filter((o) => o.paymentStatus === "CANCELLED" || o.status === "CANCELLED").map((o) => o.id) },
+    { entity: "Booking", ids: [...new Set(refundedBookingIds)] },
   ]);
 
   // Rechnungen der Schützenstube: Beitragsrechnungen, mit denen Konsumationen verrechnet wurden.
@@ -140,13 +171,13 @@ export async function loadJournalDocuments(tenantId: string, from: string, to: s
       type: "invoice", source: "FEE", id: f.id, number: f.number, kind, label,
       amountCents: f.amountCents, currency: f.currency, issuedAt: f.issuedAt, status: invoiceStatus(f.status),
       paidAt: f.paidAt, paidOnline: paidByOnline(f.paidAt, f.payments), refundedAt: null,
-      cancelledAt: f.status === "CANCELLED" ? f.updatedAt : null,
+      cancelledAt: f.status === "CANCELLED" ? (events.get(eventKey("cancel", "FeeInvoice", f.id)) ?? f.updatedAt) : null,
       onlinePayments: f.payments.map((p) => toOnlinePayment(p)),
     });
   }
 
   for (const i of bookingInvoices) {
-    const refundedAt = bookingRefundedAt(i.booking);
+    const refundedAt = bookingRefundedAt(i.booking, events);
     const onlinePaid = i.booking.payments.some((p) => p.status === "PAID");
     docs.push({
       type: "invoice", source: "BOOKING", id: i.id, number: i.number, kind: "booking",
@@ -165,7 +196,15 @@ export async function loadJournalDocuments(tenantId: string, from: string, to: s
     docs.push({
       type: "payment", source: "ONLINE", id: p.id, number: `ONL-${p.id.slice(-8).toUpperCase()}`, kind: "booking",
       label: `Reservation ${p.booking.resource.name} ${shortDate(p.booking.startsAt)}`,
-      payment: toOnlinePayment(p, bookingRefundedAt(p.booking)),
+      payment: toOnlinePayment(p, bookingRefundedAt(p.booking, events)),
+    });
+  }
+
+  for (const b of cashBookings) {
+    docs.push({
+      type: "payment", source: "CASH", id: b.id, number: `BAR-${b.id.slice(-8).toUpperCase()}`, kind: "booking",
+      label: `Reservation ${b.resource.name} ${shortDate(b.startsAt)}`,
+      payment: { id: b.id, provider: "CASH", amountCents: b.totalCents, currency: b.currency, paidAt: b.paidAt ?? b.createdAt, refundedAt: bookingRefundedAt(b, events) },
     });
   }
 
@@ -176,7 +215,8 @@ export async function loadJournalDocuments(tenantId: string, from: string, to: s
       type: "invoice", source: "AMMO", id: o.id, number: o.invoiceNumber, kind: "ammo", label: "Munition",
       amountCents: o.totalCents, currency: o.currency, issuedAt: o.invoiceIssuedAt,
       status: cancelled ? "CANCELLED" : o.paymentStatus === "PAID" ? "PAID" : "OPEN",
-      paidAt: o.paidAt, paidOnline: false, refundedAt: null, cancelledAt: cancelled ? o.updatedAt : null,
+      paidAt: o.paidAt, paidOnline: false, refundedAt: null,
+      cancelledAt: cancelled ? (events.get(eventKey("cancel", "AmmoOrder", o.id)) ?? o.updatedAt) : null,
       // Munition ist nie online bezahlbar (Anbieter-AGB), nur per Rechnung.
       onlinePayments: [],
     });

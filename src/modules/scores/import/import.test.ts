@@ -215,6 +215,18 @@ describe("Schützen bilden und prüfen", () => {
     expect(over.errors[0]).toBe("5 Schüsse, das Programm hat 4");
   });
 
+  it("Doppelte Schuss-Nr. (Zeile pro Schuss) = Fehler, pro Serie bzw. Disziplin getrennt", () => {
+    const dup = readScoreFile(enc("Name;Schuss;Wert\nAnna Muster;1;9\nAnna Muster;2;10\nAnna Muster;2;10\nAnna Muster;3;8"));
+    const b = buildShooters(dup, ["name", "shotNo", "shotValue"], "shots");
+    expect(b.shooters[0]!.shots).toHaveLength(3);
+    const ev = evaluateShooter(b.shooters[0]!, prog("RINGS_INT", stage(10)));
+    expect(ev.errors).toContain("Schuss 2 kommt mehrfach vor (Zeile 4)");
+    const perSeries = readScoreFile(enc("Name;Serie;Schuss;Wert\nA B;1;1;9\nA B;2;1;10"));
+    expect(buildShooters(perSeries, ["name", "series", "shotNo", "shotValue"], "shots").shooters[0]!.errors).toEqual([]);
+    const perDisc = readScoreFile(enc("Name;Disziplin;Schuss;Wert\nA B;LG;1;9\nA B;LP;1;10"));
+    expect(buildShooters(perDisc, ["name", "discipline", "shotNo", "shotValue"], "shots").shooters[0]!.errors).toEqual([]);
+  });
+
   it("Maximum pro Schuss und Trefferwertung", () => {
     expect(convertShot(11, stage(1), "RINGS_INT")).toEqual({ error: "Wert 11 über dem Maximum 10" });
     expect(convertShot(10.95, stage(1), "RINGS_DECIMAL")).toEqual({ error: "Wert 11 über dem Maximum 10.9" });

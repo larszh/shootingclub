@@ -27,7 +27,10 @@ export function TenantPaymentsTable({ rows }: { rows: TenantPaymentRow[] }) {
             </div>
             <div className="shrink-0 text-right">
               <div className="font-semibold tabular-nums">{formatMoney(r.amountCents, r.currency)}</div>
-              <Badge tone={st.tone}>{st.label}</Badge>
+              <div className="flex flex-wrap justify-end gap-1">
+                {r.review ? <Badge tone={r.review.tone}>{r.review.label}</Badge> : null}
+                <Badge tone={st.tone}>{st.label}</Badge>
+              </div>
             </div>
           </>
         );

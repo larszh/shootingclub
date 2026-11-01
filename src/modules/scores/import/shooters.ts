@@ -108,7 +108,7 @@ export function buildShooters(table: Pick<ScoreTable, "rows" | "firstLine">, map
   };
   const hasName = c.name >= 0 || c.first >= 0 || c.last >= 0;
   const errors: string[] = [];
-  const shooters = new Map<string, ImportedShooter & { _hadRow: boolean }>();
+  const shooters = new Map<string, ImportedShooter & { _hadRow: boolean; _shotNos: Set<string> }>();
   const disciplines = new Map<string, number>();
   const dates = new Map<string, number>();
   let skipped = 0;
@@ -149,7 +149,7 @@ export function buildShooters(table: Pick<ScoreTable, "rows" | "firstLine">, map
         skipped++;
         return;
       }
-      s = { key, name, startNo, club: get(c.club).slice(0, 60) || null, firstLine: line, rowCount: 0, shots: [], seriesTotals: [], total: null, sighters: 0, hasXY: false, errors: [], warnings: [], _hadRow: false };
+      s = { key, name, startNo, club: get(c.club).slice(0, 60) || null, firstLine: line, rowCount: 0, shots: [], seriesTotals: [], total: null, sighters: 0, hasXY: false, errors: [], warnings: [], _hadRow: false, _shotNos: new Set() };
       shooters.set(key, s);
     }
     s.rowCount++;
@@ -178,6 +178,15 @@ export function buildShooters(table: Pick<ScoreTable, "rows" | "firstLine">, map
         return;
       }
       const no = c.shotNo >= 0 ? parseNumber(get(c.shotNo)) : null;
+      // Doppelte Zeile (gleiche Schuss-Nr. in derselben Serie und Disziplin) würde den Schuss doppelt zählen
+      if (no !== null && Number.isFinite(no)) {
+        const shotKey = `${disc}|${series ?? ""}|${no}`;
+        if (s._shotNos.has(shotKey)) {
+          pushOnce(s.errors, `Schuss ${no}${typeof series === "number" ? ` (Serie ${series})` : ""} kommt mehrfach vor (Zeile ${line})`);
+          return;
+        }
+        s._shotNos.add(shotKey);
+      }
       const x = c.x >= 0 ? parseNumber(get(c.x)) : null;
       const y = c.y >= 0 ? parseNumber(get(c.y)) : null;
       const xy = { x: x !== null && !Number.isNaN(x) ? x : null, y: y !== null && !Number.isNaN(y) ? y : null };
@@ -248,8 +257,9 @@ export function buildShooters(table: Pick<ScoreTable, "rows" | "firstLine">, map
   }
   const list = [...shooters.values()]
     .filter((s) => s.rowCount > 0)
-    .map(({ _hadRow, ...rest }) => {
+    .map(({ _hadRow, _shotNos, ...rest }) => {
       void _hadRow;
+      void _shotNos;
       return rest;
     });
   const byCount = (m: Map<string, number>) => [...m.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])).map(([k]) => k);

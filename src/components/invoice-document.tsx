@@ -1,7 +1,8 @@
 import { formatIban, formatQrReference } from "@/lib/qr-reference";
 import { formatDate, formatMoneyLocale, getT, normalizeLocale } from "@/lib/i18n/core";
 
-export type InvoiceLine = { label: string; sublabel?: string | null; amountCents: number };
+/** Rechnungsposition, optional mit einer Aufstellung (z.B. die einzelnen Schützenstube-Konsumationen). */
+export type InvoiceLine = { label: string; sublabel?: string | null; amountCents: number; items?: Array<{ date: Date; label: string; amountCents: number }> };
 
 export type InvoiceDocumentProps = {
   title?: string;
@@ -61,7 +62,23 @@ export function InvoiceDocument(p: InvoiceDocumentProps) {
           <tbody>
             {p.lines.map((l, i) => (
               <tr key={i} className="border-b border-neutral-200">
-                <td className="py-3"><div className="font-medium">{l.label}</div>{l.sublabel ? <div className="text-neutral-600">{l.sublabel}</div> : null}</td>
+                <td className="py-3">
+                  <div className="font-medium">{l.label}</div>
+                  {l.sublabel ? <div className="text-neutral-600">{l.sublabel}</div> : null}
+                  {l.items?.length ? (
+                    <table className="mt-2 w-full text-xs text-neutral-600">
+                      <tbody>
+                        {l.items.map((it, j) => (
+                          <tr key={j}>
+                            <td className="py-0.5 pr-3 whitespace-nowrap tabular-nums align-top">{date(it.date)}</td>
+                            <td className="py-0.5 pr-3 w-full">{it.label}</td>
+                            <td className="py-0.5 text-right whitespace-nowrap tabular-nums align-top">{money(it.amountCents)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  ) : null}
+                </td>
                 <td className="py-3 text-right tabular-nums align-top">{money(l.amountCents)}</td>
               </tr>
             ))}

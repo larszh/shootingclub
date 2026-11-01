@@ -18,6 +18,8 @@ import { audit } from "@/lib/audit";
 import { notify } from "@/lib/notify";
 import { formatDate, formatMoneyLocale, getT } from "@/lib/i18n/core";
 import { getTenantLocale } from "@/lib/i18n";
+import { recordAccountingEvent } from "@/modules/accounting/events";
+import { kioskReopenBlocked } from "@/modules/kiosk/invoice-guard";
 
 
 const revalidate = () => { revalidatePath("/admin/billing"); revalidatePath("/billing"); revalidatePath("/admin/bookings"); };
@@ -302,11 +304,16 @@ export async function setFeeInvoiceStatusAction(id: string, status: "OPEN" | "PA
   const inv = await db.feeInvoice.findUnique({ where: { id } });
   if (!inv || inv.tenantId !== ctx.tenant.id) return fail("Nicht gefunden");
   if (inv.status === status && note === undefined) return ok();
+  const blocked = await kioskReopenBlocked(db, inv, status);
+  if (blocked) return fail(blocked);
   const paidAt = status === "PAID" ? (inv.status === "PAID" && inv.paidAt ? inv.paidAt : new Date()) : null;
   // Eine neue Notiz ersetzt die sichtbare Notiz, der interne Mahnzähler bleibt erhalten.
   const reminders = reminderCount(inv.paymentNote, null);
   const paymentNote = note !== undefined ? joinNoteLines(reminders && /Gemahnt:/.test(inv.paymentNote ?? "") ? `Gemahnt: ${reminders}×` : null, [note.trim()]) : undefined;
   await db.feeInvoice.update({ where: { id }, data: { status, paidAt, ...(paymentNote !== undefined ? { paymentNote } : {}) } });
+  if (inv.status !== "CANCELLED" && status === "CANCELLED") {
+    await recordAccountingEvent({ tenantId: ctx.tenant.id, kind: "cancel", entity: "FeeInvoice", entityId: id, actorId: ctx.user.id, actorName: ctx.user.name });
+  }
   revalidate();
   return ok();
 }

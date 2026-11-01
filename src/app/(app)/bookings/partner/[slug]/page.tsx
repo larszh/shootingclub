@@ -3,7 +3,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Repeat } from "lucide-react";
 import { requireModule } from "@/lib/tenant";
-import { Card, PageHeader, SectionTitle } from "@/components/ui";
+import { Alert, Card, LinkButton, PageHeader, SectionTitle } from "@/components/ui";
 import { getBookingSettings } from "@/modules/bookings/queries";
 import { repeatTarget } from "@/modules/bookings/repeat";
 import { BookingWizard } from "@/modules/bookings/ui/booking-wizard";
@@ -23,7 +23,18 @@ export default async function PartnerBookingPage({ params, searchParams }: { par
   if (!/^[\w-]{1,64}$/.test(slug)) notFound();
   if (!ctx.tenant.role) notFound();
   const [group] = await listSharedResourcesForGuest(ctx.tenant.id, { ownerSlug: slug.toLowerCase() });
-  if (!group || !group.resources.length) notFound();
+  if (!group || !group.resources.length) {
+    // Wiederholen einer früheren Partnerbuchung, deren Freigabe pausiert oder entfernt wurde:
+    // Hinweis statt 404.
+    if (!sp.repeat) notFound();
+    return (
+      <div>
+        <PageHeader title="Reservation wiederholen" subtitle={`Gemeinsame Anlage für ${ctx.tenant.name}`} back={{ href: "/bookings", label: "Reservationen" }} />
+        <Alert tone="info">Diese Reservation kann nicht wiederholt werden: Die Anlage ist für deinen Verein nicht mehr freigegeben.</Alert>
+        <div className="mt-4"><LinkButton href="/bookings" variant="secondary">Zu den Reservationen</LinkButton></div>
+      </div>
+    );
+  }
   const [settings, source] = await Promise.all([getBookingSettings(group.owner.id), sp.repeat ? getGuestRepeatSource(ctx, sp.repeat) : Promise.resolve(null)]);
   const repeatResource = source ? group.resources.find((r) => r.id === source.resourceId) : null;
   const prefill = source && repeatResource

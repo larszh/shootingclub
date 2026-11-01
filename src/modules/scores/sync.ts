@@ -269,6 +269,8 @@ export async function refreshOfficialPass(participantId: string, rule: PassRule)
 // Serie speichern (last-write-wins über clientUpdatedAt)
 // ---------------------------------------------------------------------------
 
+const TOTALS_ONLY_MSG = "Diese Serie wurde nur mit Total importiert und kann nicht bearbeitet werden.";
+
 function parseStoredShots(json: string): number[] | undefined {
   try {
     const v: unknown = JSON.parse(json);
@@ -312,6 +314,10 @@ export async function saveStageResultCore(
   const existing = await db.matchResult.findUnique({ where });
   // Bereits gespeicherte Schüsse bleiben gültig, auch wenn das Programm seither geändert wurde
   const stored = existing ? parseStoredShots(existing.shotsJson) : undefined;
+  // Nur mit Total importierte Serie (keine Einzelschüsse): eine Schusseingabe würde das Total überschreiben.
+  if (existing && stored && stored.length === 0 && existing.total !== 0) {
+    return coreFail(TOTALS_ONLY_MSG, "invalid");
+  }
   const shots = sanitizeShots(input.shots, stage, mode, stored);
   // Zonenwertung: Werte ausserhalb der Zonen der Serie nicht still verwerfen (würde Schüsse verschieben)
   // (Strafen ohne Schuss zählen nicht als Schuss, darum ist die Liste dort länger als stage.shots)
@@ -375,6 +381,10 @@ export async function setMatchStatusCore(actor: ScoreActor, raw: z.input<typeof 
   const hasOfficial = match.participants.some((p) => p.isOfficial);
   if (hasOfficial && !actor.can("results.verify") && match.status !== parsed.data.status) {
     return coreFail("Der Durchgang enthält amtlich bestätigte Resultate: Status ändern nur durch den Schützenmeister.", "official_locked");
+  }
+  if (match.status === "FINISHED" && parsed.data.status !== "FINISHED") {
+    const totalsOnly = await db.matchResult.count({ where: { participant: { matchId: match.id }, shotsJson: "[]", total: { not: 0 } } });
+    if (totalsOnly > 0) return coreFail("Dieser Durchgang enthält Serien, die nur mit Total importiert wurden, und kann nicht wieder geöffnet werden.", "invalid");
   }
   const clientUpdatedAt = clampClientTime(parsed.data.clientUpdatedAt);
   const neverChanged = match.updatedAt.getTime() - match.createdAt.getTime() <= STATUS_UNCHANGED_MS;

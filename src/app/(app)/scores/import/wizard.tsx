@@ -239,16 +239,12 @@ export function ScoreImportWizard({ programs, members, today }: { programs: Impo
 function DuplicateNotice({ previous }: { previous: PreviousImport }) {
   return (
     <Alert tone="warn" title="Diese Datei wurde bereits importiert" className="mb-3">
-      «{previous.fileName}» am {formatDate(previous.createdAt)}. Ein zweiter Import würde die Resultate doppelt erfassen.
-      {previous.matches.length ? (
-        <span className="mt-1 block">
-          {previous.matches.map((m) => (
-            <Link key={m.id} href={`/scores/matches/${m.id}`} className="mr-3 underline">{m.title ?? "Durchgang"} ({formatDate(m.date)})</Link>
-          ))}
-        </span>
-      ) : (
-        <span className="mt-1 block">Der damals erstellte Durchgang wurde inzwischen gelöscht.</span>
-      )}
+      «{previous.fileName}» am {formatDate(previous.createdAt)}. Ein zweiter Import würde die Resultate doppelt erfassen. Um neu zu importieren, zuerst den Durchgang löschen.
+      <span className="mt-1 block">
+        {previous.matches.map((m) => (
+          <Link key={m.id} href={`/scores/matches/${m.id}`} className="mr-3 inline-flex min-h-11 items-center underline">{m.title ?? "Durchgang"} ({formatDate(m.date)})</Link>
+        ))}
+      </span>
     </Alert>
   );
 }
@@ -279,7 +275,7 @@ function UploadStep({ file, onFile, preset, onPreset, onNext, pending }: { file:
         <ul className="mt-2 list-disc space-y-1 pl-5">
           <li>Vorlagen ordnen typische Spaltennamen vor. <strong>{PRESET_DISCLAIMER}</strong> – die Formate unterscheiden sich je nach Version.</li>
           <li>Zwei Aufbauten: eine Zeile pro Schuss (Schütze, Wert, optional Serie und X/Y) oder eine Zeile pro Schütze (Serientotale, Total).</li>
-          <li>Nichts wird gespeichert, bevor du im letzten Schritt bestätigst. Dieselbe Datei kann nur einmal importiert werden.</li>
+          <li>Nichts wird gespeichert, bevor du im letzten Schritt bestätigst. Dieselbe Datei kann nur einmal importiert werden – ausser der damals erstellte Durchgang wurde gelöscht.</li>
         </ul>
       </Card>
     </div>

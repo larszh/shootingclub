@@ -1,8 +1,8 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import { CalendarPlus, FileText, Repeat } from "lucide-react";
-import { requireModule } from "@/lib/tenant";
+import { requireTenant } from "@/lib/tenant";
 import { Alert, Badge, Card, PageHeader, SectionTitle } from "@/components/ui";
 import { Avatar, userAvatarUrl } from "@/components/avatar";
 import { ResourceIcon } from "@/modules/bookings/ui/resource-icon";
@@ -15,18 +15,28 @@ import { CancelBookingButton, DecideButtons, PaidToggle, PayNowButton, RefundedB
 import { formatDateTimeZurich, formatDateZurich, formatTimeRange } from "@/lib/time";
 import { formatMoney } from "@/lib/money";
 import { personsSuffix } from "@/modules/bookings/pricing";
-import { partnerNameMap } from "@/modules/sharing/queries";
+import { partnerNameMap, resolveGuestShare } from "@/modules/sharing/queries";
 
 export const metadata: Metadata = { title: "Reservation" };
 
 export default async function BookingDetailPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ cancelled?: string; created?: string; outsideWindow?: string }> }) {
-  const ctx = await requireModule("bookings");
+  // Kein requireModule: Partnerbuchungen gehören dem Eigentümer; das buchende Mitglied soll sie auch
+  // sehen und stornieren können, wenn der eigene Verein das Modul später ausschaltet (wie die Rechnung).
+  const ctx = await requireTenant();
   const { id } = await params;
   const sp = await searchParams;
   const b = await getBooking(ctx, id);
-  if (!b) notFound();
+  if (!b || (!b.isGuest && !ctx.hasModule("bookings"))) {
+    if (!ctx.hasModule("bookings")) redirect("/?module=bookings");
+    notFound();
+  }
   // Regeln und Rechnungsprofil des Vereins, dem die Anlage gehört (bei Partnerbuchungen der Eigentümer).
-  const [settings, billingProfile, partnerNames] = await Promise.all([getBookingSettings(b.tenantId), getBillingProfile(b.tenantId), partnerNameMap([b.viaTenantId])]);
+  // «Wiederholen» bei Partnerbuchungen nur, solange die Anlage für den aktiven Verein buchbar ist
+  // und dort das Modul aktiv ist (sonst führt der Link ins Leere).
+  const [settings, billingProfile, partnerNames, guestShare] = await Promise.all([
+    getBookingSettings(b.tenantId), getBillingProfile(b.tenantId), partnerNameMap([b.viaTenantId]),
+    b.isGuest && b.isOwner && b.viaTenantId === ctx.tenant.id && ctx.hasModule("bookings") ? resolveGuestShare(ctx, b.resourceId) : Promise.resolve(null),
+  ]);
   const st = BOOKING_STATUS[b.status]!;
   const ps = paymentStatusView(b);
   const isAdmin = b.isOwnerAdmin;
@@ -36,11 +46,12 @@ export default async function BookingDetailPage({ params, searchParams }: { para
   // Partnerbuchungen: das Mitglied gehört nicht zum Verein, darum ohne Vorauswahl der Person.
   const adminAgainHref = `/admin/bookings/new?resourceId=${b.resourceId}&date=${again.date}&time=${again.time}&duration=${b.durationMinutes}${b.persons > 1 ? `&persons=${b.persons}` : ""}${b.userId && !b.viaTenantId ? `&userId=${b.userId}` : ""}`;
   const repeatHref = b.isGuest ? `/bookings/partner/${b.tenant.slug}?repeat=${b.id}` : `/bookings?repeat=${b.id}`;
+  const canRepeat = b.isOwner && (!b.isGuest || !!guestShare?.ok);
   const partner = b.viaTenantId ? partnerNames[b.viaTenantId] ?? "Partnerverein (gelöscht)" : null;
 
   return (
     <div>
-      <PageHeader title={b.resource.name} subtitle={`${formatDateZurich(b.startsAt, { weekday: "long" })} · ${formatTimeRange(b.startsAt, b.endsAt)} · ${formatDuration(b.durationMinutes)}`} back={{ href: "/bookings", label: "Reservationen" }}
+      <PageHeader title={b.resource.name} subtitle={`${formatDateZurich(b.startsAt, { weekday: "long" })} · ${formatTimeRange(b.startsAt, b.endsAt)} · ${formatDuration(b.durationMinutes)}`} back={ctx.hasModule("bookings") ? { href: "/bookings", label: "Reservationen" } : { href: "/", label: "Start" }}
         action={<Badge tone={st.tone}>{st.label}</Badge>} />
 
       {sp.created ? <div className="mb-4"><Alert tone="ok">Buchung erfasst{b.user ? ` für ${b.user.name}` : ""}.</Alert></div> : null}
@@ -81,7 +92,7 @@ export default async function BookingDetailPage({ params, searchParams }: { para
       <SectionTitle>Termin</SectionTitle>
       <div className="animate-rise grid grid-cols-2 gap-2">
         <a href={`/bookings/${b.id}/ics`} download className="press"><Card className="p-3.5 flex items-center gap-2 hover:border-ink/30 min-h-14"><CalendarPlus className="h-5 w-5 text-ink-2" /><span className="text-sm font-medium">In meinen Kalender</span></Card></a>
-        {b.isOwner ? (
+        {canRepeat ? (
           <Link href={repeatHref} className="press"><Card className="p-3.5 flex items-center gap-2 hover:border-ink/30 min-h-14"><Repeat className="h-5 w-5 text-ink-2" /><span className="min-w-0"><span className="block text-sm font-medium">Wiederholen</span><span className="block text-xs text-ink-3 truncate">gleiche Zeit, {formatDateZurich(new Date(`${again.date}T12:00:00Z`), { year: undefined, timeZone: "UTC" })}</span></span></Card></Link>
         ) : isAdmin ? (
           <Link href={adminAgainHref} className="press"><Card className="p-3.5 flex items-center gap-2 hover:border-ink/30 min-h-14"><Repeat className="h-5 w-5 text-ink-2" /><span className="text-sm font-medium">Erneut buchen</span></Card></Link>

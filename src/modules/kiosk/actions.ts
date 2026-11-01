@@ -8,8 +8,10 @@ import { fail, ok, type ActionResult } from "@/lib/action-result";
 import { requireModule } from "@/lib/tenant";
 import { formatMoney, parseMoneyToCents } from "@/lib/money";
 import { createStandaloneFeeInvoice, finalizeStandaloneFeeInvoices, standaloneInvoiceDefaults } from "@/modules/billing/standalone-invoice";
+import { appendPaymentNote } from "@/modules/billing/types";
+import { formatDateZurich } from "@/lib/time";
 import {
-  UNDO_WINDOW_MS, invoiceCategoryName, invoiceYear, isBatchId, lineClientId, normalizeCart, periodLabel, periodToUtcRange, validatePeriod, type Period,
+  KIOSK_RELEASED_NOTE, UNDO_WINDOW_MS, invoiceCategoryName, invoiceYear, isBatchId, lineClientId, normalizeCart, periodLabel, periodToUtcRange, saleTime, validatePeriod, type Period,
 } from "./logic";
 import { entryInputSchema, firstIssue, productSchema, type EntryInput } from "./types";
 
@@ -140,6 +142,16 @@ export async function recordEntriesAction(input: EntryInput): Promise<ActionResu
   }
   const paidCash = v.userId ? v.paidCash : true;
 
+  // Offline gespeicherte Erfassungen zählen zum Zeitpunkt des Verkaufs (Kassentag, Abrechnungszeitraum),
+  // nicht zum Zeitpunkt der Übertragung. Ausnahme: wurden für dieses Mitglied seither schon Einträge
+  // verrechnet, gilt «jetzt», damit die Konsumation nicht in einem bereits abgerechneten Zeitraum hängen bleibt.
+  const now = new Date();
+  let createdAt = saleTime(v.soldAt, now);
+  if (v.userId && !paidCash && now.getTime() - createdAt.getTime() > 60_000) {
+    const billedSince = await db.kioskEntry.count({ where: { tenantId, userId: v.userId, billedInvoiceId: { not: null }, createdAt: { gte: createdAt } } });
+    if (billedSince) createdAt = now;
+  }
+
   const lines = normalizeCart(v.lines);
   // Auch inzwischen ausgeblendete Produkte annehmen: eine offline gespeicherte Erfassung soll nicht verloren gehen.
   // Die Theke zeigt nur aktive Produkte; gelöschte Produkte lassen sich nicht mehr buchen.
@@ -152,7 +164,7 @@ export async function recordEntriesAction(input: EntryInput): Promise<ActionResu
     return {
       tenantId, userId: v.userId, guestName: v.userId ? null : v.guestName, productId: p.id, productName: p.name.slice(0, 191),
       quantity: l.quantity, unitPriceCents: p.priceCents, totalCents: p.priceCents * l.quantity, createdById: ctx.user.id,
-      clientId: lineClientId(v.batchId, i), paidCash,
+      clientId: lineClientId(v.batchId, i), paidCash, createdAt,
     };
   });
   const totalCents = data.reduce((s, d) => s + d.totalCents, 0);
@@ -285,7 +297,11 @@ export async function billKioskAction(input: { from: string; to: string; userIds
   }
 }
 
-/** Einträge stornierter Rechnungen wieder freigeben (danach erneut verrechenbar). */
+/**
+ * Einträge stornierter Rechnungen wieder freigeben (danach erneut verrechenbar).
+ * Die Rechnung wird dabei markiert (Zahlungsnotiz) und kann danach nicht mehr reaktiviert werden.
+ * Nach dem Storno online bezahlte Rechnungen bleiben verknüpft: die Konsumation ist bezahlt.
+ */
 export async function releaseCancelledAction(): Promise<ActionResult<{ count: number }>> {
   const ctx = await manageCtx();
   if (!ctx) return fail(NO_RIGHT);
@@ -293,15 +309,35 @@ export async function releaseCancelledAction(): Promise<ActionResult<{ count: nu
   try {
     const billed = await db.kioskEntry.findMany({ where: { tenantId, billedInvoiceId: { not: null } }, distinct: ["billedInvoiceId"], select: { billedInvoiceId: true } });
     const ids = billed.map((b) => b.billedInvoiceId!);
-    const cancelled = ids.length ? await db.feeInvoice.findMany({ where: { tenantId, id: { in: ids }, status: "CANCELLED" }, select: { id: true, number: true } }) : [];
+    const cancelled = ids.length
+      ? await db.feeInvoice.findMany({ where: { tenantId, id: { in: ids }, status: "CANCELLED", payments: { none: { status: "PAID" } } }, select: { id: true, number: true } })
+      : [];
     if (!cancelled.length) return fail("Keine Einträge aus stornierten Rechnungen.");
-    const r = await db.kioskEntry.updateMany({ where: { tenantId, billedInvoiceId: { in: cancelled.map((c) => c.id) } }, data: { billedInvoiceId: null } });
+    const note = `${KIOSK_RELEASED_NOTE} ${formatDateZurich(new Date(), { weekday: undefined })}`;
+    const released = await db.$transaction(async (tx) => {
+      const out: Array<{ number: string; count: number }> = [];
+      for (const c of cancelled) {
+        // Status in der Transaktion sperren und erneut prüfen (inzwischen reaktiviert oder online bezahlt?).
+        const [row] = await tx.$queryRaw<Array<{ status: string; paymentNote: string | null }>>`
+          SELECT status, paymentNote FROM \`FeeInvoice\` WHERE id = ${c.id} AND tenantId = ${tenantId} FOR UPDATE`;
+        if (!row || row.status !== "CANCELLED") continue;
+        if (await tx.payment.count({ where: { feeInvoiceId: c.id, status: "PAID" } })) continue;
+        const r = await tx.kioskEntry.updateMany({ where: { tenantId, billedInvoiceId: c.id }, data: { billedInvoiceId: null } });
+        await tx.feeInvoice.update({ where: { id: c.id }, data: { paymentNote: appendPaymentNote(row.paymentNote, note) } });
+        out.push({ number: c.number, count: r.count });
+      }
+      return out;
+    });
+    const count = released.reduce((s, r) => s + r.count, 0);
+    if (!released.length) return fail("Keine Einträge aus stornierten Rechnungen.");
     await audit({
       tenantId, actorId: ctx.user.id, actorName: ctx.user.name, action: "kiosk.release", entity: "KioskEntry", entityId: tenantId,
-      detail: `${r.count} Einträge freigegeben (${cancelled.map((c) => c.number).join(", ")})`.slice(0, 1900),
+      detail: `${count} Einträge freigegeben (${released.map((c) => c.number).join(", ")})`.slice(0, 1900),
     });
     revalidate();
-    return ok({ count: r.count }, `${r.count} ${r.count === 1 ? "Eintrag" : "Einträge"} wieder offen.`);
+    revalidatePath("/admin/billing", "layout");
+    revalidatePath("/admin/payments");
+    return ok({ count }, `${count} ${count === 1 ? "Eintrag" : "Einträge"} wieder offen.`);
   } catch (e) {
     return handle(e);
   }

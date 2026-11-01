@@ -19,6 +19,7 @@ vi.mock("@/lib/db", () => {
       Object.assign(state.payment, data);
       return { count: 1 };
     },
+    update: async ({ data }: { data: Record<string, unknown> }) => Object.assign(state.payment!, data),
   };
   const feeInvoice = {
     findUnique: async () => (state.invoice ? { status: state.invoice.status, paymentNote: state.invoice.paymentNote } : null),
@@ -29,7 +30,9 @@ vi.mock("@/lib/db", () => {
     },
     update: async ({ data }: { data: Record<string, unknown> }) => Object.assign(state.invoice!, data),
   };
-  const tx = { payment, feeInvoice, booking: { update: async () => ({}), updateMany: async () => ({ count: 0 }) } };
+  // SELECT … FOR UPDATE auf die Rechnung (sperrendes Lesen in settlePayment).
+  const $queryRaw = async () => (state.invoice ? [{ status: state.invoice.status, paymentNote: state.invoice.paymentNote }] : []);
+  const tx = { payment, feeInvoice, $queryRaw, booking: { update: async () => ({}), updateMany: async () => ({ count: 0 }) } };
   return { db: { ...tx, $transaction: async (fn: (t: typeof tx) => Promise<unknown>) => fn(tx) } };
 });
 vi.mock("@/lib/audit", () => ({ audit: async (e: { action: string }) => void state.audits.push(e.action) }));
@@ -37,6 +40,7 @@ vi.mock("@/lib/notify", () => ({ notify: async () => void state.notifications++ 
 vi.mock("@/lib/crypto", () => ({ decryptJson: () => ({}), encryptJson: () => "" }));
 
 import { beginCheckout, settlePayment } from "./settle";
+import { paymentReviewFromDetails } from "./logic";
 import type { PaymentProvider } from "./types";
 
 const checkoutInput = { tenantId: "t1", amountCents: 5000, currency: "CHF", reference: "X", description: "d", successUrl: "https://a/ok", cancelUrl: "https://a/c" };
@@ -88,5 +92,25 @@ describe("settlePayment (Beitragsrechnung)", () => {
     expect(await settlePayment("p1", { amountCents: 8000, currency: "CHF" })).toBe("PAID");
     expect(String(state.invoice!.paymentNote)).toMatch(/Doppelt bezahlt/);
     expect(state.notifications).toBe(0);
+    expect(state.audits).toEqual(["billing.invoice.online_payment_extra"]);
+    expect(paymentReviewFromDetails(state.payment!.detailsJson as string)?.kind).toBe("REFUND");
+  });
+
+  it("stornierte Rechnung bleibt storniert und die Zahlung wird zur Rückerstattung markiert", async () => {
+    state.invoice!.status = "CANCELLED";
+    expect(await settlePayment("p1", { amountCents: 8000, currency: "CHF" })).toBe("PAID");
+    expect(state.invoice!.status).toBe("CANCELLED");
+    expect(String(state.invoice!.paymentNote)).toMatch(/nach Storno bezahlt – Rückerstattung prüfen/);
+    expect(paymentReviewFromDetails(state.payment!.detailsJson as string)).toMatchObject({ kind: "REFUND" });
+  });
+
+  it("protokolliert eine Betragsabweichung nur einmal, auch bei wiederholter Abfrage", async () => {
+    for (let i = 0; i < 3; i++) expect(await settlePayment("p1", { amountCents: 4900, currency: "CHF" })).toBe("MISMATCH");
+    expect(state.audits.filter((a) => a === "payment.amount_mismatch")).toHaveLength(1);
+    expect(paymentReviewFromDetails(state.payment!.detailsJson as string)?.kind).toBe("AMOUNT_MISMATCH");
+    // Andere Abweichung → neuer Eintrag
+    expect(await settlePayment("p1", { amountCents: 5000, currency: "EUR" })).toBe("MISMATCH");
+    expect(state.audits.filter((a) => a === "payment.amount_mismatch")).toHaveLength(2);
+    expect(state.payment!.status).toBe("PENDING");
   });
 });

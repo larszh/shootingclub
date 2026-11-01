@@ -157,7 +157,8 @@ export async function kioskStats(tenantId: string) {
     db.kioskEntry.findMany({ where: { tenantId, billedInvoiceId: { not: null } }, distinct: ["billedInvoiceId"], select: { billedInvoiceId: true } }),
   ]);
   const ids = billedIds.map((b) => b.billedInvoiceId!);
-  const cancelled = ids.length ? await db.feeInvoice.findMany({ where: { tenantId, id: { in: ids }, status: "CANCELLED" }, select: { id: true } }) : [];
+  // Nach dem Storno online bezahlte Rechnungen bleiben verknüpft (siehe releaseCancelledAction).
+  const cancelled = ids.length ? await db.feeInvoice.findMany({ where: { tenantId, id: { in: ids }, status: "CANCELLED", payments: { none: { status: "PAID" } } }, select: { id: true } }) : [];
   const releasable = cancelled.length ? await db.kioskEntry.count({ where: { tenantId, billedInvoiceId: { in: cancelled.map((c) => c.id) } } }) : 0;
   return {
     openCents: open._sum.totalCents ?? 0,
@@ -192,5 +193,36 @@ export async function myKiosk(tenantId: string, userId: string) {
       select: { id: true, number: true, categoryName: true, amountCents: true, currency: true, status: true, issuedAt: true, dueAt: true },
     })
     : [];
-  return { open, openCents: sumCents(open), invoices, recentCash };
+  // Positionen pro Rechnung, damit das Mitglied nachvollziehen kann, was verrechnet wurde.
+  const billedEntries = invoices.length
+    ? await db.kioskEntry.findMany({
+      where: { tenantId, userId, billedInvoiceId: { in: invoices.map((i) => i.id) } },
+      orderBy: { createdAt: "asc" }, take: 3000,
+      select: { id: true, billedInvoiceId: true, productName: true, quantity: true, unitPriceCents: true, totalCents: true, createdAt: true },
+    })
+    : [];
+  const itemsByInvoice = new Map<string, typeof billedEntries>();
+  for (const e of billedEntries) itemsByInvoice.set(e.billedInvoiceId!, [...(itemsByInvoice.get(e.billedInvoiceId!) ?? []), e]);
+  return { open, openCents: sumCents(open), invoices: invoices.map((i) => ({ ...i, items: itemsByInvoice.get(i.id) ?? [] })), recentCash };
 }
+
+/** Rechnungen der Schützenstube (Einzelrechnungen ohne Beitragslauf): alle offenen und die neuesten übrigen, mit Anzahl Einträge. */
+export async function kioskInvoices(tenantId: string, take = 30) {
+  const groups = await db.kioskEntry.groupBy({
+    by: ["billedInvoiceId"],
+    where: { tenantId, billedInvoiceId: { not: null } },
+    _count: { _all: true },
+  });
+  const counts = new Map(groups.map((g) => [g.billedInvoiceId!, g._count._all]));
+  if (!counts.size) return [];
+  const ids = [...counts.keys()];
+  const select = { id: true, number: true, memberName: true, categoryName: true, amountCents: true, currency: true, status: true, issuedAt: true, paidAt: true } as const;
+  const orderBy = [{ issuedAt: "desc" as const }, { number: "desc" as const }];
+  // Alle offenen, dazu die neuesten bezahlten/stornierten.
+  const [open, done] = await Promise.all([
+    db.feeInvoice.findMany({ where: { tenantId, id: { in: ids }, status: "OPEN" }, orderBy, take: 500, select }),
+    db.feeInvoice.findMany({ where: { tenantId, id: { in: ids }, status: { not: "OPEN" } }, orderBy, take, select }),
+  ]);
+  return [...open, ...done].map((i) => ({ ...i, entryCount: counts.get(i.id) ?? 0 }));
+}
+export type KioskInvoiceRow = Awaited<ReturnType<typeof kioskInvoices>>[number];

@@ -505,10 +505,10 @@ const ENTRIES: FaqEntry[] = [
       <ol>
         <li>Unter <Link href="/admin/accounting">Buchhaltung</Link> einmal den Kontenplan prüfen (Vorschlag nach KMU-Kontenrahmen, z.B. 1020 Bank, 1100 Debitoren, 3000 Beiträge).</li>
         <li>Zeitraum wählen (Jahr, Quartal, Monat) und die Vorschau kontrollieren.</li>
-        <li><strong>Banana</strong>: «Banana Buchhaltung» herunterladen (.txt), in Banana «Aktionen → In Buchhaltung importieren → Buchungen», Format «Textdatei mit Spaltenüberschriften» wählen und die Spaltenzuordnung prüfen.</li>
+        <li><strong>Banana</strong>: «Banana Buchhaltung» herunterladen (.txt, Spalten Date/Doc/Description/AccountDebit/AccountCredit/Amount, Datum JJJJ-MM-TT), in Banana «Aktionen → In Buchhaltung importieren → Buchungen», Format «Textdatei mit Spaltenüberschriften» wählen; die Konten müssen im Banana-Kontenplan existieren.</li>
         <li><strong>bexio</strong>: «bexio (CSV für manuellen Import)» herunterladen und im Buchungsimport von bexio die Spalten zuordnen.</li>
       </ol>
-      <p>Am besten nur abgeschlossene Zeiträume exportieren. Gebühren der Zahlungsanbieter und Barverkäufe der Schützenstube bitte von Hand buchen.</p>
+      <p>Am besten nur abgeschlossene Zeiträume exportieren. Reservationen, die «Bar / vor Ort» bezahlt wurden, sind automatisch enthalten (Bank an Reservationen). Von Hand buchen müsst ihr nur noch die Gebühren der Zahlungsanbieter und die Barverkäufe der Schützenstube.</p>
     </>,
   ),
   entry(

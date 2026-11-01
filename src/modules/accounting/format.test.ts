@@ -24,12 +24,12 @@ describe("formatAmount", () => {
 });
 
 describe("renderBanana", () => {
-  it("Kopfzeile und Zeilen mit Tabulatoren, Datum TT.MM.JJJJ, CRLF", () => {
+  it("Kopfzeile mit Banana-Spaltennamen, Tabulatoren, Datum JJJJ-MM-TT, CRLF", () => {
     const out = renderBanana([entry(), entry({ date: "2026-12-31", doc: "MU-7", text: "Zahlung MU-7 Munition", debit: "1020", credit: "1100", amountCents: 3050 })]);
     const lines = out.split("\r\n");
-    expect(lines[0]).toBe("Datum\tBeleg\tBeschreibung\tKtSoll\tKtHaben\tBetrag");
-    expect(lines[1]).toBe("05.03.2026\tMB-2026-001\tRechnung MB-2026-001 Mitgliederbeitrag 2026 Aktiv\t1100\t3000\t120.00");
-    expect(lines[2]).toBe("31.12.2026\tMU-7\tZahlung MU-7 Munition\t1020\t1100\t30.50");
+    expect(lines[0]).toBe("Date\tDoc\tDescription\tAccountDebit\tAccountCredit\tAmount");
+    expect(lines[1]).toBe("2026-03-05\tMB-2026-001\tRechnung MB-2026-001 Mitgliederbeitrag 2026 Aktiv\t1100\t3000\t120.00");
+    expect(lines[2]).toBe("2026-12-31\tMU-7\tZahlung MU-7 Munition\t1020\t1100\t30.50");
     expect(lines[3]).toBe("");
     expect(out.startsWith("﻿")).toBe(false);
     expect(lines[1]!.split("\t")).toHaveLength(6);
@@ -70,7 +70,7 @@ describe("renderGenericCsv", () => {
 
   it("leeres Journal: nur Kopfzeile", () => {
     expect(renderJournal("csv", []).slice(1)).toBe("Datum;Beleg;Text;Soll;Haben;Betrag;Währung;Bereich;Art;Buchungsart\r\n");
-    expect(renderJournal("banana", [])).toBe("Datum\tBeleg\tBeschreibung\tKtSoll\tKtHaben\tBetrag\r\n");
+    expect(renderJournal("banana", [])).toBe("Date\tDoc\tDescription\tAccountDebit\tAccountCredit\tAmount\r\n");
   });
 });
 

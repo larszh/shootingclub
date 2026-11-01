@@ -15,6 +15,8 @@ export const entryInputSchema = z.object({
   userId: z.string().min(1).max(40).nullable(),
   guestName: z.string().trim().max(80).optional().transform((s) => s || null),
   paidCash: z.boolean(),
+  /** Zeitpunkt der Erfassung am Gerät (ms seit Epoch); offline gespeicherte Erfassungen werden später gesendet. */
+  soldAt: z.number().int().positive().optional(),
   lines: z.array(z.object({ productId: z.string().min(1).max(40), quantity: z.number().int().min(1).max(MAX_QUANTITY) })).min(1, "Bitte mindestens ein Produkt wählen.").max(MAX_LINES),
 });
 export type EntryInput = z.input<typeof entryInputSchema>;

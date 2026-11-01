@@ -15,6 +15,8 @@ import type { AccountKey, AccountPlan } from "./types";
  * - Rechnung nach Ausstellung storniert (cancelledAt): Ertragskonto / Debitoren (Gegenbuchung)
  * - Online-Zahlung ohne Rechnung (Reservation direkt bezahlt): Bank / Ertragskonto,
  *   Rückerstattung: Ertragskonto / Bank
+ * - Barzahlung ohne Rechnung (Reservation «Bar / vor Ort»): Bank / Ertragskonto am Zahlungsdatum,
+ *   Rückerstattung: Ertragskonto / Bank
  *
  * Ertragskonto nach Art: Mitgliederbeitrag und Vereinsrechnung → feeAccount, Ersatzabgabe →
  * workFeeAccount, Schützenstube (Kiosk) → feeAccount (der Kontenplan hat kein eigenes Kiosk-Konto),
@@ -25,7 +27,7 @@ import type { AccountKey, AccountPlan } from "./types";
  */
 
 export type RevenueKind = "fee" | "workfee" | "kiosk" | "booking" | "ammo";
-export type DocSource = "FEE" | "BOOKING" | "AMMO" | "ONLINE";
+export type DocSource = "FEE" | "BOOKING" | "AMMO" | "ONLINE" | "CASH";
 export type EntryType = "issue" | "payment" | "reversal" | "refund";
 
 export const REVENUE_ACCOUNT: Record<RevenueKind, AccountKey> = {
@@ -56,6 +58,7 @@ export const SOURCE_LABEL: Record<DocSource, string> = {
   BOOKING: "Reservationen",
   AMMO: "Munition",
   ONLINE: "Online-Zahlungen",
+  CASH: "Barzahlungen",
 };
 
 export type OnlinePayment = {
@@ -70,7 +73,7 @@ export type OnlinePayment = {
 
 export type InvoiceDoc = {
   type: "invoice";
-  source: Exclude<DocSource, "ONLINE">;
+  source: Exclude<DocSource, "ONLINE" | "CASH">;
   id: string;
   number: string;
   kind: RevenueKind;
@@ -90,9 +93,10 @@ export type InvoiceDoc = {
   onlinePayments: OnlinePayment[];
 };
 
+/** Zahlung ohne Rechnung: Reservation online bezahlt (ONLINE) oder bar vor Ort (CASH). */
 export type PaymentDoc = {
   type: "payment";
-  source: "ONLINE";
+  source: "ONLINE" | "CASH";
   id: string;
   /** Belegnummer (Online-Zahlungen ohne Rechnung haben keine eigene Nummer) */
   number: string;
@@ -174,7 +178,7 @@ export function buildJournal(docs: JournalDocument[], accounts: AccountPlan, opt
 
     if (d.type === "payment") {
       const p = d.payment;
-      const via = `Online-Zahlung ${providerLabel(p.provider)}`;
+      const via = d.source === "CASH" ? "Barzahlung" : `Online-Zahlung ${providerLabel(p.provider)}`;
       push({ ...base, type: "payment", date: day(p.paidAt), text: `${via} ${d.label}`, debit: bank, credit: revenue, amountCents: p.amountCents, currency: p.currency });
       if (p.refundedAt) {
         push({ ...base, type: "refund", date: day(p.refundedAt), text: `Rückerstattung ${via} ${d.label}`, debit: revenue, credit: bank, amountCents: p.amountCents, currency: p.currency });

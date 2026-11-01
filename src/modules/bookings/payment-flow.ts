@@ -46,7 +46,7 @@ export async function verifyBookingPayment(bookingId: string) {
   const provider = await getActiveProvider(b.tenantId, payment.provider);
   if (!provider) return { status: b.paymentStatus };
   const r = await refreshPaymentStatus(payment.id);
-  return r.error ? { status: r.status, error: r.error } : { status: r.status };
+  return r.error ? { status: r.status, error: r.error, needsReview: r.needsReview ?? false } : { status: r.status };
 }
 
 /** Zahlung als bezahlt verbuchen (Betrag und Währung aus der Payment-Zeile, z.B. für Tests/Admin). */

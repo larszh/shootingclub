@@ -1,4 +1,5 @@
 import "server-only";
+import { db } from "@/lib/db";
 import { renderQrBillSvg } from "@/lib/qr-bill";
 import { getT, getTenantLocale } from "@/lib/i18n";
 import { dueDateInDays } from "@/modules/billing/dates";
@@ -43,6 +44,15 @@ export async function buildFeeInvoiceDocument(inv: Inv, tenantId: string, tenant
   const qr = inv.status === "OPEN"
     ? await renderQrBillSvg({ amountCents: inv.amountCents, currency: inv.currency, creditor, debtor: { name: inv.memberName, street, zip, city }, message: purpose, reference: profile.qrIban ? reference : null, locale })
     : null;
+  // Schützenstube-Einzelrechnung: die verrechneten Konsumationen einzeln aufführen.
+  const kioskEntries = inv.runId
+    ? []
+    : await db.kioskEntry.findMany({
+        where: { tenantId: inv.tenantId, billedInvoiceId: inv.id },
+        select: { createdAt: true, quantity: true, productName: true, totalCents: true },
+        orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+      });
+  const items = kioskEntries.map((e) => ({ date: e.createdAt, label: `${e.quantity} × ${e.productName}`, amountCents: e.totalCents }));
   return {
     locale,
     title,
@@ -53,7 +63,7 @@ export async function buildFeeInvoiceDocument(inv: Inv, tenantId: string, tenant
     currency: inv.currency,
     payee: creditor,
     debtor: { name: inv.memberName, email: inv.memberEmail, street, zip, city, memberNumber: inv.membership?.memberNumber ?? null },
-    lines: [{ label: feeLabel, sublabel: isStandaloneFeeInvoice(inv) ? null : inv.categoryName, amountCents: inv.amountCents }],
+    lines: [{ label: feeLabel, sublabel: isStandaloneFeeInvoice(inv) ? null : inv.categoryName, amountCents: inv.amountCents, ...(items.length ? { items } : {}) }],
     totalCents: inv.amountCents,
     intro: opts?.reminder ? t("invoice.reminderIntro", { number: inv.number }) : null,
     note: inv.run?.note ?? null,

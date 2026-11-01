@@ -4,7 +4,7 @@ import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { db } from "@/lib/db";
-import { requireModule, requirePermission } from "@/lib/tenant";
+import { requireModule, requirePermission, requireTenant } from "@/lib/tenant";
 import { fail, ok, type ActionResult } from "@/lib/action-result";
 import { zurichToUtc } from "@/lib/time";
 import { parseMoneyToCents } from "@/lib/money";
@@ -18,6 +18,7 @@ import { createBookingIfFree, SLOT_TAKEN } from "./create";
 import { checkBookingWindow, windowRejectMessage } from "@/modules/range/booking-window";
 import { bookingAccess, guestMayCancel } from "@/modules/sharing/logic";
 import { audit } from "@/lib/audit";
+import { recordAccountingEvent } from "@/modules/accounting/events";
 
 /** Hinweis bei Reservationen der Verwaltung ausserhalb der bewilligten Schiesszeiten (Modul «range»). */
 const OUTSIDE_WINDOW_NOTE = "Achtung: ausserhalb der bewilligten Schiesszeiten";
@@ -134,13 +135,16 @@ export async function createBookingAction(_prev: ActionResult | null, formData: 
 }
 
 export async function cancelBookingAction(bookingId: string): Promise<ActionResult> {
-  const ctx = await requireModule("bookings");
+  // Kein requireModule: das Mitglied eines Partnervereins storniert beim Eigentümer, auch wenn der
+  // eigene Verein das Modul inzwischen ausgeschaltet hat. Im eigenen Verein gilt das Modul (unten).
+  const ctx = await requireTenant();
   if (typeof bookingId !== "string" || !bookingId || bookingId.length > 40) return fail("Nicht gefunden");
   const b = await db.booking.findUnique({ where: { id: bookingId } });
   if (!b) return fail("Nicht gefunden");
   // Gemeinsame Anlage: das Mitglied eines Partnervereins storniert die eigene Buchung beim Eigentümer.
   const access = bookingAccess(b, { userId: ctx.user.id, activeTenantId: ctx.tenant.id, canManageActive: ctx.can("tenant.manage") });
   if (!access) return fail("Nicht gefunden");
+  if (access !== "guest" && !ctx.hasModule("bookings")) redirect("/?module=bookings");
   const isAdmin = access === "admin" || (access === "owner" && ctx.can("tenant.manage"));
   if (!["PENDING", "CONFIRMED"].includes(b.status)) return fail("Buchung ist bereits beendet.");
   if (!isAdmin) {
@@ -455,6 +459,9 @@ export async function markBookingRefundedAction(bookingId: string): Promise<Acti
   const b = await db.booking.findUnique({ where: { id: bookingId } });
   if (!b || b.tenantId !== ctx.tenant.id) return fail("Nicht gefunden");
   await db.booking.update({ where: { id: bookingId }, data: { paymentStatus: "REFUNDED" } });
+  if (b.paymentStatus !== "REFUNDED") {
+    await recordAccountingEvent({ tenantId: ctx.tenant.id, kind: "refund", entity: "Booking", entityId: bookingId, actorId: ctx.user.id, actorName: ctx.user.name });
+  }
   revalidatePath("/admin/bookings");
   return ok();
 }

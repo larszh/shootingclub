@@ -14,7 +14,7 @@ import { recomputeMatchTotals } from "../sync";
 import { SCORE_IMPORT_MAX_BYTES, SCORE_IMPORT_MAX_COLUMNS, SCORE_PRESETS, SCORE_PRESET_IDS, normalizeMapping, readScoreFile, type ScorePresetId } from "./parse";
 import { parseAssignment, SINGLE_SHOOTER_NAME } from "./shooters";
 import { planImport } from "./plan";
-import { findPreviousImport, type PreviousImport } from "./queries";
+import { findPreviousImport, isStaleImport, type PreviousImport } from "./queries";
 
 /**
  * Resultat-Import übernehmen. Nur für Trainer und Vorstand (alle Resultate sehen bzw. Programme
@@ -35,7 +35,8 @@ export async function checkScoreImportAction(fileHash: string): Promise<ActionRe
   if (!ctx) return fail("Keine Berechtigung");
   const parsed = hashSchema.safeParse(fileHash);
   if (!parsed.success) return fail("Ungültige Eingabe");
-  return ok({ previous: await findPreviousImport(ctx.tenant.id, parsed.data) });
+  const previous = await findPreviousImport(ctx.tenant.id, parsed.data);
+  return ok({ previous: previous && !isStaleImport(previous) ? previous : null });
 }
 
 const configSchema = z.object({
@@ -83,7 +84,9 @@ export async function commitScoreImportAction(formData: FormData): Promise<Actio
   const bytes = new Uint8Array(await file.arrayBuffer());
   const fileHash = createHash("sha256").update(bytes).digest("hex");
   const previous = await findPreviousImport(ctx.tenant.id, fileHash);
-  if (previous) return ok({ status: "duplicate", previous });
+  if (previous && !isStaleImport(previous)) return ok({ status: "duplicate", previous });
+  // Früherer Import, dessen Durchgänge alle gelöscht wurden: Eintrag wird in der Transaktion ersetzt
+  const staleImportId = previous ? previous.id : null;
 
   let table;
   try {
@@ -123,6 +126,7 @@ export async function commitScoreImportAction(formData: FormData): Promise<Actio
   try {
     matchId = await db.$transaction(
       async (tx) => {
+        if (staleImportId) await tx.scoreImport.deleteMany({ where: { id: staleImportId, tenantId: ctx.tenant.id } });
         // Zuerst den Import registrieren: die Eindeutigkeit (tenantId, fileHash) verhindert Doppelimporte auch bei gleichzeitiger Übernahme
         const imp = await tx.scoreImport.create({
           data: { tenantId: ctx.tenant.id, createdById: ctx.user.id, format, fileName, fileHash, rows: usedRows },
@@ -163,7 +167,7 @@ export async function commitScoreImportAction(formData: FormData): Promise<Actio
   } catch (e) {
     if (isUniqueViolation(e)) {
       const again = await findPreviousImport(ctx.tenant.id, fileHash);
-      if (again) return ok({ status: "duplicate", previous: again });
+      if (again && !isStaleImport(again)) return ok({ status: "duplicate", previous: again });
     }
     throw e;
   }

@@ -236,18 +236,18 @@ Unter **Einstellungen → Website-Widgets** (`/admin/embed`) schaltet ein Admin 
 ```
 
 - Widgets: `calendar` (Anlässe, `?kind=`, `?limit=`), `times` (Schiesszeiten), `ranking` und `championship` (nur mit signiertem Link aus `/admin/embed`). `?theme=auto|light|dark`.
-- `/embed/*` erhält eine eigene CSP ohne `X-Frame-Options`; `frame-ancestors` kommt aus **`EMBED_FRAME_ANCESTORS`** (Leerzeichen-getrennt, z.B. `"https://www.sv-muster.ch https://*.muster.ch"`, Standard `*`). Die Variable wird beim Build gelesen: nach einer Änderung `scripts/deploy.sh` bzw. `npm run build` und Neustart. Alle anderen Seiten bleiben gegen Einbetten geschützt.
+- `/embed/*` erhält eine eigene CSP ohne `X-Frame-Options`; `frame-ancestors` kommt aus **`EMBED_FRAME_ANCESTORS`** (durch Leerzeichen oder Kommas getrennt, z.B. `"https://www.sv-muster.ch https://*.muster.ch"`; Standard `*` nur wenn leer. Die eigene Origin der App (`'self'`) ist immer erlaubt, für die Vorschau unter `/admin/embed`. Ist die Variable gesetzt, aber kein Eintrag gültig, gilt `'self'` und der Build gibt eine Warnung aus; `'none'` sperrt jedes Einbetten). Die Variable wird beim Build gelesen: nach einer Änderung `scripts/deploy.sh` bzw. `npm run build` und Neustart. Alle anderen Seiten bleiben gegen Einbetten geschützt.
 - Antworten sind 5 Minuten öffentlich zwischengespeichert (Fehlerseiten 60 s). Widerruf oder «Neu erzeugen» wirkt also spätestens nach 5 Minuten. Hinter Cloudflare den Cache für `/embed/*` nicht länger einstellen.
 
 ## Buchhaltung: Export für Banana und bexio
 
 Unter **Einstellungen → Buchhaltung** (`/admin/accounting`, Recht `accounting.export`) einmal den Kontenplan prüfen und anpassen, dann Zeitraum wählen und exportieren:
 
-- **Banana Buchhaltung Plus**: «Banana Buchhaltung» herunterladen (.txt, Tabulator-getrennt, Spalten Datum/Beleg/Beschreibung/KtSoll/KtHaben/Betrag, Datum TT.MM.JJJJ). In Banana *Aktionen → In Buchhaltung importieren…* → *Buchungen* → Format *Textdatei mit Spaltenüberschriften* wählen, Datei auswählen und die Spaltenzuordnung prüfen. Die Konten müssen im Banana-Kontenplan existieren.
+- **Banana Buchhaltung Plus**: «Banana Buchhaltung» herunterladen (.txt, Tabulator-getrennt, Spalten Date/Doc/Description/AccountDebit/AccountCredit/Amount, Datum JJJJ-MM-TT). In Banana *Aktionen → In Buchhaltung importieren…* → *Buchungen* → Format *Textdatei mit Spaltenüberschriften* wählen, Datei auswählen und die Spaltenzuordnung prüfen. Die Konten müssen im Banana-Kontenplan existieren.
 - **bexio**: «bexio (CSV für manuellen Import)» herunterladen (Semikolon, UTF-8 mit BOM) und im Buchungsimport von bexio die Spalten zuordnen.
 - **CSV**: generisch mit zusätzlichen Spalten (Währung, Bereich, Art) für Excel oder andere Programme.
 
-Das Journal wird aus dem aktuellen Stand der Belege berechnet: nur abgeschlossene Zeiträume exportieren. Gebühren der Zahlungsanbieter und Barverkäufe der Schützenstube werden nicht automatisch gebucht. Jeder Export steht im Protokoll.
+Das Journal enthält Beiträge, Ersatzabgabe, Schützenstube, Reservationen (auch «Bar / vor Ort» bezahlte: Bank an Reservationen), Munition und Online-Zahlungen. Es wird aus dem aktuellen Stand der Belege berechnet: nur abgeschlossene Zeiträume exportieren. Gebühren der Zahlungsanbieter und Barverkäufe der Schützenstube werden nicht automatisch gebucht. Jeder Export steht im Protokoll.
 
 ## Resultat-Import aus elektronischen Trefferanzeigen
 

@@ -21,8 +21,11 @@ export async function notifyBooking(bookingId: string, notice: BookingNotice, ac
   });
   if (!b) return;
   const date = formatDateTime(b.startsAt, "de");
-  const resource = b.viaTenantId ? `${b.resource.name} (${b.tenant.name})` : b.resource.name;
   if (notice === "pending") {
+    // Anfrage an die Verwaltung des Eigentümers: bei Partnerbuchungen den anfragenden Partnerverein
+    // nennen (der eigene Vereinsname in Klammern wäre für die Verwaltung nutzlos).
+    const via = b.viaTenantId ? await db.tenant.findUnique({ where: { id: b.viaTenantId }, select: { name: true } }) : null;
+    const resource = b.viaTenantId ? `${b.resource.name} (Partnerverein ${via?.name ?? "gelöscht"})` : b.resource.name;
     const admins = (await tenantUserIdsWithRole(b.tenantId, ["OWNER", "ADMIN"])).filter((id) => id !== actor.id);
     const name = b.user?.name ?? actor.name;
     await notify({
@@ -39,6 +42,8 @@ export async function notifyBooking(bookingId: string, notice: BookingNotice, ac
     return;
   }
   if (!b.userId || b.userId === actor.id) return;
+  // Mitteilung an das buchende Mitglied: bei Partnerbuchungen den Eigentümer der Anlage nennen.
+  const resource = b.viaTenantId ? `${b.resource.name} (${b.tenant.name})` : b.resource.name;
   const de: Record<Exclude<BookingNotice, "pending">, [string, string]> = {
     confirmed: ["Reservation bestätigt", `Deine Reservation «${resource}» am ${date} ist bestätigt.`],
     rejected: ["Reservation abgelehnt", `Deine Reservation «${resource}» am ${date} wurde leider abgelehnt.`],

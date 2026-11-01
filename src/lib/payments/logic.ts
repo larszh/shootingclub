@@ -86,3 +86,42 @@ export function feeInvoiceReturnPath(invoiceId: string) {
 
 /** Eine laufende Zahlung gilt nach dieser Zeit als verwaist (neuer Checkout erlaubt, Admin-Liste). */
 export const PENDING_STALE_MINUTES = 60;
+
+/**
+ * Prüfhinweis an einer Zahlung (im `detailsJson` der Payment-Zeile, neben den Anbieterdaten):
+ * - REFUND: Geld ist eingegangen, die Rechnung/Reservation war aber schon bezahlt oder storniert.
+ * - AMOUNT_MISMATCH: der Anbieter meldet einen anderen Betrag/eine andere Währung (Zahlung bleibt offen).
+ */
+export type PaymentReview = { kind: "REFUND" | "AMOUNT_MISMATCH"; note: string };
+
+const REVIEW_KEY = "standchefReview";
+
+/** detailsJson schreiben: Anbieterdaten, bei Bedarf mit Prüfhinweis umhüllt. */
+export function paymentDetailsJson(details: unknown, review?: PaymentReview | null): string {
+  return JSON.stringify(review ? { [REVIEW_KEY]: review, details: details ?? null } : (details ?? null));
+}
+
+/** Prüfhinweis aus detailsJson lesen (null, wenn keiner da oder unlesbar). */
+export function paymentReviewFromDetails(detailsJson: string | null | undefined): PaymentReview | null {
+  if (!detailsJson) return null;
+  try {
+    const v: unknown = JSON.parse(detailsJson);
+    if (!v || typeof v !== "object" || !(REVIEW_KEY in v)) return null;
+    const r = (v as Record<string, unknown>)[REVIEW_KEY];
+    if (!r || typeof r !== "object") return null;
+    const { kind, note } = r as Record<string, unknown>;
+    if ((kind !== "REFUND" && kind !== "AMOUNT_MISMATCH") || typeof note !== "string") return null;
+    return { kind, note };
+  } catch {
+    return null;
+  }
+}
+
+/** Hinweis für die Zahlungslisten: Rückerstattung prüfen (bezahlt) bzw. Betrag weicht ab (offen). */
+export function paymentReviewBadge(payment: { status: string; detailsJson?: string | null }): { label: string; tone: "warn" | "accent" } | null {
+  const r = paymentReviewFromDetails(payment.detailsJson);
+  if (!r) return null;
+  if (r.kind === "REFUND" && payment.status === "PAID") return { label: "Rückerstattung prüfen", tone: "accent" };
+  if (r.kind === "AMOUNT_MISMATCH" && payment.status === "PENDING") return { label: "Betrag weicht ab", tone: "warn" };
+  return null;
+}

@@ -22,6 +22,11 @@ export async function GET(req: NextRequest) {
   if (!ctx.tenant) return new NextResponse("Kein Verein ausgewählt", { status: 400 });
   if (!ctx.can("accounting.export")) return new NextResponse("Keine Berechtigung", { status: 403 });
 
+  // Client-Router (RSC-Abruf, Prefetch) bekommt keinen Export: sonst läuft er doppelt und wird mehrfach protokolliert.
+  if (req.headers.get("rsc") === "1" || req.headers.get("next-router-prefetch") || req.nextUrl.searchParams.has("_rsc")) {
+    return new NextResponse(null, { status: 204, headers: { "Cache-Control": "private, no-store" } });
+  }
+
   const sp = req.nextUrl.searchParams;
   const format = sp.get("format") ?? "csv";
   if (!isExportFormat(format)) return new NextResponse("Unbekanntes Format (banana, bexio oder csv).", { status: 400 });

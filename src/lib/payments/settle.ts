@@ -8,7 +8,8 @@ import { appendPaymentNote } from "@/modules/billing/types";
 import { feeInvoiceTitle } from "@/modules/billing/fee-title";
 import { getActiveProvider } from "./index";
 import { providerLabel } from "./catalog";
-import { assertOnlinePayable, feeInvoiceSettlement, onlinePaymentNote, settlementDecision } from "./logic";
+import { assertOnlinePayable, feeInvoiceSettlement, onlinePaymentNote, paymentDetailsJson, paymentReviewFromDetails, settlementDecision, type PaymentReview } from "./logic";
+import { isKioskReleasedNote } from "@/modules/kiosk/logic";
 import type { CheckoutInput, PaymentProvider, StatusResult } from "./types";
 
 /**
@@ -62,8 +63,18 @@ export async function settlePayment(paymentId: string, reported: { amountCents?:
   if (decision === "ALREADY_PAID") return "ALREADY_PAID";
   const tenantId = paymentTenantId(p);
   if (decision === "MISMATCH") {
-    console.warn(`Zahlung ${p.id}: gemeldeter Betrag (${reported.amountCents ?? "?"} ${reported.currency ?? "?"}) passt nicht zu ${p.amountCents} ${p.currency}.`);
-    await audit({ tenantId, actorName: `Online-Zahlung (${providerLabel(p.provider)})`, action: "payment.amount_mismatch", entity: "Payment", entityId: p.id, detail: `gemeldet ${reported.amountCents ?? "?"} ${reported.currency ?? "?"}, erwartet ${p.amountCents} ${p.currency}` });
+    const note = `gemeldet ${reported.amountCents ?? "?"} ${reported.currency ?? "?"}, erwartet ${p.amountCents} ${p.currency}`;
+    // Nur einmal festhalten: Rücksprungseite (Poller) und Webhooks fragen dieselbe Zahlung mehrfach ab.
+    const prev = paymentReviewFromDetails(p.detailsJson);
+    if (prev?.kind === "AMOUNT_MISMATCH" && prev.note === note) return "MISMATCH";
+    const marked = await db.payment.updateMany({
+      where: { id: p.id, status: { not: "PAID" }, detailsJson: p.detailsJson },
+      data: { detailsJson: paymentDetailsJson(details, { kind: "AMOUNT_MISMATCH", note }) },
+    });
+    if (marked.count) {
+      console.warn(`Zahlung ${p.id}: gemeldeter Betrag (${reported.amountCents ?? "?"} ${reported.currency ?? "?"}) passt nicht zu ${p.amountCents} ${p.currency}.`);
+      await audit({ tenantId, actorName: `Online-Zahlung (${providerLabel(p.provider)})`, action: "payment.amount_mismatch", entity: "Payment", entityId: p.id, detail: note });
+    }
     return "MISMATCH";
   }
 
@@ -76,6 +87,7 @@ export async function settlePayment(paymentId: string, reported: { amountCents?:
     if (res.count === 0) return { settled: false as const, lateBooking: false, fee: null as FeeEffect };
 
     let lateBooking = false;
+    let review: PaymentReview | null = null;
     if (p.booking) {
       // Zahlung nach (automatischer) Stornierung: Geld ist eingegangen, Platz aber nicht mehr reserviert.
       lateBooking = ["CANCELLED", "REJECTED"].includes(p.booking.status);
@@ -84,26 +96,36 @@ export async function settlePayment(paymentId: string, reported: { amountCents?:
         where: { id: p.booking.id },
         data: { paymentStatus: "PAID", paidAt: now, ...(lateNote ? { adminNote: [p.booking.adminNote, lateNote].filter(Boolean).join(" ").slice(-191) } : {}) },
       });
+      if (lateNote) review = { kind: "REFUND", note: lateNote };
     }
 
     let fee: FeeEffect = null;
     if (p.feeInvoice) {
-      // Frisch lesen (innerhalb der Transaktion), damit eine parallele Bankbuchung erkannt wird.
-      const inv = await tx.feeInvoice.findUnique({ where: { id: p.feeInvoice.id }, select: { status: true, paymentNote: true } });
+      // Sperrend lesen (SELECT … FOR UPDATE): ein gewöhnliches Lesen sähe unter REPEATABLE READ noch
+      // «offen», obwohl eine parallele Online- oder Bankzahlung die Rechnung gerade als bezahlt verbucht.
+      // Mit der Zeilensperre wartet diese Transaktion und entscheidet auf dem festgeschriebenen Stand.
+      const [inv] = await tx.$queryRaw<{ status: string; paymentNote: string | null }[]>`SELECT status, paymentNote FROM \`FeeInvoice\` WHERE id = ${p.feeInvoice.id} FOR UPDATE`;
       if (inv) {
-        const s = feeInvoiceSettlement(inv, label);
+        const base = feeInvoiceSettlement(inv, label);
+        // Storniert und Schützenstube-Einträge freigegeben: die Konsumationen sind bereits neu verrechnet.
+        const s = base.action === "NOTE_ONLY" && inv.status === "CANCELLED" && isKioskReleasedNote(inv.paymentNote)
+          ? { ...base, note: `Online (${label}) nach Storno und Freigabe bezahlt – Rückerstattung nötig` }
+          : base;
         if (s.action === "MARK_PAID") {
-          const upd = await tx.feeInvoice.updateMany({
-            where: { id: p.feeInvoice.id, status: "OPEN" },
+          await tx.feeInvoice.update({
+            where: { id: p.feeInvoice.id },
             data: { status: "PAID", paidAt: now, paymentNote: appendPaymentNote(inv.paymentNote, onlinePaymentNote(label)) },
           });
-          fee = upd.count ? { kind: "paid" } : null;
+          fee = { kind: "paid" };
         } else {
           await tx.feeInvoice.update({ where: { id: p.feeInvoice.id }, data: { paymentNote: appendPaymentNote(inv.paymentNote, s.note) } });
           fee = { kind: "note", note: s.note };
+          review = { kind: "REFUND", note: s.note };
         }
       }
     }
+    // Rückerstattungsfälle an der Zahlung selbst markieren (Admin-Zahlungslisten, Rücksprungseite).
+    if (review) await tx.payment.update({ where: { id: p.id }, data: { detailsJson: paymentDetailsJson(details, review) } });
     return { settled: true as const, lateBooking, fee };
   });
 
@@ -172,7 +194,8 @@ export async function markPaymentFailed(paymentId: string, details?: unknown) {
   });
 }
 
-export type RefreshResult = { status: "PAID" | "PENDING" | "FAILED"; error?: string };
+/** `needsReview`: Betrag passt nicht – der Verein muss prüfen, erneutes Abfragen bringt nichts. */
+export type RefreshResult = { status: "PAID" | "PENDING" | "FAILED"; error?: string; needsReview?: boolean };
 
 /** Status einer Zahlung beim Anbieter abfragen und verbuchen (Rücksprungseite). */
 export async function refreshPaymentStatus(paymentId: string): Promise<RefreshResult> {
@@ -192,7 +215,7 @@ export async function refreshPaymentStatus(paymentId: string): Promise<RefreshRe
   }
   if (v.status === "PAID") {
     const outcome = await settlePayment(p.id, v, v.details);
-    if (outcome === "MISMATCH") return { status: "PENDING", error: "Der gemeldete Betrag stimmt nicht mit der Rechnung überein. Der Verein prüft die Zahlung." };
+    if (outcome === "MISMATCH") return { status: "PENDING", needsReview: true, error: "Der gemeldete Betrag stimmt nicht mit der Rechnung überein. Der Verein prüft die Zahlung." };
     return { status: "PAID" };
   }
   if (v.status === "FAILED") {
