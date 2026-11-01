@@ -11,6 +11,8 @@ import { announcementSchema, computeTimes, daysBetween, eventFormSchema, recurre
 import { getBaseUrl, tenantFeedPath, userFeedPath } from "./queries";
 import { notify } from "@/lib/notify";
 import { formatDate, formatDateTime } from "@/lib/i18n/core";
+import { getRequestLocale, getT } from "@/lib/i18n";
+import { localizeMessage } from "@/modules/billing/ui/i18n";
 
 function revalidateEvents(eventId?: string) {
   revalidatePath("/events");
@@ -166,18 +168,21 @@ export async function deleteEventAction(eventId: string): Promise<ActionResult> 
 
 export async function rsvpAction(input: { eventId: string; status: string; guests?: number; note?: string }): Promise<ActionResult> {
   const ctx = await requireModule("events");
+  // Meldungen in der Sprache des Mitglieds
+  const locale = await getRequestLocale();
+  const tr = getT(locale);
   const parsed = rsvpSchema.safeParse(input);
-  if (!parsed.success) return fail(parsed.error.issues[0]?.message ?? "Ungültige Eingabe.");
+  if (!parsed.success) return fail(localizeMessage(parsed.error.issues[0]?.message ?? "Ungültige Eingabe.", locale));
   const { eventId, status, note } = parsed.data;
   const guests = status === "NO" ? 0 : parsed.data.guests;
 
   const event = await db.event.findFirst({ where: { id: eventId, tenantId: ctx.tenant.id } });
-  if (!event) return fail("Anlass nicht gefunden.");
+  if (!event) return fail(tr("money.events.msg.notFound"));
   const now = new Date();
-  if (!event.rsvpEnabled) return fail("Für diesen Anlass gibt es keine Anmeldung.");
-  if (event.isCancelled) return fail("Der Anlass wurde abgesagt.");
-  if (event.startsAt.getTime() <= now.getTime()) return fail("Der Anlass hat bereits begonnen.");
-  if (event.rsvpDeadline && event.rsvpDeadline.getTime() < now.getTime()) return fail("Die Anmeldefrist ist abgelaufen.");
+  if (!event.rsvpEnabled) return fail(tr("money.events.reason.noRsvp"));
+  if (event.isCancelled) return fail(tr("money.events.reason.cancelled"));
+  if (event.startsAt.getTime() <= now.getTime()) return fail(tr("money.events.reason.started"));
+  if (event.rsvpDeadline && event.rsvpDeadline.getTime() < now.getTime()) return fail(tr("money.events.reason.deadline"));
 
   const result = await db.$transaction(async (tx) => {
     if (status === "YES" && event.capacity !== null) {
@@ -192,8 +197,8 @@ export async function rsvpAction(input: { eventId: string; status: string; guest
       const free = event.capacity - taken;
       if (1 + guests > free) {
         return free > 0
-          ? fail(`Es hat nur noch ${free} ${free === 1 ? "Platz" : "Plätze"} frei. Bitte weniger Begleitpersonen angeben.`)
-          : fail("Leider ausgebucht. Melde dich mit «Vielleicht» an, dann kommst du auf die Warteliste.");
+          ? fail(tr(`money.events.msg.seatsLeft.${free === 1 ? "one" : "other"}`, { n: free }))
+          : fail(tr("money.events.msg.full"));
       }
     }
     await tx.eventRsvp.upsert({
@@ -205,7 +210,7 @@ export async function rsvpAction(input: { eventId: string; status: string; guest
   });
   if (result) return result;
   revalidateEvents(event.id);
-  const msg = status === "YES" ? "Super, du bist angemeldet!" : status === "MAYBE" ? "Gespeichert: vielleicht." : "Du hast dich abgemeldet.";
+  const msg = tr(status === "YES" ? "money.events.msg.yes" : status === "MAYBE" ? "money.events.msg.maybe" : "money.events.msg.no");
   return ok(undefined, msg);
 }
 
@@ -342,5 +347,5 @@ export async function regenerateMyFeedAction(): Promise<ActionResult<FeedLink>> 
   const token = newToken();
   await db.user.update({ where: { id: ctx.user.id }, data: { calendarToken: token } });
   revalidatePath("/events");
-  return ok({ url: (await getBaseUrl()) + userFeedPath(token) }, "Neuer Link erstellt. Der alte Link funktioniert nicht mehr.");
+  return ok({ url: (await getBaseUrl()) + userFeedPath(token) }, getT(await getRequestLocale())("money.cal.newLink"));
 }

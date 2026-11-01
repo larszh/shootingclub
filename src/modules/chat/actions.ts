@@ -5,6 +5,8 @@ import { z } from "zod";
 import { db } from "@/lib/db";
 import { requireModule } from "@/lib/tenant";
 import { fail, ok, type ActionResult } from "@/lib/action-result";
+import { getRequestLocale, getT, type TFunction } from "@/lib/i18n";
+import { localizeMessage, tPlural } from "@/modules/billing/ui/i18n";
 import { publishChat } from "./bus";
 import {
   deleteMessage,
@@ -35,13 +37,13 @@ function isUniqueViolation(e: unknown) {
   return typeof e === "object" && e !== null && (e as { code?: string }).code === "P2002";
 }
 
-async function groupAccess(ctx: Ctx, conversationId: string, needAdmin: boolean): Promise<ConversationAccess | string> {
+async function groupAccess(ctx: Ctx, conversationId: string, needAdmin: boolean, t: TFunction): Promise<ConversationAccess | string> {
   const parsed = idSchema.safeParse(conversationId);
-  if (!parsed.success) return "Unterhaltung nicht gefunden.";
+  if (!parsed.success) return t("money.chat.err.notFound");
   const access = await getConversationAccess(ctx.user.id, parsed.data, ctx.tenant.id);
-  if (!access) return "Unterhaltung nicht gefunden.";
-  if (access.conversation.kind !== "GROUP") return "Nur in Gruppen möglich.";
-  if (needAdmin && access.member.role !== "ADMIN") return "Nur Gruppen-Admins dürfen das.";
+  if (!access) return t("money.chat.err.notFound");
+  if (access.conversation.kind !== "GROUP") return t("money.chat.err.groupOnly");
+  if (needAdmin && access.member.role !== "ADMIN") return t("money.chat.err.groupAdminOnly");
   return access;
 }
 
@@ -58,10 +60,11 @@ async function filterTenantMembers(tenantId: string, userIds: string[]) {
 /** 1:1-Unterhaltung öffnen oder anlegen (eindeutig pro Paar). */
 export async function startDirectChatAction(otherUserId: string): Promise<ActionResult<{ id: string }>> {
   const ctx = await chatCtx();
-  if (!ctx) return fail("Der Chat ist nur für Vereinsmitglieder.");
+  const t = getT(await getRequestLocale());
+  if (!ctx) return fail(t("money.chat.err.membersOnly"));
   const parsed = idSchema.safeParse(otherUserId);
-  if (!parsed.success || parsed.data === ctx.user.id) return fail("Bitte ein anderes Mitglied wählen.");
-  if (!(await isTenantMember(parsed.data, ctx.tenant.id))) return fail("Diese Person ist nicht im Verein.");
+  if (!parsed.success || parsed.data === ctx.user.id) return fail(t("money.chat.err.pickOther"));
+  if (!(await isTenantMember(parsed.data, ctx.tenant.id))) return fail(t("money.chat.err.notInClub"));
 
   const directKey = directKeyFor(ctx.tenant.id, ctx.user.id, parsed.data);
   let conv = await db.chatConversation.findUnique({ where: { directKey }, select: { id: true } });
@@ -81,7 +84,7 @@ export async function startDirectChatAction(otherUserId: string): Promise<Action
     } catch (e) {
       if (!isUniqueViolation(e)) throw e;
       conv = await db.chatConversation.findUnique({ where: { directKey }, select: { id: true } });
-      if (!conv) return fail("Die Unterhaltung konnte nicht geöffnet werden.");
+      if (!conv) return fail(t("money.chat.err.openFailed"));
     }
   }
   // Eigene Mitgliedschaft sicherstellen (falls die Unterhaltung früher entfernt wurde).
@@ -104,7 +107,9 @@ const createGroupSchema = z.object({
 /** Neue Gruppe; Ersteller wird Admin. Vereins-Gruppe (alle Mitglieder) nur mit tenant.manage. */
 export async function createGroupAction(_prev: ActionResult<{ id: string }> | null, formData: FormData): Promise<ActionResult<{ id: string }>> {
   const ctx = await chatCtx();
-  if (!ctx) return fail("Der Chat ist nur für Vereinsmitglieder.");
+  const locale = await getRequestLocale();
+  const t = getT(locale);
+  if (!ctx) return fail(t("money.chat.err.membersOnly"));
   const parsed = createGroupSchema.safeParse({
     title: String(formData.get("title") ?? ""),
     club: formData.get("club") === "on",
@@ -114,10 +119,10 @@ export async function createGroupAction(_prev: ActionResult<{ id: string }> | nu
   if (!parsed.success) {
     const issue = parsed.error.issues[0];
     const field = String(issue?.path[0] ?? "form");
-    return fail(issue?.message ?? "Bitte Eingaben prüfen.", { [field]: issue?.message ?? "" });
+    return fail(localizeMessage(issue?.message ?? "Bitte Eingaben prüfen.", locale), { [field]: localizeMessage(issue?.message ?? "", locale) });
   }
   const input = parsed.data;
-  if (input.club && !ctx.can("tenant.manage")) return fail("Nur Vereins-Admins dürfen eine Vereins-Gruppe erstellen.");
+  if (input.club && !ctx.can("tenant.manage")) return fail(t("money.chat.err.clubAdminOnly"));
 
   let memberIds: string[];
   if (input.club) {
@@ -125,7 +130,7 @@ export async function createGroupAction(_prev: ActionResult<{ id: string }> | nu
     memberIds = all.map((m) => m.userId);
   } else {
     memberIds = await filterTenantMembers(ctx.tenant.id, input.members);
-    if (!memberIds.filter((id) => id !== ctx.user.id).length) return fail("Bitte mindestens ein Mitglied wählen.", { members: "Bitte mindestens ein Mitglied wählen." });
+    if (!memberIds.filter((id) => id !== ctx.user.id).length) return fail(t("money.chat.err.pickMember"), { members: t("money.chat.err.pickMember") });
   }
   const others = memberIds.filter((id) => id !== ctx.user.id);
 
@@ -144,109 +149,117 @@ export async function createGroupAction(_prev: ActionResult<{ id: string }> | nu
       select: { id: true },
     });
   } catch (e) {
-    if (isUniqueViolation(e)) return fail("Es gibt bereits eine synchronisierte Vereins-Gruppe.", { sync: "Es gibt bereits eine synchronisierte Vereins-Gruppe." });
+    if (isUniqueViolation(e)) return fail(t("money.chat.err.syncExists"), { sync: t("money.chat.err.syncExists") });
     throw e;
   }
   publishChat({ type: "conversation", tenantId: ctx.tenant.id, conversationId: created.id });
   revalidateChat();
-  return ok({ id: created.id }, "Gruppe erstellt.");
+  return ok({ id: created.id }, t("money.chat.groupCreated"));
 }
 
 export async function renameGroupAction(conversationId: string, title: string): Promise<ActionResult> {
   const ctx = await chatCtx();
-  if (!ctx) return fail("Keine Berechtigung.");
-  const access = await groupAccess(ctx, conversationId, true);
+  const locale = await getRequestLocale();
+  const t = getT(locale);
+  if (!ctx) return fail(t("money.chat.err.noPermission"));
+  const access = await groupAccess(ctx, conversationId, true, t);
   if (typeof access === "string") return fail(access);
   const parsed = groupTitleSchema.safeParse(title);
-  if (!parsed.success) return fail(parsed.error.issues[0]?.message ?? "Ungültiger Name.");
+  if (!parsed.success) return fail(localizeMessage(parsed.error.issues[0]?.message ?? "Ungültiger Name.", locale));
   await db.chatConversation.update({ where: { id: access.conversation.id }, data: { title: parsed.data } });
   publishChat({ type: "conversation", tenantId: ctx.tenant.id, conversationId: access.conversation.id });
   revalidateChat(access.conversation.id);
-  return ok(undefined, "Gruppe umbenannt.");
+  return ok(undefined, t("money.chat.msg.renamed"));
 }
 
 export async function addGroupMembersAction(conversationId: string, userIds: string[]): Promise<ActionResult<{ added: number }>> {
   const ctx = await chatCtx();
-  if (!ctx) return fail("Keine Berechtigung.");
-  const access = await groupAccess(ctx, conversationId, true);
+  const t = getT(await getRequestLocale());
+  if (!ctx) return fail(t("money.chat.err.noPermission"));
+  const access = await groupAccess(ctx, conversationId, true, t);
   if (typeof access === "string") return fail(access);
-  if (!Array.isArray(userIds) || userIds.length > 1000) return fail("Ungültige Auswahl.");
+  if (!Array.isArray(userIds) || userIds.length > 1000) return fail(t("money.chat.err.invalidSelection"));
   const valid = await filterTenantMembers(ctx.tenant.id, userIds);
-  if (!valid.length) return fail("Bitte mindestens ein Vereinsmitglied wählen.");
+  if (!valid.length) return fail(t("money.chat.err.pickClubMember"));
   // Hinzugefügte (auch ehemalige) Mitglieder starten ohne ungelesenen Altbestand.
   const lastReadAt = new Date();
   const res = await db.chatMember.createMany({ data: valid.map((userId) => ({ conversationId: access.conversation.id, userId, lastReadAt })), skipDuplicates: true });
   publishChat({ type: "conversation", tenantId: ctx.tenant.id, conversationId: access.conversation.id });
   revalidateChat(access.conversation.id);
-  return ok({ added: res.count }, res.count === 1 ? "1 Mitglied hinzugefügt." : `${res.count} Mitglieder hinzugefügt.`);
+  return ok({ added: res.count }, tPlural(t, "money.chat.msg.added", res.count));
 }
 
 export async function removeGroupMemberAction(conversationId: string, userId: string): Promise<ActionResult> {
   const ctx = await chatCtx();
-  if (!ctx) return fail("Keine Berechtigung.");
-  const access = await groupAccess(ctx, conversationId, true);
+  const t = getT(await getRequestLocale());
+  if (!ctx) return fail(t("money.chat.err.noPermission"));
+  const access = await groupAccess(ctx, conversationId, true, t);
   if (typeof access === "string") return fail(access);
-  if (userId === ctx.user.id) return fail("Zum Austreten bitte «Gruppe verlassen» verwenden.");
-  if (isClubKey(access.conversation.directKey)) return fail("Aus der synchronisierten Vereins-Gruppe kann niemand entfernt werden. Synchronisierung zuerst ausschalten.");
+  if (userId === ctx.user.id) return fail(t("money.chat.err.useLeave"));
+  if (isClubKey(access.conversation.directKey)) return fail(t("money.chat.err.syncNoRemove"));
   const res = await db.chatMember.deleteMany({ where: { conversationId: access.conversation.id, userId: String(userId) } });
-  if (res.count === 0) return fail("Mitglied nicht gefunden.");
+  if (res.count === 0) return fail(t("money.chat.err.memberNotFound"));
   publishChat({ type: "conversation", tenantId: ctx.tenant.id, conversationId: access.conversation.id });
   revalidateChat(access.conversation.id);
-  return ok(undefined, "Mitglied entfernt.");
+  return ok(undefined, t("money.chat.msg.memberRemoved"));
 }
 
 export async function setGroupAdminAction(conversationId: string, userId: string, admin: boolean): Promise<ActionResult> {
   const ctx = await chatCtx();
-  if (!ctx) return fail("Keine Berechtigung.");
-  const access = await groupAccess(ctx, conversationId, true);
+  const t = getT(await getRequestLocale());
+  if (!ctx) return fail(t("money.chat.err.noPermission"));
+  const access = await groupAccess(ctx, conversationId, true, t);
   if (typeof access === "string") return fail(access);
   if (!admin && userId === ctx.user.id) {
     const admins = await db.chatMember.count({ where: { conversationId: access.conversation.id, role: "ADMIN" } });
-    if (admins <= 1) return fail("Die Gruppe braucht mindestens einen Admin.");
+    if (admins <= 1) return fail(t("money.chat.err.needAdmin"));
   }
   const res = await db.chatMember.updateMany({ where: { conversationId: access.conversation.id, userId: String(userId) }, data: { role: admin ? "ADMIN" : "MEMBER" } });
-  if (res.count === 0) return fail("Mitglied nicht gefunden.");
+  if (res.count === 0) return fail(t("money.chat.err.memberNotFound"));
   publishChat({ type: "conversation", tenantId: ctx.tenant.id, conversationId: access.conversation.id });
   revalidateChat(access.conversation.id);
-  return ok(undefined, admin ? "Ist jetzt Admin der Gruppe." : "Ist kein Admin mehr.");
+  return ok(undefined, admin ? t("money.chat.msg.isAdmin") : t("money.chat.msg.notAdmin"));
 }
 
 /** Gruppe verlassen bzw. 1:1-Unterhaltung aus der Liste entfernen (taucht bei neuer Nachricht wieder auf). */
 export async function leaveConversationAction(conversationId: string): Promise<ActionResult> {
   const ctx = await chatCtx();
-  if (!ctx) return fail("Keine Berechtigung.");
+  const t = getT(await getRequestLocale());
+  if (!ctx) return fail(t("money.chat.err.noPermission"));
   const access = await getConversationAccess(ctx.user.id, String(conversationId), ctx.tenant.id);
-  if (!access) return fail("Unterhaltung nicht gefunden.");
-  if (isClubKey(access.conversation.directKey)) return fail("Die Vereins-Gruppe kann nicht verlassen werden. Du kannst sie aber stummschalten.");
+  if (!access) return fail(t("money.chat.err.notFound"));
+  if (isClubKey(access.conversation.directKey)) return fail(t("money.chat.err.clubNoLeave"));
   await db.chatMember.delete({ where: { id: access.member.id } });
   if (access.conversation.kind === "GROUP" && access.member.role === "ADMIN") await ensureGroupAdmin(access.conversation.id);
   publishChat({ type: "conversation", tenantId: ctx.tenant.id, conversationId: access.conversation.id });
   revalidateChat();
-  return ok(undefined, access.conversation.kind === "GROUP" ? "Du hast die Gruppe verlassen." : "Unterhaltung entfernt.");
+  return ok(undefined, access.conversation.kind === "GROUP" ? t("money.chat.msg.leftGroup") : t("money.chat.msg.convRemoved"));
 }
 
 export async function setMutedAction(conversationId: string, muted: boolean): Promise<ActionResult> {
   const ctx = await chatCtx();
-  if (!ctx) return fail("Keine Berechtigung.");
+  const t = getT(await getRequestLocale());
+  if (!ctx) return fail(t("money.chat.err.noPermission"));
   const access = await getConversationAccess(ctx.user.id, String(conversationId), ctx.tenant.id);
-  if (!access) return fail("Unterhaltung nicht gefunden.");
+  if (!access) return fail(t("money.chat.err.notFound"));
   await db.chatMember.update({ where: { id: access.member.id }, data: { muted: !!muted } });
   revalidateChat(access.conversation.id);
-  return ok(undefined, muted ? "Stummgeschaltet." : "Stummschaltung aufgehoben.");
+  return ok(undefined, muted ? t("money.chat.mutedDone") : t("money.chat.unmutedDone"));
 }
 
 /** Vereins-Gruppe synchron halten (neue Vereinsmitglieder werden beim Öffnen des Chats aufgenommen). */
 export async function setClubSyncAction(conversationId: string, sync: boolean): Promise<ActionResult> {
   const ctx = await chatCtx();
-  if (!ctx || !ctx.can("tenant.manage")) return fail("Nur Vereins-Admins dürfen das.");
-  const access = await groupAccess(ctx, conversationId, false);
+  const t = getT(await getRequestLocale());
+  if (!ctx || !ctx.can("tenant.manage")) return fail(t("money.chat.err.clubAdminsOnly"));
+  const access = await groupAccess(ctx, conversationId, false, t);
   if (typeof access === "string") return fail(access);
   const id = access.conversation.id;
   if (sync) {
     try {
       await db.chatConversation.update({ where: { id }, data: { directKey: clubKeyFor(ctx.tenant.id) } });
     } catch (e) {
-      if (isUniqueViolation(e)) return fail("Es gibt bereits eine synchronisierte Vereins-Gruppe.");
+      if (isUniqueViolation(e)) return fail(t("money.chat.err.syncExists"));
       throw e;
     }
     await syncAllClubMembers(id, ctx.tenant.id);
@@ -255,27 +268,31 @@ export async function setClubSyncAction(conversationId: string, sync: boolean): 
   }
   publishChat({ type: "conversation", tenantId: ctx.tenant.id, conversationId: id });
   revalidateChat(id);
-  return ok(undefined, sync ? "Alle Vereinsmitglieder sind jetzt in der Gruppe." : "Synchronisierung ausgeschaltet.");
+  return ok(undefined, sync ? t("money.chat.msg.syncOn") : t("money.chat.msg.syncOff"));
 }
 
 /* ------------------------------------------------------------ Nachrichten */
 
 export async function editMessageAction(messageId: string, body: string): Promise<ActionResult<ChatMessageDTO>> {
   const ctx = await chatCtx();
-  if (!ctx) return fail("Keine Berechtigung.");
+  const locale = await getRequestLocale();
+  const t = getT(locale);
+  if (!ctx) return fail(t("money.chat.err.noPermission"));
   const id = idSchema.safeParse(messageId);
   const text = messageBodySchema.safeParse(String(body ?? ""));
-  if (!id.success) return fail("Nachricht nicht gefunden.");
-  if (!text.success) return fail(text.error.issues[0]?.message ?? "Ungültige Nachricht.");
+  if (!id.success) return fail(t("money.chat.err.msgNotFound"));
+  if (!text.success) return fail(localizeMessage(text.error.issues[0]?.message ?? "Ungültige Nachricht.", locale));
   const res = await editMessage(ctx.user.id, id.data, text.data, new Date());
-  return res.ok ? ok(res.data) : fail(res.error);
+  return res.ok ? ok(res.data) : fail(localizeMessage(res.error, locale));
 }
 
 export async function deleteMessageAction(messageId: string): Promise<ActionResult<ChatMessageDTO>> {
   const ctx = await chatCtx();
-  if (!ctx) return fail("Keine Berechtigung.");
+  const locale = await getRequestLocale();
+  const t = getT(locale);
+  if (!ctx) return fail(t("money.chat.err.noPermission"));
   const id = idSchema.safeParse(messageId);
-  if (!id.success) return fail("Nachricht nicht gefunden.");
+  if (!id.success) return fail(t("money.chat.err.msgNotFound"));
   const res = await deleteMessage(ctx.user.id, id.data, new Date());
-  return res.ok ? ok(res.data, "Nachricht gelöscht.") : fail(res.error);
+  return res.ok ? ok(res.data, t("money.chat.msg.deleted")) : fail(localizeMessage(res.error, locale));
 }

@@ -6,6 +6,7 @@ import { Bell, X } from "lucide-react";
 import { Button, Card } from "@/components/ui";
 import { Spinner } from "@/components/ui/form";
 import { toast } from "@/lib/ui-feedback";
+import { useT } from "@/components/locale";
 import { enablePush, getPushState, resyncPush, type PushState } from "@/lib/push/client";
 
 const DISMISS_KEY = "sc-push-prompt-dismissed";
@@ -33,6 +34,7 @@ function writeDismissed() {
  * bzw. auf dem iPhone als Hinweis zum Home-Bildschirm. «Später» wird im Browser gemerkt.
  */
 export function PushPrompt({ className }: { className?: string }) {
+  const t = useT();
   const [state, setState] = useState<PushState | null>(null);
   const [hidden, setHidden] = useState(true);
   const [busy, setBusy] = useState(false);
@@ -73,15 +75,15 @@ export function PushPrompt({ className }: { className?: string }) {
       const next = await enablePush();
       setState(next);
       if (next === "enabled") {
-        toast.success("Benachrichtigungen eingeschaltet.");
+        toast.success(t("shell.push.enabled"));
         writeDismissed();
         setHidden(true);
       } else if (next === "denied") {
-        toast.error("Benachrichtigungen wurden nicht erlaubt.", { description: "Du kannst sie jederzeit in den Einstellungen des Browsers erlauben." });
+        toast.error(t("shell.push.denied"), { description: t("shell.push.deniedHint") });
         dismiss();
       }
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Das hat nicht geklappt.");
+      toast.error(e instanceof Error ? e.message : t("shell.common.failed"));
     } finally {
       setBusy(false);
     }
@@ -89,7 +91,7 @@ export function PushPrompt({ className }: { className?: string }) {
 
   return (
     <Card className={["animate-rise relative p-4 pr-12", className].filter(Boolean).join(" ")}>
-      <button type="button" onClick={dismiss} aria-label="Hinweis schliessen" className="press absolute right-1 top-1 flex h-11 w-11 items-center justify-center rounded-control text-ink-3 hover:text-ink">
+      <button type="button" onClick={dismiss} aria-label={t("shell.ui.closeNotice")} className="press absolute right-1 top-1 flex h-11 w-11 items-center justify-center rounded-control text-ink-3 hover:text-ink">
         <X className="h-4 w-4" />
       </button>
       <div className="flex items-start gap-3">
@@ -97,25 +99,25 @@ export function PushPrompt({ className }: { className?: string }) {
           <Bell className="h-5 w-5" />
         </span>
         <div className="min-w-0 flex-1">
-          <p className="font-semibold">Nichts mehr verpassen</p>
+          <p className="font-semibold">{t("shell.push.promptTitle")}</p>
           {state === "ios-needs-install" ? (
             <p className="mt-0.5 text-sm text-ink-3">
-              Auf dem iPhone kommen Benachrichtigungen, wenn Standchef auf dem Home-Bildschirm liegt: in Safari «Teilen» → «Zum Home-Bildschirm».
+              {t("shell.push.promptIos")}
             </p>
           ) : (
-            <p className="mt-0.5 text-sm text-ink-3">Erhalte Chat-Nachrichten, Absagen und Rechnungen direkt auf dieses Gerät.</p>
+            <p className="mt-0.5 text-sm text-ink-3">{t("shell.push.promptText")}</p>
           )}
           <div className="mt-3 flex flex-wrap gap-2">
             {state === "disabled" ? (
               <Button onClick={() => void enable()} disabled={busy}>
-                {busy ? <Spinner /> : <Bell className="h-4 w-4" aria-hidden />} Einschalten
+                {busy ? <Spinner /> : <Bell className="h-4 w-4" aria-hidden />} {t("shell.push.enable")}
               </Button>
             ) : null}
             <Link href="/me/notifications" className="press inline-flex h-11 items-center rounded-control px-3 text-sm font-medium text-ink-2 hover:bg-surface-2">
-              Einstellungen
+              {t("shell.push.settings")}
             </Link>
             <button type="button" onClick={dismiss} className="press inline-flex h-11 items-center rounded-control px-3 text-sm font-medium text-ink-3 hover:bg-surface-2">
-              Später
+              {t("shell.sync.later")}
             </button>
           </div>
         </div>

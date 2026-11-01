@@ -6,6 +6,7 @@ import { AppShell } from "@/components/app-shell";
 import { BrandTheme } from "@/components/brand-theme";
 import { DEFAULT_THEME_COLORS, brandColors } from "@/lib/brand";
 import { getUnreadChatCount } from "@/modules/chat/queries";
+import { getRequestLocale, getT } from "@/lib/i18n";
 
 /**
  * Browser-Leiste (theme-color): mit Vereinsfarbe die Akzentfarbe, sonst der Seitenhintergrund
@@ -37,6 +38,8 @@ export async function generateViewport(): Promise<Viewport> {
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const ctx = await getAppContext();
+  const locale = await getRequestLocale();
+  const t = getT(locale);
   // Startwert für den Ungelesen-Zähler; danach aktualisiert ihn der Chat-Stream im Browser.
   const chatUnread = ctx.tenant && ctx.hasModule("chat") ? await getUnreadChatCount(ctx.user.id, ctx.tenant.id).catch(() => 0) : null;
   return (
@@ -47,6 +50,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         tenant={ctx.tenant ? { id: ctx.tenant.id, name: ctx.tenant.name, logoUrl: ctx.tenant.logoUrl } : null}
         user={{ name: ctx.user.name, email: ctx.user.email, avatarUrl: ctx.user.avatarUrl }}
         chatUnread={chatUnread}
+        locale={locale}
         admin={{
           settings: ctx.can("tenant.manage"),
           members: ctx.can("members.view"),
@@ -63,8 +67,8 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         {ctx.tenant?.deletedAt ? (
           <div className="mb-4">
             <Alert tone="error">
-              Dieser Verein ist zur Löschung vorgemerkt (endgültig nach 30 Tagen). Wiederherstellen unter{" "}
-              <Link href="/super/tenants?show=deleted" className="font-semibold underline underline-offset-2">Tenants</Link>.
+              {t("shell.layout.tenantDeleted")}{" "}
+              <Link href="/super/tenants?show=deleted" className="font-semibold underline underline-offset-2">{t("shell.layout.tenantDeletedLink")}</Link>.
             </Alert>
           </div>
         ) : null}

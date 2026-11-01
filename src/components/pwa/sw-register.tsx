@@ -10,6 +10,7 @@ import { flushOutbox, getSyncStatus, refreshCounts } from "@/lib/offline/outbox"
 import { refreshSnapshot, resetSnapshotThrottle } from "@/lib/offline/snapshot";
 import { clearUserData, discardFailed, getSession, listOutbox, retryFailed } from "@/lib/offline/store";
 import { cn } from "@/lib/utils";
+import { useT } from "@/components/locale";
 
 const SW_ENABLED = process.env.NODE_ENV === "production" || process.env.NEXT_PUBLIC_SW_DEV === "1";
 const AUTH_PATHS = ["/login", "/register"];
@@ -30,6 +31,7 @@ function postToServiceWorker(message: unknown) {
  */
 export function ServiceWorkerRegister() {
   const pathname = usePathname();
+  const t = useT();
   const status = useSyncStatus();
   const [waiting, setWaiting] = useState<ServiceWorker | null>(null);
   const [updateDismissed, setUpdateDismissed] = useState(false);
@@ -143,8 +145,8 @@ export function ServiceWorkerRegister() {
     const session = await getSession().catch(() => undefined);
     if (!session) return setFailedErrors([]);
     const ops = await listOutbox(session.userId);
-    setFailedErrors([...new Set(ops.filter((o) => o.failed).map((o) => o.lastError ?? "Unbekannter Fehler"))].slice(0, 3));
-  }, []);
+    setFailedErrors([...new Set(ops.filter((o) => o.failed).map((o) => o.lastError ?? t("shell.sync.unknownError")))].slice(0, 3));
+  }, [t]);
 
   const togglePanel = () => {
     const next = !panelOpen;
@@ -169,8 +171,8 @@ export function ServiceWorkerRegister() {
           <div role="status" className="animate-rise pointer-events-auto flex w-full max-w-sm items-center gap-3 rounded-card border border-line bg-surface p-3 pl-4 shadow-lg">
             <Sparkles className="h-5 w-5 shrink-0 text-accent" aria-hidden />
             <div className="min-w-0 flex-1 text-sm">
-              <div className="font-semibold">Neue Version verfügbar</div>
-              <div className="text-ink-3 text-xs">Kurz neu laden, um sie zu verwenden.</div>
+              <div className="font-semibold">{t("shell.sync.updateTitle")}</div>
+              <div className="text-ink-3 text-xs">{t("shell.sync.updateText")}</div>
             </div>
             <button
               type="button"
@@ -182,9 +184,9 @@ export function ServiceWorkerRegister() {
               }}
               className="press h-10 rounded-control bg-ink px-3 text-sm font-medium text-bg"
             >
-              Aktualisieren
+              {t("shell.sync.update")}
             </button>
-            <button type="button" onClick={() => setUpdateDismissed(true)} aria-label="Später" className="press flex h-10 w-8 items-center justify-center text-ink-3">
+            <button type="button" onClick={() => setUpdateDismissed(true)} aria-label={t("shell.sync.later")} className="press flex h-10 w-8 items-center justify-center text-ink-3">
               <X className="h-4 w-4" />
             </button>
           </div>
@@ -195,32 +197,32 @@ export function ServiceWorkerRegister() {
         <div className="pointer-events-none fixed inset-x-0 z-40 bottom-[calc(env(safe-area-inset-bottom)+5.25rem)] md:bottom-4 flex flex-col items-center gap-2 px-4 no-print">
           {panelOpen ? (
             <>
-              <button type="button" aria-label="Schliessen" className="pointer-events-auto fixed inset-0 -z-10 cursor-default" onClick={() => setPanelOpen(false)} />
+              <button type="button" aria-label={t("shell.common.close")} className="pointer-events-auto fixed inset-0 -z-10 cursor-default" onClick={() => setPanelOpen(false)} />
               <div className="pointer-events-auto animate-rise w-full max-w-[22rem] rounded-card border border-line bg-surface p-4 shadow-xl text-sm">
                 <div className="flex items-start gap-3">
                   {status.online ? <CloudUpload className="mt-0.5 h-5 w-5 text-ink-2" aria-hidden /> : <WifiOff className="mt-0.5 h-5 w-5 text-warn" aria-hidden />}
                   <div className="min-w-0 flex-1">
-                    <div className="font-semibold">{status.online ? "Verbunden" : "Keine Internetverbindung"}</div>
+                    <div className="font-semibold">{status.online ? t("shell.sync.connected") : t("shell.sync.noInternet")}</div>
                     <p className="mt-0.5 text-ink-3">
                       {status.online
                         ? status.pending > 0
-                          ? `${status.pending} ${status.pending === 1 ? "Eingabe wird" : "Eingaben werden"} übertragen.`
-                          : "Alles ist gespeichert."
-                        : "Keine Sorge: Eingaben bleiben auf diesem Gerät gespeichert und werden automatisch übertragen, sobald wieder Empfang da ist."}
+                          ? t(status.pending === 1 ? "shell.sync.pendingOne" : "shell.sync.pendingMany", { count: status.pending })
+                          : t("shell.sync.allSaved")
+                        : t("shell.sync.offlineText")}
                     </p>
                   </div>
                 </div>
 
                 {status.authRequired ? (
                   <a href="/login" className="press mt-3 flex h-11 items-center justify-center gap-2 rounded-control bg-ink font-medium text-bg">
-                    <LogIn className="h-4 w-4" /> Neu anmelden, um zu übertragen
+                    <LogIn className="h-4 w-4" /> {t("shell.sync.reloginToSync")}
                   </a>
                 ) : null}
 
                 {status.failed > 0 ? (
                   <div className="mt-3 rounded-control bg-accent-soft p-3 text-accent">
                     <div className="flex items-center gap-2 font-medium">
-                      <AlertTriangle className="h-4 w-4" /> {status.failed} {status.failed === 1 ? "Eingabe konnte" : "Eingaben konnten"} nicht gespeichert werden
+                      <AlertTriangle className="h-4 w-4" /> {t(status.failed === 1 ? "shell.sync.failedOne" : "shell.sync.failedMany", { count: status.failed })}
                     </div>
                     {failedErrors.length ? (
                       <ul className="mt-1 list-disc pl-5 text-xs">
@@ -231,16 +233,16 @@ export function ServiceWorkerRegister() {
                     ) : null}
                     <div className="mt-2 flex gap-2">
                       <button type="button" onClick={() => void withSession(retryFailed).then(() => flushOutbox({ force: true }))} className="press h-11 rounded-control bg-surface px-3 text-xs font-medium text-ink">
-                        Erneut versuchen
+                        {t("shell.sync.retry")}
                       </button>
                       <button
                         type="button"
                         onClick={async () => {
-                          if ((await confirmDialog({ title: "Fehlgeschlagene Eingaben endgültig verwerfen?", tone: "danger", confirmLabel: "Verwerfen" }))) void withSession(discardFailed);
+                          if ((await confirmDialog({ title: t("shell.sync.discardConfirm"), tone: "danger", confirmLabel: t("shell.sync.discard") }))) void withSession(discardFailed);
                         }}
                         className="press inline-flex h-11 items-center gap-1 rounded-control px-3 text-xs font-medium"
                       >
-                        <Trash2 className="h-3.5 w-3.5" /> Verwerfen
+                        <Trash2 className="h-3.5 w-3.5" /> {t("shell.sync.discard")}
                       </button>
                     </div>
                   </div>
@@ -253,10 +255,10 @@ export function ServiceWorkerRegister() {
                     onClick={() => void flushOutbox({ force: true })}
                     className="press inline-flex h-11 flex-1 items-center justify-center gap-2 rounded-control border border-line bg-surface-2 font-medium disabled:opacity-50"
                   >
-                    <RefreshCw className={cn("h-4 w-4", status.syncing && "animate-spin")} /> Jetzt synchronisieren
+                    <RefreshCw className={cn("h-4 w-4", status.syncing && "animate-spin")} /> {t("shell.sync.syncNow")}
                   </button>
                   <a href="/offline" className="press inline-flex h-11 items-center justify-center rounded-control px-3 font-medium text-ink-2 hover:bg-surface-2">
-                    Übersicht
+                    {t("shell.sync.overview")}
                   </a>
                 </div>
               </div>
@@ -276,27 +278,27 @@ export function ServiceWorkerRegister() {
             {!status.online ? (
               <>
                 <CloudOff className="h-4 w-4 text-warn" aria-hidden />
-                Offline{status.pending > 0 ? ` · ${status.pending} ausstehend` : ""}
+                {status.pending > 0 ? t("shell.sync.pillOfflinePending", { count: status.pending }) : t("shell.sync.pillOffline")}
               </>
             ) : status.authRequired ? (
               <>
-                <LogIn className="h-4 w-4" aria-hidden /> Anmeldung nötig
+                <LogIn className="h-4 w-4" aria-hidden /> {t("shell.sync.pillLogin")}
               </>
             ) : status.failed > 0 ? (
               <>
-                <AlertTriangle className="h-4 w-4" aria-hidden /> {status.failed} nicht gespeichert
+                <AlertTriangle className="h-4 w-4" aria-hidden /> {t("shell.sync.pillFailed", { count: status.failed })}
               </>
             ) : status.syncing ? (
               <>
-                <RefreshCw className="h-4 w-4 animate-spin" aria-hidden /> Wird übertragen…
+                <RefreshCw className="h-4 w-4 animate-spin" aria-hidden /> {t("shell.sync.pillSyncing")}
               </>
             ) : status.pending > 0 ? (
               <>
-                <CloudUpload className="h-4 w-4" aria-hidden /> {status.pending} ausstehend
+                <CloudUpload className="h-4 w-4" aria-hidden /> {t("shell.sync.pillPending", { count: status.pending })}
               </>
             ) : (
               <>
-                <Check className="h-4 w-4 text-ok" aria-hidden /> Gespeichert
+                <Check className="h-4 w-4 text-ok" aria-hidden /> {t("shell.sync.pillSaved")}
               </>
             )}
           </button>

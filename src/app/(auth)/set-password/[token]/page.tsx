@@ -6,22 +6,26 @@ import { findValidAuthToken } from "@/modules/core/invitations";
 import { setInitialPasswordAction } from "@/modules/core/auth-actions";
 import { EmptyState, LinkButton } from "@/components/ui";
 import { NewPasswordForm } from "../../reset-password/password-form";
+import { getRequestLocale, getT } from "@/lib/i18n";
 
-export const metadata: Metadata = { title: "Passwort festlegen", robots: { index: false } };
+export async function generateMetadata(): Promise<Metadata> {
+  return { title: getT(await getRequestLocale())("shell.setPassword.metaTitle"), robots: { index: false } };
+}
 
 export default async function SetPasswordPage({ params }: { params: Promise<{ token: string }> }) {
   const { token } = await params;
   const row = await findValidAuthToken(token, ["INVITE"]);
+  const t = getT(await getRequestLocale());
   if (!row) {
     return (
       <div className="animate-rise">
         <EmptyState
-          title="Link ungültig oder abgelaufen"
-          text="Hast du schon ein Passwort festgelegt? Dann melde dich einfach an. Sonst kannst du über «Passwort vergessen» einen neuen Link anfordern."
+          title={t("shell.reset.invalidTitle")}
+          text={t("shell.setPassword.invalidText")}
           action={
             <>
-              <LinkButton href="/login">Anmelden</LinkButton>
-              <LinkButton href="/forgot-password" variant="secondary">Passwort vergessen</LinkButton>
+              <LinkButton href="/login">{t("shell.common.login")}</LinkButton>
+              <LinkButton href="/forgot-password" variant="secondary">{t("shell.forgot.metaTitle")}</LinkButton>
             </>
           }
         />
@@ -36,15 +40,15 @@ export default async function SetPasswordPage({ params }: { params: Promise<{ to
   });
   return (
     <div className="animate-rise [animation-delay:120ms]">
-      <h1 className="mb-1 text-center text-xl font-semibold tracking-tight">Willkommen, {row.user.name}</h1>
+      <h1 className="mb-1 text-center text-xl font-semibold tracking-tight">{t("shell.setPassword.welcome", { name: row.user.name })}</h1>
       <p className="mb-4 text-center text-sm text-ink-3">
-        {memberships.length ? <>Dein Konto bei {memberships.map((m) => `«${m.tenant.name}»`).join(", ")} ist bereit. </> : null}
-        Lege jetzt dein Passwort fest. Du meldest dich danach mit <span className="font-medium text-ink-2">{row.user.email}</span> an.
+        {memberships.length ? <>{t("shell.setPassword.ready", { clubs: memberships.map((m) => t("shell.quoted", { text: m.tenant.name })).join(", ") })} </> : null}
+        {t("shell.setPassword.lead")} <span className="font-medium text-ink-2">{row.user.email}</span>{t("shell.setPassword.leadEnd")}
       </p>
-      <NewPasswordForm token={token} email={row.user.email} action={setInitialPasswordAction} submitLabel="Passwort festlegen & loslegen" minLength={PASSWORD_MIN_LENGTH} />
+      <NewPasswordForm token={token} email={row.user.email} action={setInitialPasswordAction} submitLabel={t("shell.setPassword.submit")} minLength={PASSWORD_MIN_LENGTH} />
       <p className="mt-6 text-center text-sm text-ink-3">
-        Schon ein Passwort?{" "}
-        <Link href="/login" className="font-medium text-ink underline underline-offset-4">Anmelden</Link>
+        {t("shell.setPassword.already")}{" "}
+        <Link href="/login" className="font-medium text-ink underline underline-offset-4">{t("shell.common.login")}</Link>
       </p>
     </div>
   );

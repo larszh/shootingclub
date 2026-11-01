@@ -5,12 +5,14 @@ import { Star } from "lucide-react";
 import { toggleFavoriteAction } from "@/modules/scores/actions";
 import { isNavigationError, isNetworkError, toast } from "@/lib/ui-feedback";
 import { cn } from "@/lib/utils";
+import { getT, type Locale } from "@/lib/i18n/core";
 
-export function FavoriteButton({ programId, favorite, className }: { programId: string; favorite: boolean; className?: string }) {
+export function FavoriteButton({ programId, favorite, className, locale = "de" }: { programId: string; favorite: boolean; className?: string; locale?: Locale }) {
+  const t = getT(locale);
   const [opt, setOpt] = useOptimistic(favorite);
   const [, start] = useTransition();
   return (
-    <button type="button" aria-label={opt ? "Favorit entfernen" : "Als Favorit markieren"} aria-pressed={opt}
+    <button type="button" aria-label={opt ? t("shooting.favorite.remove") : t("shooting.favorite.add")} aria-pressed={opt}
       onClick={(e) => {
         e.preventDefault();
         e.stopPropagation();
@@ -22,7 +24,7 @@ export function FavoriteButton({ programId, favorite, className }: { programId: 
             if (!r.ok) toast.error(r.error);
           } catch (err) {
             if (isNavigationError(err)) throw err;
-            toast.error(isNetworkError(err) ? "Keine Verbindung. Bitte versuche es nochmals, sobald du wieder online bist." : "Das hat nicht geklappt. Bitte nochmals versuchen.");
+            toast.error(isNetworkError(err) ? t("shooting.favorite.offline") : t("shooting.favorite.failed"));
           }
         });
       }}

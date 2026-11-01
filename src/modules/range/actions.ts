@@ -9,6 +9,7 @@ import { setActiveTenantCookie } from "@/lib/tenant";
 import { audit } from "@/lib/audit";
 import { notify, tenantUserIdsWithRole } from "@/lib/notify";
 import { fail, ok, type ActionResult } from "@/lib/action-result";
+import { getRequestLocale, getT } from "@/lib/i18n";
 import { todayZurich, zurichToUtc } from "@/lib/time";
 import { hasValidQualification } from "@/modules/qualifications/service";
 import { createWeaponLoan, returnWeaponLoan } from "@/modules/weapons/service";
@@ -407,25 +408,26 @@ export async function switchTenantForCheckInAction(tenantId: string) {
 
 export async function selfCheckInAction(input: { dayId: string; clientId: string; acceptRulesId?: string | null; lane?: string; discipline?: string }): Promise<ActionResult<{ id: string } | { needsRules: string }>> {
   const ctx = await requireRange();
+  const t = getT(await getRequestLocale());
   const extra = visitUpdateSchema.safeParse({ lane: input.lane, discipline: input.discipline });
-  if (!idSchema.safeParse(input.dayId).success || !clientIdSchema.safeParse(input.clientId).success || !extra.success) return fail("Ungültige Anfrage.");
+  if (!idSchema.safeParse(input.dayId).success || !clientIdSchema.safeParse(input.clientId).success || !extra.success) return fail(t("shooting.checkin.msg.invalid"));
   const tenantId = ctx.tenant.id;
   const userId = ctx.user.id;
   // Wiederholung derselben Anfrage (Doppeltipp, Verbindungsabbruch) → bestehender Eintrag.
   const byClient = await db.rangeVisit.findUnique({ where: { clientId: input.clientId }, select: { id: true, tenantId: true, userId: true } });
   if (byClient) {
-    if (byClient.tenantId !== tenantId || byClient.userId !== userId) return fail("Ungültige Anfrage.");
+    if (byClient.tenantId !== tenantId || byClient.userId !== userId) return fail(t("shooting.checkin.msg.invalid"));
     revalidate(); // Antwort ging evtl. verloren: Seite soll den Check-in anzeigen.
-    return ok({ id: byClient.id }, "Du bist eingecheckt.");
+    return ok({ id: byClient.id }, t("shooting.checkin.msg.checkedIn"));
   }
-  if (!(await activeMember(tenantId, userId))) return fail("Nur aktive Mitglieder können sich einchecken.");
+  if (!(await activeMember(tenantId, userId))) return fail(t("shooting.checkin.msg.onlyActive"));
   const day = await openDayOf(tenantId, input.dayId);
-  if (!day) return fail("Der Stand ist nicht (mehr) offen.");
-  if (isStaleDay(day)) return fail("Dieses Standbuch ist nicht von heute. Bitte beim Standdienst melden.");
+  if (!day) return fail(t("shooting.checkin.msg.notOpen"));
+  if (isStaleDay(day)) return fail(t("shooting.checkin.msg.stale"));
   const open = await db.rangeVisit.findFirst({ where: { tenantId, userId, rangeDayId: day.id, checkedOutAt: null }, select: { id: true } });
   if (open) {
     revalidate(); // z.B. zweiter Tab oder Check-in durch den Standdienst: Seite aktualisieren.
-    return ok({ id: open.id }, "Du bist bereits eingecheckt.");
+    return ok({ id: open.id }, t("shooting.checkin.msg.already"));
   }
   const rules = await getActiveRules(tenantId);
   let acceptedAt: Date | null = null;
@@ -444,9 +446,9 @@ export async function selfCheckInAction(input: { dayId: string; clientId: string
       tenantId, rangeDayId: day.id, userId, lane: extra.data.lane, discipline: extra.data.discipline,
       rulesId: rules?.id ?? null, rulesAcceptedAt: acceptedAt, clientId: input.clientId,
     });
-    if (!res) return fail("Ungültige Anfrage.");
+    if (!res) return fail(t("shooting.checkin.msg.invalid"));
     revalidate();
-    return ok({ id: res.visit.id }, "Eingecheckt. Gut Schuss!");
+    return ok({ id: res.visit.id }, t("shooting.checkin.msg.done"));
   } catch (e) {
     return handle(e);
   }
@@ -454,17 +456,18 @@ export async function selfCheckInAction(input: { dayId: string; clientId: string
 
 export async function selfCheckOutAction(visitId: string): Promise<ActionResult> {
   const ctx = await requireRange();
-  if (!idSchema.safeParse(visitId).success) return fail("Ungültige Anfrage.");
+  const t = getT(await getRequestLocale());
+  if (!idSchema.safeParse(visitId).success) return fail(t("shooting.checkin.msg.invalid"));
   const v = await db.rangeVisit.findFirst({ where: { id: visitId, tenantId: ctx.tenant.id, userId: ctx.user.id }, select: { id: true, checkedOutAt: true, clubWeaponId: true, userId: true, guestName: true } });
-  if (!v) return fail("Eintrag nicht gefunden.");
+  if (!v) return fail(t("shooting.checkin.msg.notFound"));
   if (v.checkedOutAt) {
     revalidate();
-    return ok(undefined, "Bereits ausgecheckt.");
+    return ok(undefined, t("shooting.checkin.msg.alreadyOut"));
   }
-  if (await findOpenLoanForVisit(ctx.tenant.id, v)) return fail("Bitte die Vereinswaffe beim Standdienst zurückgeben. Er checkt dich dann aus.");
+  if (await findOpenLoanForVisit(ctx.tenant.id, v)) return fail(t("shooting.checkin.msg.returnWeapon"));
   await db.rangeVisit.updateMany({ where: { id: v.id, tenantId: ctx.tenant.id, checkedOutAt: null }, data: { checkedOutAt: new Date() } });
   revalidate();
-  return ok(undefined, "Ausgecheckt. Danke und bis bald!");
+  return ok(undefined, t("shooting.checkin.msg.out"));
 }
 
 // --- Standordnung (Verwaltung) ------------------------------------------------------------

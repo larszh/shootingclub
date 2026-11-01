@@ -21,10 +21,10 @@ import {
 import { db } from "@/lib/db";
 import { getAppContext, type AppContext, type ActiveTenant } from "@/lib/tenant";
 import type { ModuleKey } from "@/lib/modules";
-import { ROLE_LABELS, isTenantRole } from "@/lib/permissions";
-import { formatDateZurich, formatTimeRange } from "@/lib/time";
+import { isTenantRole } from "@/lib/permissions";
+import { INTL_LOCALE, formatDate, formatMoneyLocale, getRequestLocale, getT, type Locale, type TFunction } from "@/lib/i18n";
 import { brandColors, contrastRatio } from "@/lib/brand";
-import { cn, dayGreeting, formatDate, formatScore, plural } from "@/lib/utils";
+import { cn, formatScore, zurichHour } from "@/lib/utils";
 import { Avatar } from "@/components/avatar";
 import {
   Alert,
@@ -41,7 +41,6 @@ import { listMatches, listPrograms, userStats } from "@/modules/scores/queries";
 import { listMyBookings, partitionBookings } from "@/modules/bookings/queries";
 import { nowDate } from "@/modules/billing/dates";
 import { anyPaymentModule, summarizeMyOpenPayments } from "@/modules/billing/overview";
-import { formatTotals } from "@/modules/billing/ui/payment-rows";
 import { AnnouncementsCard, UpcomingEventsCard } from "@/modules/events/ui/dashboard-cards";
 import { listConversations } from "@/modules/chat/queries";
 import { canSeeFolder, loadFolderTree } from "@/modules/files/queries";
@@ -51,6 +50,31 @@ import { TwoFactorHint } from "../me/security/hint";
 import { ModuleStatusCards } from "./module-cards";
 
 type TenantCtx = AppContext & { tenant: ActiveTenant };
+
+/* ------------------------------------------------------------ Formatierung */
+
+/** Tageszeitabhängiger Gruss in Schweizer Zeit. */
+function greetingKey(at: Date = new Date()) {
+  const hour = zurichHour(at);
+  if (hour >= 5 && hour < 11) return "shell.home.greeting.morning";
+  if (hour < 18) return "shell.home.greeting.day";
+  return "shell.home.greeting.evening";
+}
+
+/** Einzahl/Mehrzahl über zwei Schlüssel mit {count}. */
+function countLabel(t: TFunction, n: number, one: string, many: string) {
+  return t(n === 1 ? one : many, { count: n });
+}
+
+/** Wochentag kurz + Datum, z.B. «Sa., 01.11.2026» bzw. «sam. 01.11.2026». */
+function weekdayDate(d: Date, locale: Locale) {
+  return formatDate(d, locale, { weekday: "short" });
+}
+
+function timeRange(start: Date, end: Date, locale: Locale) {
+  const f = new Intl.DateTimeFormat(INTL_LOCALE[locale], { timeZone: "Europe/Zurich", hour: "2-digit", minute: "2-digit" });
+  return `${f.format(start)}–${f.format(end)}`;
+}
 
 /* ---------------------------------------------------------------- Daten */
 
@@ -123,7 +147,8 @@ function gradientReadable(tenant: ActiveTenant) {
   return [c.light, c.dark].every((m) => contrastRatio(m.accentInk, m.accent2) >= Math.min(4.5, contrastRatio(m.accentInk, m.accent)));
 }
 
-type SetupItem = { key: string; title: string; text: string; href: string; done: boolean };
+/** title/text: Schlüssel shell.home.setup.<key>.title/.text */
+type SetupItem = { key: string; href: string; done: boolean };
 
 /** Erste Schritte für Admins eines neuen Vereins. Leer, wenn alles erledigt ist. */
 async function loadSetupChecklist(ctx: TenantCtx): Promise<SetupItem[]> {
@@ -136,31 +161,32 @@ async function loadSetupChecklist(ctx: TenantCtx): Promise<SetupItem[]> {
     bookingsOn || billingOn ? db.billingProfile.findUnique({ where: { tenantId }, select: { payeeName: true, iban: true } }) : Promise.resolve(null),
   ]);
   const items: SetupItem[] = [
-    { key: "brand", title: "Logo & Farben setzen", text: "Damit die App nach eurem Verein aussieht.", href: "/admin", done: !!(ctx.tenant.logoUrl || ctx.tenant.brandColor) },
-    { key: "members", title: "Mitglieder einladen", text: "Teile den Beitrittscode oder füge Mitglieder per E-Mail hinzu.", href: "/admin/members", done: members >= 2 },
+    { key: "brand", href: "/admin", done: !!(ctx.tenant.logoUrl || ctx.tenant.brandColor) },
+    { key: "members", href: "/admin/members", done: members >= 2 },
   ];
   // Nur vereinsweite Schritte: Favoriten sind pro Person und gehören nicht in diese Liste
   // (dafür gibt es unten den Schnellstart mit eigenem Hinweis).
   if (bookingsOn) {
-    items.push({ key: "resources", title: "Ressourcen erfassen", text: "Anlagen, Bahnen oder Räume, die man reservieren kann.", href: "/admin/bookings/resources", done: resources > 0 });
+    items.push({ key: "resources", href: "/admin/bookings/resources", done: resources > 0 });
   }
   if (bookingsOn || billingOn) {
-    items.push({ key: "billing", title: "Rechnungsprofil ausfüllen", text: "Empfänger und IBAN für QR-Rechnungen.", href: "/admin/billing/settings", done: !!(profile?.payeeName && profile?.iban) });
+    items.push({ key: "billing", href: "/admin/billing/settings", done: !!(profile?.payeeName && profile?.iban) });
   }
   return items.every((i) => i.done) ? [] : items;
 }
 
 /* --------------------------------------------------------------- Ansicht */
 
+/** label: Schlüssel im Wörterbuch «shell» */
 type QuickAction = { module: ModuleKey; href: string; label: string; icon: React.ComponentType<{ className?: string }>; primary?: boolean };
 
 const QUICK_ACTIONS: QuickAction[] = [
-  { module: "scores", href: "/scores/matches/new", label: "Durchgang starten", icon: Crosshair, primary: true },
-  { module: "bookings", href: "/bookings", label: "Reservieren", icon: CalendarPlus },
-  { module: "targets", href: "/targets", label: "Scheibe drucken", icon: Printer },
-  { module: "events", href: "/events", label: "Anlässe", icon: CalendarDays },
-  { module: "billing", href: "/billing", label: "Beiträge", icon: Receipt },
-  { module: "ammo", href: "/ammo", label: "Munition bestellen", icon: Package },
+  { module: "scores", href: "/scores/matches/new", label: "shell.home.quick.startMatch", icon: Crosshair, primary: true },
+  { module: "bookings", href: "/bookings", label: "shell.home.quick.book", icon: CalendarPlus },
+  { module: "targets", href: "/targets", label: "shell.home.quick.printTarget", icon: Printer },
+  { module: "events", href: "/events", label: "shell.home.quick.events", icon: CalendarDays },
+  { module: "billing", href: "/billing", label: "shell.home.quick.fees", icon: Receipt },
+  { module: "ammo", href: "/ammo", label: "shell.home.quick.ammo", icon: Package },
 ];
 
 export default async function HomePage({ searchParams }: { searchParams: Promise<{ module?: string; denied?: string }> }) {
@@ -168,6 +194,8 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
   if (!base.tenant) redirect("/onboarding");
   const ctx = base as TenantCtx;
   const sp = await searchParams;
+  const locale = await getRequestLocale();
+  const t = getT(locale);
 
   const scoresOn = ctx.hasModule("scores");
   const bookingsOn = ctx.hasModule("bookings");
@@ -184,10 +212,10 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
   ]);
   const checklist = isAdmin ? await loadSetupChecklist(ctx) : [];
 
-  const greeting = dayGreeting();
+  const greeting = t(greetingKey());
   const firstName = ctx.user.name.split(" ")[0];
   const actions = QUICK_ACTIONS.filter((a) => ctx.hasModule(a.module));
-  const role = ctx.tenant.role && isTenantRole(ctx.tenant.role) ? ROLE_LABELS[ctx.tenant.role] : ctx.user.isSuperAdmin ? "Super-Admin" : null;
+  const role = ctx.tenant.role && isTenantRole(ctx.tenant.role) ? t(`role.${ctx.tenant.role}`) : ctx.user.isSuperAdmin ? t("shell.me.superAdmin") : null;
   const doneCount = checklist.filter((i) => i.done).length;
   const primaryBg = gradientReadable(ctx.tenant) ? "brand-gradient" : "bg-accent";
 
@@ -202,22 +230,22 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
             {role ? <span className="shrink-0 rounded-full bg-surface-2 px-2 py-0.5 text-[11px] font-medium text-ink-2">{role}</span> : null}
           </div>
           <h1 className="mt-1 text-3xl font-semibold tracking-tight">
-            {greeting}, {firstName}.
+            {t("shell.home.greetingName", { greeting, name: firstName ?? "" })}
           </h1>
         </div>
-        <Link href="/me" aria-label="Mein Profil" className="press shrink-0 rounded-full focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent">
+        <Link href="/me" aria-label={t("shell.home.myProfile")} className="press shrink-0 rounded-full focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent">
           <Avatar name={ctx.user.name} src={ctx.user.avatarUrl} size={52} className="ring-2 ring-surface shadow-sm" />
         </Link>
       </div>
 
       {sp.module ? (
         <div className="mb-4">
-          <Alert tone="warn">Dieses Modul ist in {ctx.tenant.name} nicht aktiviert.{isAdmin ? <> Du kannst es unter <Link href="/admin" className="font-semibold underline underline-offset-2">Verein</Link> einschalten.</> : null}</Alert>
+          <Alert tone="warn">{t("shell.home.moduleOff", { club: ctx.tenant.name })}{isAdmin ? <> {t("shell.home.moduleOffAdmin")} <Link href="/admin" className="font-semibold underline underline-offset-2">{t("shell.nav.group.club")}</Link>{t("shell.home.moduleOffAdminEnd")}</> : null}</Alert>
         </div>
       ) : null}
       {sp.denied ? (
         <div className="mb-4">
-          <Alert tone="warn">Dafür fehlt dir die Berechtigung. Frag bei Bedarf deinen Vereinsadmin.</Alert>
+          <Alert tone="warn">{t("shell.home.denied")}</Alert>
         </div>
       ) : null}
 
@@ -226,7 +254,7 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
 
       {/* Schnellaktionen */}
       {actions.length ? (
-        <nav aria-label="Schnellaktionen" className="stagger grid grid-cols-2 gap-2.5 sm:grid-cols-3">
+        <nav aria-label={t("shell.home.quickActions")} className="stagger grid grid-cols-2 gap-2.5 sm:grid-cols-3">
           {actions.map((a, i) => (
             <Link
               key={a.href}
@@ -239,7 +267,7 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
             >
               <a.icon className={cn("h-6 w-6", a.primary ? "" : "text-accent")} />
               <span className="flex items-center justify-between gap-2 text-[15px] font-semibold leading-tight">
-                {a.label}
+                {t(a.label)}
                 <ChevronRight className={cn("h-4 w-4 shrink-0 transition-transform group-hover:translate-x-0.5", a.primary ? "opacity-80" : "text-ink-3")} aria-hidden />
               </span>
             </Link>
@@ -250,19 +278,19 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
       {/* Erste Schritte für Admins */}
       {checklist.length ? (
         <>
-          <SectionTitle>Erste Schritte</SectionTitle>
+          <SectionTitle>{t("shell.home.setup.title")}</SectionTitle>
           <Card className="animate-rise p-4">
             <div className="flex items-start justify-between gap-3">
               <div>
-                <h2 className="font-semibold">Richte {ctx.tenant.name} ein</h2>
-                <p className="text-sm text-ink-3">Ein paar Minuten, dann ist alles bereit. Die Liste verschwindet, sobald alles erledigt ist.</p>
+                <h2 className="font-semibold">{t("shell.home.setup.heading", { club: ctx.tenant.name })}</h2>
+                <p className="text-sm text-ink-3">{t("shell.home.setup.lead")}</p>
               </div>
               <span className="shrink-0 text-sm font-semibold tabular-nums text-ink-2">{doneCount}/{checklist.length}</span>
             </div>
-            <ProgressBar className="mt-3" value={doneCount} max={checklist.length} label="Fortschritt Einrichtung" tone="ok" size="sm" />
+            <ProgressBar className="mt-3" value={doneCount} max={checklist.length} label={t("shell.home.setup.progress")} tone="ok" size="sm" />
             <ul className="-mx-2 mt-2">
               {checklist.map((i) => (
-                <ChecklistItem key={i.key} done={i.done} href={i.href} title={i.title} text={i.text} />
+                <ChecklistItem key={i.key} done={i.done} href={i.href} title={t(`shell.home.setup.${i.key}.title`)} text={t(`shell.home.setup.${i.key}.text`)} />
               ))}
             </ul>
           </Card>
@@ -281,14 +309,14 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
             </span>
             <div className="min-w-0 flex-1">
               <div className="font-semibold">
-                {plural(invoices.count, "offene Rechnung", "offene Rechnungen")} · {formatTotals(invoices.totals)}
+                {countLabel(t, invoices.count, "shell.home.invoices.openOne", "shell.home.invoices.openMany")} · {invoices.totals.map((x) => formatMoneyLocale(x.cents, locale, x.currency)).join(" · ")}
               </div>
               <div className="text-xs text-ink-3">
                 {invoices.overdue > 0
-                  ? `${plural(invoices.overdue, "Rechnung ist", "Rechnungen sind")} überfällig. Mit der QR-Rechnung bezahlst du in deiner Banking-App.`
+                  ? countLabel(t, invoices.overdue, "shell.home.invoices.overdueOne", "shell.home.invoices.overdueMany")
                   : invoices.nextDue
-                    ? `Nächste zahlbar bis ${formatDateZurich(invoices.nextDue, { weekday: undefined })} – einfach QR-Code scannen.`
-                    : "Einfach QR-Code in der Banking-App scannen."}
+                    ? t("shell.home.invoices.nextDue", { date: formatDate(invoices.nextDue, locale) })
+                    : t("shell.home.invoices.scan")}
               </div>
             </div>
             <ArrowRight className="h-4 w-4 shrink-0 text-ink-3" aria-hidden />
@@ -296,11 +324,11 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
           {invoices.onlinePay ? (
             <div className="border-t border-line px-4 pb-4 pt-3">
               <LinkButton href={invoices.onlinePay.href} prefetch={false} className="w-full">
-                <CreditCard className="h-4 w-4" aria-hidden /> Online bezahlen
+                <CreditCard className="h-4 w-4" aria-hidden /> {t("shell.home.invoices.payOnline")}
               </LinkButton>
               <p className="mt-1.5 text-center text-xs text-ink-3">
-                {invoices.onlinePay.count > 1 ? `${invoices.onlinePay.count} Beitragsrechnungen · ` : ""}
-                {invoices.onlinePay.methods} über {invoices.onlinePay.provider}
+                {invoices.onlinePay.count > 1 ? `${t("shell.home.invoices.feeInvoices", { count: invoices.onlinePay.count })} · ` : ""}
+                {t("shell.home.invoices.via", { methods: invoices.onlinePay.methods, provider: invoices.onlinePay.provider })}
               </p>
             </div>
           ) : null}
@@ -315,7 +343,7 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
               <MessageCircle className="h-5 w-5" />
             </span>
             <div className="min-w-0 flex-1">
-              <div className="font-semibold">{plural(chats.total, "ungelesene Nachricht", "ungelesene Nachrichten")}</div>
+              <div className="font-semibold">{countLabel(t, chats.total, "shell.home.chat.unreadOne", "shell.home.chat.unreadMany")}</div>
               <div className="truncate text-xs text-ink-3">
                 {chats.conversations.map((c) => (c.unread > 1 ? `${c.title} (${c.unread})` : c.title)).join(" · ")}
               </div>
@@ -335,7 +363,7 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
       {/* Stand, Schicht, Obligatorisch, Meisterschaft: eigene kleine Abfragen, gestreamt */}
       {ctx.hasModule("range") || ctx.hasModule("shifts") || ctx.hasModule("federal") || ctx.hasModule("championship") ? (
         <Suspense fallback={null}>
-          <ModuleStatusCards ctx={ctx} />
+          <ModuleStatusCards ctx={ctx} locale={locale} />
         </Suspense>
       ) : null}
 
@@ -344,7 +372,7 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
           {/* Weiter wo du warst */}
           {scores.openMine.length ? (
             <>
-              <SectionTitle action={<Link href="/scores/matches?status=OPEN" className="text-xs text-ink-3 hover:text-ink">Alle offenen</Link>}>Weiter wo du warst</SectionTitle>
+              <SectionTitle action={<Link href="/scores/matches?status=OPEN" className="text-xs text-ink-3 hover:text-ink">{t("shell.home.scores.allOpen")}</Link>}>{t("shell.home.scores.continue")}</SectionTitle>
               <div className="stagger space-y-2.5">
                 {scores.openMine.map((m) => {
                   const done = m.participants.find((p) => p.userId === ctx.user.id)?.total ?? 0;
@@ -358,13 +386,13 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
                         <div className="min-w-0 flex-1">
                           <div className="truncate font-medium">{m.title ?? m.program.name}</div>
                           <div className="truncate text-xs text-ink-3">
-                            {formatDate(m.date)} · {m.participants.length > 1 ? m.participants.map((p) => p.name).join(", ") : "Training allein"}
+                            {formatDate(m.date, locale)} · {m.participants.length > 1 ? m.participants.map((p) => p.name).join(", ") : t("shell.home.scores.alone")}
                           </div>
-                          <ProgressBar className="mt-2" size="sm" value={done} max={m.maxScore || 1} label={`Stand ${formatScore(done, decimal)} von ${m.maxScore}`} />
+                          <ProgressBar className="mt-2" size="sm" value={done} max={m.maxScore || 1} label={t("shell.home.scores.progress", { score: formatScore(done, decimal), max: m.maxScore })} />
                         </div>
                         <div className="shrink-0 text-right">
                           <div className="text-lg font-semibold tabular-nums">{formatScore(done, decimal)}</div>
-                          <div className="text-[11px] text-ink-3">von {m.maxScore}</div>
+                          <div className="text-[11px] text-ink-3">{t("shell.home.scores.ofMax", { max: m.maxScore })}</div>
                         </div>
                       </Card>
                     </Link>
@@ -375,7 +403,7 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
           ) : null}
 
           {/* Favoriten */}
-          <SectionTitle action={<Link href="/scores/programs" className="text-xs text-ink-3 hover:text-ink">Alle Programme</Link>}>Schnellstart</SectionTitle>
+          <SectionTitle action={<Link href="/scores/programs" className="text-xs text-ink-3 hover:text-ink">{t("shell.home.scores.allPrograms")}</Link>}>{t("shell.home.scores.quickStart")}</SectionTitle>
           {scores.favorites.length ? (
             <div className="stagger grid grid-cols-1 gap-2.5 sm:grid-cols-2">
               {scores.favorites.map((p) => (
@@ -387,10 +415,10 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
                     <div className="min-w-0 flex-1">
                       <div className="truncate font-medium">{p.name}</div>
                       <div className="text-xs text-ink-3">
-                        {p.totals.shots} Schuss · {plural(p.stages.length, "Serie", "Serien")}
+                        {t("shell.home.scores.shots", { count: p.totals.shots })} · {countLabel(t, p.stages.length, "shell.home.scores.stageOne", "shell.home.scores.stageMany")}
                       </div>
                     </div>
-                    <span className="sr-only">Durchgang starten</span>
+                    <span className="sr-only">{t("shell.home.quick.startMatch")}</span>
                     <ArrowRight className="h-4 w-4 text-ink-3" aria-hidden />
                   </Card>
                 </Link>
@@ -399,20 +427,20 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
           ) : (
             <EmptyState
               illustration={<TargetIllustration size={80} />}
-              title="Noch keine Favoriten"
-              text="Markiere Programme mit dem Stern, dann startest du sie hier mit einem Tipp."
-              action={<LinkButton href="/scores/programs" variant="secondary" size="sm">Programme ansehen</LinkButton>}
+              title={t("shell.home.scores.noFavorites")}
+              text={t("shell.home.scores.noFavoritesText")}
+              action={<LinkButton href="/scores/programs" variant="secondary" size="sm">{t("shell.home.scores.viewPrograms")}</LinkButton>}
             />
           )}
 
           {/* Statistik */}
           {scores.stats.matches > 0 ? (
             <>
-              <SectionTitle action={<Link href="/scores/stats" className="text-xs text-ink-3 hover:text-ink">Statistik</Link>}>Deine Zahlen</SectionTitle>
+              <SectionTitle action={<Link href="/scores/stats" className="text-xs text-ink-3 hover:text-ink">{t("shell.home.scores.stats")}</Link>}>{t("shell.home.scores.yourNumbers")}</SectionTitle>
               <div className="stagger grid grid-cols-3 gap-2.5">
-                <StatCard label="Durchgänge" value={scores.stats.matches} href="/scores/matches" />
-                <StatCard label="Schüsse" value={scores.stats.totalShots.toLocaleString("de-CH")} />
-                <StatCard label="Programme" value={scores.stats.byProgram.length} href="/scores/stats" />
+                <StatCard label={t("shell.home.scores.matches")} value={scores.stats.matches} href="/scores/matches" />
+                <StatCard label={t("shell.home.scores.shotsLabel")} value={scores.stats.totalShots.toLocaleString(INTL_LOCALE[locale])} />
+                <StatCard label={t("shell.home.scores.programs")} value={scores.stats.byProgram.length} href="/scores/stats" />
               </div>
               {scores.stats.byProgram.length ? (
                 <Card className="animate-rise mt-2.5 divide-y divide-line">
@@ -424,11 +452,11 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
                         <Trophy className="h-4 w-4 shrink-0 text-warn" aria-hidden />
                         <div className="min-w-0 flex-1">
                           <div className="truncate text-sm font-medium">{p.name}</div>
-                          <ProgressBar className="mt-1.5" size="sm" tone="ok" value={p.best} max={p.max || 1} label={`Bestleistung ${p.name}`} />
+                          <ProgressBar className="mt-1.5" size="sm" tone="ok" value={p.best} max={p.max || 1} label={t("shell.home.scores.bestOf", { name: p.name })} />
                         </div>
                         <div className="shrink-0 text-right">
                           <div className="font-semibold tabular-nums">{formatScore(p.best, p.decimal)}</div>
-                          <div className="text-[11px] text-ink-3">Bestwert von {p.max}</div>
+                          <div className="text-[11px] text-ink-3">{t("shell.home.scores.bestOfMax", { max: p.max })}</div>
                         </div>
                       </div>
                     ))}
@@ -438,7 +466,7 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
           ) : null}
 
           {/* Letzte Durchgänge */}
-          <SectionTitle action={<Link href="/scores/matches" className="text-xs text-ink-3 hover:text-ink">Alle</Link>}>Letzte Durchgänge</SectionTitle>
+          <SectionTitle action={<Link href="/scores/matches" className="text-xs text-ink-3 hover:text-ink">{t("shell.home.scores.all")}</Link>}>{t("shell.home.scores.recent")}</SectionTitle>
           {scores.recent.length ? (
             <div className="stagger space-y-2.5">
               {scores.recent.map((m) => (
@@ -454,7 +482,7 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
                         <div className="min-w-0">
                           <div className="truncate font-medium">{m.title ?? m.program.name}</div>
                           <div className="truncate text-xs text-ink-3">
-                            {formatDate(m.date)} · {m.participants.map((p) => p.name).join(", ")}
+                            {formatDate(m.date, locale)} · {m.participants.map((p) => p.name).join(", ")}
                           </div>
                         </div>
                       </div>
@@ -462,7 +490,7 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
                         <div className="text-lg font-semibold tabular-nums">
                           {m.participants.length ? formatScore(Math.max(...m.participants.map((p) => p.total)), m.program.scoringMode === "RINGS_DECIMAL") : "–"}
                         </div>
-                        <div className="text-[11px] text-ink-3">von {m.maxScore}</div>
+                        <div className="text-[11px] text-ink-3">{t("shell.home.scores.ofMax", { max: m.maxScore })}</div>
                       </div>
                     </div>
                   </Card>
@@ -472,9 +500,9 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
           ) : scores.openMine.length ? null : (
             <EmptyState
               icon={<Trophy className="h-5 w-5" />}
-              title="Noch nichts geschossen"
-              text="Starte deinen ersten Durchgang – allein, mit Kollegen oder Gästen."
-              action={<LinkButton href="/scores/matches/new" size="sm"><Crosshair className="h-4 w-4" /> Durchgang starten</LinkButton>}
+              title={t("shell.home.scores.nothingYet")}
+              text={t("shell.home.scores.nothingYetText")}
+              action={<LinkButton href="/scores/matches/new" size="sm"><Crosshair className="h-4 w-4" /> {t("shell.home.quick.startMatch")}</LinkButton>}
             />
           )}
         </>
@@ -485,7 +513,7 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
       {/* Neueste Dateien */}
       {filesOn && newestFiles.length ? (
         <>
-          <SectionTitle action={<Link href="/files" className="text-xs text-ink-3 hover:text-ink">Dateiablage</Link>}>Neue Dateien</SectionTitle>
+          <SectionTitle action={<Link href="/files" className="text-xs text-ink-3 hover:text-ink">{t("shell.me.row.files")}</Link>}>{t("shell.home.files.new")}</SectionTitle>
           <Card className="animate-rise divide-y divide-line overflow-hidden">
             {newestFiles.map((f) => (
               <Link
@@ -497,7 +525,7 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
                 <div className="min-w-0 flex-1">
                   <div className="truncate font-medium">{f.name}</div>
                   <div className="truncate text-xs text-ink-3">
-                    {formatDateZurich(f.createdAt, { weekday: undefined })}
+                    {formatDate(f.createdAt, locale)}
                     {f.folderName ? ` · ${f.folderName}` : ""}
                   </div>
                 </div>
@@ -511,7 +539,7 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
       {/* Nächste Reservation */}
       {bookingsOn ? (
         <>
-          <SectionTitle action={<Link href="/bookings" className="text-xs text-ink-3 hover:text-ink">Reservieren</Link>}>Nächste Reservation</SectionTitle>
+          <SectionTitle action={<Link href="/bookings" className="text-xs text-ink-3 hover:text-ink">{t("shell.home.quick.book")}</Link>}>{t("shell.home.bookings.next")}</SectionTitle>
           {nextBookings.length ? (
             <div className="stagger space-y-2.5">
               {nextBookings.map((b) => (
@@ -523,8 +551,8 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
                     <div className="min-w-0 flex-1">
                       <div className="truncate font-medium">{b.resource.name}</div>
                       <div className="text-xs text-ink-3">
-                        {formatDateZurich(b.startsAt)} · {formatTimeRange(b.startsAt, b.endsAt)}
-                        {b.status === "PENDING" ? " · wartet auf Freigabe" : ""}
+                        {weekdayDate(b.startsAt, locale)} · {timeRange(b.startsAt, b.endsAt, locale)}
+                        {b.status === "PENDING" ? ` · ${t("shell.home.bookings.pending")}` : ""}
                       </div>
                     </div>
                     <ArrowRight className="h-4 w-4 text-ink-3" aria-hidden />
@@ -535,9 +563,9 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
           ) : (
             <EmptyState
               icon={<CalendarDays className="h-5 w-5" />}
-              title="Keine Reservation geplant"
-              text="Sieh nach, wann die Anlage frei ist, und reserviere in wenigen Schritten."
-              action={<LinkButton href="/bookings" variant="secondary" size="sm">Jetzt reservieren</LinkButton>}
+              title={t("shell.home.bookings.none")}
+              text={t("shell.home.bookings.noneText")}
+              action={<LinkButton href="/bookings" variant="secondary" size="sm">{t("shell.home.bookings.bookNow")}</LinkButton>}
             />
           )}
         </>
@@ -548,13 +576,13 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
         {isAdmin ? (
           <Link href="/admin/members" className="press flex items-center gap-3 rounded-card border border-line bg-surface p-4 transition-colors hover:border-ink/30 focus-visible:outline-2 focus-visible:outline-accent">
             <Users className="h-5 w-5 text-ink-3" aria-hidden />
-            <span className="flex-1 text-sm font-medium">Mitglieder einladen</span>
+            <span className="flex-1 text-sm font-medium">{t("shell.me.row.adminInvite")}</span>
             <ChevronRight className="h-4 w-4 text-ink-3" aria-hidden />
           </Link>
         ) : null}
         <Link href="/help" className="press flex items-center gap-3 rounded-card border border-line bg-surface p-4 transition-colors hover:border-ink/30 focus-visible:outline-2 focus-visible:outline-accent">
           <HelpCircle className="h-5 w-5 text-ink-3" aria-hidden />
-          <span className="flex-1 text-sm font-medium">Hilfe & häufige Fragen</span>
+          <span className="flex-1 text-sm font-medium">{t("shell.me.helpFaq")}</span>
           <ChevronRight className="h-4 w-4 text-ink-3" aria-hidden />
         </Link>
       </div>

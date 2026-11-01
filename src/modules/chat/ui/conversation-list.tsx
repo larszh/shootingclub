@@ -7,9 +7,10 @@ import { BellOff, MessageCirclePlus, Paperclip, Search, Shield, Users } from "lu
 import { Avatar } from "@/components/avatar";
 import { EmptyState, Input, LinkButton } from "@/components/ui";
 import { cn } from "@/lib/utils";
+import { getT, type Locale, type TFunction } from "@/lib/i18n/core";
 import type { ConversationListItem } from "../queries";
-import { DELETED_LABEL } from "../types";
-import { listTimeLabel, useNow } from "./format";
+import { chatTitle, listTimeLabel, useNow } from "./format";
+import { tPlural } from "@/modules/billing/ui/i18n";
 import { flushOutbox, useOutbox } from "./outbox";
 import { subscribeChatStream } from "./stream-client";
 
@@ -30,7 +31,8 @@ export function ConversationAvatar({ item, size = 48 }: { item: Pick<Conversatio
 }
 
 /** Chat-Übersicht mit Suche, Live-Aktualisierung und ungelesenen Zählern. */
-export function ConversationList({ userId, items }: { userId: string; items: ConversationListItem[] }) {
+export function ConversationList({ userId, items, locale = "de" }: { userId: string; items: ConversationListItem[]; locale?: Locale }) {
+  const t = getT(locale);
   const router = useRouter();
   const now = useNow();
   const outbox = useOutbox(userId);
@@ -108,33 +110,33 @@ export function ConversationList({ userId, items }: { userId: string; items: Con
     <div>
       <div className="mb-4 grid grid-cols-2 gap-2">
         <LinkButton href="/chat/new" variant="primary">
-          <MessageCirclePlus className="h-5 w-5" aria-hidden /> Neue Nachricht
+          <MessageCirclePlus className="h-5 w-5" aria-hidden /> {t("money.chat.newMessage")}
         </LinkButton>
         <LinkButton href="/chat/new-group" variant="secondary">
-          <Users className="h-5 w-5" aria-hidden /> Neue Gruppe
+          <Users className="h-5 w-5" aria-hidden /> {t("money.chat.newGroup")}
         </LinkButton>
       </div>
 
       {list.length === 0 ? (
         <EmptyState
           icon={<MessageCirclePlus className="h-6 w-6" />}
-          title="Noch keine Unterhaltungen"
-          text="Schreib einem Vereinsmitglied oder gründe eine Gruppe, z.B. für den Vorstand oder die Jungschützen."
+          title={t("money.chat.empty.title")}
+          text={t("money.chat.empty.text")}
         />
       ) : (
         <>
           <div className="relative mb-3">
-            <label htmlFor="chat-search" className="sr-only">Unterhaltungen durchsuchen</label>
+            <label htmlFor="chat-search" className="sr-only">{t("money.chat.searchLabel")}</label>
             <Search className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-ink-3" aria-hidden />
-            <Input id="chat-search" type="search" value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Suchen" className="pl-10" autoComplete="off" enterKeyHint="search" />
+            <Input id="chat-search" type="search" value={query} onChange={(e) => setQuery(e.target.value)} placeholder={t("money.chat.search")} className="pl-10" autoComplete="off" enterKeyHint="search" />
           </div>
           {filtered.length === 0 ? (
-            <p className="py-6 text-center text-sm text-ink-3">Keine Unterhaltung gefunden.</p>
+            <p className="py-6 text-center text-sm text-ink-3">{t("money.chat.noneFound")}</p>
           ) : (
             <ul className="divide-y divide-line overflow-hidden rounded-card border border-line bg-surface">
               {filtered.map((c) => (
                 <li key={c.id}>
-                  <ConversationRow item={c} now={now} pending={pendingByConv.get(c.id) ?? 0} />
+                  <ConversationRow item={c} now={now} pending={pendingByConv.get(c.id) ?? 0} t={t} locale={locale} />
                 </li>
               ))}
             </ul>
@@ -145,19 +147,19 @@ export function ConversationList({ userId, items }: { userId: string; items: Con
   );
 }
 
-function ConversationRow({ item: c, now, pending }: { item: ConversationListItem; now: number; pending: number }) {
+function ConversationRow({ item: c, now, pending, t, locale }: { item: ConversationListItem; now: number; pending: number; t: TFunction; locale: Locale }) {
   const unread = c.unread > 0;
   const preview = c.preview;
-  let text: React.ReactNode = <span className="italic">Noch keine Nachrichten</span>;
+  let text: React.ReactNode = <span className="italic">{t("money.chat.noMessages")}</span>;
   if (preview) {
-    const prefix = preview.mine ? "Du: " : c.kind === "GROUP" && preview.senderName ? `${preview.senderName.split(" ")[0]}: ` : "";
-    if (preview.deleted) text = <span className="italic">{DELETED_LABEL}</span>;
+    const prefix = preview.mine ? t("money.chat.youPrefix") : c.kind === "GROUP" && preview.senderName ? `${preview.senderName.split(" ")[0]}: ` : "";
+    if (preview.deleted) text = <span className="italic">{t("money.chat.deleted")}</span>;
     else
       text = (
         <>
           {prefix}
-          {preview.hasFile ? <Paperclip className="mr-0.5 inline h-3.5 w-3.5 align-[-2px]" aria-label="Anhang" /> : null}
-          {preview.text || (preview.hasFile ? "Anhang" : "")}
+          {preview.hasFile ? <Paperclip className="mr-0.5 inline h-3.5 w-3.5 align-[-2px]" aria-label={t("money.chat.attachment")} /> : null}
+          {preview.text || (preview.hasFile ? t("money.chat.attachment") : "")}
         </>
       );
   }
@@ -169,19 +171,19 @@ function ConversationRow({ item: c, now, pending }: { item: ConversationListItem
       <ConversationAvatar item={c} />
       <span className="min-w-0 flex-1">
         <span className="flex items-baseline justify-between gap-2">
-          <span className={cn("truncate text-[15px]", unread ? "font-semibold" : "font-medium")}>{c.title}</span>
-          <span className={cn("shrink-0 text-xs tabular-nums", unread ? "font-semibold text-accent" : "text-ink-3")}>{listTimeLabel(c.lastMessageAt, now)}</span>
+          <span className={cn("truncate text-[15px]", unread ? "font-semibold" : "font-medium")}>{chatTitle(c.title, locale)}</span>
+          <span className={cn("shrink-0 text-xs tabular-nums", unread ? "font-semibold text-accent" : "text-ink-3")}>{listTimeLabel(c.lastMessageAt, now, locale)}</span>
         </span>
         <span className="mt-0.5 flex items-center gap-2">
           <span className={cn("min-w-0 flex-1 truncate text-sm", unread ? "text-ink" : "text-ink-3")}>
-            {pending > 0 ? <span className="text-warn">Wird gesendet… · </span> : null}
+            {pending > 0 ? <span className="text-warn">{t("money.chat.sending")} · </span> : null}
             {text}
           </span>
-          {c.muted ? <BellOff className="h-4 w-4 shrink-0 text-ink-3" aria-label="Stummgeschaltet" /> : null}
+          {c.muted ? <BellOff className="h-4 w-4 shrink-0 text-ink-3" aria-label={t("money.chat.muted")} /> : null}
           {unread ? (
             <span
               className={cn("inline-flex h-5 min-w-5 shrink-0 items-center justify-center rounded-full px-1.5 text-[11px] font-semibold tabular-nums", c.muted ? "bg-surface-2 text-ink-2" : "bg-accent text-accent-ink")}
-              aria-label={c.unread === 1 ? "1 ungelesene Nachricht" : `${c.unread} ungelesene Nachrichten`}
+              aria-label={tPlural(t, "money.chat.unread", c.unread)}
             >
               {c.unread > 99 ? "99+" : c.unread}
             </span>

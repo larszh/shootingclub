@@ -5,8 +5,11 @@ import { AlertCircle } from "lucide-react";
 import { acceptInvitationAction, switchAccountForInvitationAction } from "@/modules/core/auth-actions";
 import { Alert, Button } from "@/components/ui";
 import { Spinner } from "@/components/ui/form";
+import { useT } from "@/components/locale";
+import { translateServerMessage } from "@/components/server-messages";
 
 export function AcceptInvitationButton({ token, label }: { token: string; label: string }) {
+  const t = useT();
   const [pending, start] = useTransition();
   const [error, setError] = useState<string | null>(null);
   return (
@@ -21,21 +24,22 @@ export function AcceptInvitationButton({ token, label }: { token: string; label:
         onClick={() =>
           start(async () => {
             const res = await acceptInvitationAction(token);
-            if (res && !res.ok) setError(res.error);
+            if (res && !res.ok) setError(translateServerMessage(res.error, t));
           })
         }
       >
-        {pending ? <span className="inline-flex items-center gap-2"><Spinner /> Einen Moment…</span> : label}
+        {pending ? <span className="inline-flex items-center gap-2"><Spinner /> {t("shell.invite.moment")}</span> : label}
       </Button>
     </div>
   );
 }
 
 export function SwitchAccountButton({ token }: { token: string }) {
+  const t = useT();
   const [pending, start] = useTransition();
   return (
     <Button type="button" variant="secondary" size="lg" className="mt-4 w-full" disabled={pending} onClick={() => start(() => switchAccountForInvitationAction(token))}>
-      {pending ? <span className="inline-flex items-center gap-2"><Spinner /> Abmelden…</span> : "Abmelden & anders anmelden"}
+      {pending ? <span className="inline-flex items-center gap-2"><Spinner /> {t("shell.invite.loggingOut")}</span> : t("shell.invite.switch")}
     </Button>
   );
 }

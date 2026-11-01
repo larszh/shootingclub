@@ -23,15 +23,23 @@ export function localeFromAcceptLanguage(header: string | null | undefined): Loc
   return null;
 }
 
+/** Cookie mit der auf den Anmeldeseiten gewählten Sprache (für nicht angemeldete Besucher). */
+export const LOCALE_COOKIE = "standchef_locale";
+
 /**
  * Sprache für den aktuellen Request:
- * Benutzersprache → Standardsprache des aktiven Vereins → Accept-Language → Deutsch.
+ * Benutzersprache → (abgemeldet) gewählte Sprache aus dem Cookie «standchef_locale»
+ * → Standardsprache des aktiven Vereins → Accept-Language → Deutsch.
  */
 export async function getRequestLocale(): Promise<Locale> {
   try {
     const user = await getCurrentUser();
     if (user && isLocale(user.locale)) return user.locale;
     const jar = await cookies();
+    if (!user) {
+      const chosen = jar.get(LOCALE_COOKIE)?.value;
+      if (isLocale(chosen)) return chosen;
+    }
     const tenantId = jar.get("standchef_tenant")?.value;
     if (tenantId) {
       const t = await db.tenant.findUnique({ where: { id: tenantId }, select: { defaultLocale: true } });

@@ -4,7 +4,9 @@ import { Fragment } from "react";
 import { AlertCircle, Clock, FileText, MoreHorizontal } from "lucide-react";
 import { Avatar } from "@/components/avatar";
 import { cn } from "@/lib/utils";
-import { DELETED_LABEL, chatFileUrl, formatBytes, isImageMime, type ChatMessageDTO } from "../types";
+import { getT, type Locale } from "@/lib/i18n/core";
+import { localizeMessage } from "@/modules/billing/ui/i18n";
+import { chatFileUrl, formatBytes, isImageMime, type ChatMessageDTO } from "../types";
 import { timeLabel } from "./format";
 
 const URL_RE = /(https?:\/\/[^\s<>"]+[^\s<>"'.,:;!?)\]])/g;
@@ -41,6 +43,7 @@ export function MessageBubble({
   onOpenActions,
   onRetry,
   onDiscard,
+  locale = "de",
 }: {
   msg: ChatMessageDTO;
   mine: boolean;
@@ -56,11 +59,13 @@ export function MessageBubble({
   onOpenActions?: () => void;
   onRetry?: () => void;
   onDiscard?: () => void;
+  locale?: Locale;
 }) {
+  const t = getT(locale);
   const deleted = !!msg.deletedAt;
   const file = msg.file;
   const image = file && isImageMime(file.mimeType);
-  const time = timeLabel(msg.createdAt);
+  const time = timeLabel(msg.createdAt, locale);
 
   return (
     <div className={cn("flex items-end gap-2", mine ? "justify-end" : "justify-start", showSender ? "mt-3" : "mt-0.5")}>
@@ -82,7 +87,7 @@ export function MessageBubble({
           )}
         >
           {deleted ? (
-            <span className="italic">{DELETED_LABEL}</span>
+            <span className="italic">{t("money.chat.deleted")}</span>
           ) : (
             <>
               {file ? (
@@ -125,26 +130,26 @@ export function MessageBubble({
         </div>
         <div className={cn("mt-0.5 flex items-center gap-1.5 px-1 text-[11px] tabular-nums text-ink-3", mine ? "flex-row-reverse" : "")}>
           <span>{time}</span>
-          {msg.editedAt && !deleted ? <span>· bearbeitet</span> : null}
+          {msg.editedAt && !deleted ? <span>· {t("money.chat.edited")}</span> : null}
           {state === "pending" ? (
-            <span className="inline-flex items-center gap-1"><Clock className="h-3 w-3" aria-hidden /> Wird gesendet…</span>
+            <span className="inline-flex items-center gap-1"><Clock className="h-3 w-3" aria-hidden /> {t("money.chat.sending")}</span>
           ) : state === "queued" ? (
-            <span className="inline-flex items-center gap-1 text-warn"><Clock className="h-3 w-3" aria-hidden /> Wartet auf Verbindung</span>
+            <span className="inline-flex items-center gap-1 text-warn"><Clock className="h-3 w-3" aria-hidden /> {t("money.chat.waiting")}</span>
           ) : receipt ? (
             <span>{receipt}</span>
           ) : null}
         </div>
         {state === "failed" ? (
           <div className="mt-1 flex flex-wrap items-center justify-end gap-1 text-sm">
-            <span className="inline-flex items-center gap-1 text-danger"><AlertCircle className="h-4 w-4" aria-hidden /> {error ?? "Nicht gesendet"}</span>
+            <span className="inline-flex items-center gap-1 text-danger"><AlertCircle className="h-4 w-4" aria-hidden /> {error ? localizeMessage(error, locale) : t("money.chat.notSent")}</span>
             {onRetry ? (
               <button type="button" onClick={onRetry} className="press min-h-11 rounded-control px-3 font-medium text-accent hover:bg-surface-2 focus-visible:outline-2 focus-visible:outline-accent">
-                Erneut senden
+                {t("money.chat.retry")}
               </button>
             ) : null}
             {onDiscard ? (
               <button type="button" onClick={onDiscard} className="press min-h-11 rounded-control px-3 text-ink-3 hover:bg-surface-2 focus-visible:outline-2 focus-visible:outline-accent">
-                Verwerfen
+                {t("money.chat.discard")}
               </button>
             ) : null}
           </div>
@@ -154,7 +159,7 @@ export function MessageBubble({
           <button
             type="button"
             onClick={onOpenActions}
-            aria-label="Aktionen zur Nachricht"
+            aria-label={t("money.chat.actionsLabel")}
             className={cn(
               "absolute top-1/2 flex h-11 w-11 -translate-y-1/2 items-center justify-center rounded-full text-ink-3 opacity-0 hover:bg-surface-2 focus-visible:opacity-100 focus-visible:outline-2 focus-visible:outline-accent group-hover:opacity-100 [@media(pointer:coarse)]:hidden",
               mine ? "-left-12" : "-right-12",
@@ -176,11 +181,12 @@ export function DayDivider({ label }: { label: string }) {
   );
 }
 
-export function UnreadDivider({ id }: { id?: string }) {
+export function UnreadDivider({ id, locale = "de" }: { id?: string; locale?: Locale }) {
+  const label = getT(locale)("money.chat.newMessages");
   return (
-    <div id={id} className="my-3 flex items-center gap-3 text-xs font-semibold text-accent" role="separator" aria-label="Neue Nachrichten">
+    <div id={id} className="my-3 flex items-center gap-3 text-xs font-semibold text-accent" role="separator" aria-label={label}>
       <span className="h-px flex-1 bg-accent/40" />
-      Neue Nachrichten
+      {label}
       <span className="h-px flex-1 bg-accent/40" />
     </div>
   );

@@ -8,8 +8,12 @@ import { zurichParts } from "@/lib/time";
 import { MatchRow } from "@/modules/scores/ui/match-row";
 import { MatchFilters } from "@/modules/scores/ui/match-filters";
 import { ExportLink } from "@/modules/scores/ui/export-link";
+import { getRequestLocale, getT } from "@/lib/i18n";
+import { tCount } from "@/modules/scores/ui/labels";
 
-export const metadata: Metadata = { title: "Durchgänge" };
+export async function generateMetadata(): Promise<Metadata> {
+  return { title: getT(await getRequestLocale())("shooting.common.matches") };
+}
 
 type SP = { q?: string; programId?: string; status?: string; period?: string };
 
@@ -29,6 +33,8 @@ function rangeFor(period: string | undefined) {
 
 export default async function MatchesPage({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
   const ctx = await requireModule("scores");
+  const locale = await getRequestLocale();
+  const t = getT(locale);
   const raw = await searchParams;
   const values: SP = {
     q: pick(raw.q)?.slice(0, 60),
@@ -46,31 +52,31 @@ export default async function MatchesPage({ searchParams }: { searchParams: Prom
 
   return (
     <div>
-      <PageHeader title="Durchgänge" subtitle={viewAll ? "Alle Durchgänge im Verein" : "Deine Durchgänge und Wettkämpfe"} back={{ href: "/scores", label: "Schiessen" }}
-        action={ctx.can("match.create") ? <LinkButton href="/scores/matches/new" size="sm"><Play className="h-4 w-4" /> Starten</LinkButton> : null} />
+      <PageHeader title={t("shooting.common.matches")} subtitle={viewAll ? t("shooting.matches.subtitleAll") : t("shooting.matches.subtitleMine")} back={{ href: "/scores", label: t("shooting.common.shooting") }}
+        action={ctx.can("match.create") ? <LinkButton href="/scores/matches/new" size="sm"><Play className="h-4 w-4" /> {t("shooting.common.start")}</LinkButton> : null} />
 
-      <MatchFilters key={JSON.stringify(values)} values={values} programs={programs.map((p) => ({ id: p.id, name: p.name }))} />
+      <MatchFilters key={JSON.stringify(values)} values={values} programs={programs.map((p) => ({ id: p.id, name: p.name }))} locale={locale} />
 
       {matches.length ? (
         <>
           <p className="mb-2 text-xs text-ink-3" aria-live="polite">
-            {matches.length === 100 ? "Die neusten 100 Durchgänge" : `${matches.length} ${matches.length === 1 ? "Durchgang" : "Durchgänge"}`}
+            {matches.length === 100 ? t("shooting.matches.latest100") : tCount(t, "shooting.board.attempts", matches.length)}
           </p>
           <div className="stagger space-y-2.5">
-            {matches.map((m) => <MatchRow key={m.id} m={m} againFor={ctx.can("match.create") ? ctx.user.id : undefined} />)}
+            {matches.map((m) => <MatchRow key={m.id} m={m} againFor={ctx.can("match.create") ? ctx.user.id : undefined} locale={locale} />)}
           </div>
         </>
       ) : filtered ? (
-        <EmptyState icon={<SearchX className="h-5 w-5" />} title="Nichts gefunden" text="Mit diesen Filtern gibt es keine Durchgänge. Versuche es mit weniger Filtern."
-          action={<LinkButton href="/scores/matches" variant="secondary" size="sm">Filter zurücksetzen</LinkButton>} />
+        <EmptyState icon={<SearchX className="h-5 w-5" />} title={t("shooting.matches.nothing")} text={t("shooting.matches.nothingText")}
+          action={<LinkButton href="/scores/matches" variant="secondary" size="sm">{t("shooting.filters.reset")}</LinkButton>} />
       ) : (
-        <EmptyState icon={<History className="h-5 w-5" />} title="Noch keine Durchgänge" text={ctx.can("match.create") ? "Starte dein erstes Programm." : "Sobald du an einem Durchgang teilnimmst, erscheint er hier."}
-          action={ctx.can("match.create") ? <LinkButton href="/scores/matches/new" size="sm">Durchgang starten</LinkButton> : null} />
+        <EmptyState icon={<History className="h-5 w-5" />} title={t("shooting.matches.none")} text={ctx.can("match.create") ? t("shooting.matches.noneCreate") : t("shooting.matches.noneMember")}
+          action={ctx.can("match.create") ? <LinkButton href="/scores/matches/new" size="sm">{t("shooting.matches.startMatch")}</LinkButton> : null} />
       )}
 
       <div className="mt-6 flex flex-wrap gap-2">
-        <ExportLink href="/api/export/scores/me">Meine Resultate (CSV)</ExportLink>
-        {viewAll ? <ExportLink href={`/api/export/scores/tenant${exportQs.size ? `?${exportQs.toString()}` : ""}`}>Alle Vereinsresultate (CSV)</ExportLink> : null}
+        <ExportLink href="/api/export/scores/me">{t("shooting.export.mine")}</ExportLink>
+        {viewAll ? <ExportLink href={`/api/export/scores/tenant${exportQs.size ? `?${exportQs.toString()}` : ""}`}>{t("shooting.export.tenant")}</ExportLink> : null}
       </div>
     </div>
   );

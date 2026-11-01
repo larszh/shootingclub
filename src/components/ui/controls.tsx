@@ -5,6 +5,7 @@ import { Check, Copy, Eye, EyeOff, Info } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { getOnline, getServerOnline, subscribeOnline, toast } from "@/lib/ui-feedback";
 import { inputClass } from "./index";
+import { useT } from "@/components/locale";
 
 /* ---------------------------------------------------------------- Hooks */
 
@@ -249,8 +250,8 @@ async function writeClipboard(text: string) {
 /** Kopiert Text in die Zwischenablage, zeigt kurz ein Häkchen und einen Toast. */
 export function CopyButton({
   text,
-  label = "Kopieren",
-  copiedMessage = "Kopiert",
+  label: labelProp,
+  copiedMessage: copiedProp,
   iconOnly,
   variant = "secondary",
   className,
@@ -262,6 +263,9 @@ export function CopyButton({
   variant?: "secondary" | "ghost";
   className?: string;
 }) {
+  const t = useT();
+  const label = labelProp ?? t("shell.ui.copy");
+  const copiedMessage = copiedProp ?? t("shell.ui.copied");
   const [copied, setCopied] = useState(false);
   const timer = useRef<number | undefined>(undefined);
   useEffect(() => () => window.clearTimeout(timer.current), []);
@@ -269,7 +273,7 @@ export function CopyButton({
   async function onClick() {
     const ok = await writeClipboard(text);
     if (!ok) {
-      toast.error("Kopieren nicht möglich", { description: "Bitte den Text von Hand markieren." });
+      toast.error(t("shell.ui.copyFailed"), { description: t("shell.ui.copyFailedHint") });
       return;
     }
     setCopied(true);
@@ -294,8 +298,8 @@ export function CopyButton({
       )}
     >
       <Icon className="h-4 w-4" aria-hidden />
-      {iconOnly ? null : <span>{copied ? "Kopiert" : label}</span>}
-      <span className="sr-only" aria-live="polite">{copied ? "In die Zwischenablage kopiert" : ""}</span>
+      {iconOnly ? null : <span>{copied ? t("shell.ui.copied") : label}</span>}
+      <span className="sr-only" aria-live="polite">{copied ? t("shell.ui.copiedToClipboard") : ""}</span>
     </button>
   );
 }
@@ -307,7 +311,9 @@ export function CopyButton({
  * öffnet. Schliesst mit Escape, Klick daneben oder erneutem Antippen.
  *   <Hint>Der Beitrittscode ist für alle Mitglieder gleich.</Hint>
  */
-export function Hint({ children, label = "Mehr erfahren", side = "bottom", className, trigger }: { children: React.ReactNode; label?: string; side?: "top" | "bottom"; className?: string; trigger?: React.ReactNode }) {
+export function Hint({ children, label: labelProp, side = "bottom", className, trigger }: { children: React.ReactNode; label?: string; side?: "top" | "bottom"; className?: string; trigger?: React.ReactNode }) {
+  const t = useT();
+  const label = labelProp ?? t("shell.ui.learnMore");
   const [open, setOpen] = useState(false);
   const wrap = useRef<HTMLSpanElement>(null);
   const id = useId();
@@ -368,6 +374,7 @@ export const Tooltip = Hint;
  * Alle Input-Props werden durchgereicht (name, autoComplete, required …).
  */
 export function PasswordInput({ className, onKeyUp, onKeyDown, onBlur, ...props }: React.InputHTMLAttributes<HTMLInputElement>) {
+  const t = useT();
   const [visible, setVisible] = useState(false);
   const [caps, setCaps] = useState(false);
   const hintId = useId();
@@ -401,7 +408,7 @@ export function PasswordInput({ className, onKeyUp, onKeyDown, onBlur, ...props 
         <button
           type="button"
           onClick={() => setVisible((v) => !v)}
-          aria-label={visible ? "Passwort verbergen" : "Passwort anzeigen"}
+          aria-label={visible ? t("shell.ui.hidePassword") : t("shell.ui.showPassword")}
           aria-pressed={visible}
           className="absolute right-1 top-1/2 flex h-9 w-10 -translate-y-1/2 items-center justify-center rounded-[10px] text-ink-3 hover:bg-surface-2 hover:text-ink focus-visible:outline-2 focus-visible:outline-accent"
         >
@@ -410,7 +417,7 @@ export function PasswordInput({ className, onKeyUp, onKeyDown, onBlur, ...props 
       </div>
       {caps ? (
         <p id={hintId} role="status" className="mt-1.5 inline-flex items-center gap-1.5 rounded-full bg-warn/10 px-2.5 py-0.5 text-xs font-medium text-warn animate-pop">
-          Feststelltaste ist aktiv
+          {t("shell.ui.capsLock")}
         </p>
       ) : null}
     </div>

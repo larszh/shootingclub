@@ -12,23 +12,28 @@ import { RulesBody } from "@/modules/range/ui/rules-body";
 import { SelfCheckIn } from "@/modules/range/ui/self-checkin";
 import { EmergencyBox } from "@/modules/range/ui/emergency-box";
 import { db } from "@/lib/db";
+import { getRequestLocale, getT } from "@/lib/i18n";
 
-export const metadata: Metadata = { title: "Check-in" };
+export async function generateMetadata(): Promise<Metadata> {
+  return { title: getT(await getRequestLocale())("shooting.checkin.title") };
+}
 
 /** Selbst-Check-in per QR-Code (/range/checkin?t=<Verein>). */
 export default async function RangeCheckInPage({ searchParams }: { searchParams: Promise<{ t?: string }> }) {
   const sp = await searchParams;
   const base = await requireTenant();
+  const locale = await getRequestLocale();
+  const t = getT(locale);
   if (sp.t && sp.t !== base.tenant.id) {
     const other = base.user.memberships.find((m) => m.tenantId === sp.t);
     if (other) {
       return (
         <div>
-          <PageHeader title="Check-in" />
+          <PageHeader title={t("shooting.checkin.title")} />
           <Card className="space-y-3 p-5">
-            <p>Dieser QR-Code gehört zu <strong>{other.tenant.name}</strong>. Gerade ist «{base.tenant.name}» geöffnet.</p>
+            <p>{t("shooting.checkin.otherBefore")}<strong>{other.tenant.name}</strong>{t("shooting.checkin.otherAfter", { current: base.tenant.name })}</p>
             <form action={switchTenantForCheckInAction.bind(null, other.tenantId)}>
-              <SubmitButton size="lg" className="h-14 w-full">Zu {other.tenant.name} wechseln</SubmitButton>
+              <SubmitButton size="lg" className="h-14 w-full">{t("shooting.checkin.switchTo", { club: other.tenant.name })}</SubmitButton>
             </form>
           </Card>
         </div>
@@ -40,7 +45,7 @@ export default async function RangeCheckInPage({ searchParams }: { searchParams:
   const tenantId = ctx.tenant.id;
   const today = todayZurich();
   const [openDays, rules, mine] = await Promise.all([listOpenDays(tenantId), getActiveRules(tenantId), getMyOpenVisit(tenantId, ctx.user.id)]);
-  const days = openDays.filter((d) => dbDateKey(d.date) === today).map((d) => ({ id: d.id, title: dayTitle(d), dutyName: d.dutyName }));
+  const days = openDays.filter((d) => dbDateKey(d.date) === today).map((d) => ({ id: d.id, title: d.resource ? dayTitle(d) : t("shooting.checkin.wholeRange"), dutyName: d.dutyName }));
   const accepted = rules ? await hasAcceptedRules(rules.id, ctx.user.id) : true;
   let hasWeapon = false;
   if (mine?.clubWeaponId) {
@@ -50,16 +55,17 @@ export default async function RangeCheckInPage({ searchParams }: { searchParams:
 
   return (
     <div className="mx-auto max-w-lg space-y-4">
-      <PageHeader title="Check-in" subtitle={ctx.tenant.name} back={{ href: "/range", label: "Standbetrieb" }} />
+      <PageHeader title={t("shooting.checkin.title")} subtitle={ctx.tenant.name} back={{ href: "/range", label: t("shooting.checkin.back") }} />
       <SelfCheckIn
         days={days}
-        myVisit={mine ? { id: mine.id, since: fmtTime(mine.checkedInAt), title: mine.rangeDay ? dayTitle(mine.rangeDay) : "Stand", hasWeapon } : null}
+        myVisit={mine ? { id: mine.id, since: fmtTime(mine.checkedInAt), title: mine.rangeDay ? (mine.rangeDay.resource ? dayTitle(mine.rangeDay) : t("shooting.checkin.wholeRange")) : t("shooting.checkin.range"), hasWeapon } : null}
         rules={rules ? { id: rules.id, version: rules.version, title: rules.title } : null}
         rulesAccepted={accepted}
+        locale={locale}
       >
         {rules && !accepted ? <RulesBody body={rules.body} /> : null}
       </SelfCheckIn>
-      <EmergencyBox hasRules={!!rules} />
+      <EmergencyBox hasRules={!!rules} locale={locale} />
     </div>
   );
 }

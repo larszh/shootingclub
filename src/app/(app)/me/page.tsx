@@ -7,18 +7,33 @@ import { logoutAction } from "@/modules/core/auth-actions";
 import { Badge, Card, SectionTitle } from "@/components/ui";
 import { Avatar, tenantLogoUrl } from "@/components/avatar";
 import { TenantLogo } from "@/components/logo";
-import { ROLE_LABELS, type TenantRole } from "@/lib/permissions";
-import { formatDate } from "@/lib/utils";
+import { formatDate, getRequestLocale, getT, type TFunction } from "@/lib/i18n";
 import { todayZurich } from "@/lib/time";
-import { dateOnly, formatIsoDate, statusLabel } from "@/modules/members/types";
+import { accessStatusWhere } from "@/lib/membership-access";
+import { dateOnly } from "@/modules/members/types";
 import { AvatarCard, ProfileForm, TenantSwitcher, ThemePicker } from "./forms";
 
-export const metadata: Metadata = { title: "Mehr" };
+export async function generateMetadata(): Promise<Metadata> {
+  return { title: getT(await getRequestLocale())("shell.nav.more") };
+}
 
-const roleLabel = (r: string) => ROLE_LABELS[r as TenantRole] ?? r;
+/** Übersetzt einen Schlüssel mit Rückfall auf den Rohwert (z.B. unbekannte Rolle). */
+function labelOr(t: TFunction, key: string, raw: string) {
+  const v = t(key);
+  return v === key ? raw : v;
+}
+
+/** ISO-Datum (JJJJ-MM-TT) in der Sprache des Benutzers, ohne Zeitzonen-Verschiebung. */
+function formatIso(iso: string | null, locale: string) {
+  if (!iso) return "–";
+  return formatDate(new Date(`${iso}T12:00:00Z`), locale);
+}
 
 export default async function MePage() {
   const ctx = await getAppContext();
+  const locale = await getRequestLocale();
+  const t = getT(locale);
+  const roleLabel = (r: string) => labelOr(t, `role.${r}`, r);
   const canManage = ctx.tenant ? ctx.can("tenant.manage") : false;
   const canManageAmmo = ctx.tenant ? ctx.can("ammo.manage") : false;
   const canViewMembers = ctx.tenant ? ctx.can("members.view") : false;
@@ -52,7 +67,7 @@ export default async function MePage() {
       memberNumber: true,
       createdAt: true,
       joinedAt: true,
-      tenant: { select: { id: true, name: true, kind: true, city: true, logoPath: true, updatedAt: true, _count: { select: { memberships: { where: { status: { not: "LEFT" } } } } } } },
+      tenant: { select: { id: true, name: true, kind: true, city: true, logoPath: true, updatedAt: true, _count: { select: { memberships: { where: { status: accessStatusWhere() } } } } } },
     },
     orderBy: { createdAt: "asc" },
   });
@@ -67,9 +82,10 @@ export default async function MePage() {
         </div>
       </div>
 
-      <SectionTitle>Verein / Anlage</SectionTitle>
+      <SectionTitle>{t("shell.me.clubSection")}</SectionTitle>
       <TenantSwitcher
         activeId={ctx.tenant?.id ?? null}
+        labels={{ join: t("shell.me.joinAnother"), help: t("shell.me.helpFaq"), offline: t("shell.me.offline") }}
         tenants={ctx.user.memberships.map((m) => ({ id: m.tenantId, name: m.tenant.name, role: roleLabel(m.role), logoUrl: tenantLogoUrl(m.tenant) }))}
       />
 
@@ -78,67 +94,67 @@ export default async function MePage() {
           <SectionTitle>{ctx.tenant.name}</SectionTitle>
           <Card className="animate-rise divide-y divide-line overflow-hidden">
             {/* Alle Module, auch die, die mobil nicht in die Tableiste passen */}
-            {ctx.hasModule("chat") ? <Row href="/chat" icon={<MessageCircle className="h-4 w-4" />} label="Chat" /> : null}
-            {ctx.hasModule("events") ? <Row href="/events" icon={<Megaphone className="h-4 w-4" />} label="Anlässe & News" /> : null}
-            {ctx.hasModule("bookings") ? <Row href="/bookings" icon={<CalendarDays className="h-4 w-4" />} label="Reservationen" /> : null}
-            {ctx.hasModule("targets") ? <Row href="/targets" icon={<Target className="h-4 w-4" />} label="Zielscheiben drucken" /> : null}
-            {ctx.hasModule("files") ? <Row href="/files" icon={<FolderOpen className="h-4 w-4" />} label="Dateiablage" /> : null}
-            {ctx.hasModule("ammo") ? <Row href="/ammo" icon={<Package className="h-4 w-4" />} label="Munition bestellen" /> : null}
-            {paymentsOn ? <Row href="/payments" icon={<Wallet className="h-4 w-4" />} label="Meine Zahlungen" /> : null}
-            {ctx.hasModule("billing") ? <Row href="/billing" icon={<CreditCard className="h-4 w-4" />} label="Meine Beiträge" /> : null}
-            {ctx.hasModule("scores") ? <Row href="/scores/stats" icon={<BarChart3 className="h-4 w-4" />} label="Meine Statistik" /> : null}
-            <Row href="/members" icon={<BookUser className="h-4 w-4" />} label="Mitgliederverzeichnis" />
+            {ctx.hasModule("chat") ? <Row href="/chat" icon={<MessageCircle className="h-4 w-4" />} label={t("shell.me.row.chat")} /> : null}
+            {ctx.hasModule("events") ? <Row href="/events" icon={<Megaphone className="h-4 w-4" />} label={t("shell.me.row.events")} /> : null}
+            {ctx.hasModule("bookings") ? <Row href="/bookings" icon={<CalendarDays className="h-4 w-4" />} label={t("shell.me.row.bookings")} /> : null}
+            {ctx.hasModule("targets") ? <Row href="/targets" icon={<Target className="h-4 w-4" />} label={t("shell.me.row.targets")} /> : null}
+            {ctx.hasModule("files") ? <Row href="/files" icon={<FolderOpen className="h-4 w-4" />} label={t("shell.me.row.files")} /> : null}
+            {ctx.hasModule("ammo") ? <Row href="/ammo" icon={<Package className="h-4 w-4" />} label={t("shell.me.row.ammo")} /> : null}
+            {paymentsOn ? <Row href="/payments" icon={<Wallet className="h-4 w-4" />} label={t("shell.me.row.payments")} /> : null}
+            {ctx.hasModule("billing") ? <Row href="/billing" icon={<CreditCard className="h-4 w-4" />} label={t("shell.me.row.billing")} /> : null}
+            {ctx.hasModule("scores") ? <Row href="/scores/stats" icon={<BarChart3 className="h-4 w-4" />} label={t("shell.me.row.stats")} /> : null}
+            <Row href="/members" icon={<BookUser className="h-4 w-4" />} label={t("shell.me.row.directory")} />
           </Card>
           {shootingOn ? (
             <>
-              <SectionTitle>Schiessen</SectionTitle>
+              <SectionTitle>{t("shell.nav.group.shooting")}</SectionTitle>
               <Card className="animate-rise divide-y divide-line overflow-hidden">
-                {ctx.hasModule("federal") ? <Row href="/federal" icon={<BadgeCheck className="h-4 w-4" />} label="Bundesübungen" hint="Obligatorisch, Feldschiessen, Schiessnachweis" /> : null}
-                {ctx.hasModule("championship") ? <Row href="/championship" icon={<Trophy className="h-4 w-4" />} label="Jahresmeisterschaft" /> : null}
-                {canLive ? <Row href="/admin/live" icon={<Tv className="h-4 w-4" />} label="Live-Rangliste" hint="Für den Bildschirm im Schützenhaus" /> : null}
-                {canScoreImport ? <Row href="/scores/import" icon={<FileInput className="h-4 w-4" />} label="Resultat-Import" hint="Meyton, SIUS, ShotMarker oder CSV" /> : null}
+                {ctx.hasModule("federal") ? <Row href="/federal" icon={<BadgeCheck className="h-4 w-4" />} label={t("shell.me.row.federal")} hint={t("shell.me.hint.federal")} /> : null}
+                {ctx.hasModule("championship") ? <Row href="/championship" icon={<Trophy className="h-4 w-4" />} label={t("shell.me.row.championship")} /> : null}
+                {canLive ? <Row href="/admin/live" icon={<Tv className="h-4 w-4" />} label={t("shell.me.row.live")} hint={t("shell.me.hint.live")} /> : null}
+                {canScoreImport ? <Row href="/scores/import" icon={<FileInput className="h-4 w-4" />} label={t("shell.me.row.scoreImport")} hint={t("shell.me.hint.scoreImport")} /> : null}
               </Card>
             </>
           ) : null}
           {clubOn ? (
             <>
-              <SectionTitle>Verein</SectionTitle>
+              <SectionTitle>{t("shell.nav.group.club")}</SectionTitle>
               <Card className="animate-rise divide-y divide-line overflow-hidden">
-                {ctx.hasModule("range") ? <Row href="/range" icon={<DoorOpen className="h-4 w-4" />} label="Standbetrieb" hint="Heute am Stand, Check-in, Standordnung" /> : null}
-                {ctx.hasModule("shifts") ? <Row href="/shifts" icon={<HandHelping className="h-4 w-4" />} label="Helfereinsätze" hint="Schichten und Arbeitsstunden" /> : null}
-                {ctx.hasModule("courses") ? <Row href="/courses" icon={<GraduationCap className="h-4 w-4" />} label="Kurse" /> : null}
-                {canWeapons ? <Row href="/weapons" icon={<Shield className="h-4 w-4" />} label="Vereinswaffen" /> : null}
+                {ctx.hasModule("range") ? <Row href="/range" icon={<DoorOpen className="h-4 w-4" />} label={t("shell.me.row.range")} hint={t("shell.me.hint.range")} /> : null}
+                {ctx.hasModule("shifts") ? <Row href="/shifts" icon={<HandHelping className="h-4 w-4" />} label={t("shell.me.row.shifts")} hint={t("shell.me.hint.shifts")} /> : null}
+                {ctx.hasModule("courses") ? <Row href="/courses" icon={<GraduationCap className="h-4 w-4" />} label={t("shell.me.row.courses")} /> : null}
+                {canWeapons ? <Row href="/weapons" icon={<Shield className="h-4 w-4" />} label={t("shell.me.row.weapons")} /> : null}
                 {kioskOn ? (
                   can("kiosk.sell")
-                    ? <Row href="/kiosk" icon={<Coffee className="h-4 w-4" />} label="Schützenstube" hint="Theke und meine Konsumationen" />
-                    : <Row href="/kiosk/me" icon={<Coffee className="h-4 w-4" />} label="Meine Konsumationen" hint="Schützenstube" />
+                    ? <Row href="/kiosk" icon={<Coffee className="h-4 w-4" />} label={t("shell.me.row.kiosk")} hint={t("shell.me.hint.kiosk")} />
+                    : <Row href="/kiosk/me" icon={<Coffee className="h-4 w-4" />} label={t("shell.me.row.kioskMe")} hint={t("shell.me.hint.kioskMe")} />
                 ) : null}
               </Card>
             </>
           ) : null}
           {canManage || canManageAmmo || canViewMembers || canAudit || adminRange || adminShifts || adminQuali || adminAccounting || adminKiosk ? (
             <>
-              <SectionTitle>Verwaltung</SectionTitle>
+              <SectionTitle>{t("shell.nav.group.admin")}</SectionTitle>
               <Card className="animate-rise divide-y divide-line overflow-hidden">
-                {canManage ? <Row href="/admin" icon={<Settings className="h-4 w-4" />} label="Einstellungen, Logo & Farben" /> : null}
-                {canViewMembers ? <Row href="/admin/members" icon={<Users className="h-4 w-4" />} label="Mitglieder & Rollen" /> : null}
-                {canManageMembers ? <Row href="/admin/members/invitations" icon={<Mail className="h-4 w-4" />} label="Mitglieder einladen" /> : null}
-                {canManageMembers ? <Row href="/admin/members/import" icon={<FileUp className="h-4 w-4" />} label="Mitglieder importieren" /> : null}
-                {canManageMembers ? <Row href="/admin/members/households" icon={<Home className="h-4 w-4" />} label="Haushalte" /> : null}
-                {canManage && paymentsOn ? <Row href="/admin/payments" icon={<Wallet className="h-4 w-4" />} label="Offene Posten" /> : null}
-                {canManage && ctx.hasModule("bookings") ? <Row href="/admin/bookings" icon={<CalendarDays className="h-4 w-4" />} label="Reservationen verwalten" /> : null}
-                {canManage && ctx.hasModule("billing") ? <Row href="/admin/billing" icon={<CreditCard className="h-4 w-4" />} label="Mitgliederbeiträge verwalten" /> : null}
-                {canManage && ctx.hasModule("files") ? <Row href="/admin/files" icon={<FolderOpen className="h-4 w-4" />} label="Dateiablage & Speicherort" /> : null}
-                {canManageAmmo && ctx.hasModule("ammo") ? <Row href="/admin/ammo" icon={<Package className="h-4 w-4" />} label="Munition verwalten" /> : null}
-                {adminStock ? <Row href="/admin/ammo/stock" icon={<Boxes className="h-4 w-4" />} label="Munitionskontrolle" hint="Bestand, Inventur, Jahresübersicht" /> : null}
-                {adminRange ? <Row href="/admin/range" icon={<Clock className="h-4 w-4" />} label="Standordnung & Schiesszeiten" /> : null}
-                {adminShifts ? <Row href="/admin/shifts" icon={<HandHelping className="h-4 w-4" />} label="Einsätze & Arbeitsstunden" /> : null}
-                {adminQuali ? <Row href="/admin/qualifications" icon={<Award className="h-4 w-4" />} label="Qualifikationen" /> : null}
-                {adminPartners ? <Row href="/admin/bookings/partners" icon={<Handshake className="h-4 w-4" />} label="Partner-Anlagen" hint="Anlagen teilen, Abrechnung pro Partnerverein" /> : null}
-                {adminKiosk ? <Row href="/admin/kiosk" icon={<Coffee className="h-4 w-4" />} label="Schützenstube verwalten" hint="Sortiment, Abrechnung, Kasse" /> : null}
-                {adminAccounting ? <Row href="/admin/accounting" icon={<BookOpenCheck className="h-4 w-4" />} label="Buchhaltung" hint="Export für Banana & bexio" /> : null}
-                {canManage ? <Row href="/admin/embed" icon={<Code2 className="h-4 w-4" />} label="Website-Widgets" hint="Kalender, Zeiten, Ranglisten" /> : null}
-                {canAudit ? <Row href="/admin/audit" icon={<History className="h-4 w-4" />} label="Protokoll" /> : null}
+                {canManage ? <Row href="/admin" icon={<Settings className="h-4 w-4" />} label={t("shell.me.row.admin")} /> : null}
+                {canViewMembers ? <Row href="/admin/members" icon={<Users className="h-4 w-4" />} label={t("shell.me.row.adminMembers")} /> : null}
+                {canManageMembers ? <Row href="/admin/members/invitations" icon={<Mail className="h-4 w-4" />} label={t("shell.me.row.adminInvite")} /> : null}
+                {canManageMembers ? <Row href="/admin/members/import" icon={<FileUp className="h-4 w-4" />} label={t("shell.me.row.adminImport")} /> : null}
+                {canManageMembers ? <Row href="/admin/members/households" icon={<Home className="h-4 w-4" />} label={t("shell.me.row.adminHouseholds")} /> : null}
+                {canManage && paymentsOn ? <Row href="/admin/payments" icon={<Wallet className="h-4 w-4" />} label={t("shell.me.row.adminPayments")} /> : null}
+                {canManage && ctx.hasModule("bookings") ? <Row href="/admin/bookings" icon={<CalendarDays className="h-4 w-4" />} label={t("shell.me.row.adminBookings")} /> : null}
+                {canManage && ctx.hasModule("billing") ? <Row href="/admin/billing" icon={<CreditCard className="h-4 w-4" />} label={t("shell.me.row.adminBilling")} /> : null}
+                {canManage && ctx.hasModule("files") ? <Row href="/admin/files" icon={<FolderOpen className="h-4 w-4" />} label={t("shell.me.row.adminFiles")} /> : null}
+                {canManageAmmo && ctx.hasModule("ammo") ? <Row href="/admin/ammo" icon={<Package className="h-4 w-4" />} label={t("shell.me.row.adminAmmo")} /> : null}
+                {adminStock ? <Row href="/admin/ammo/stock" icon={<Boxes className="h-4 w-4" />} label={t("shell.me.row.adminStock")} hint={t("shell.me.hint.adminStock")} /> : null}
+                {adminRange ? <Row href="/admin/range" icon={<Clock className="h-4 w-4" />} label={t("shell.me.row.adminRange")} /> : null}
+                {adminShifts ? <Row href="/admin/shifts" icon={<HandHelping className="h-4 w-4" />} label={t("shell.me.row.adminShifts")} /> : null}
+                {adminQuali ? <Row href="/admin/qualifications" icon={<Award className="h-4 w-4" />} label={t("shell.me.row.adminQuali")} /> : null}
+                {adminPartners ? <Row href="/admin/bookings/partners" icon={<Handshake className="h-4 w-4" />} label={t("shell.me.row.adminPartners")} hint={t("shell.me.hint.adminPartners")} /> : null}
+                {adminKiosk ? <Row href="/admin/kiosk" icon={<Coffee className="h-4 w-4" />} label={t("shell.me.row.adminKiosk")} hint={t("shell.me.hint.adminKiosk")} /> : null}
+                {adminAccounting ? <Row href="/admin/accounting" icon={<BookOpenCheck className="h-4 w-4" />} label={t("shell.me.row.adminAccounting")} hint={t("shell.me.hint.adminAccounting")} /> : null}
+                {canManage ? <Row href="/admin/embed" icon={<Code2 className="h-4 w-4" />} label={t("shell.me.row.adminEmbed")} hint={t("shell.me.hint.adminEmbed")} /> : null}
+                {canAudit ? <Row href="/admin/audit" icon={<History className="h-4 w-4" />} label={t("shell.me.row.adminAudit")} /> : null}
               </Card>
             </>
           ) : null}
@@ -147,41 +163,41 @@ export default async function MePage() {
 
       {ctx.user.isSuperAdmin ? (
         <>
-          <SectionTitle>Super-Admin</SectionTitle>
+          <SectionTitle>{t("shell.me.superAdmin")}</SectionTitle>
           <Card className="animate-rise divide-y divide-line overflow-hidden">
-            <Row href="/super" icon={<Shield className="h-4 w-4" />} label="Globale Verwaltung" />
-            <Row href="/super/system" icon={<Server className="h-4 w-4" />} label="System" />
+            <Row href="/super" icon={<Shield className="h-4 w-4" />} label={t("shell.me.row.super")} />
+            <Row href="/super/system" icon={<Server className="h-4 w-4" />} label={t("shell.me.row.system")} />
           </Card>
         </>
       ) : null}
 
-      <SectionTitle>Konto</SectionTitle>
+      <SectionTitle>{t("shell.me.account")}</SectionTitle>
       <Card className="animate-rise divide-y divide-line overflow-hidden">
-        <Row href="/me/security" icon={<ShieldCheck className="h-4 w-4" />} label="Sicherheit" hint="Passwort, Zwei-Faktor, Geräte" />
-        <Row href="/me/notifications" icon={<Bell className="h-4 w-4" />} label="Benachrichtigungen & Sprache" />
-        <Row href="/me/privacy" icon={<KeyRound className="h-4 w-4" />} label="Datenschutz" hint="Daten herunterladen, Konto löschen" />
+        <Row href="/me/security" icon={<ShieldCheck className="h-4 w-4" />} label={t("shell.me.row.security")} hint={t("shell.me.hint.security")} />
+        <Row href="/me/notifications" icon={<Bell className="h-4 w-4" />} label={t("shell.me.row.notifications")} />
+        <Row href="/me/privacy" icon={<KeyRound className="h-4 w-4" />} label={t("shell.me.row.privacy")} hint={t("shell.me.hint.privacy")} />
       </Card>
 
-      <SectionTitle>Profilbild</SectionTitle>
-      <AvatarCard name={ctx.user.name} avatarUrl={ctx.user.avatarUrl} />
+      <SectionTitle>{t("shell.me.avatar")}</SectionTitle>
+      <AvatarCard name={ctx.user.name} avatarUrl={ctx.user.avatarUrl} title={t("shell.me.avatar")} />
 
-      <SectionTitle>Profil</SectionTitle>
+      <SectionTitle>{t("shell.me.profile")}</SectionTitle>
       <ProfileForm
         today={todayZurich()}
         profile={{ name: ctx.user.name, phone: profile.phone, birthDate: dateOnly(profile.birthDate), street: ctx.user.street, zip: ctx.user.zip, city: ctx.user.city }}
       />
 
-      <SectionTitle>Darstellung</SectionTitle>
+      <SectionTitle>{t("shell.me.theme")}</SectionTitle>
       <ThemePicker value={ctx.user.themePref} />
 
-      <SectionTitle>Meine Daten</SectionTitle>
+      <SectionTitle>{t("shell.me.myData")}</SectionTitle>
       <Card className="animate-rise overflow-hidden">
         <dl className="divide-y divide-line text-sm">
-          <DataRow label="Name" value={ctx.user.name} />
-          <DataRow label="E-Mail" value={ctx.user.email} />
-          <DataRow label="Adresse" value={[ctx.user.street, [ctx.user.zip, ctx.user.city].filter(Boolean).join(" ")].filter(Boolean).join(", ") || "–"} />
-          <DataRow label="Telefon" value={profile.phone || "–"} />
-          <DataRow label="Geburtsdatum" value={formatIsoDate(dateOnly(profile.birthDate))} />
+          <DataRow label={t("shell.common.name")} value={ctx.user.name} />
+          <DataRow label={t("shell.common.email")} value={ctx.user.email} />
+          <DataRow label={t("shell.me.address")} value={[ctx.user.street, [ctx.user.zip, ctx.user.city].filter(Boolean).join(" ")].filter(Boolean).join(", ") || "–"} />
+          <DataRow label={t("shell.me.phone")} value={profile.phone || "–"} />
+          <DataRow label={t("shell.me.birthDate")} value={formatIso(dateOnly(profile.birthDate), locale)} />
         </dl>
       </Card>
       {memberships.length ? (
@@ -192,26 +208,30 @@ export default async function MePage() {
               <div className="min-w-0 flex-1">
                 <div className="font-medium truncate">{m.tenant.name}</div>
                 <div className="text-xs text-ink-3 truncate">
-                  {m.status === "LEFT" ? "Ausgetreten" : `Mitglied seit ${formatDate(m.joinedAt ?? m.createdAt)}`}
-                  {m.memberNumber ? ` · Nr. ${m.memberNumber}` : ""}
+                  {m.status === "LEFT"
+                    ? t("members.status.LEFT")
+                    : m.status === "PENDING"
+                      ? t("shell.me.pendingApproval")
+                      : t("shell.me.memberSince", { date: formatDate(m.joinedAt ?? m.createdAt, locale) })}
+                  {m.memberNumber ? ` · ${t("shell.me.memberNumber", { number: m.memberNumber })}` : ""}
                   {m.tenant.city ? ` · ${m.tenant.city}` : ""}
-                  {` · ${m.tenant._count.memberships} Mitglieder`}
+                  {` · ${t(m.tenant._count.memberships === 1 ? "shell.me.membersOne" : "shell.me.membersMany", { count: m.tenant._count.memberships })}`}
                 </div>
               </div>
-              {m.status === "LEFT" ? <Badge tone="outline">{statusLabel(m.status)}</Badge> : <Badge tone={m.role === "OWNER" || m.role === "ADMIN" ? "accent" : "neutral"}>{roleLabel(m.role)}</Badge>}
+              {m.status === "LEFT" || m.status === "PENDING" ? <Badge tone={m.status === "PENDING" ? "warn" : "outline"}>{labelOr(t, `members.status.${m.status}`, m.status === "PENDING" ? t("shell.me.pendingShort") : m.status)}</Badge> : <Badge tone={m.role === "OWNER" || m.role === "ADMIN" ? "accent" : "neutral"}>{roleLabel(m.role)}</Badge>}
             </div>
           ))}
         </Card>
       ) : (
-        <p className="mt-2.5 text-sm text-ink-3">Du bist noch in keinem Verein.</p>
+        <p className="mt-2.5 text-sm text-ink-3">{t("shell.me.noClub")}</p>
       )}
 
       <form action={logoutAction} className="mt-8">
         <button type="submit" className="press w-full h-11 rounded-control border border-line text-ink-2 inline-flex items-center justify-center gap-2 hover:bg-surface-2">
-          <LogOut className="h-4 w-4" /> Abmelden
+          <LogOut className="h-4 w-4" /> {t("shell.me.logout")}
         </button>
       </form>
-      <p className="text-center text-xs text-ink-3 mt-6">Standchef · Version 0.2</p>
+      <p className="text-center text-xs text-ink-3 mt-6">{t("shell.me.version", { version: "0.2" })}</p>
     </div>
   );
 }

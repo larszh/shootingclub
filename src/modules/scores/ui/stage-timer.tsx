@@ -1,9 +1,10 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { ChevronDown, Pause, Play, RotateCcw, Timer, Volume2, VolumeX } from "lucide-react";
 import { Card } from "@/components/ui";
 import { cn } from "@/lib/utils";
+import { getT, type Locale, type TFunction } from "@/lib/i18n/core";
 
 // ---------------------------------------------------------------------------
 // Ton und Vibration (ausserhalb der Komponente, damit der Render rein bleibt)
@@ -95,14 +96,15 @@ function useWakeLock(active: boolean) {
 
 // ---------------------------------------------------------------------------
 
-export function StageTimer({ timeLimitSec }: { timeLimitSec?: number }) {
-  if (timeLimitSec && timeLimitSec > 0) return <Countdown limitMs={timeLimitSec * 1000} />;
-  return <Stopwatch />;
+export function StageTimer({ timeLimitSec, locale = "de" }: { timeLimitSec?: number; locale?: Locale }) {
+  const t = useMemo(() => getT(locale), [locale]);
+  if (timeLimitSec && timeLimitSec > 0) return <Countdown limitMs={timeLimitSec * 1000} t={t} />;
+  return <Stopwatch t={t} />;
 }
 
 type Phase = "idle" | "leadin" | "running" | "paused" | "done";
 
-function Countdown({ limitMs }: { limitMs: number }) {
+function Countdown({ limitMs, t }: { limitMs: number; t: TFunction }) {
   const [phase, setPhase] = useState<Phase>("idle");
   const [remaining, setRemaining] = useState(limitMs);
   const [leadLeft, setLeadLeft] = useState(0);
@@ -208,9 +210,9 @@ function Countdown({ limitMs }: { limitMs: number }) {
   // Für Screenreader nur Phasenwechsel und die Warnungen bei 10 / 5 s ansagen, nicht jede Zehntelsekunde
   const announcement =
     phase === "leadin" ? String(leadLeft)
-    : phase === "done" ? "Zeit! Feuer einstellen"
-    : phase === "paused" ? "Pausiert"
-    : phase === "running" ? (remaining <= 5000 && limitMs > 10_000 ? "Noch 5 Sekunden" : remaining <= 10_000 && limitMs > 20_000 ? "Noch 10 Sekunden" : "Läuft")
+    : phase === "done" ? t("shooting.timer.timeUp")
+    : phase === "paused" ? t("shooting.timer.paused")
+    : phase === "running" ? (remaining <= 5000 && limitMs > 10_000 ? t("shooting.timer.left5") : remaining <= 10_000 && limitMs > 20_000 ? t("shooting.timer.left10") : t("shooting.timer.running"))
     : "";
   const progress = Math.max(0, Math.min(1, remaining / limitMs));
 
@@ -221,13 +223,13 @@ function Countdown({ limitMs }: { limitMs: number }) {
       </div>
       <div className="p-4">
         <div className="flex items-center justify-between text-xs text-ink-3">
-          <span className="inline-flex items-center gap-1.5 font-medium uppercase tracking-wider"><Timer className="h-3.5 w-3.5" /> Zeitlimit</span>
+          <span className="inline-flex items-center gap-1.5 font-medium uppercase tracking-wider"><Timer className="h-3.5 w-3.5" /> {t("shooting.timer.limit")}</span>
           <div className="flex items-center gap-1">
             <button type="button" onClick={() => setUseLeadIn((v) => !v)} aria-pressed={useLeadIn} disabled={active}
               className={cn("press h-8 rounded-full px-3 text-xs font-medium disabled:opacity-50", useLeadIn ? "bg-ink text-bg" : "bg-surface-2 text-ink-2")}>
               3-2-1
             </button>
-            <button type="button" onClick={toggleSound} aria-pressed={sound} aria-label={sound ? "Ton ausschalten" : "Ton einschalten"}
+            <button type="button" onClick={toggleSound} aria-pressed={sound} aria-label={sound ? t("shooting.timer.soundOff") : t("shooting.timer.soundOn")}
               className="press flex h-8 w-8 items-center justify-center rounded-full bg-surface-2 text-ink-2">
               {sound ? <Volume2 className="h-4 w-4" /> : <VolumeX className="h-4 w-4" />}
             </button>
@@ -239,27 +241,27 @@ function Countdown({ limitMs }: { limitMs: number }) {
           {phase === "leadin" ? (
             <div key={leadLeft} className="animate-pop text-7xl font-semibold tabular-nums text-accent">{leadLeft}</div>
           ) : phase === "done" ? (
-            <div className="animate-pop text-6xl font-semibold text-accent">Zeit!</div>
+            <div className="animate-pop text-6xl font-semibold text-accent">{t("shooting.timer.time")}</div>
           ) : (
             <div role="timer" className={cn("text-7xl font-semibold tabular-nums leading-none", warn && "text-accent")}>{formatClock(remaining, remaining < 10_000)}</div>
           )}
           <div className="mt-2 text-xs text-ink-3">
-            {phase === "idle" ? (limitMs < 60_000 ? `${Math.round(limitMs / 1000)} Sekunden für diese Serie` : `${formatClock(limitMs, false)} Minuten für diese Serie`) : phase === "paused" ? "Pausiert" : phase === "leadin" ? "Achtung …" : phase === "done" ? "Feuer einstellen" : "Läuft"}
+            {phase === "idle" ? (limitMs < 60_000 ? t("shooting.timer.seconds", { n: Math.round(limitMs / 1000) }) : t("shooting.timer.minutes", { time: formatClock(limitMs, false) })) : phase === "paused" ? t("shooting.timer.paused") : phase === "leadin" ? t("shooting.timer.attention") : phase === "done" ? t("shooting.timer.ceaseFire") : t("shooting.timer.running")}
           </div>
         </div>
 
         <div className="grid grid-cols-3 gap-2">
           {active ? (
             <button type="button" onClick={pause} className="press col-span-2 flex h-14 items-center justify-center gap-2 rounded-2xl bg-surface-2 text-lg font-semibold">
-              <Pause className="h-5 w-5" /> Pause
+              <Pause className="h-5 w-5" /> {t("shooting.timer.pause")}
             </button>
           ) : (
             <button type="button" onClick={start} className="press col-span-2 flex h-14 items-center justify-center gap-2 rounded-2xl bg-ink text-lg font-semibold text-bg">
-              <Play className="h-5 w-5" /> {phase === "paused" ? "Weiter" : phase === "done" ? "Nochmals" : "Start"}
+              <Play className="h-5 w-5" /> {phase === "paused" ? t("shooting.timer.resume") : phase === "done" ? t("shooting.timer.again") : t("shooting.timer.start")}
             </button>
           )}
           <button type="button" onClick={reset} disabled={phase === "idle"} className="press flex h-14 items-center justify-center gap-2 rounded-2xl border border-line bg-surface font-medium text-ink-2 disabled:opacity-40">
-            <RotateCcw className="h-5 w-5" /> <span className="sr-only sm:not-sr-only">Zurück</span>
+            <RotateCcw className="h-5 w-5" /> <span className="sr-only sm:not-sr-only">{t("shooting.timer.back")}</span>
           </button>
         </div>
       </div>
@@ -267,7 +269,7 @@ function Countdown({ limitMs }: { limitMs: number }) {
   );
 }
 
-function Stopwatch() {
+function Stopwatch({ t }: { t: TFunction }) {
   const [open, setOpen] = useState(false);
   const [running, setRunning] = useState(false);
   const [elapsed, setElapsed] = useState(0);
@@ -302,7 +304,7 @@ function Stopwatch() {
   return (
     <Card className="animate-rise overflow-hidden">
       <button type="button" onClick={() => setOpen((o) => !o)} aria-expanded={open} className="flex w-full items-center gap-2 px-4 h-12 text-left text-sm font-medium text-ink-2">
-        <Timer className="h-4 w-4" /> Stoppuhr
+        <Timer className="h-4 w-4" /> {t("shooting.timer.stopwatch")}
         {!open && (running || elapsed > 0) ? <span className="tabular-nums text-ink">{formatClock(elapsed, true)}</span> : null}
         <ChevronDown className={cn("ml-auto h-4 w-4 transition-transform", open && "rotate-180")} />
       </button>
@@ -311,9 +313,9 @@ function Stopwatch() {
           <div className="text-center text-6xl font-semibold tabular-nums leading-none py-2">{formatClock(elapsed, true)}</div>
           <div className="mt-3 grid grid-cols-3 gap-2">
             <button type="button" onClick={toggle} className={cn("press col-span-2 flex h-14 items-center justify-center gap-2 rounded-2xl text-lg font-semibold", running ? "bg-surface-2" : "bg-ink text-bg")}>
-              {running ? <><Pause className="h-5 w-5" /> Stopp</> : <><Play className="h-5 w-5" /> {elapsed > 0 ? "Weiter" : "Start"}</>}
+              {running ? <><Pause className="h-5 w-5" /> {t("shooting.timer.stop")}</> : <><Play className="h-5 w-5" /> {elapsed > 0 ? t("shooting.timer.resume") : t("shooting.timer.start")}</>}
             </button>
-            <button type="button" onClick={reset} disabled={elapsed === 0 && !running} className="press flex h-14 items-center justify-center rounded-2xl border border-line bg-surface text-ink-2 disabled:opacity-40" aria-label="Zurücksetzen">
+            <button type="button" onClick={reset} disabled={elapsed === 0 && !running} className="press flex h-14 items-center justify-center rounded-2xl border border-line bg-surface text-ink-2 disabled:opacity-40" aria-label={t("shooting.timer.reset")}>
               <RotateCcw className="h-5 w-5" />
             </button>
           </div>

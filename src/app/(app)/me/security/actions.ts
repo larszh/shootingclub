@@ -19,6 +19,7 @@ import {
 import { fail, ok, type ActionResult } from "@/lib/action-result";
 import { audit } from "@/lib/audit";
 import { mailSecurityNotice } from "@/lib/mail/platform-mails";
+import { getRequestLocale, getT, type TFunction } from "@/lib/i18n";
 import {
   checkTotpForUser,
   disableTwoFactor,
@@ -33,6 +34,19 @@ async function requireUser() {
   const user = await getCurrentUser();
   if (!user) redirect("/login?next=/me/security");
   return user;
+}
+
+/** Meldungen in der Sprache des Benutzers. */
+async function translator(): Promise<TFunction> {
+  return getT(await getRequestLocale());
+}
+
+/** Drosselungs-Meldung aus lib/auth übersetzen («Zu viele Versuche. Bitte in N Minuten …»). */
+function throttleMessage(t: TFunction, msg: string): string {
+  const m = msg.match(/(\d+) Minute/);
+  if (!m) return msg;
+  const minutes = Number(m[1]);
+  return minutes === 1 ? t("shell.msg.throttleOne") : t("shell.msg.throttle", { minutes });
 }
 
 /** Gemeinsame Drosselung für Passwort- und Code-Prüfungen auf dieser Seite. */
@@ -52,25 +66,28 @@ function fe(issues: z.core.$ZodIssue[]) {
   return out;
 }
 
-const passwordSchema = z
-  .object({
-    current: z.string().min(1, "Bitte aktuelles Passwort eingeben").max(200),
-    next: z.string().min(PASSWORD_MIN_LENGTH, `Mindestens ${PASSWORD_MIN_LENGTH} Zeichen`).max(200, "Zu lang"),
-    confirm: z.string(),
-  })
-  .refine((v) => v.next === v.confirm, { message: "Die Passwörter stimmen nicht überein", path: ["confirm"] })
-  .refine((v) => v.next !== v.current, { message: "Das neue Passwort muss sich vom alten unterscheiden", path: ["next"] });
+function passwordSchema(t: TFunction) {
+  return z
+    .object({
+      current: z.string().min(1, t("shell.security.msg.enterCurrent")).max(200),
+      next: z.string().min(PASSWORD_MIN_LENGTH, t("shell.password.min", { count: PASSWORD_MIN_LENGTH })).max(200, t("shell.security.msg.tooLong")),
+      confirm: z.string(),
+    })
+    .refine((v) => v.next === v.confirm, { message: t("shell.msg.passwordsDiffer"), path: ["confirm"] })
+    .refine((v) => v.next !== v.current, { message: t("shell.security.msg.mustDiffer"), path: ["next"] });
+}
 
 export async function changePasswordSecureAction(_prev: ActionResult | null, formData: FormData): Promise<ActionResult> {
   const user = await requireUser();
-  const parsed = passwordSchema.safeParse({ current: formData.get("current") ?? "", next: formData.get("next") ?? "", confirm: formData.get("confirm") ?? "" });
-  if (!parsed.success) return fail(parsed.error.issues[0]?.message ?? "Bitte Eingaben prüfen.", fe(parsed.error.issues));
+  const t = await translator();
+  const parsed = passwordSchema(t).safeParse({ current: formData.get("current") ?? "", next: formData.get("next") ?? "", confirm: formData.get("confirm") ?? "" });
+  if (!parsed.success) return fail(parsed.error.issues[0]?.message ?? t("shell.msg.checkInput"), fe(parsed.error.issues));
   const limited = checkLimit(user.id);
-  if (limited) return fail(limited);
+  if (limited) return fail(throttleMessage(t, limited));
   const row = await db.user.findUnique({ where: { id: user.id }, select: { passwordHash: true } });
   if (!row || !(await verifyPassword(parsed.data.current, row.passwordHash))) {
     countFailure(user.id);
-    return fail("Das aktuelle Passwort stimmt nicht.", { current: "Stimmt nicht" });
+    return fail(t("shell.security.msg.currentWrong"), { current: t("shell.security.msg.wrong") });
   }
   await db.user.update({ where: { id: user.id }, data: { passwordHash: await hashPassword(parsed.data.next), passwordSetAt: new Date() } });
   // Offene Links (Passwort vergessen / Einladung) entwerten, sonst überschreiben sie das neue Passwort.
@@ -82,7 +99,11 @@ export async function changePasswordSecureAction(_prev: ActionResult | null, for
   revalidatePath("/me/security");
   return ok(
     undefined,
-    loggedOut > 0 ? `Passwort geändert. ${loggedOut === 1 ? "Ein anderes Gerät wurde" : `${loggedOut} andere Geräte wurden`} abgemeldet.` : "Passwort geändert.",
+    loggedOut === 0
+      ? t("shell.security.msg.changed")
+      : loggedOut === 1
+        ? t("shell.security.msg.changedOne")
+        : t("shell.security.msg.changedMany", { count: loggedOut }),
   );
 }
 
@@ -93,21 +114,23 @@ export type EnrollmentData = { qrDataUrl: string; secret: string; ticket: string
 
 export async function startTwoFactorAction(): Promise<ActionResult<EnrollmentData>> {
   const user = await requireUser();
+  const t = await translator();
   const row = await db.user.findUnique({ where: { id: user.id }, select: { totpEnabledAt: true } });
-  if (row?.totpEnabledAt) return fail("Die Zwei-Faktor-Anmeldung ist bereits aktiv.");
+  if (row?.totpEnabledAt) return fail(t("shell.security.msg.alreadyOn"));
   const e = await startEnrollment(user);
   return ok({ qrDataUrl: e.qrDataUrl, secret: e.secretFormatted, ticket: e.ticket });
 }
 
 export async function confirmTwoFactorAction(ticket: string, code: string): Promise<ActionResult<{ codes: string[] }>> {
   const user = await requireUser();
+  const t = await translator();
   const limited = checkLimit(user.id);
-  if (limited) return fail(limited);
+  if (limited) return fail(throttleMessage(t, limited));
   const secret = readEnrollmentTicket(String(ticket ?? ""), user.id);
-  if (!secret) return fail("Die Einrichtung ist abgelaufen. Bitte nochmals starten.");
+  if (!secret) return fail(t("shell.security.msg.setupExpired"));
   if (!checkTotpForUser(user.id, secret, String(code ?? ""))) {
     countFailure(user.id);
-    return fail("Der Code stimmt nicht. Prüfe, ob die Uhrzeit auf dem Handy stimmt, und gib den aktuellen Code ein.");
+    return fail(t("shell.security.msg.setupWrongCode"));
   }
   resetThrottle(limitKey(user.id));
   const codes = await enableTwoFactor(user.id, secret);
@@ -120,36 +143,41 @@ export async function confirmTwoFactorAction(ticket: string, code: string): Prom
 
 export async function disableTwoFactorAction(_prev: ActionResult | null, formData: FormData): Promise<ActionResult> {
   const user = await requireUser();
+  const t = await translator();
   const limited = checkLimit(user.id);
-  if (limited) return fail(limited);
+  if (limited) return fail(throttleMessage(t, limited));
   const password = String(formData.get("password") ?? "").slice(0, 200);
   const code = String(formData.get("code") ?? "").slice(0, 40);
-  if (!password || !code) return fail("Bitte Passwort und Code eingeben.", { ...(password ? {} : { password: "Fehlt" }), ...(code ? {} : { code: "Fehlt" }) });
+  if (!password || !code) {
+    const missing = t("shell.security.msg.missing");
+    return fail(t("shell.security.msg.enterPasswordCode"), { ...(password ? {} : { password: missing }), ...(code ? {} : { code: missing }) });
+  }
   const row = await db.user.findUnique({ where: { id: user.id }, select: { passwordHash: true } });
   if (!row || !(await verifyPassword(password, row.passwordHash))) {
     countFailure(user.id);
-    return fail("Das Passwort stimmt nicht.", { password: "Stimmt nicht" });
+    return fail(t("shell.security.msg.passwordWrong"), { password: t("shell.security.msg.wrong") });
   }
   if (!(await verifySecondFactor(user.id, code))) {
     countFailure(user.id);
-    return fail("Der Code stimmt nicht.", { code: "Stimmt nicht" });
+    return fail(t("shell.security.msg.codeWrong"), { code: t("shell.security.msg.wrong") });
   }
   resetThrottle(limitKey(user.id));
   await disableTwoFactor(user.id);
   await audit({ actorId: user.id, actorName: user.name, action: "auth.2fa.disable", entity: "User", entityId: user.id });
   await mailSecurityNotice(user, "twofaOff").catch(() => null);
   revalidatePath("/me/security");
-  return ok(undefined, "Zwei-Faktor-Anmeldung ausgeschaltet.");
+  return ok(undefined, t("shell.security.msg.disabled"));
 }
 
 export async function regenerateRecoveryCodesAction(code: string): Promise<ActionResult<{ codes: string[] }>> {
   const user = await requireUser();
+  const t = await translator();
   const limited = checkLimit(user.id);
-  if (limited) return fail(limited);
+  if (limited) return fail(throttleMessage(t, limited));
   const result = await verifySecondFactor(user.id, String(code ?? "").slice(0, 40));
   if (result !== "totp") {
     countFailure(user.id);
-    return fail("Bitte den aktuellen 6-stelligen Code aus der App eingeben.");
+    return fail(t("shell.security.msg.enterTotp"));
   }
   resetThrottle(limitKey(user.id));
   const codes = await regenerateRecoveryCodes(user.id);
@@ -163,18 +191,20 @@ export async function regenerateRecoveryCodesAction(code: string): Promise<Actio
 
 export async function terminateSessionAction(sessionId: string): Promise<ActionResult> {
   const user = await requireUser();
+  const t = await translator();
   const current = await currentSessionHash();
   const res = await db.session.deleteMany({
     where: { id: String(sessionId), userId: user.id, ...(current ? { NOT: { tokenHash: current } } : {}) },
   });
   revalidatePath("/me/security");
-  return res.count ? ok(undefined, "Gerät abgemeldet.") : fail("Sitzung nicht gefunden.");
+  return res.count ? ok(undefined, t("shell.security.msg.deviceLoggedOut")) : fail(t("shell.security.msg.sessionNotFound"));
 }
 
 export async function terminateOtherSessionsAction(): Promise<ActionResult> {
   const user = await requireUser();
+  const t = await translator();
   const n = await destroyOtherSessions(user.id);
   if (n > 0) await audit({ actorId: user.id, actorName: user.name, action: "auth.sessions.terminate", entity: "User", entityId: user.id, detail: `${n} Sitzungen beendet` });
   revalidatePath("/me/security");
-  return ok(undefined, n === 0 ? "Keine anderen Geräte angemeldet." : n === 1 ? "Ein Gerät abgemeldet." : `${n} Geräte abgemeldet.`);
+  return ok(undefined, n === 0 ? t("shell.security.msg.noOthers") : n === 1 ? t("shell.security.msg.oneLoggedOut") : t("shell.security.msg.manyLoggedOut", { count: n }));
 }

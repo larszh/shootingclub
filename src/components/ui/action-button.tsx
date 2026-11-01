@@ -6,6 +6,7 @@ import { Button } from "./index";
 import { Spinner } from "./form";
 import { confirmDialog, isNavigationError, isNetworkError, toast, type ConfirmOptions } from "@/lib/ui-feedback";
 import type { ActionResult } from "@/lib/action-result";
+import { useT } from "@/components/locale";
 
 type Result = ActionResult<unknown> | void | undefined;
 
@@ -45,6 +46,7 @@ export type ActionButtonProps = Omit<React.ComponentProps<typeof Button>, "onCli
 export function ActionButton({ action, confirm, successMessage, errorMessage, pendingText, refresh, onSuccess, onError, children, disabled, ...props }: ActionButtonProps) {
   const [pending, start] = useTransition();
   const router = useRouter();
+  const t = useT();
 
   async function run() {
     if (confirm && !(await confirmDialog(confirm))) return;
@@ -52,7 +54,7 @@ export function ActionButton({ action, confirm, successMessage, errorMessage, pe
       try {
         const res = await action();
         if (res && res.ok === false) {
-          toast.error(res.error || errorMessage || "Das hat nicht geklappt.");
+          toast.error(res.error || errorMessage || t("shell.ui.failed"));
           onError?.(res.error);
           return;
         }
@@ -63,7 +65,7 @@ export function ActionButton({ action, confirm, successMessage, errorMessage, pe
       } catch (err) {
         if (isNavigationError(err)) throw err;
         const offline = isNetworkError(err);
-        const text = offline ? "Keine Verbindung. Bitte versuche es nochmals, sobald du wieder online bist." : (errorMessage ?? "Das hat nicht geklappt. Bitte nochmals versuchen.");
+        const text = offline ? t("shell.ui.offlineRetry") : (errorMessage ?? t("shell.ui.failedRetry"));
         toast.error(text);
         onError?.(text);
       }

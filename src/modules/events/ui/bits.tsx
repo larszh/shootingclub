@@ -1,6 +1,8 @@
 import { CalendarDays, Hammer, PartyPopper, ShieldCheck, Target, Trophy, Users } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { dateBadge, kindMeta, linkify, type EventKind } from "../types";
+import type { Locale } from "@/lib/i18n/core";
+import { kindMeta, linkify, type EventKind } from "../types";
+import { dateBadgeL, kindLabel } from "./i18n";
 
 const KIND_ICONS: Record<EventKind, React.ComponentType<{ className?: string }>> = {
   TRAINING: Target,
@@ -17,19 +19,19 @@ export function KindIcon({ kind, className }: { kind: string; className?: string
   return <Icon className={className} />;
 }
 
-export function KindChip({ kind, className }: { kind: string; className?: string }) {
+export function KindChip({ kind, className, locale = "de" }: { kind: string; className?: string; locale?: Locale }) {
   const meta = kindMeta(kind);
   return (
     <span className={cn("inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium", meta.chip, className)}>
       <KindIcon kind={kind} className="h-3.5 w-3.5" />
-      {meta.label}
+      {kindLabel(kind, locale)}
     </span>
   );
 }
 
 /** Kalenderblatt mit Tag, Monat und Wochentag (Schweizer Zeit). */
-export function DateBadge({ date, muted, size = "md" }: { date: Date; muted?: boolean; size?: "md" | "lg" }) {
-  const b = dateBadge(date);
+export function DateBadge({ date, muted, size = "md", locale = "de" }: { date: Date; muted?: boolean; size?: "md" | "lg"; locale?: Locale }) {
+  const b = dateBadgeL(date, locale);
   return (
     <div className={cn("flex shrink-0 flex-col items-center justify-center overflow-hidden rounded-control border text-center leading-none",
       size === "lg" ? "h-18 w-16" : "h-15 w-13",

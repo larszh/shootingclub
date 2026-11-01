@@ -6,9 +6,12 @@ import { Card, EmptyState, LinkButton, LinkTabs, PageHeader, SectionTitle, StatC
 import { anyPaymentModule, listMyPayments } from "@/modules/billing/overview";
 import { nowDate } from "@/modules/billing/dates";
 import { OpenPaymentCard, PaymentRow, formatTotals } from "@/modules/billing/ui/payment-rows";
-import { plural } from "@/lib/utils";
+import { getRequestLocale, getT } from "@/lib/i18n";
+import { localizeMethods, tPlural } from "@/modules/billing/ui/i18n";
 
-export const metadata: Metadata = { title: "Zahlungen" };
+export async function generateMetadata(): Promise<Metadata> {
+  return { title: getT(await getRequestLocale())("money.payments.title") };
+}
 
 const FILTERS = ["open", "paid", "all"] as const;
 type Filter = (typeof FILTERS)[number];
@@ -17,15 +20,17 @@ export default async function PaymentsPage({ searchParams }: { searchParams: Pro
   const ctx = await requireTenant();
   const sp = await searchParams;
   const canManage = ctx.can("tenant.manage");
+  const locale = await getRequestLocale();
+  const t = getT(locale);
 
   if (!anyPaymentModule(ctx)) {
     return (
       <div>
-        <PageHeader title="Zahlungen" subtitle={ctx.tenant.name} />
+        <PageHeader title={t("money.payments.title")} subtitle={ctx.tenant.name} />
         <EmptyState
           icon={<Wallet className="h-5 w-5" />}
-          title="Keine Rechnungen in diesem Verein"
-          text="Rechnungen erscheinen hier, sobald der Verein Mitgliederbeiträge, Reservationen oder Munition aktiviert hat."
+          title={t("money.payments.noModule.title")}
+          text={t("money.payments.noModule.text")}
         />
       </div>
     );
@@ -43,30 +48,30 @@ export default async function PaymentsPage({ searchParams }: { searchParams: Pro
   return (
     <div>
       <PageHeader
-        title="Zahlungen"
-        subtitle={`Alle deine Rechnungen bei ${ctx.tenant.name}`}
-        action={canManage ? <LinkButton href="/admin/payments" variant="secondary" size="sm"><Settings className="h-4 w-4" /> Offene Posten</LinkButton> : null}
+        title={t("money.payments.title")}
+        subtitle={t("money.payments.subtitle", { club: ctx.tenant.name })}
+        action={canManage ? <LinkButton href="/admin/payments" variant="secondary" size="sm"><Settings className="h-4 w-4" /> {t("money.payments.openItems")}</LinkButton> : null}
       />
 
       <div className="stagger grid grid-cols-2 gap-2.5">
         <StatCard
-          label="Offen"
+          label={t("money.status.OPEN")}
           value={<span className="block text-xl break-words">{formatTotals(data.openTotals)}</span>}
           tone={data.overdueCount > 0 ? "warn" : data.openCount > 0 ? "accent" : "neutral"}
-          hint={data.openCount ? `${plural(data.openCount, "Rechnung", "Rechnungen")}${data.overdueCount ? `, ${data.overdueCount} überfällig` : ""}` : "Alles bezahlt"}
+          hint={data.openCount ? `${tPlural(t, "money.payments.invoices", data.openCount)}${data.overdueCount ? t("money.payments.overdueSuffix", { n: data.overdueCount }) : ""}` : t("money.payments.allPaid")}
           href="/payments?filter=open"
         />
-        <StatCard label={`Bezahlt ${data.year}`} value={<span className="block text-xl break-words">{formatTotals(data.paidThisYear)}</span>} tone="ok" hint="seit 1. Januar" href="/payments?filter=paid" />
+        <StatCard label={t("money.payments.paidYear", { year: data.year })} value={<span className="block text-xl break-words">{formatTotals(data.paidThisYear)}</span>} tone="ok" hint={t("money.payments.sinceJan1")} href="/payments?filter=paid" />
       </div>
 
       <LinkTabs
         className="mt-4"
-        label="Zahlungen filtern"
+        label={t("money.payments.filterLabel")}
         active={filter}
         items={[
-          { value: "open", href: "/payments?filter=open", label: "Offen", count: open.length },
-          { value: "paid", href: "/payments?filter=paid", label: "Bezahlt", count: paid.length },
-          { value: "all", href: "/payments?filter=all", label: "Alle", count: data.items.length },
+          { value: "open", href: "/payments?filter=open", label: t("money.status.OPEN"), count: open.length },
+          { value: "paid", href: "/payments?filter=paid", label: t("money.status.PAID"), count: paid.length },
+          { value: "all", href: "/payments?filter=all", label: t("money.payments.all"), count: data.items.length },
         ]}
       />
 
@@ -74,21 +79,21 @@ export default async function PaymentsPage({ searchParams }: { searchParams: Pro
         <>
           <p className="mt-4 text-sm text-ink-2">
             {data.onlineFeeProvider && open.some((i) => i.payOnlineHref)
-              ? `Beiträge und Vereinsrechnungen kannst du direkt online bezahlen (${data.onlineFeeMethods ?? "Karte"} über ${data.onlineFeeProvider}). Sonst: QR-Rechnung öffnen und mit der Banking-App scannen.`
-              : "Am einfachsten: QR-Rechnung öffnen und mit der Banking- oder TWINT-App scannen. Oder IBAN und Referenz kopieren und im E-Banking einfügen."}
+              ? t("money.payments.hintOnline", { methods: data.onlineFeeMethods ? localizeMethods(data.onlineFeeMethods, locale) : t("money.payments.card"), provider: data.onlineFeeProvider })
+              : t("money.payments.hintQr")}
           </p>
           <div className="stagger mt-3 space-y-3">
             {open.map((i) =>
               // Online-Zahlung nur für Beitragsrechnungen (FeeInvoice), nie für Munition.
               i.payOnlineHref && i.source === "FEE" ? (
                 <div key={i.key} className="space-y-2">
-                  <OpenPaymentCard item={i} payee={payee} />
-                  <LinkButton href={i.payOnlineHref} prefetch={false} className="w-full" aria-label={`${i.title} ${i.number} online bezahlen`}>
-                    <CreditCard className="h-4 w-4" aria-hidden /> Online bezahlen
+                  <OpenPaymentCard item={i} payee={payee} locale={locale} />
+                  <LinkButton href={i.payOnlineHref} prefetch={false} className="w-full" aria-label={t("money.payOnline.aria", { title: i.title, number: i.number })}>
+                    <CreditCard className="h-4 w-4" aria-hidden /> {t("money.payOnline.button")}
                   </LinkButton>
                 </div>
               ) : (
-                <OpenPaymentCard key={i.key} item={i} payee={payee} />
+                <OpenPaymentCard key={i.key} item={i} payee={payee} locale={locale} />
               ),
             )}
           </div>
@@ -99,28 +104,28 @@ export default async function PaymentsPage({ searchParams }: { searchParams: Pro
         <EmptyState
           className="mt-4"
           icon={<Wallet className="h-5 w-5" />}
-          title="Nichts offen"
-          text="Du hast alle Rechnungen bezahlt. Danke!"
-          action={<LinkButton href="/payments?filter=all" variant="secondary" size="sm">Alle anzeigen</LinkButton>}
+          title={t("money.payments.nothingOpen.title")}
+          text={t("money.payments.nothingOpen.text")}
+          action={<LinkButton href="/payments?filter=all" variant="secondary" size="sm">{t("money.payments.showAll")}</LinkButton>}
         />
       ) : null}
 
       {rest.length ? (
         <>
-          {filter === "all" && open.length ? <SectionTitle>Erledigt</SectionTitle> : <div className="mt-4" />}
+          {filter === "all" && open.length ? <SectionTitle>{t("money.common.done")}</SectionTitle> : <div className="mt-4" />}
           <Card className="animate-rise divide-y divide-line overflow-hidden">
             {rest.map((i) => (
-              <PaymentRow key={i.key} item={i} />
+              <PaymentRow key={i.key} item={i} locale={locale} />
             ))}
           </Card>
         </>
       ) : filter !== "open" && !(filter === "all" && open.length) ? (
-        <EmptyState className="mt-4" icon={<Wallet className="h-5 w-5" />} title="Noch keine Zahlungen" text="Bezahlte Rechnungen und Online-Zahlungen erscheinen hier." />
+        <EmptyState className="mt-4" icon={<Wallet className="h-5 w-5" />} title={t("money.payments.none.title")} text={t("money.payments.none.text")} />
       ) : null}
 
       {!ctx.user.street ? (
         <p className="mt-6 text-xs text-ink-3">
-          Tipp: Hinterlege deine Adresse unter <Link href="/me" className="underline">Mehr → Profil</Link>, dann ist sie auf den Rechnungen und im QR-Code vorausgefüllt.
+          {t("money.tip.addressBefore")}<Link href="/me" className="underline">{t("money.tip.addressLink")}</Link>{t("money.tip.addressAfterPlural")}
         </p>
       ) : null}
     </div>

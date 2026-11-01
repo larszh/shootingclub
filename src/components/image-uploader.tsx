@@ -9,6 +9,8 @@ import { Avatar } from "@/components/avatar";
 import { Alert, Button } from "@/components/ui";
 import { Spinner } from "@/components/ui/form";
 import { cn } from "@/lib/utils";
+import { useT } from "@/components/locale";
+import { translateServerMessage } from "@/components/server-messages";
 
 /**
  * Bild auswählen, quadratisch zuschneiden (Ziehen, Pinch, Mausrad, Regler) und als
@@ -105,6 +107,7 @@ export function ImageUploader({
   hint?: string;
 }) {
   const router = useRouter();
+  const t = useT();
   const inputRef = useRef<HTMLInputElement>(null);
   const [loaded, setLoaded] = useState<Loaded | null>(null);
   const [fit, setFit] = useState<Fit>("cover");
@@ -141,7 +144,7 @@ export function ImageUploader({
     setError(null);
     setMessage(null);
     if (file.size > 30 * 1024 * 1024) {
-      setError("Die Datei ist sehr gross. Bitte ein kleineres Bild wählen.");
+      setError(t("shell.image.tooLarge"));
       return;
     }
     const url = URL.createObjectURL(file);
@@ -150,7 +153,7 @@ export function ImageUploader({
     img.onload = () => {
       if (!img.naturalWidth || !img.naturalHeight) {
         URL.revokeObjectURL(url);
-        setError("Das Bild konnte nicht gelesen werden.");
+        setError(t("shell.image.unreadable"));
         return;
       }
       const l: Loaded = { url, img, w: img.naturalWidth, h: img.naturalHeight };
@@ -161,7 +164,7 @@ export function ImageUploader({
     };
     img.onerror = () => {
       URL.revokeObjectURL(url);
-      setError("Dieses Bildformat kann dein Browser nicht öffnen. Bitte ein JPG oder PNG wählen.");
+      setError(t("shell.image.format"));
     };
     img.src = url;
   };
@@ -247,28 +250,28 @@ export function ImageUploader({
       fd.append("file", new File([blob], `bild.${ext}`, { type: blob.type }));
       const res = await uploadAction(fd);
       if (!res.ok) {
-        setError(res.error);
+        setError(translateServerMessage(res.error, t));
       } else {
-        setMessage(res.message ?? "Gespeichert.");
+        setMessage(translateServerMessage(res.message, t) || t("shell.common.saved"));
         close();
         router.refresh();
       }
     } catch {
-      setError("Das Bild konnte nicht verarbeitet werden. Bitte ein anderes Bild versuchen.");
+      setError(t("shell.image.failed"));
     } finally {
       setBusy(false);
     }
   };
 
   const remove = async () => {
-    if (!(await confirmDialog({ title: isLogo ? "Logo wirklich entfernen?" : "Profilbild wirklich entfernen?", tone: "danger", confirmLabel: "Entfernen" }))) return;
+    if (!(await confirmDialog({ title: isLogo ? t("shell.image.removeLogoConfirm") : t("shell.image.removeAvatarConfirm"), tone: "danger", confirmLabel: t("shell.image.remove") }))) return;
     setError(null);
     setMessage(null);
     startRemove(async () => {
       const res = await removeAction();
-      if (!res.ok) setError(res.error);
+      if (!res.ok) setError(translateServerMessage(res.error, t));
       else {
-        setMessage(res.message ?? "Entfernt.");
+        setMessage(translateServerMessage(res.message, t) || t("shell.image.removed"));
         router.refresh();
       }
     });
@@ -294,14 +297,14 @@ export function ImageUploader({
         )}
         <div className="min-w-0 flex-1">
           {title ? <div className="font-medium">{title}</div> : null}
-          <p className="text-xs text-ink-3">{hint ?? (isLogo ? "PNG mit transparentem Hintergrund eignet sich am besten." : "Ein freundliches Foto hilft anderen, dich zu erkennen.")}</p>
+          <p className="text-xs text-ink-3">{hint ?? (isLogo ? t("shell.image.logoHint") : t("shell.image.avatarHint"))}</p>
           <div className="mt-2 flex flex-wrap gap-2">
             <Button type="button" variant="secondary" size="sm" onClick={() => inputRef.current?.click()} disabled={busy || removing}>
-              <Camera className="h-4 w-4" /> {currentUrl ? "Ändern" : "Bild wählen"}
+              <Camera className="h-4 w-4" /> {currentUrl ? t("shell.image.change") : t("shell.image.choose")}
             </Button>
             {currentUrl ? (
               <Button type="button" variant="ghost" size="sm" onClick={remove} disabled={busy || removing}>
-                {removing ? <Spinner /> : <Trash2 className="h-4 w-4" />} Entfernen
+                {removing ? <Spinner /> : <Trash2 className="h-4 w-4" />} {t("shell.image.remove")}
               </Button>
             ) : null}
           </div>
@@ -315,14 +318,14 @@ export function ImageUploader({
       <Dialog
         open={!!loaded}
         onClose={requestClose}
-        title={isLogo ? "Logo zuschneiden" : "Profilbild zuschneiden"}
+        title={isLogo ? t("shell.image.cropLogo") : t("shell.image.cropAvatar")}
         dismissible={!busy}
         initialFocusRef={viewportRef}
         footer={
           <div className="grid w-full grid-cols-2 gap-2 sm:w-auto">
-            <Button type="button" variant="secondary" onClick={close} disabled={busy}>Abbrechen</Button>
+            <Button type="button" variant="secondary" onClick={close} disabled={busy}>{t("shell.common.cancel")}</Button>
             <Button type="button" onClick={save} disabled={busy}>
-              {busy ? <><Spinner /> Speichern…</> : "Übernehmen"}
+              {busy ? <><Spinner /> {t("shell.image.saving")}</> : t("shell.image.apply")}
             </Button>
           </div>
         }
@@ -330,8 +333,8 @@ export function ImageUploader({
         {loaded ? (
           <>
             {isLogo ? (
-              <div className="mb-3 grid grid-cols-2 gap-1 rounded-control bg-surface-2 p-1" role="radiogroup" aria-label="Zuschnitt">
-                {([["cover", "Quadratisch", Square], ["contain", "Ganz einpassen", Maximize2]] as const).map(([f, label, Icon]) => (
+              <div className="mb-3 grid grid-cols-2 gap-1 rounded-control bg-surface-2 p-1" role="radiogroup" aria-label={t("shell.image.crop")}>
+                {([["cover", t("shell.image.square"), Square], ["contain", t("shell.image.fit"), Maximize2]] as const).map(([f, label, Icon]) => (
                   <button key={f} type="button" role="radio" aria-checked={fit === f} onClick={() => changeFit(f)}
                     className={cn("press flex h-10 items-center justify-center gap-2 rounded-[0.65rem] text-sm font-medium transition-colors", fit === f ? "bg-surface text-ink shadow-sm" : "text-ink-3")}>
                     <Icon className="h-4 w-4" /> {label}
@@ -350,7 +353,7 @@ export function ImageUploader({
               onWheel={onWheel}
               onKeyDown={onKeyDown}
               tabIndex={0}
-              aria-label="Bildausschnitt. Ziehen zum Verschieben, Pfeiltasten und Plus/Minus zum Anpassen."
+              aria-label={t("shell.image.viewportAria")}
             >
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img
@@ -369,7 +372,7 @@ export function ImageUploader({
             </div>
 
             <div className="mt-4 flex items-center gap-3">
-              <button type="button" className="press flex h-11 w-11 items-center justify-center rounded-full border border-line" onClick={() => update({ ...view, zoom: view.zoom / 1.15 })} aria-label="Verkleinern"><Minus className="h-4 w-4" /></button>
+              <button type="button" className="press flex h-11 w-11 items-center justify-center rounded-full border border-line" onClick={() => update({ ...view, zoom: view.zoom / 1.15 })} aria-label={t("shell.image.zoomOut")}><Minus className="h-4 w-4" /></button>
               <input
                 type="range"
                 min={min}
@@ -380,9 +383,9 @@ export function ImageUploader({
                 className="h-11 flex-1 accent-[var(--accent)]"
                 aria-label="Zoom"
               />
-              <button type="button" className="press flex h-11 w-11 items-center justify-center rounded-full border border-line" onClick={() => update({ ...view, zoom: view.zoom * 1.15 })} aria-label="Vergrössern"><Plus className="h-4 w-4" /></button>
+              <button type="button" className="press flex h-11 w-11 items-center justify-center rounded-full border border-line" onClick={() => update({ ...view, zoom: view.zoom * 1.15 })} aria-label={t("shell.image.zoomIn")}><Plus className="h-4 w-4" /></button>
             </div>
-            <p className="mt-1 text-center text-xs text-ink-3">Mit dem Finger verschieben, mit zwei Fingern zoomen.</p>
+            <p className="mt-1 text-center text-xs text-ink-3">{t("shell.image.gestureHint")}</p>
 
             {error ? <div className="mt-3"><Alert>{error}</Alert></div> : null}
           </>

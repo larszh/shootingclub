@@ -5,7 +5,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from
 import { unstable_rethrow, useRouter } from "next/navigation";
 import { AlertTriangle, Check, ChevronLeft, ChevronRight, CloudOff, Delete, Loader2, Lock, Trash2, Trophy, Unlock } from "lucide-react";
 import { deleteMatchAction, saveStageResultAction, setMatchStatusAction } from "@/modules/scores/actions";
-import { firedShots, MAX_STAGE_PENALTIES, maxShotValue, penaltyValues, positionLabel, stageTotal, stageZones, zoneForValue } from "@/modules/scores/types";
+import { firedShots, MAX_STAGE_PENALTIES, maxShotValue, penaltyValues, stageTotal, stageZones, zoneForValue } from "@/modules/scores/types";
 import { Alert, Button, Card } from "@/components/ui";
 import { Avatar } from "@/components/avatar";
 import { cn, formatScore } from "@/lib/utils";
@@ -15,6 +15,8 @@ import { discardMatch, getMatchEntry, recordShots, recordStatus, upsertServerVie
 import { cellKey, type ScoreMatch, type SyncEvent } from "@/lib/offline/types";
 import { StageTimer } from "./stage-timer";
 import { formatZonePoints } from "./zone-legend";
+import { getT, type Locale } from "@/lib/i18n/core";
+import { positionText, tCount } from "./labels";
 
 type CellState = Record<string, number>;
 
@@ -50,8 +52,9 @@ function importedTotal(results: Array<{ stageIndex: number; shots: number[]; tot
  *
  * `storageKey`: "s:<matchId>" für Server-Durchgänge, "c:<clientId>" für offline erstellte.
  */
-export function ScoreEntry({ match, storageKey, tenantId, userId, persistView = true, onStatusChange, lockedParticipantIds, refreshOnSave = false }: { match: ScoreMatch; storageKey: string; tenantId: string; userId: string; /** Serveransicht in IndexedDB ablegen (false, wenn die Ansicht selbst aus IndexedDB stammt) */ persistView?: boolean; /** Meldet Statuswechsel (z.B. für die Kopfzeile der Offline-Ansicht) */ onStatusChange?: (status: string) => void; /** Amtlich bestätigte Teilnehmer, deren Schüsse hier nicht geändert werden dürfen */ lockedParticipantIds?: string[]; /** Seite nach gespeicherten Serien neu laden (z.B. Panel «Amtliches Resultat» mit Serverwerten) */ refreshOnSave?: boolean }) {
+export function ScoreEntry({ match, storageKey, tenantId, userId, persistView = true, onStatusChange, lockedParticipantIds, refreshOnSave = false, locale = "de" }: { match: ScoreMatch; storageKey: string; tenantId: string; userId: string; /** Serveransicht in IndexedDB ablegen (false, wenn die Ansicht selbst aus IndexedDB stammt) */ persistView?: boolean; /** Meldet Statuswechsel (z.B. für die Kopfzeile der Offline-Ansicht) */ onStatusChange?: (status: string) => void; /** Amtlich bestätigte Teilnehmer, deren Schüsse hier nicht geändert werden dürfen */ lockedParticipantIds?: string[]; /** Seite nach gespeicherten Serien neu laden (z.B. Panel «Amtliches Resultat» mit Serverwerten) */ refreshOnSave?: boolean; /** Sprache der Oberfläche (Standard: Deutsch) */ locale?: Locale }) {
   const router = useRouter();
+  const t = useMemo(() => getT(locale), [locale]);
   const { online } = useSyncStatus();
   const decimal = match.program.scoringMode === "RINGS_DECIMAL";
   const hits = match.program.scoringMode === "HITS";
@@ -163,10 +166,10 @@ export function ScoreEntry({ match, storageKey, tenantId, userId, persistView = 
           setFailed((f) => ({ ...f, [ck]: res.error }));
         }
       } catch {
-        setFailed((f) => ({ ...f, [ck]: "Keine Verbindung" }));
+        setFailed((f) => ({ ...f, [ck]: t("shooting.common.noConnection") }));
       }
     },
-    [match.id, scheduleRefresh],
+    [match.id, scheduleRefresh, t],
   );
 
   // Fallback ohne IndexedDB: beim Verlassen sofort senden, bei Wiederverbindung erneut versuchen,
@@ -208,21 +211,21 @@ export function ScoreEntry({ match, storageKey, tenantId, userId, persistView = 
           setSaved((s) => (s[pk] ? s : { ...s, [pk]: true }));
           scheduleRefresh();
         } else {
-          setFailed((f) => ({ ...f, [ck]: ev.result.error ?? "Fehler" }));
+          setFailed((f) => ({ ...f, [ck]: ev.result.error ?? t("shooting.common.error") }));
         }
       } else if (op.type === "setMatchStatus") {
-        if (ev.type === "failed") setNotice(ev.result.error ?? "Status konnte nicht gespeichert werden.");
+        if (ev.type === "failed") setNotice(ev.result.error ?? t("shooting.entry.statusNotSaved"));
         else if (isServerMatch) router.refresh();
       }
     },
-    [storageKey, isServerMatch, router, scheduleRefresh],
+    [storageKey, isServerMatch, router, scheduleRefresh, t],
   );
   useSyncEvents(onSyncEvent);
 
   /** Fallback ohne IndexedDB (z.B. gesperrter Speicher): direkt per Server Action speichern. */
   const persistDirect = (participantId: string, stageIndex: number, list: number[], ts: number) => {
     if (!isServerMatch || !match.id) {
-      setNotice("Lokales Speichern ist auf diesem Gerät nicht möglich.");
+      setNotice(t("shooting.entry.localUnavailable"));
       return;
     }
     const ck = cellKey(participantId, stageIndex);
@@ -303,7 +306,7 @@ export function ScoreEntry({ match, storageKey, tenantId, userId, persistView = 
     recordStatus(ctx, next, ts)
       .then(() => requestFlush(0))
       .catch(() => {
-        if (!isServerMatch || !match.id) return setNotice("Status konnte lokal nicht gespeichert werden.");
+        if (!isServerMatch || !match.id) return setNotice(t("shooting.entry.statusLocalFailed"));
         start(async () => {
           try {
             const res = await setMatchStatusAction(match.id!, next);
@@ -312,14 +315,14 @@ export function ScoreEntry({ match, storageKey, tenantId, userId, persistView = 
           } catch {
             setStatus(finished ? "FINISHED" : "OPEN");
             onStatusChange?.(finished ? "FINISHED" : "OPEN");
-            setNotice("Keine Verbindung. Bitte später nochmals versuchen.");
+            setNotice(t("shooting.common.noConnectionRetryLater"));
           }
         });
       });
   };
 
   const remove = async () => {
-    if (!(await confirmDialog({ title: "Durchgang wirklich löschen?", tone: "danger", confirmLabel: "Löschen" }))) return;
+    if (!(await confirmDialog({ title: t("shooting.entry.deleteConfirm"), tone: "danger", confirmLabel: t("shooting.common.delete") }))) return;
     setNotice(null);
     let serverId = isServerMatch ? match.id : null;
     if (!isServerMatch) {
@@ -333,7 +336,7 @@ export function ScoreEntry({ match, storageKey, tenantId, userId, persistView = 
       }
     }
     if (!navigator.onLine) {
-      setNotice("Löschen ist nur mit Internetverbindung möglich.");
+      setNotice(t("shooting.entry.deleteOnlineOnly"));
       return;
     }
     start(async () => {
@@ -355,7 +358,7 @@ export function ScoreEntry({ match, storageKey, tenantId, userId, persistView = 
           await discardLocal();
           throw redirect;
         }
-        setNotice("Keine Verbindung. Bitte später nochmals versuchen.");
+        setNotice(t("shooting.common.noConnectionRetryLater"));
         router.refresh();
       }
     });
@@ -403,7 +406,7 @@ export function ScoreEntry({ match, storageKey, tenantId, userId, persistView = 
       <Card className="animate-rise overflow-hidden">
         <div className="divide-y divide-line">
           {match.participants.map((p) => {
-            const t = totals[p.id]!;
+            const tot = totals[p.id]!;
             const isLeader = finished && leader?.id === p.id && match.participants.length > 1;
             const st = participantState(p.id);
             return (
@@ -411,23 +414,23 @@ export function ScoreEntry({ match, storageKey, tenantId, userId, persistView = 
                 className={cn("flex w-full items-center gap-3 px-4 py-3 text-left transition-colors", activeP === p.id ? "bg-surface-2" : "hover:bg-surface-2/60")}>
                 <Avatar name={p.name} src={p.avatarUrl} size={40} tone={p.isGuest ? "guest" : "ink"} />
                 <span className="min-w-0 flex-1">
-                  <span className="flex items-center gap-1.5 font-medium truncate">{p.name}{isLeader ? <Trophy className="h-4 w-4 text-accent" /> : null}{p.isMe ? <span className="text-xs text-ink-3">(du)</span> : null}</span>
+                  <span className="flex items-center gap-1.5 font-medium truncate">{p.name}{isLeader ? <Trophy className="h-4 w-4 text-accent" /> : null}{p.isMe ? <span className="text-xs text-ink-3">{t("shooting.common.me")}</span> : null}</span>
                   <span className="flex gap-1 mt-1 flex-wrap">
-                    {t.stages.map((sv, i) => (
+                    {tot.stages.map((sv, i) => (
                       <span key={i} className={cn("rounded-md px-1.5 py-0.5 text-[11px] tabular-nums", firedIn(p.id, i) >= stages[i]!.shots ? "bg-ink/10 text-ink" : "bg-surface-2 text-ink-3")}>{formatScore(sv, decimal)}</span>
                     ))}
                   </span>
                   {st ? (
                     <span className={cn("mt-1 flex items-center gap-1 text-[11px]", st === "failed" ? "text-accent" : st === "pending" ? (online ? "text-ink-3" : "text-warn") : "text-ok")}>
-                      {st === "failed" ? <><AlertTriangle className="h-3 w-3" /> nicht gespeichert</>
-                        : st === "pending" ? (online ? <><Loader2 className="h-3 w-3 animate-spin" /> wird gespeichert…</> : <><CloudOff className="h-3 w-3" /> wartet auf Verbindung</>)
-                        : <><Check className="h-3 w-3" /> gespeichert</>}
+                      {st === "failed" ? <><AlertTriangle className="h-3 w-3" /> {t("shooting.entry.state.failed")}</>
+                        : st === "pending" ? (online ? <><Loader2 className="h-3 w-3 animate-spin" /> {t("shooting.entry.state.saving")}</> : <><CloudOff className="h-3 w-3" /> {t("shooting.entry.state.waiting")}</>)
+                        : <><Check className="h-3 w-3" /> {t("shooting.entry.state.saved")}</>}
                     </span>
                   ) : null}
                 </span>
                 <span className="text-right">
-                  <span className="block text-2xl font-semibold tabular-nums leading-none">{formatScore(t.total, decimal)}</span>
-                  <span className="block text-[11px] text-ink-3 mt-1">von {match.program.totals.max}</span>
+                  <span className="block text-2xl font-semibold tabular-nums leading-none">{formatScore(tot.total, decimal)}</span>
+                  <span className="block text-[11px] text-ink-3 mt-1">{t("shooting.common.ofMax", { max: match.program.totals.max })}</span>
                 </span>
               </button>
             );
@@ -438,13 +441,13 @@ export function ScoreEntry({ match, storageKey, tenantId, userId, persistView = 
       {/* Serien-Navigation */}
       <div className="animate-rise [animation-delay:60ms]">
         <div className="flex items-center justify-between mb-2">
-          <button type="button" onClick={() => setActiveS((s) => Math.max(0, s - 1))} disabled={activeS === 0} aria-label="Vorherige Serie" className="press h-11 w-11 rounded-full hover:bg-surface-2 disabled:opacity-30 flex items-center justify-center"><ChevronLeft className="h-5 w-5" /></button>
+          <button type="button" onClick={() => setActiveS((s) => Math.max(0, s - 1))} disabled={activeS === 0} aria-label={t("shooting.entry.prevStage")} className="press h-11 w-11 rounded-full hover:bg-surface-2 disabled:opacity-30 flex items-center justify-center"><ChevronLeft className="h-5 w-5" /></button>
           <div className="text-center">
             <div className="font-semibold">{stage.name}</div>
-            <div className="text-xs text-ink-3">{stage.distanceM} m · {stage.shots} Schuss{stage.position ? ` · ${positionLabel(stage.position)}` : ""}{stage.timeLimitSec ? ` · ${stage.timeLimitSec} s` : ""}</div>
+            <div className="text-xs text-ink-3">{stage.distanceM} m · {tCount(t, "shooting.common.shots", stage.shots)}{stage.position ? ` · ${positionText(t, stage.position)}` : ""}{stage.timeLimitSec ? ` · ${stage.timeLimitSec} s` : ""}</div>
             {stage.note ? <div className="text-xs text-ink-3 mt-0.5">{stage.note}</div> : null}
           </div>
-          <button type="button" onClick={() => setActiveS((s) => Math.min(stages.length - 1, s + 1))} disabled={activeS === stages.length - 1} aria-label="Nächste Serie" className="press h-11 w-11 rounded-full hover:bg-surface-2 disabled:opacity-30 flex items-center justify-center"><ChevronRight className="h-5 w-5" /></button>
+          <button type="button" onClick={() => setActiveS((s) => Math.min(stages.length - 1, s + 1))} disabled={activeS === stages.length - 1} aria-label={t("shooting.entry.nextStage")} className="press h-11 w-11 rounded-full hover:bg-surface-2 disabled:opacity-30 flex items-center justify-center"><ChevronRight className="h-5 w-5" /></button>
         </div>
         <div className="flex gap-1 justify-center">
           {stages.map((st, i) => {
@@ -455,12 +458,12 @@ export function ScoreEntry({ match, storageKey, tenantId, userId, persistView = 
       </div>
 
       {/* Zeitnehmung */}
-      {!finished && !locked ? <StageTimer key={`${activeS}-${stage.timeLimitSec ?? 0}`} timeLimitSec={stage.timeLimitSec} /> : null}
+      {!finished && !locked ? <StageTimer key={`${activeS}-${stage.timeLimitSec ?? 0}`} timeLimitSec={stage.timeLimitSec} locale={locale} /> : null}
 
       {/* Schüsse */}
       <Card className="animate-rise [animation-delay:120ms] p-4">
         <div className="flex items-center justify-between mb-3">
-          <span className="text-sm text-ink-3">{participant.name} · Schuss {Math.min(currentFired.length + 1, stage.shots)} von {stage.shots}</span>
+          <span className="text-sm text-ink-3">{t("shooting.entry.shotOf", { name: participant.name, n: Math.min(currentFired.length + 1, stage.shots), total: stage.shots })}</span>
           <span className="text-sm font-semibold tabular-nums">{formatScore(current.length ? stageTotal(current) : (importedTotal(participant.results, activeS) ?? stageTotal(current)), decimal)}{hits ? ` / ${stage.shots}` : ` / ${stage.shots * (zonesMode ? topValue : stage.maxPerShot)}`}</span>
         </div>
         <div className="flex flex-wrap gap-1.5 min-h-10">
@@ -487,8 +490,8 @@ export function ScoreEntry({ match, storageKey, tenantId, userId, persistView = 
           })}
         </div>
         {currentPenalties.length ? (
-          <div className="mt-2 flex flex-wrap items-center gap-1.5" aria-label="Strafen ohne Schuss">
-            <span className="text-xs text-ink-3">Strafen:</span>
+          <div className="mt-2 flex flex-wrap items-center gap-1.5" aria-label={t("shooting.entry.penaltiesAria")}>
+            <span className="text-xs text-ink-3">{t("shooting.entry.penalties")}</span>
             {currentPenalties.map((v, i) => {
               const z = zoneForValue(stage, v);
               return (
@@ -501,56 +504,56 @@ export function ScoreEntry({ match, storageKey, tenantId, userId, persistView = 
         ) : null}
         <div className="mt-2 min-h-4 text-[11px] text-ink-3 text-right" aria-live="polite">
           {failed[activeCell] ? (
-            <span className="inline-flex items-center gap-1 text-accent"><AlertTriangle className="h-3 w-3" /> Nicht gespeichert: {failed[activeCell]}</span>
+            <span className="inline-flex items-center gap-1 text-accent"><AlertTriangle className="h-3 w-3" /> {t("shooting.entry.notSavedWith", { error: failed[activeCell] })}</span>
           ) : dirty[activeCell] !== undefined ? (
-            online ? <span className="inline-flex items-center gap-1"><Loader2 className="h-3 w-3 animate-spin" /> Speichern…</span>
-              : <span className="inline-flex items-center gap-1 text-warn"><CloudOff className="h-3 w-3" /> Auf dem Gerät gespeichert – wird übertragen, sobald Empfang da ist</span>
+            online ? <span className="inline-flex items-center gap-1"><Loader2 className="h-3 w-3 animate-spin" /> {t("shooting.entry.saving")}</span>
+              : <span className="inline-flex items-center gap-1 text-warn"><CloudOff className="h-3 w-3" /> {t("shooting.entry.savedOnDevice")}</span>
           ) : saved[activeP] ? (
-            <span className="inline-flex items-center gap-1 text-ok"><Check className="h-3 w-3" /> Gespeichert</span>
+            <span className="inline-flex items-center gap-1 text-ok"><Check className="h-3 w-3" /> {t("shooting.entry.saved")}</span>
           ) : null}
         </div>
       </Card>
 
       {/* Eingabe */}
       {!finished && locked ? (
-        <Alert tone="info" title="Amtlich bestätigt">Das Resultat von {participant.name} ist amtlich bestätigt und kann hier nicht mehr geändert werden. Korrekturen nur durch den Schützenmeister nach «Bestätigung aufheben».</Alert>
+        <Alert tone="info" title={t("shooting.entry.lockedTitle")}>{t("shooting.entry.lockedText", { name: participant.name })}</Alert>
       ) : null}
       {!finished && !locked ? (
         <div className="animate-rise [animation-delay:180ms]">
           {zonesMode ? (
             <div className="grid grid-cols-2 gap-2">
               {zones.map((z) => (
-                <Key key={z.key} onClick={() => addShot(z.points)} label={`${z.label}, ${formatZonePoints(z.points)} Punkte${z.penalty ? ", Strafe ohne Schuss" : ""}`}
+                <Key key={z.key} onClick={() => addShot(z.points)} label={t(z.penalty ? "shooting.entry.zoneAriaPenalty" : "shooting.entry.zoneAria", { label: z.label, points: formatZonePoints(z.points) })}
                   className={cn("h-20 flex-col gap-0.5 px-2",
                     z.points < 0 ? cn("bg-danger/15 text-danger border-danger/30", z.penalty && "border-dashed") : z.points === topValue ? "bg-ink text-bg" : z.points === 0 ? "bg-surface-2 text-ink-3" : "bg-surface border-line hover:bg-surface-2")}>
                   <span className="flex items-baseline gap-2 leading-none"><span>{z.key}</span><span className="text-lg tabular-nums">{formatZonePoints(z.points)}</span></span>
-                  <span className="max-w-full truncate text-xs font-medium leading-tight opacity-90">{z.penalty ? `${z.label} · ohne Schuss` : z.label}</span>
+                  <span className="max-w-full truncate text-xs font-medium leading-tight opacity-90">{z.penalty ? t("shooting.entry.zoneNoShot", { label: z.label }) : z.label}</span>
                 </Key>
               ))}
-              <Key onClick={undo} className={cn("bg-surface", zones.length % 2 === 0 && "col-span-2")} variant="secondary"><Delete className="h-5 w-5" /> Rückgängig</Key>
+              <Key onClick={undo} className={cn("bg-surface", zones.length % 2 === 0 && "col-span-2")} variant="secondary"><Delete className="h-5 w-5" /> {t("shooting.entry.undo")}</Key>
             </div>
           ) : hits ? (
             <div className="grid grid-cols-2 gap-2">
-              <Key onClick={() => addShot(1)} className="h-20 bg-ok/15 text-ok text-xl">Treffer</Key>
-              <Key onClick={() => addShot(0)} className="h-20 bg-accent-soft text-accent text-xl">Fehler</Key>
-              <Key onClick={undo} className="col-span-2 bg-surface" variant="secondary"><Delete className="h-5 w-5" /> Rückgängig</Key>
+              <Key onClick={() => addShot(1)} className="h-20 bg-ok/15 text-ok text-xl">{t("shooting.entry.hit")}</Key>
+              <Key onClick={() => addShot(0)} className="h-20 bg-accent-soft text-accent text-xl">{t("shooting.entry.miss")}</Key>
+              <Key onClick={undo} className="col-span-2 bg-surface" variant="secondary"><Delete className="h-5 w-5" /> {t("shooting.entry.undo")}</Key>
             </div>
           ) : decimal ? (
             <div className="grid grid-cols-3 gap-2">
               {["7", "8", "9", "4", "5", "6", "1", "2", "3", ".", "0"].map((k) => (
                 <Key key={k} onClick={() => pushDecimal(k)}>{k}</Key>
               ))}
-              <Key onClick={undo} variant="secondary" label="Rückgängig"><Delete className="h-5 w-5" /></Key>
-              <Key onClick={() => { setDecimalBuffer(""); addShot(stage.maxPerShot + 0.9); }} className="col-span-2 bg-ink text-bg">{stage.maxPerShot}.9 (Mouche)</Key>
-              <Key onClick={commitDecimalBuffer} variant="secondary" disabled={!decimalBuffer}>OK</Key>
+              <Key onClick={undo} variant="secondary" label={t("shooting.entry.undo")}><Delete className="h-5 w-5" /></Key>
+              <Key onClick={() => { setDecimalBuffer(""); addShot(stage.maxPerShot + 0.9); }} className="col-span-2 bg-ink text-bg">{t("shooting.entry.mouche", { value: `${stage.maxPerShot}.9` })}</Key>
+              <Key onClick={commitDecimalBuffer} variant="secondary" disabled={!decimalBuffer}>{t("shooting.common.ok")}</Key>
             </div>
           ) : (
             <div className="grid grid-cols-4 gap-2">
               {keypadValues.map((v) => (
                 <Key key={v} onClick={() => addShot(v)} className={cn(v === stage.maxPerShot && "bg-ink text-bg col-span-2", v === 0 && "text-ink-3")}>{v}</Key>
               ))}
-              {stage.maxPerShot > 12 ? <ManualInput max={stage.maxPerShot} onAdd={addShot} /> : null}
-              <Key onClick={undo} variant="secondary" label="Rückgängig" className={cn(keypadValues.length % 4 === 1 ? "col-span-2" : "")}><Delete className="h-5 w-5" /></Key>
+              {stage.maxPerShot > 12 ? <ManualInput max={stage.maxPerShot} onAdd={addShot} label={t("shooting.entry.enterValue")} okLabel={t("shooting.common.ok")} /> : null}
+              <Key onClick={undo} variant="secondary" label={t("shooting.entry.undo")} className={cn(keypadValues.length % 4 === 1 ? "col-span-2" : "")}><Delete className="h-5 w-5" /></Key>
             </div>
           )}
         </div>
@@ -561,15 +564,15 @@ export function ScoreEntry({ match, storageKey, tenantId, userId, persistView = 
       {/* Aktionen */}
       <div className="animate-rise [animation-delay:240ms] flex flex-col gap-2 pt-2">
         {match.canEdit && finished && hasTotalsOnly ? (
-          <p className="text-center text-xs text-ink-3">Dieser Durchgang enthält Serien, die nur mit Total importiert wurden, und kann nicht wieder geöffnet werden.</p>
+          <p className="text-center text-xs text-ink-3">{t("shooting.entry.totalsOnly")}</p>
         ) : match.canEdit ? (
           <Button type="button" variant={finished ? "secondary" : "primary"} size="lg" disabled={pending} onClick={toggleStatus}>
-            {finished ? <><Unlock className="h-4 w-4" /> Wieder öffnen</> : <><Lock className="h-4 w-4" /> Durchgang abschliessen</>}
+            {finished ? <><Unlock className="h-4 w-4" /> {t("shooting.entry.reopen")}</> : <><Lock className="h-4 w-4" /> {t("shooting.entry.finish")}</>}
           </Button>
         ) : null}
         {match.canDelete ? (
           <Button type="button" variant="ghost" size="sm" disabled={pending} className="text-ink-3" onClick={() => void remove()}>
-            <Trash2 className="h-4 w-4" /> Löschen
+            <Trash2 className="h-4 w-4" /> {t("shooting.common.delete")}
           </Button>
         ) : null}
       </div>
@@ -588,12 +591,12 @@ function Key({ children, onClick, className, variant = "primary", disabled, labe
   );
 }
 
-function ManualInput({ max, onAdd }: { max: number; onAdd: (v: number) => void }) {
+function ManualInput({ max, onAdd, label, okLabel }: { max: number; onAdd: (v: number) => void; label: string; okLabel: string }) {
   const [v, setV] = useState("");
   return (
     <form className="col-span-3 flex gap-2" onSubmit={(e) => { e.preventDefault(); const n = Number(v); if (Number.isFinite(n) && n >= 0 && n <= max) { tap(); onAdd(n); setV(""); } }}>
-      <input value={v} onChange={(e) => setV(e.target.value)} type="number" inputMode="numeric" min={0} max={max} placeholder={`0–${max}`} aria-label="Wert eingeben" className="flex-1 h-14 rounded-2xl border border-line bg-surface px-4 text-2xl tabular-nums focus:outline-none focus:border-ink" />
-      <button type="submit" className="press h-14 px-5 rounded-2xl bg-ink text-bg font-semibold">OK</button>
+      <input value={v} onChange={(e) => setV(e.target.value)} type="number" inputMode="numeric" min={0} max={max} placeholder={`0–${max}`} aria-label={label} className="flex-1 h-14 rounded-2xl border border-line bg-surface px-4 text-2xl tabular-nums focus:outline-none focus:border-ink" />
+      <button type="submit" className="press h-14 px-5 rounded-2xl bg-ink text-bg font-semibold">{okLabel}</button>
     </form>
   );
 }

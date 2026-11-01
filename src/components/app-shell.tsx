@@ -8,9 +8,13 @@ import { TenantLogo } from "@/components/logo";
 import { Avatar } from "@/components/avatar";
 import type { ModuleKey } from "@/lib/modules";
 import { ChatUnreadBadge } from "@/modules/chat/ui/chat-unread-badge";
+import { getT, type Locale } from "@/lib/i18n/core";
+import { useEffect } from "react";
+import { rememberLocale } from "@/components/locale";
 
 type NavItem = {
   href: string;
+  /** Schlüssel im Wörterbuch «shell» */
   label: string;
   icon: React.ComponentType<{ className?: string }>;
   /** Sichtbar, wenn mindestens eines dieser Module aktiv ist (leer = immer) */
@@ -19,7 +23,7 @@ type NavItem = {
   alsoActive?: string[];
   /** Gruppe in der Desktop-Seitenleiste (ohne = Hauptliste oben) */
   group?: NavGroup;
-  /** Abweichende Beschriftung in der Seitenleiste (Tableiste nutzt label) */
+  /** Abweichende Beschriftung in der Seitenleiste (Tableiste nutzt label), ebenfalls ein Schlüssel */
   sideLabel?: string;
   /** Nur sichtbar mit dieser Berechtigung (aus ShellAdmin) */
   requires?: keyof ShellAdmin;
@@ -29,8 +33,8 @@ type NavItem = {
 
 type NavGroup = "schiessen" | "verein";
 const GROUPS: { key: NavGroup; label: string }[] = [
-  { key: "schiessen", label: "Schiessen" },
-  { key: "verein", label: "Verein" },
+  { key: "schiessen", label: "shell.nav.group.shooting" },
+  { key: "verein", label: "shell.nav.group.club" },
 ];
 
 /**
@@ -47,26 +51,26 @@ const GROUPS: { key: NavGroup; label: string }[] = [
  * «Schiessen» und «Verein».
  */
 const NAV: NavItem[] = [
-  { href: "/", label: "Start", icon: Home },
-  { href: "/scores", label: "Schiessen", sideLabel: "Resultate", icon: Crosshair, modules: ["scores"], group: "schiessen" },
-  { href: "/chat", label: "Chat", icon: MessageCircle, modules: ["chat"] },
-  { href: "/events", label: "Anlässe", icon: Megaphone, modules: ["events"] },
-  { href: "/bookings", label: "Buchen", icon: CalendarDays, modules: ["bookings"] },
-  { href: "/targets", label: "Scheiben", icon: Target, modules: ["targets"], group: "schiessen" },
-  { href: "/files", label: "Dateien", icon: FolderOpen, modules: ["files"] },
-  { href: "/ammo", label: "Munition", icon: Package, modules: ["ammo"] },
-  { href: "/payments", label: "Zahlungen", icon: Wallet, modules: ["billing", "bookings", "ammo"], alsoActive: ["/billing"] },
-  { href: "/federal", label: "Bundesübungen", icon: BadgeCheck, modules: ["federal"], group: "schiessen" },
-  { href: "/championship", label: "Meisterschaft", sideLabel: "Jahresmeisterschaft", icon: Trophy, modules: ["championship"], group: "schiessen" },
-  { href: "/admin/live", label: "Live", sideLabel: "Live-Rangliste", icon: Tv, modules: ["scores"], group: "schiessen", requires: "live" },
-  { href: "/scores/import", label: "Import", sideLabel: "Resultat-Import", icon: FileInput, modules: ["scores"], group: "schiessen", requires: "scoreImport", noTab: true },
-  { href: "/range", label: "Stand", sideLabel: "Standbetrieb", icon: DoorOpen, modules: ["range"], group: "verein" },
-  { href: "/shifts", label: "Helfer", sideLabel: "Helfereinsätze", icon: HandHelping, modules: ["shifts"], group: "verein" },
-  { href: "/courses", label: "Kurse", icon: GraduationCap, modules: ["courses"], group: "verein" },
-  { href: "/weapons", label: "Waffen", sideLabel: "Vereinswaffen", icon: Shield, modules: ["weapons"], group: "verein", requires: "weapons" },
-  { href: "/kiosk", label: "Stube", sideLabel: "Schützenstube", icon: Coffee, modules: ["kiosk"], group: "verein" },
+  { href: "/", label: "shell.nav.start", icon: Home },
+  { href: "/scores", label: "shell.nav.scores", sideLabel: "shell.nav.scores.side", icon: Crosshair, modules: ["scores"], group: "schiessen" },
+  { href: "/chat", label: "shell.nav.chat", icon: MessageCircle, modules: ["chat"] },
+  { href: "/events", label: "shell.nav.events", icon: Megaphone, modules: ["events"] },
+  { href: "/bookings", label: "shell.nav.bookings", icon: CalendarDays, modules: ["bookings"] },
+  { href: "/targets", label: "shell.nav.targets", icon: Target, modules: ["targets"], group: "schiessen" },
+  { href: "/files", label: "shell.nav.files", icon: FolderOpen, modules: ["files"] },
+  { href: "/ammo", label: "shell.nav.ammo", icon: Package, modules: ["ammo"] },
+  { href: "/payments", label: "shell.nav.payments", icon: Wallet, modules: ["billing", "bookings", "ammo"], alsoActive: ["/billing"] },
+  { href: "/federal", label: "shell.nav.federal", icon: BadgeCheck, modules: ["federal"], group: "schiessen" },
+  { href: "/championship", label: "shell.nav.championship", sideLabel: "shell.nav.championship.side", icon: Trophy, modules: ["championship"], group: "schiessen" },
+  { href: "/admin/live", label: "shell.nav.live", sideLabel: "shell.nav.live.side", icon: Tv, modules: ["scores"], group: "schiessen", requires: "live" },
+  { href: "/scores/import", label: "shell.nav.scoreImport", sideLabel: "shell.nav.scoreImport.side", icon: FileInput, modules: ["scores"], group: "schiessen", requires: "scoreImport", noTab: true },
+  { href: "/range", label: "shell.nav.range", sideLabel: "shell.nav.range.side", icon: DoorOpen, modules: ["range"], group: "verein" },
+  { href: "/shifts", label: "shell.nav.shifts", sideLabel: "shell.nav.shifts.side", icon: HandHelping, modules: ["shifts"], group: "verein" },
+  { href: "/courses", label: "shell.nav.courses", icon: GraduationCap, modules: ["courses"], group: "verein" },
+  { href: "/weapons", label: "shell.nav.weapons", sideLabel: "shell.nav.weapons.side", icon: Shield, modules: ["weapons"], group: "verein", requires: "weapons" },
+  { href: "/kiosk", label: "shell.nav.kiosk", sideLabel: "shell.nav.kiosk.side", icon: Coffee, modules: ["kiosk"], group: "verein" },
   // Verwaltung und Verzeichnis liegen mobil unter «Mehr» (Tableiste bleibt bei 5 Einträgen).
-  { href: "/me", label: "Mehr", icon: Menu, alsoActive: ["/admin", "/members", "/super", "/help"] },
+  { href: "/me", label: "shell.nav.more", icon: Menu, alsoActive: ["/admin", "/members", "/super", "/help"] },
 ];
 
 export type ShellTenant = { id: string; name: string; logoUrl: string | null };
@@ -88,18 +92,18 @@ function adminLinks(a: ShellAdmin | null | undefined, modules: ModuleKey[]): Nav
   if (!a) return [];
   const out: NavItem[] = [];
   const on = (m: ModuleKey) => modules.includes(m);
-  if (a.settings) out.push({ href: "/admin", label: "Einstellungen", icon: Settings });
-  if (a.members) out.push({ href: "/admin/members", label: "Mitglieder", icon: Users });
+  if (a.settings) out.push({ href: "/admin", label: "shell.admin.settings", icon: Settings });
+  if (a.members) out.push({ href: "/admin/members", label: "shell.admin.members", icon: Users });
   if (a.membersManage) {
-    out.push({ href: "/admin/members/import", label: "Import", icon: FileUp });
-    out.push({ href: "/admin/members/households", label: "Haushalte", icon: House });
+    out.push({ href: "/admin/members/import", label: "shell.admin.import", icon: FileUp });
+    out.push({ href: "/admin/members/households", label: "shell.admin.households", icon: House });
   }
-  if (a.settings && on("bookings")) out.push({ href: "/admin/bookings/partners", label: "Partner-Anlagen", icon: Handshake });
-  if (a.kiosk && on("kiosk")) out.push({ href: "/admin/kiosk", label: "Schützenstube verwalten", icon: Coffee });
-  if (a.accounting) out.push({ href: "/admin/accounting", label: "Buchhaltung", icon: BookOpenCheck });
-  if (a.settings) out.push({ href: "/admin/embed", label: "Website-Widgets", icon: Code2 });
-  if (a.audit) out.push({ href: "/admin/audit", label: "Protokoll", icon: History });
-  if (a.system) out.push({ href: "/super/system", label: "System", icon: Server });
+  if (a.settings && on("bookings")) out.push({ href: "/admin/bookings/partners", label: "shell.admin.partners", icon: Handshake });
+  if (a.kiosk && on("kiosk")) out.push({ href: "/admin/kiosk", label: "shell.admin.kiosk", icon: Coffee });
+  if (a.accounting) out.push({ href: "/admin/accounting", label: "shell.admin.accounting", icon: BookOpenCheck });
+  if (a.settings) out.push({ href: "/admin/embed", label: "shell.admin.embed", icon: Code2 });
+  if (a.audit) out.push({ href: "/admin/audit", label: "shell.admin.audit", icon: History });
+  if (a.system) out.push({ href: "/super/system", label: "shell.admin.system", icon: Server });
   return out;
 }
 export type ShellUser = { name: string; email: string; avatarUrl: string | null };
@@ -111,6 +115,7 @@ export function AppShell({
   user,
   chatUnread = null,
   admin = null,
+  locale,
 }: {
   children: React.ReactNode;
   enabledModules: ModuleKey[];
@@ -120,7 +125,12 @@ export function AppShell({
   chatUnread?: number | null;
   /** Verwaltungslinks für die Desktop-Seitenleiste (mobil unter «Mehr» → /me) */
   admin?: ShellAdmin | null;
+  /** Sprache der Oberfläche (aus getRequestLocale im Layout) */
+  locale: Locale;
 }) {
+  const t = getT(locale);
+  // Für die Offline-Seiten merken, in welcher Sprache die App läuft.
+  useEffect(() => rememberLocale(locale), [locale]);
   const pathname = usePathname();
   const items = NAV.filter((n) => (!n.modules || n.modules.some((m) => enabledModules.includes(m))) && (!n.requires || !!admin?.[n.requires]));
   const matches = (href: string) => (href === "/" ? pathname === "/" : pathname === href || pathname.startsWith(href + "/"));
@@ -154,7 +164,7 @@ export function AppShell({
     return (
       <Link key={n.href} href={n.href} aria-current={active ? "page" : undefined}
         className={cn("flex items-center gap-3 rounded-control px-3 h-11 text-[15px] font-medium transition-colors", active ? "bg-accent-soft text-accent" : "text-ink-2 hover:bg-surface-2")}>
-        <n.icon className="h-5 w-5" /> <span className="flex-1">{n.sideLabel ?? n.label}</span>
+        <n.icon className="h-5 w-5" /> <span className="flex-1">{t(n.sideLabel ?? n.label)}</span>
         {n.href === "/chat" && chatOn ? <ChatUnreadBadge initial={chatUnread ?? 0} /> : null}
       </Link>
     );
@@ -168,31 +178,31 @@ export function AppShell({
           <TenantLogo src={tenant?.logoUrl} size={36} />
           <span className="min-w-0">
             <span className="block font-semibold tracking-tight leading-tight truncate">{title}</span>
-            {tenant ? <span className="block text-[11px] text-ink-3 leading-tight">mit Standchef</span> : null}
+            {tenant ? <span className="block text-[11px] text-ink-3 leading-tight">{t("shell.brand.withStandchef")}</span> : null}
           </span>
         </Link>
         <div className="mx-5 mb-3 h-0.5 rounded-full brand-gradient opacity-80" aria-hidden />
-        <nav className="flex-1 px-3 space-y-0.5 overflow-y-auto" aria-label="Hauptnavigation">
+        <nav className="flex-1 px-3 space-y-0.5 overflow-y-auto" aria-label={t("shell.nav.main")}>
           {items.filter((n) => !n.group).map(sideLink)}
           {GROUPS.map((g) => {
             const list = items.filter((n) => n.group === g.key);
             if (!list.length) return null;
             return (
-              <div key={g.key} role="group" aria-label={g.label}>
-                <div className="px-3 pb-1 pt-5 text-[11px] font-semibold uppercase tracking-wider text-ink-3">{g.label}</div>
+              <div key={g.key} role="group" aria-label={t(g.label)}>
+                <div className="px-3 pb-1 pt-5 text-[11px] font-semibold uppercase tracking-wider text-ink-3">{t(g.label)}</div>
                 {list.map(sideLink)}
               </div>
             );
           })}
           {admins.length ? (
             <>
-              <div className="px-3 pb-1 pt-5 text-[11px] font-semibold uppercase tracking-wider text-ink-3">Verwaltung</div>
+              <div className="px-3 pb-1 pt-5 text-[11px] font-semibold uppercase tracking-wider text-ink-3">{t("shell.nav.group.admin")}</div>
               {admins.map((n) => {
                 const active = activeAdmin === n.href;
                 return (
                   <Link key={n.href} href={n.href} aria-current={active ? "page" : undefined}
                     className={cn("flex items-center gap-3 rounded-control px-3 h-11 text-[15px] font-medium transition-colors", active ? "bg-accent-soft text-accent" : "text-ink-2 hover:bg-surface-2")}>
-                    <n.icon className="h-5 w-5" /> <span className="flex-1">{n.label}</span>
+                    <n.icon className="h-5 w-5" /> <span className="flex-1">{t(n.label)}</span>
                   </Link>
                 );
               })}
@@ -216,7 +226,7 @@ export function AppShell({
               <TenantLogo src={tenant?.logoUrl} size={28} />
               <span className="truncate">{title}</span>
             </Link>
-            <Link href="/me" className="press shrink-0 rounded-full ring-2 ring-transparent focus-visible:ring-accent" aria-label="Profil und Einstellungen">
+            <Link href="/me" className="press shrink-0 rounded-full ring-2 ring-transparent focus-visible:ring-accent" aria-label={t("shell.nav.profileSettings")}>
               <Avatar name={user.name} src={user.avatarUrl} size={36} />
             </Link>
           </div>
@@ -225,7 +235,7 @@ export function AppShell({
         <main className="flex-1 w-full max-w-3xl mx-auto px-4 pt-5 pb-28 md:pb-10 md:px-8">{children}</main>
 
         {/* Mobile-Tableiste */}
-        <nav className="md:hidden fixed bottom-0 inset-x-0 z-20 border-t border-line bg-surface/95 backdrop-blur safe-bottom" aria-label="Hauptnavigation">
+        <nav className="md:hidden fixed bottom-0 inset-x-0 z-20 border-t border-line bg-surface/95 backdrop-blur safe-bottom" aria-label={t("shell.nav.main")}>
           <div className="grid" style={{ gridTemplateColumns: `repeat(${tabs.length}, minmax(0, 1fr))` }}>
             {tabs.map((n) => {
               const active = isTabActive(n.href);
@@ -237,7 +247,7 @@ export function AppShell({
                       <ChatUnreadBadge initial={chatUnread ?? 0} className="absolute -top-1 right-0.5 ring-2 ring-surface" />
                     ) : null}
                   </span>
-                  <span className={cn("truncate max-w-full px-0.5", active ? "text-ink" : "text-ink-3")}>{n.label}</span>
+                  <span className={cn("truncate max-w-full px-0.5", active ? "text-ink" : "text-ink-3")}>{t(n.label)}</span>
                 </Link>
               );
             })}

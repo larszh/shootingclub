@@ -8,20 +8,35 @@ import { DialogHost } from "@/components/ui/dialog";
 import { getCurrentUser } from "@/lib/auth";
 import { DEFAULT_THEME_COLORS } from "@/lib/brand";
 import { unstable_rethrow } from "next/navigation";
+import { DEFAULT_LOCALE, INTL_LOCALE, getRequestLocale, getT, type Locale } from "@/lib/i18n";
+import { LocaleProvider } from "@/components/locale";
 
-export const metadata: Metadata = {
-  title: { default: "Standchef", template: "%s · Standchef" },
-  description: "Die App für Schiessvereine und Schiessanlagen in der Schweiz: Punkteerfassung, Zielscheiben und mehr.",
-  applicationName: "Standchef",
-  appleWebApp: { capable: true, title: "Standchef", statusBarStyle: "default" },
-  icons: {
-    icon: [
-      { url: "/icons/icon.svg", type: "image/svg+xml" },
-      { url: "/icons/icon-192.png", sizes: "192x192", type: "image/png" },
-    ],
-    apple: [{ url: "/icons/apple-touch-icon.png", sizes: "180x180" }],
-  },
-};
+/** Sprache des Requests; Next-interne Signale (dynamisches Rendering) nicht verschlucken. */
+async function requestLocale(): Promise<Locale> {
+  try {
+    return await getRequestLocale();
+  } catch (e) {
+    unstable_rethrow(e);
+    return DEFAULT_LOCALE;
+  }
+}
+
+export async function generateMetadata(): Promise<Metadata> {
+  const t = getT(await requestLocale());
+  return {
+    title: { default: "Standchef", template: "%s · Standchef" },
+    description: t("shell.meta.description"),
+    applicationName: "Standchef",
+    appleWebApp: { capable: true, title: "Standchef", statusBarStyle: "default" },
+    icons: {
+      icon: [
+        { url: "/icons/icon.svg", type: "image/svg+xml" },
+        { url: "/icons/icon-192.png", sizes: "192x192", type: "image/png" },
+      ],
+      apple: [{ url: "/icons/apple-touch-icon.png", sizes: "180x180" }],
+    },
+  };
+}
 
 /** Gewählte Darstellung des angemeldeten Benutzers; «system» bzw. abgemeldet → null. */
 async function forcedTheme(): Promise<"light" | "dark" | null> {
@@ -51,14 +66,16 @@ export async function generateViewport(): Promise<Viewport> {
 }
 
 export default async function RootLayout({ children }: { children: React.ReactNode }) {
-  const theme = await forcedTheme();
+  const [theme, locale] = await Promise.all([forcedTheme(), requestLocale()]);
   return (
-    <html lang="de-CH" className={`${GeistSans.variable} ${GeistMono.variable}`} data-theme={theme ?? undefined} suppressHydrationWarning>
+    <html lang={INTL_LOCALE[locale]} className={`${GeistSans.variable} ${GeistMono.variable}`} data-theme={theme ?? undefined} suppressHydrationWarning>
       <body>
-        {children}
-        <Toaster />
-        <DialogHost />
-        <ServiceWorkerRegister />
+        <LocaleProvider locale={locale}>
+          {children}
+          <Toaster />
+          <DialogHost />
+          <ServiceWorkerRegister />
+        </LocaleProvider>
       </body>
     </html>
   );

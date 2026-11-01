@@ -7,18 +7,22 @@ import { Alert, Button, Card } from "@/components/ui";
 import { Spinner } from "@/components/ui/form";
 import type { ActionResult } from "@/lib/action-result";
 import { isNetworkError } from "@/lib/ui-feedback";
+import { getT, type Locale } from "@/lib/i18n/core";
+import { localizeMessage } from "@/modules/billing/ui/i18n";
 import { ensureMyFeedAction, ensureTenantFeedAction, regenerateMyFeedAction, regenerateTenantFeedAction, type FeedLink } from "../actions";
 import { webcalUrl } from "../types";
 import { CopyField } from "./copy-field";
 
-function FeedBlock({ title, text, initialUrl, ensure, regenerate, regenerateLabel }: {
+function FeedBlock({ title, text, initialUrl, ensure, regenerate, regenerateLabel, locale = "de" }: {
   title: string;
   text: string;
   initialUrl: string | null;
   ensure: () => Promise<ActionResult<FeedLink>>;
   regenerate?: () => Promise<ActionResult<FeedLink>>;
   regenerateLabel?: string;
+  locale?: Locale;
 }) {
+  const t = getT(locale);
   const [url, setUrl] = useState(initialUrl);
   const [pending, start] = useTransition();
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
@@ -30,13 +34,13 @@ function FeedBlock({ title, text, initialUrl, ensure, regenerate, regenerateLabe
       try {
         r = await fn();
       } catch (err) {
-        setMsg({ ok: false, text: isNetworkError(err) ? "Keine Verbindung. Bitte versuche es nochmals, sobald du wieder online bist." : "Das hat nicht geklappt. Bitte nochmals versuchen." });
+        setMsg({ ok: false, text: isNetworkError(err) ? t("money.err.offline") : t("money.err.generic") });
         return;
       }
       if (r.ok && r.data) {
         setUrl(r.data.url);
-        if (r.message) setMsg({ ok: true, text: r.message });
-      } else if (!r.ok) setMsg({ ok: false, text: r.error });
+        if (r.message) setMsg({ ok: true, text: localizeMessage(r.message, locale) });
+      } else if (!r.ok) setMsg({ ok: false, text: localizeMessage(r.error, locale) });
     });
   }
 
@@ -49,19 +53,19 @@ function FeedBlock({ title, text, initialUrl, ensure, regenerate, regenerateLabe
       {url ? (
         <>
           <a href={webcalUrl(url)} className="press flex h-11 items-center justify-center gap-2 rounded-control bg-ink px-4 text-[15px] font-medium text-bg hover:opacity-90">
-            <CalendarPlus className="h-4 w-4" /> In Kalender-App abonnieren
+            <CalendarPlus className="h-4 w-4" /> {t("money.cal.subscribeApp")}
           </a>
-          <CopyField value={url} label={`${title} – Link`} />
+          <CopyField value={url} label={t("money.cal.linkLabel", { title })} locale={locale} />
           {regenerate ? (
             <Button type="button" variant="ghost" size="sm" disabled={pending}
-              onClick={async () => { if ((await confirmDialog({ title: "Neuen Link erzeugen?", message: "Der bisherige Link funktioniert danach nicht mehr.", tone: "danger", confirmLabel: "Neu erzeugen" }))) run(regenerate); }}>
-              {pending ? <Spinner /> : <RefreshCw className="h-4 w-4" />} {regenerateLabel ?? "Neuen Link erzeugen"}
+              onClick={async () => { if ((await confirmDialog({ title: t("money.cal.regenTitle"), message: t("money.cal.regenMessage"), tone: "danger", confirmLabel: t("money.cal.regenConfirm") }))) run(regenerate); }}>
+              {pending ? <Spinner /> : <RefreshCw className="h-4 w-4" />} {regenerateLabel ?? t("money.cal.regenButton")}
             </Button>
           ) : null}
         </>
       ) : (
         <Button type="button" variant="secondary" className="w-full" disabled={pending} onClick={() => run(ensure)}>
-          {pending ? <Spinner /> : <Rss className="h-4 w-4" />} Link erstellen
+          {pending ? <Spinner /> : <Rss className="h-4 w-4" />} {t("money.cal.create")}
         </Button>
       )}
       {msg ? <Alert tone={msg.ok ? "ok" : "error"}>{msg.text}</Alert> : null}
@@ -70,16 +74,16 @@ function FeedBlock({ title, text, initialUrl, ensure, regenerate, regenerateLabe
 }
 
 /** «Kalender abonnieren» auf /events: Vereinskalender und persönliche Termine. */
-export function CalendarSubscribe({ tenantName, tenantFeedUrl, userFeedUrl }: { tenantName: string; tenantFeedUrl: string | null; userFeedUrl: string | null }) {
+export function CalendarSubscribe({ tenantName, tenantFeedUrl, userFeedUrl, locale = "de" }: { tenantName: string; tenantFeedUrl: string | null; userFeedUrl: string | null; locale?: Locale }) {
+  const t = getT(locale);
   return (
     <Card className="p-4 space-y-5">
       <p className="text-sm text-ink-2">
-        Abonniere die Termine in Google Kalender, Apple Kalender oder Outlook. Neue und geänderte Anlässe erscheinen dann automatisch.
-        Der Link ist geheim: Wer ihn kennt, sieht die Termine.
+        {t("money.cal.intro")}
       </p>
-      <FeedBlock title={`Alle Anlässe von ${tenantName}`} text="Der ganze Vereinskalender, inklusive Absagen." initialUrl={tenantFeedUrl} ensure={ensureTenantFeedAction} />
+      <FeedBlock locale={locale} title={t("money.cal.tenantTitle", { club: tenantName })} text={t("money.cal.tenantText")} initialUrl={tenantFeedUrl} ensure={ensureTenantFeedAction} />
       <div className="border-t border-line pt-5">
-        <FeedBlock title="Meine Termine" text="Anlässe, für die du zugesagt oder «vielleicht» gesagt hast, und deine Reservationen – aus allen deinen Vereinen."
+        <FeedBlock locale={locale} title={t("money.cal.myTitle")} text={t("money.cal.myText")}
           initialUrl={userFeedUrl} ensure={ensureMyFeedAction} regenerate={regenerateMyFeedAction} />
       </div>
     </Card>

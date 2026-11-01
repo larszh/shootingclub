@@ -4,12 +4,13 @@ import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Alert, Card } from "@/components/ui";
 import { toast } from "@/lib/ui-feedback";
+import type { Locale } from "@/lib/i18n/core";
 import { startDirectChatAction } from "../actions";
 import type { PickerMember } from "../queries";
 import { MemberPicker } from "./member-picker";
 
 /** «Neue Nachricht»: Mitglied wählen, bestehende 1:1-Unterhaltung öffnen oder neu anlegen. */
-export function NewDirectPicker({ members }: { members: PickerMember[] }) {
+export function NewDirectPicker({ members, locale = "de" }: { members: PickerMember[]; locale?: Locale }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
@@ -29,7 +30,7 @@ export function NewDirectPicker({ members }: { members: PickerMember[] }) {
   return (
     <Card className="p-4">
       {error ? <Alert className="mb-3">{error}</Alert> : null}
-      <MemberPicker members={members} onPick={pick} disabled={pending} />
+      <MemberPicker members={members} onPick={pick} disabled={pending} locale={locale} />
     </Card>
   );
 }
