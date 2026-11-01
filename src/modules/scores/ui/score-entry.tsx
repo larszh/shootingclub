@@ -38,6 +38,12 @@ function tap() {
   }
 }
 
+/** Gespeichertes Total einer Serie, die ohne Einzelschüsse importiert wurde (sonst null). */
+function importedTotal(results: Array<{ stageIndex: number; shots: number[]; total: number }>, stageIndex: number): number | null {
+  const r = results.find((x) => x.stageIndex === stageIndex);
+  return r && r.total > 0 && r.shots.length === 0 ? r.total : null;
+}
+
 /**
  * Resultat-Eingabe, offline-fähig: Jeder Schuss wird sofort in IndexedDB gespeichert und
  * über die Outbox an den Server übertragen (sofort, wenn online; sonst bei Wiederverbindung).
@@ -358,10 +364,16 @@ export function ScoreEntry({ match, storageKey, tenantId, userId, persistView = 
   const totals = useMemo(
     () =>
       Object.fromEntries(
-        match.participants.map((p) => [p.id, { total: Math.round((shots[p.id] ?? []).reduce((a, arr) => a + stageTotal(arr), 0) * 10) / 10, stages: (shots[p.id] ?? []).map(stageTotal) }]),
+        match.participants.map((p) => {
+          // Nur mit Total importierte Serien (keine Einzelschüsse): gespeichertes Total anzeigen.
+          const list = (shots[p.id] ?? []).map((arr, i) => (arr.length ? stageTotal(arr) : (importedTotal(p.results, i) ?? stageTotal(arr))));
+          return [p.id, { total: Math.round(list.reduce((a, v) => a + v, 0) * 10) / 10, stages: list }];
+        }),
       ),
     [shots, match.participants],
   );
+  /** Serien nur mit Total (Import ohne Einzelschüsse) dürfen nicht wieder geöffnet werden: die nächste Eingabe würde das Total überschreiben. */
+  const hasTotalsOnly = useMemo(() => match.participants.some((p) => p.results.some((r) => r.total > 0 && r.shots.length === 0)), [match.participants]);
   const leader = match.participants.reduce<{ id: string; total: number } | null>((best, p) => {
     const t = totals[p.id]!.total;
     return !best || t > best.total ? { id: p.id, total: t } : best;
@@ -449,7 +461,7 @@ export function ScoreEntry({ match, storageKey, tenantId, userId, persistView = 
       <Card className="animate-rise [animation-delay:120ms] p-4">
         <div className="flex items-center justify-between mb-3">
           <span className="text-sm text-ink-3">{participant.name} · Schuss {Math.min(currentFired.length + 1, stage.shots)} von {stage.shots}</span>
-          <span className="text-sm font-semibold tabular-nums">{formatScore(stageTotal(current), decimal)}{hits ? ` / ${stage.shots}` : ` / ${stage.shots * (zonesMode ? topValue : stage.maxPerShot)}`}</span>
+          <span className="text-sm font-semibold tabular-nums">{formatScore(current.length ? stageTotal(current) : (importedTotal(participant.results, activeS) ?? stageTotal(current)), decimal)}{hits ? ` / ${stage.shots}` : ` / ${stage.shots * (zonesMode ? topValue : stage.maxPerShot)}`}</span>
         </div>
         <div className="flex flex-wrap gap-1.5 min-h-10">
           {Array.from({ length: stage.shots }, (_, i) => {
@@ -548,7 +560,9 @@ export function ScoreEntry({ match, storageKey, tenantId, userId, persistView = 
 
       {/* Aktionen */}
       <div className="animate-rise [animation-delay:240ms] flex flex-col gap-2 pt-2">
-        {match.canEdit ? (
+        {match.canEdit && finished && hasTotalsOnly ? (
+          <p className="text-center text-xs text-ink-3">Dieser Durchgang enthält Serien, die nur mit Total importiert wurden, und kann nicht wieder geöffnet werden.</p>
+        ) : match.canEdit ? (
           <Button type="button" variant={finished ? "secondary" : "primary"} size="lg" disabled={pending} onClick={toggleStatus}>
             {finished ? <><Unlock className="h-4 w-4" /> Wieder öffnen</> : <><Lock className="h-4 w-4" /> Durchgang abschliessen</>}
           </Button>

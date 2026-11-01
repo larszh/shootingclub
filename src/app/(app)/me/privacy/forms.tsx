@@ -14,7 +14,7 @@ export function ExportCard() {
   return (
     <Card className="animate-rise p-4">
       <p className="text-sm text-ink-2">
-        Du erhältst eine ZIP-Datei mit allen Daten, die Standchef zu dir speichert: Profil, Mitgliedschaften, Resultate, Reservationen, Rechnungen, Anmeldungen, deine Chat-Nachrichten und die Liste deiner Dateien.
+        Du erhältst eine ZIP-Datei mit allen Daten, die Standchef zu dir speichert: Profil, Mitgliedschaften, Resultate, Reservationen, Rechnungen (Beiträge, Reservationen, Munition), Anmeldungen zu Anlässen, deine Chat-Nachrichten, die Liste deiner Dateien, Standbesuche und betreute Gäste, akzeptierte Standordnungen, Qualifikationen, Kurse, Waffenausleihen, Helfereinsätze und Arbeitsstunden, gemeldete Vorfälle, Standdienste und deine Konsumationen in der Schützenstube.
       </p>
       <a href="/api/export/me" download className={cn(buttonClasses("secondary", "md"), "mt-3 w-full sm:w-auto")}>
         <Download className="h-4 w-4" /> Meine Daten herunterladen

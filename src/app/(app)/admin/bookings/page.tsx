@@ -1,7 +1,9 @@
 import type { Metadata } from "next";
 import { CalendarDays, Download, Plus } from "lucide-react";
 import { requirePermission } from "@/lib/tenant";
-import { Button, Card, EmptyState, Input, LinkButton, PageHeader, SectionTitle } from "@/components/ui";
+import { Badge, Button, Card, EmptyState, Input, LinkButton, PageHeader, SectionTitle } from "@/components/ui";
+import { partnerNameMap } from "@/modules/sharing/queries";
+import { partnerBadge } from "@/modules/sharing/logic";
 import { monthRange } from "@/modules/bookings/calendar";
 import { AdminBookingTabs } from "@/modules/bookings/ui/admin-tabs";
 import { bookingStats, listTenantBookings } from "@/modules/bookings/queries";
@@ -23,6 +25,7 @@ export default async function AdminBookingsPage() {
     listTenantBookings(ctx.tenant.id, { limit: 300 }).then((all) => all.filter((b) => b.invoice?.status === "OPEN")),
   ]);
   const month = monthRange(todayZurich());
+  const partners = await partnerNameMap([...pending, ...upcoming, ...openInvoices].map((b) => b.viaTenantId));
   return (
     <div>
       <PageHeader title="Reservationen" subtitle={ctx.tenant.name} back={{ href: "/me", label: "Mehr" }}
@@ -42,6 +45,7 @@ export default async function AdminBookingsPage() {
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
                   <Link href={`/bookings/${b.id}`} className="font-medium hover:underline">{b.resource.name} · {b.user?.name}</Link>
+                  {partnerBadge(b, partners) ? <div className="mt-0.5"><Badge tone="outline">{partnerBadge(b, partners)}</Badge></div> : null}
                   <div className="text-xs text-ink-3">{formatDateZurich(b.startsAt)} · {formatTimeRange(b.startsAt, b.endsAt)}{personsSuffix(b) ? ` · ${personsSuffix(b)}` : ""} · {b.totalCents ? formatMoney(b.totalCents, b.currency) : "gratis"}</div>
                   {b.note ? <div className="text-xs text-ink-3 italic mt-0.5">«{b.note}»</div> : null}
                 </div>
@@ -55,10 +59,10 @@ export default async function AdminBookingsPage() {
       )}
 
       <SectionTitle>Offene Rechnungen</SectionTitle>
-      {openInvoices.length ? <div className="stagger space-y-2.5">{openInvoices.map((b) => <BookingCard key={b.id} b={b} showUser />)}</div> : <p className="text-sm text-ink-3">Keine offenen Rechnungen.</p>}
+      {openInvoices.length ? <div className="stagger space-y-2.5">{openInvoices.map((b) => <BookingCard key={b.id} b={b} showUser partner={partnerBadge(b, partners)} />)}</div> : <p className="text-sm text-ink-3">Keine offenen Rechnungen.</p>}
 
       <SectionTitle action={<Link href="/admin/bookings/calendar" className="inline-flex items-center gap-1 text-xs text-ink-3 hover:text-ink"><CalendarDays className="h-3.5 w-3.5" /> Kalender</Link>}>Kommende Buchungen</SectionTitle>
-      {upcoming.length ? <div className="stagger space-y-2.5">{upcoming.map((b) => <BookingCard key={b.id} b={b} showUser />)}</div> : <EmptyState title="Nichts geplant" text="Sobald Mitglieder reservieren, erscheint es hier." />}
+      {upcoming.length ? <div className="stagger space-y-2.5">{upcoming.map((b) => <BookingCard key={b.id} b={b} showUser partner={partnerBadge(b, partners)} />)}</div> : <EmptyState title="Nichts geplant" text="Sobald Mitglieder reservieren, erscheint es hier." />}
 
       <SectionTitle>Export</SectionTitle>
       <Card className="animate-rise p-4">

@@ -6,6 +6,7 @@ import {
   CalendarDays,
   CalendarPlus,
   ChevronRight,
+  CreditCard,
   Crosshair,
   HelpCircle,
   MessageCircle,
@@ -270,11 +271,11 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
 
       {/* Offene Rechnungen (Beiträge, Reservationen, Munition) */}
       {invoices && invoices.count > 0 ? (
-        <Link
-          href="/payments"
-          className="press mt-4 block rounded-card focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
-        >
-          <Card className={cn("animate-rise flex items-center gap-3 p-4 transition-colors hover:border-ink/30", invoices.overdue > 0 && "border-danger/50")}>
+        <Card className={cn("animate-rise mt-4 overflow-hidden", invoices.overdue > 0 && "border-danger/50")}>
+          <Link
+            href="/payments"
+            className="press flex items-center gap-3 p-4 transition-colors hover:bg-surface-2 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-accent"
+          >
             <span className={cn("flex h-11 w-11 shrink-0 items-center justify-center rounded-full", invoices.overdue > 0 ? "bg-danger/12 text-danger" : "bg-accent-soft text-accent")}>
               <Receipt className="h-5 w-5" />
             </span>
@@ -291,8 +292,19 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
               </div>
             </div>
             <ArrowRight className="h-4 w-4 shrink-0 text-ink-3" aria-hidden />
-          </Card>
-        </Link>
+          </Link>
+          {invoices.onlinePay ? (
+            <div className="border-t border-line px-4 pb-4 pt-3">
+              <LinkButton href={invoices.onlinePay.href} prefetch={false} className="w-full">
+                <CreditCard className="h-4 w-4" aria-hidden /> Online bezahlen
+              </LinkButton>
+              <p className="mt-1.5 text-center text-xs text-ink-3">
+                {invoices.onlinePay.count > 1 ? `${invoices.onlinePay.count} Beitragsrechnungen · ` : ""}
+                {invoices.onlinePay.methods} über {invoices.onlinePay.provider}
+              </p>
+            </div>
+          ) : null}
+        </Card>
       ) : null}
 
       {/* Ungelesene Chats */}

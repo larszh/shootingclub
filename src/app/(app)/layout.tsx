@@ -55,6 +55,9 @@ export default async function AppLayout({ children }: { children: React.ReactNod
           system: ctx.user.isSuperAdmin,
           live: ctx.can("match.viewAll") || ctx.can("events.manage"),
           weapons: ctx.can("weapons.loan"),
+          scoreImport: ctx.can("match.viewAll") || ctx.can("tenant.programs.manage"),
+          accounting: ctx.can("accounting.export"),
+          kiosk: ctx.can("kiosk.manage"),
         }}
       >
         {ctx.tenant?.deletedAt ? (

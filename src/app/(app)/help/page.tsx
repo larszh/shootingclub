@@ -115,6 +115,51 @@ const ENTRIES: FaqEntry[] = [
     </>,
   ),
   entry(
+    "online-bezahlen",
+    "member",
+    "Kann ich Beiträge online bezahlen (TWINT, Karte)?",
+    "online bezahlen TWINT PostFinance Karte Kreditkarte Payrexx Stripe Worldline SumUp Beitrag Ersatzabgabe Schützenstube Munition",
+    <>
+      <p>Wenn dein Verein einen Zahlungsanbieter eingerichtet hat, steht bei offenen Beitragsrechnungen (Jahresbeitrag, Ersatzabgabe, Schützenstube) der Knopf <strong>«Online bezahlen»</strong> – auf der Startseite, unter <Link href="/payments">Zahlungen</Link> und unter <Link href="/billing">Beiträge</Link>.</p>
+      <ol>
+        <li>«Online bezahlen» tippen und auf der nächsten Seite bestätigen.</li>
+        <li>Auf der Zahlungsseite des Anbieters mit TWINT, PostFinance oder Karte bezahlen (welche Zahlarten es gibt, hängt vom Verein ab).</li>
+        <li>Danach kommst du zurück zu Standchef. Die Rechnung steht nach wenigen Sekunden auf «bezahlt».</li>
+      </ol>
+      <p><strong>Munitionsrechnungen</strong> bezahlst du immer mit der QR-Rechnung – eine Online-Zahlung ist dafür nicht möglich.</p>
+    </>,
+  ),
+  entry(
+    "schuetzenstube",
+    "member",
+    "Wie funktioniert die Schützenstube (Konsumationen aufschreiben)?",
+    "Schützenstube Kiosk Konsumation Getränke aufschreiben Theke bar bezahlen Abrechnung Rechnung Meine Konsumationen",
+    <>
+      <p>An der Theke schreibt das Thekenteam deine Getränke und Snacks auf deinen Namen auf – oder du bezahlst bar. Unter <Link href="/kiosk/me">Meine Konsumationen</Link> siehst du, was noch offen ist und was schon verrechnet wurde.</p>
+      <p>Der Verein rechnet periodisch ab (z.B. monatlich). Du bekommst dann eine Rechnung «Schützenstube …», die du mit der QR-Rechnung oder – falls eingerichtet – online bezahlst.</p>
+    </>,
+  ),
+  entry(
+    "partner-anlagen",
+    "member",
+    "Kann ich die Anlage eines Partnervereins reservieren?",
+    "Partnerverein Partner-Anlage gemeinsame Anlage teilen fremder Verein reservieren buchen Partnertarif",
+    <>
+      <p>Teilt ein anderer Verein eine Anlage mit deinem Verein, erscheint sie unter <Link href="/bookings">Buchen</Link> in der Gruppe «Anlagen von …». Du buchst wie gewohnt; es gelten die Regeln und Öffnungszeiten des anderen Vereins, der Preis mit dem vereinbarten Partnertarif.</p>
+      <p>Die Rechnung stellt der Verein, dem die Anlage gehört (QR-Rechnung, keine Online-Zahlung). Deine Partnerbuchungen siehst du unter «Meine Reservationen», markiert mit «Anlage von …».</p>
+    </>,
+  ),
+  entry(
+    "kalender-abo",
+    "member",
+    "Wie sehe ich Anlässe, Reservationen und Helfereinsätze in meinem Handy-Kalender?",
+    "Kalender abonnieren iCal ics Google Kalender Apple Outlook Abo Anlässe Reservationen Helfereinsätze Kurse",
+    <>
+      <p>Unter <Link href="/events">Anlässe</Link> findest du den Link «Kalender abonnieren». Dein persönlicher Kalender enthält deine Anmeldungen, Reservationen (auch bei Partnervereinen), Helfereinsätze und Kurstage. Abgesagte Termine werden im Kalender als abgesagt markiert.</p>
+      <p>Den Link nicht weitergeben – er ist persönlich.</p>
+    </>,
+  ),
+  entry(
     "chat",
     "member",
     "Wie funktioniert der Chat?",
@@ -226,16 +271,17 @@ const ENTRIES: FaqEntry[] = [
   entry(
     "zahlungsanbieter",
     "admin",
-    "Wie richte ich Zahlungsanbieter (Stripe, Worldline, SumUp) ein?",
-    "Zahlungsanbieter Online-Zahlung Stripe Worldline Saferpay SumUp Kreditkarte Twint API Schlüssel Webhook",
+    "Wie richte ich Online-Zahlung (Payrexx/TWINT, Stripe, Worldline, SumUp) ein?",
+    "Zahlungsanbieter Online-Zahlung Payrexx TWINT PostFinance Stripe Worldline Saferpay SumUp Kreditkarte API Secret Instanz Webhook Beiträge Reservationen",
     <>
       <ol>
-        <li>Modul «Reservationen» unter <Link href="/admin">Verein</Link> einschalten.</li>
-        <li>Unter <Link href="/admin/bookings/payments">Reservationen → Zahlungsanbieter</Link> den Anbieter wählen und die Zugangsdaten aus deinem Händlerkonto eintragen. Sie werden verschlüsselt gespeichert.</li>
-        <li>Bei Stripe die angezeigte Webhook-Adresse im Stripe-Dashboard hinterlegen.</li>
-        <li>In den <Link href="/admin/bookings/settings">Reservations-Einstellungen</Link> «Online-Zahlung» aktivieren.</li>
+        <li>Unter <Link href="/admin/bookings/payments">Reservationen → Zahlungsanbieter</Link> (ohne Modul «Reservationen»: <Link href="/admin/billing/settings">Rechnungsprofil</Link>) den Anbieter wählen und die Zugangsdaten aus deinem Händlerkonto eintragen. Geheimnisse werden verschlüsselt gespeichert und nie wieder angezeigt.</li>
+        <li><strong>Payrexx</strong>: Instanzname (der Teil vor <span className="font-mono">.payrexx.com</span>) und API-Secret eintragen, «Verbindung testen». Im Payrexx-Backend unter Webhooks die angezeigte Adresse <span className="font-mono">/api/payments/payrexx/&lt;Vereins-ID&gt;</span> hinterlegen (Typ Transaktion). Zuschläge für Zahlende ausgeschaltet lassen.</li>
+        <li><strong>Stripe</strong>: die angezeigte Webhook-Adresse im Stripe-Dashboard hinterlegen (Ereignis checkout.session.completed).</li>
+        <li>Für Reservationen: in den <Link href="/admin/bookings/settings">Reservations-Einstellungen</Link> «Online-Zahlung» aktivieren und den Anbieter wählen.</li>
+        <li>Für Beiträge: im <Link href="/admin/billing/settings">Rechnungsprofil</Link> unter «Online-Zahlung für Beiträge» den Anbieter wählen.</li>
       </ol>
-      <p>Das Geld fliesst direkt auf das Konto des Vereins. Ohne Anbieter funktioniert die Zahlung per Rechnung mit QR-Code.</p>
+      <p>Das Geld fliesst direkt auf das Konto des Vereins; die Anbieter verrechnen dafür Gebühren. Munitionsrechnungen sind nie online bezahlbar (nur QR-Rechnung). Bitte vor dem Start eine Testzahlung machen.</p>
     </>,
   ),
   entry(
@@ -451,12 +497,88 @@ const ENTRIES: FaqEntry[] = [
     </>,
   ),
   entry(
+    "buchhaltung",
+    "admin",
+    "Wie übernehme ich die Buchungen in Banana oder bexio?",
+    "Buchhaltung Export Banana bexio Kontenplan Konten Journal CSV Debitoren Bank Jahresabschluss Quartal",
+    <>
+      <ol>
+        <li>Unter <Link href="/admin/accounting">Buchhaltung</Link> einmal den Kontenplan prüfen (Vorschlag nach KMU-Kontenrahmen, z.B. 1020 Bank, 1100 Debitoren, 3000 Beiträge).</li>
+        <li>Zeitraum wählen (Jahr, Quartal, Monat) und die Vorschau kontrollieren.</li>
+        <li><strong>Banana</strong>: «Banana Buchhaltung» herunterladen (.txt, Spalten Date/Doc/Description/AccountDebit/AccountCredit/Amount, Datum JJJJ-MM-TT), in Banana «Aktionen → In Buchhaltung importieren → Buchungen», Format «Textdatei mit Spaltenüberschriften» wählen; die Konten müssen im Banana-Kontenplan existieren.</li>
+        <li><strong>bexio</strong>: «bexio (CSV für manuellen Import)» herunterladen und im Buchungsimport von bexio die Spalten zuordnen.</li>
+      </ol>
+      <p>Am besten nur abgeschlossene Zeiträume exportieren. Reservationen, die «Bar / vor Ort» bezahlt wurden, sind automatisch enthalten (Bank an Reservationen). Von Hand buchen müsst ihr nur noch die Gebühren der Zahlungsanbieter und die Barverkäufe der Schützenstube.</p>
+    </>,
+  ),
+  entry(
+    "website-widgets",
+    "admin",
+    "Wie zeige ich Kalender, Schiesszeiten oder Ranglisten auf unserer Vereinswebsite?",
+    "Website Widget einbetten iframe Homepage Kalender Schiesszeiten Rangliste Jahresmeisterschaft WordPress Jimdo Code",
+    <>
+      <ol>
+        <li>Unter <Link href="/admin/embed">Website-Widgets</Link> die Widgets einschalten.</li>
+        <li>Widget wählen (Kalender, Zeiten, Rangliste, Meisterschaft), Optionen einstellen und den Code kopieren.</li>
+        <li>Den Code auf der Website als HTML-Block einfügen. Das kleine Skript (optional) passt die Höhe automatisch an.</li>
+      </ol>
+      <p>Ranglisten zeigen Namen gekürzt («Anna M.») und nur, was du freigibst. Mit «Neu erzeugen» werden alle bisherigen Codes ungültig.</p>
+    </>,
+  ),
+  entry(
+    "resultat-import",
+    "admin",
+    "Wie importiere ich Resultate aus Meyton, SIUS oder ShotMarker?",
+    "Resultate importieren Import elektronische Trefferanzeige Meyton SIUS ShotMarker CSV Export Datei Zuordnung",
+    <>
+      <ol>
+        <li>Unter <Link href="/scores/import">Resultat-Import</Link> die Exportdatei der Trefferanzeige hochladen.</li>
+        <li>Vorlage und Programm wählen, die Spaltenzuordnung in der Vorschau prüfen.</li>
+        <li>Schützen den Mitgliedern zuordnen (oder als Gast übernehmen) und importieren.</li>
+      </ol>
+      <p>Die Vorlagen für Meyton, SIUS und ShotMarker sind Vorschläge – die Spalten unterscheiden sich je nach Version. Bitte mit einer eigenen Exportdatei prüfen. Dieselbe Datei lässt sich nur einmal importieren.</p>
+    </>,
+  ),
+  entry(
+    "schuetzenstube-theke",
+    "admin",
+    "Wie erfasse ich Konsumationen an der Theke der Schützenstube?",
+    "Schützenstube Theke Kiosk erfassen aufschreiben bar Gast offline rückgängig Tablet",
+    <>
+      <p>Unter <Link href="/kiosk">Schützenstube</Link> Mitglied wählen (oder «Gast bar»), Produkte antippen und «Aufschreiben» oder «Bar erfassen». Der letzte Eintrag lässt sich 2 Minuten lang rückgängig machen.</p>
+      <p>Ohne Internet werden Einträge auf dem Gerät zwischengespeichert und automatisch gesendet, sobald wieder Verbindung besteht.</p>
+    </>,
+  ),
+  entry(
+    "schuetzenstube-admin",
+    "admin",
+    "Wie rechne ich die Schützenstube ab?",
+    "Schützenstube Abrechnung Sortiment Preise Rechnung Kasse Tagesumsatz Storno Export",
+    <>
+      <p>Unter <Link href="/admin/kiosk">Schützenstube verwalten</Link> pflegst du das Sortiment. Unter «Abrechnung» Zeitraum wählen, Vorschau prüfen und Rechnungen erstellen: jedes Mitglied erhält eine Rechnung «Schützenstube …» mit QR-Code. Einträge werden nie doppelt verrechnet. «Kasse» zeigt die Barverkäufe pro Tag.</p>
+      <p>Für die Abrechnung braucht es das Modul «Mitgliederbeiträge» und ein ausgefülltes Rechnungsprofil.</p>
+    </>,
+  ),
+  entry(
+    "partner-teilen",
+    "admin",
+    "Wie teile ich eine Anlage mit einem Partnerverein?",
+    "Anlage teilen Partnerverein gemeinsame Anlage Partnertarif Preisfaktor Beitrittscode Slug Abrechnung",
+    <>
+      <ol>
+        <li>Unter <Link href="/admin/bookings/resources">Reservationen → Anlagen</Link> die Anlage öffnen und «Mit Partnerverein teilen» wählen.</li>
+        <li>Partnerverein über Kurzname oder Beitrittscode suchen, Buchen erlauben und den Partnertarif in % festlegen.</li>
+      </ol>
+      <p>Mitglieder des Partnervereins buchen nach deinen Regeln; die Buchungen und Rechnungen liegen bei deinem Verein. Unter <Link href="/admin/bookings/partners">Partner-Anlagen</Link> siehst du Stunden und Beträge pro Partnerverein (mit CSV).</p>
+    </>,
+  ),
+  entry(
     "module",
     "admin",
     "Welche Module gibt es und wie schalte ich sie ein?",
-    "Module einschalten ausschalten Punkteerfassung Zielscheiben Anlässe Reservationen Mitgliederbeiträge Dateiablage Chat Munition Bundesübungen Standbetrieb Vereinswaffen Helfereinsätze Kurse Jahresmeisterschaft",
+    "Module einschalten ausschalten Punkteerfassung Zielscheiben Anlässe Reservationen Mitgliederbeiträge Dateiablage Chat Munition Bundesübungen Standbetrieb Vereinswaffen Helfereinsätze Kurse Jahresmeisterschaft Schützenstube",
     <>
-      <p>Unter <Link href="/admin">Verein</Link> schaltest du Module pro Verein ein oder aus: Punkteerfassung, Zielscheiben, Anlässe & News, Reservationen, Mitgliederbeiträge, Dateiablage, Chat, Munition, Bundesübungen, Standbetrieb, Vereinswaffen, Helfereinsätze, Kurse und Jahresmeisterschaft. Ausgeschaltete Module verschwinden für alle Mitglieder aus dem Menü – Daten bleiben erhalten.</p>
+      <p>Unter <Link href="/admin">Verein</Link> schaltest du Module pro Verein ein oder aus: Punkteerfassung, Zielscheiben, Anlässe & News, Reservationen, Mitgliederbeiträge, Dateiablage, Chat, Munition, Bundesübungen, Standbetrieb, Vereinswaffen, Helfereinsätze, Kurse, Jahresmeisterschaft und Schützenstube. Ausgeschaltete Module verschwinden für alle Mitglieder aus dem Menü – Daten bleiben erhalten.</p>
       <p>Mobil liegen weniger genutzte Module unter «Mehr», auf dem Computer in der Seitenleiste unter «Schiessen» und «Verein».</p>
     </>,
   ),
@@ -472,6 +594,10 @@ const ENTRY_PERMISSION: Partial<Record<string, Permission>> = {
   vereinswaffen: "weapons.loan",
   "kurse-admin": "courses.manage",
   "live-rangliste": "match.viewAll",
+  "resultat-import": "match.viewAll",
+  "schuetzenstube-theke": "kiosk.sell",
+  "schuetzenstube-admin": "kiosk.manage",
+  buchhaltung: "accounting.export",
 };
 
 export default async function HelpPage() {

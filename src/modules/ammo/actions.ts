@@ -9,6 +9,7 @@ import { requireAmmo, requireAmmoAdmin } from "./guard";
 import { AmmoError, createOrder, issueOrder } from "./service";
 import { bookStock } from "./stock-service";
 import { audit } from "@/lib/audit";
+import { recordAccountingEvent } from "@/modules/accounting/events";
 import { orderLinesSchema, orderNoteSchema, productSchema, settingsSchema, type OrderLineInput } from "./types";
 
 const revalidate = () => {
@@ -276,8 +277,10 @@ export async function cancelOrderAction(id: string, opts?: { restock?: boolean }
   const ctx = await requireAmmoAdmin();
   if (!idSchema.safeParse(id).success) return fail("Ungültige Anfrage");
   const tenantId = ctx.tenant.id;
+  let invoiceCancelled = false;
   try {
     const msg = await db.$transaction(async (tx) => {
+      invoiceCancelled = false;
       const order = await tx.ammoOrder.findFirst({ where: { id, tenantId }, include: { items: true } });
       if (!order) throw new AmmoError("Bestellung nicht gefunden.");
       if (order.status === "CANCELLED") throw new AmmoError("Die Bestellung ist bereits storniert.");
@@ -289,6 +292,7 @@ export async function cancelOrderAction(id: string, opts?: { restock?: boolean }
       if (order.paymentStatus === "PAID") throw new AmmoError("Die Rechnung ist bereits bezahlt. Zuerst als unbezahlt markieren.");
       const res = await tx.ammoOrder.updateMany({ where: { id, tenantId, status: "ISSUED" }, data: { status: "CANCELLED", paymentStatus: "CANCELLED" } });
       if (res.count === 0) throw new AmmoError("Die Bestellung wurde inzwischen bearbeitet.");
+      invoiceCancelled = Boolean(order.invoiceNumber);
       if (opts?.restock) {
         for (const it of order.items) {
           if (!it.productId) continue;
@@ -303,6 +307,9 @@ export async function cancelOrderAction(id: string, opts?: { restock?: boolean }
       }
       return "Bestellung und Rechnung storniert.";
     });
+    if (invoiceCancelled) {
+      await recordAccountingEvent({ tenantId, kind: "cancel", entity: "AmmoOrder", entityId: id, actorId: ctx.user.id, actorName: ctx.user.name });
+    }
     revalidate();
     return ok(undefined, msg);
   } catch (e) {
@@ -333,6 +340,9 @@ export async function setPaymentStatusAction(id: string, status: "UNPAID" | "PAI
       ...(n !== undefined ? { paymentNote: n || null } : {}),
     },
   });
+  if (parsed.data.status === "CANCELLED" && order.paymentStatus !== "CANCELLED") {
+    await recordAccountingEvent({ tenantId: ctx.tenant.id, kind: "cancel", entity: "AmmoOrder", entityId: id, actorId: ctx.user.id, actorName: ctx.user.name });
+  }
   revalidate();
   return ok(undefined, parsed.data.status === "PAID" ? "Als bezahlt markiert." : parsed.data.status === "UNPAID" ? "Als unbezahlt markiert." : "Rechnung storniert.");
 }

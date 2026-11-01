@@ -8,7 +8,11 @@ import type { BookingRow } from "@/modules/bookings/queries";
 import { personsSuffix } from "@/modules/bookings/pricing";
 import { ResourceIcon } from "./resource-icon";
 
-export function BookingCard({ b, showUser }: { b: BookingRow; showUser?: boolean }) {
+/**
+ * Karte einer Buchung. `partner`: Abzeichen für gemeinsame Anlagen, z.B. «Partner: SG Muster» in der
+ * Verwaltung des Eigentümers oder «Anlage von SV Beispiel» beim Mitglied des Partnervereins.
+ */
+export function BookingCard({ b, showUser, partner }: { b: Pick<BookingRow, "id" | "status" | "paymentStatus" | "persons" | "isFlatRate" | "resource" | "user" | "startsAt" | "endsAt" | "totalCents" | "currency">; showUser?: boolean; partner?: string | null }) {
   const st = BOOKING_STATUS[b.status] ?? { label: b.status, tone: "neutral" as const };
   const ps = paymentStatusView(b);
   const inactive = b.status === "CANCELLED" || b.status === "REJECTED";
@@ -28,7 +32,7 @@ export function BookingCard({ b, showUser }: { b: BookingRow; showUser?: boolean
           <div className="min-w-0 flex-1">
             <div className="font-medium truncate">{b.resource.name}{showUser && b.user ? <span className="text-ink-3 font-normal"> · {b.user.name}</span> : null}</div>
             <div className="text-xs text-ink-3">{formatDateZurich(b.startsAt)} · <span className="tabular-nums">{formatTimeRange(b.startsAt, b.endsAt)}</span>{persons ? ` · ${persons}` : ""}</div>
-            <div className="mt-1.5 flex flex-wrap gap-1"><Badge tone={st.tone}>{st.label}</Badge>{b.totalCents > 0 && !ps.void ? <Badge tone={ps.tone}>{ps.label}</Badge> : null}</div>
+            <div className="mt-1.5 flex flex-wrap gap-1"><Badge tone={st.tone}>{st.label}</Badge>{b.totalCents > 0 && !ps.void ? <Badge tone={ps.tone}>{ps.label}</Badge> : null}{partner ? <Badge tone="outline" className="max-w-full truncate">{partner}</Badge> : null}</div>
           </div>
           <div className="text-right shrink-0 text-base font-semibold tabular-nums">{b.totalCents ? formatMoney(b.totalCents, b.currency) : "gratis"}</div>
         </div>

@@ -1,10 +1,13 @@
 import "server-only";
 import { db } from "@/lib/db";
 import { can } from "@/lib/permissions";
-import { buildIcs, bookingUid, eventUid, type IcsEvent } from "./ics";
+import { MODULES, type ModuleKey } from "@/lib/modules";
+import { eventUid, bookingUid } from "./ics";
+import { buildFeedIcs, keepInFeed, parseKindFilter, type FeedEvent } from "@/modules/embed/icalendar";
 import { personsSuffix } from "@/modules/bookings/pricing";
+import { shiftUid } from "@/modules/shifts/service";
 import { enabledEventTenantIds, isEventsModuleEnabled } from "./queries";
-import { kindMeta } from "./types";
+import { EVENT_KINDS, kindMeta } from "./types";
 
 const TOKEN_RE = /^[A-Za-z0-9_-]{32,64}$/;
 
@@ -14,8 +17,20 @@ export function parseFeedToken(raw: string) {
   return TOKEN_RE.test(t) ? t : null;
 }
 
-function feedWindowStart() {
-  return new Date(Date.now() - 180 * 86_400_000);
+/** «?kind=TRAINING,COMPETITION» für den Vereins-Feed; unbekannte Werte werden ignoriert. */
+export function parseFeedKinds(raw: string | null | undefined) {
+  return parseKindFilter(raw, EVENT_KINDS);
+}
+
+const DAY = 86_400_000;
+
+function feedWindowStart(now: Date) {
+  return new Date(now.getTime() - 180 * DAY);
+}
+
+/** Absagen bleiben 30 Tage im Feed (STATUS:CANCELLED), damit Kalender-Apps sie entfernen bzw. markieren. */
+function cancelledSince(now: Date) {
+  return new Date(now.getTime() - 30 * DAY);
 }
 
 type EventRow = {
@@ -23,7 +38,7 @@ type EventRow = {
   location: string | null; isCancelled: boolean; createdAt: Date; updatedAt: Date;
 };
 
-function toIcsEvent(e: EventRow, baseUrl: string, opts?: { tentative?: boolean; prefix?: string }): IcsEvent {
+function toFeedEvent(e: EventRow, baseUrl: string, opts?: { tentative?: boolean; prefix?: string }): FeedEvent {
   return {
     uid: eventUid(e.id),
     summary: (e.isCancelled ? "Abgesagt: " : "") + (opts?.prefix ? `${opts.prefix} · ` : "") + e.title,
@@ -35,73 +50,205 @@ function toIcsEvent(e: EventRow, baseUrl: string, opts?: { tentative?: boolean; 
     allDay: e.allDay,
     status: e.isCancelled ? "CANCELLED" : opts?.tentative ? "TENTATIVE" : "CONFIRMED",
     categories: [kindMeta(e.kind).label],
-    stamp: e.updatedAt,
+    updatedAt: e.updatedAt,
     created: e.createdAt,
   };
 }
 
 const eventSelect = { id: true, title: true, description: true, kind: true, startsAt: true, endsAt: true, allDay: true, location: true, isCancelled: true, createdAt: true, updatedAt: true } as const;
 
-/** Vereins-Feed: alle Anlässe (abgesagte mit STATUS:CANCELLED). null = unbekannter Token. */
-export async function buildTenantFeed(token: string, baseUrl: string) {
+/** Ist ein Modul für die Tenants aktiv? (Standard aus der Modul-Registry, sonst TenantModule) */
+async function enabledTenantIds(tenantIds: string[], key: ModuleKey) {
+  if (!tenantIds.length) return [];
+  const rows = await db.tenantModule.findMany({ where: { tenantId: { in: tenantIds }, moduleKey: key }, select: { tenantId: true, enabled: true } });
+  const byTenant = new Map(rows.map((r) => [r.tenantId, r.enabled]));
+  const def = MODULES.find((m) => m.key === key)?.defaultEnabled ?? false;
+  return tenantIds.filter((id) => byTenant.get(id) ?? def);
+}
+
+/** Vereins-Feed: alle Anlässe (Absagen 30 Tage mit STATUS:CANCELLED), optional nach Art gefiltert. null = unbekannter Token. */
+export async function buildTenantFeed(token: string, baseUrl: string, opts?: { kinds?: string[] }) {
   // Gelöschte Vereine (in der Löschfrist) liefern keinen Feed mehr (404).
   const tenant = await db.tenant.findFirst({ where: { calendarToken: token, deletedAt: null }, select: { id: true, name: true, slug: true } });
   if (!tenant) return null;
   if (!(await isEventsModuleEnabled(tenant.id))) return null;
+  const now = new Date();
+  const kinds = opts?.kinds ?? [];
   const events = await db.event.findMany({
-    where: { tenantId: tenant.id, startsAt: { gte: feedWindowStart() } },
+    where: {
+      tenantId: tenant.id,
+      startsAt: { gte: feedWindowStart(now) },
+      ...(kinds.length ? { kind: { in: kinds } } : {}),
+      OR: [{ isCancelled: false }, { updatedAt: { gte: cancelledSince(now) } }],
+    },
     orderBy: { startsAt: "asc" },
     take: 1000,
     select: eventSelect,
   });
-  const ics = buildIcs({ name: `${tenant.name} – Anlässe`, description: `Vereinskalender ${tenant.name} (Standchef)`, events: events.map((e) => toIcsEvent(e, baseUrl)) });
+  const kindLabel = kinds.length ? ` (${kinds.map((k) => kindMeta(k).plural).join(", ")})` : "";
+  const ics = buildFeedIcs({
+    name: `${tenant.name} – Anlässe${kindLabel}`,
+    description: `Vereinskalender ${tenant.name} (Standchef)`,
+    events: events.filter((e) => keepInFeed(e, now)).map((e) => toFeedEvent(e, baseUrl)),
+  });
   return { ics, filename: `${tenant.slug}-anlaesse.ics` };
 }
 
-/** Persönlicher Feed: Zusagen/Vielleicht aus allen Vereinen + eigene Reservationen. */
+/**
+ * Persönlicher Feed: Zusagen/Vielleicht aus allen Vereinen, eigene Reservationen,
+ * Helfereinsätze (Modul «shifts») und Kurstage (Modul «courses», als Teilnehmer/in oder Leitung).
+ */
 export async function buildUserFeed(token: string, baseUrl: string) {
-  const user = await db.user.findUnique({ where: { calendarToken: token }, select: { id: true, name: true, memberships: { where: { status: { not: "LEFT" }, tenant: { deletedAt: null } }, select: { tenantId: true, tenant: { select: { name: true } } } } } });
-  if (!user) return null;
-  const tenantIds = await enabledEventTenantIds(user.memberships.map((m) => m.tenantId));
+  const user = await db.user.findUnique({
+    where: { calendarToken: token },
+    select: { id: true, name: true, deletedAt: true, memberships: { where: { status: { not: "LEFT" }, tenant: { deletedAt: null } }, select: { tenantId: true, tenant: { select: { name: true } } } } },
+  });
+  if (!user || user.deletedAt) return null;
+  const allTenantIds = user.memberships.map((m) => m.tenantId);
+  const [eventTenantIds, shiftTenantIds, courseTenantIds] = await Promise.all([
+    enabledEventTenantIds(allTenantIds),
+    enabledTenantIds(allTenantIds, "shifts"),
+    enabledTenantIds(allTenantIds, "courses"),
+  ]);
   const multi = user.memberships.length > 1;
   const tenantName = new Map(user.memberships.map((m) => [m.tenantId, m.tenant.name]));
-  const since = feedWindowStart();
+  const prefixOf = (tenantId: string) => (multi ? tenantName.get(tenantId) : undefined);
+  const now = new Date();
+  const since = feedWindowStart(now);
+  const cancelledFrom = cancelledSince(now);
 
-  const [rsvps, bookings] = await Promise.all([
-    tenantIds.length
+  const [rsvps, bookings, shifts, sessions] = await Promise.all([
+    eventTenantIds.length
       ? db.eventRsvp.findMany({
-          where: { userId: user.id, status: { in: ["YES", "MAYBE"] }, event: { tenantId: { in: tenantIds }, startsAt: { gte: since } } },
+          where: {
+            userId: user.id,
+            status: { in: ["YES", "MAYBE"] },
+            event: { tenantId: { in: eventTenantIds }, startsAt: { gte: since }, OR: [{ isCancelled: false }, { updatedAt: { gte: cancelledFrom } }] },
+          },
           select: { status: true, event: { select: { ...eventSelect, tenantId: true } } },
           take: 1000,
         })
       : Promise.resolve([]),
     db.booking.findMany({
-      where: { userId: user.id, status: { in: ["CONFIRMED", "PENDING"] }, startsAt: { gte: since }, tenant: { deletedAt: null } },
-      select: { id: true, startsAt: true, endsAt: true, status: true, note: true, persons: true, isFlatRate: true, createdAt: true, updatedAt: true, tenantId: true, resource: { select: { name: true } }, tenant: { select: { name: true } } },
+      where: {
+        userId: user.id,
+        startsAt: { gte: since },
+        tenant: { deletedAt: null },
+        // Abgesagte/abgelehnte bleiben 30 Tage (STATUS:CANCELLED), damit eine früher «unbestätigt» gezeigte Reservation verschwindet.
+        OR: [
+          { status: { in: ["CONFIRMED", "PENDING"] } },
+          { status: { in: ["CANCELLED", "REJECTED"] }, cancelledAt: { gte: cancelledFrom } },
+          { status: { in: ["CANCELLED", "REJECTED"] }, cancelledAt: null, updatedAt: { gte: cancelledFrom } },
+        ],
+      },
+      select: { id: true, startsAt: true, endsAt: true, status: true, cancelledAt: true, note: true, persons: true, isFlatRate: true, createdAt: true, updatedAt: true, tenantId: true, resource: { select: { name: true } }, tenant: { select: { name: true } } },
       orderBy: { startsAt: "asc" },
       take: 1000,
     }),
+    shiftTenantIds.length
+      ? db.shiftAssignment.findMany({
+          where: { userId: user.id, status: { in: ["ASSIGNED", "DONE"] }, shift: { tenantId: { in: shiftTenantIds }, startsAt: { gte: since } } },
+          select: {
+            createdAt: true,
+            shift: {
+              select: {
+                id: true, tenantId: true, title: true, startsAt: true, endsAt: true, note: true, createdAt: true,
+                event: { select: { title: true, location: true, isCancelled: true, updatedAt: true } },
+              },
+            },
+          },
+          take: 1000,
+        })
+      : Promise.resolve([]),
+    courseTenantIds.length
+      ? db.courseSession.findMany({
+          where: {
+            startsAt: { gte: since },
+            course: {
+              tenantId: { in: courseTenantIds },
+              OR: [{ leaderUserId: user.id }, { participants: { some: { userId: user.id, status: { not: "DROPPED" } } } }],
+            },
+          },
+          select: {
+            id: true, title: true, startsAt: true, endsAt: true, eventId: true,
+            event: { select: { location: true, isCancelled: true, updatedAt: true } },
+            course: { select: { id: true, name: true, tenantId: true, leaderUserId: true, createdAt: true, updatedAt: true } },
+          },
+          orderBy: { startsAt: "asc" },
+          take: 1000,
+        })
+      : Promise.resolve([]),
   ]);
 
-  const events: IcsEvent[] = rsvps
-    .sort((a, b) => a.event.startsAt.getTime() - b.event.startsAt.getTime())
-    .map((r) => toIcsEvent(r.event, baseUrl, { tentative: r.status === "MAYBE", prefix: multi ? tenantName.get(r.event.tenantId) : undefined }));
+  const events: FeedEvent[] = rsvps
+    .filter((r) => keepInFeed(r.event, now))
+    .map((r) => toFeedEvent(r.event, baseUrl, { tentative: r.status === "MAYBE", prefix: prefixOf(r.event.tenantId) }));
+
   for (const b of bookings) {
+    const cancelled = b.status === "CANCELLED" || b.status === "REJECTED";
     events.push({
       uid: bookingUid(b.id),
-      summary: `Reservation: ${b.resource.name}${b.status === "PENDING" ? " (unbestätigt)" : ""}`,
+      summary: `${b.status === "REJECTED" ? "Abgelehnt: " : cancelled ? "Abgesagt: " : ""}Reservation: ${b.resource.name}${b.status === "PENDING" ? " (unbestätigt)" : ""}`,
       description: [b.tenant.name, personsSuffix(b), b.note].filter(Boolean).join("\n"),
       location: `${b.resource.name}, ${b.tenant.name}`,
       url: `${baseUrl}/bookings/${b.id}`,
       startsAt: b.startsAt,
       endsAt: b.endsAt,
-      status: b.status === "PENDING" ? "TENTATIVE" : "CONFIRMED",
+      status: cancelled ? "CANCELLED" : b.status === "PENDING" ? "TENTATIVE" : "CONFIRMED",
       categories: ["Reservation"],
-      stamp: b.updatedAt,
+      updatedAt: b.cancelledAt && b.cancelledAt > b.updatedAt ? b.cancelledAt : b.updatedAt,
       created: b.createdAt,
     });
   }
-  const ics = buildIcs({ name: "Meine Termine (Standchef)", description: `Anlässe und Reservationen von ${user.name}`, events });
+
+  for (const a of shifts) {
+    const s = a.shift;
+    // Shift hat kein updatedAt: jüngste bekannte Änderung (Einteilung, Schicht, Anlass)
+    const stamps = [s.createdAt, a.createdAt, s.event?.updatedAt].filter((d): d is Date => !!d);
+    const updatedAt = new Date(Math.max(...stamps.map((d) => d.getTime())));
+    const cancelled = !!s.event?.isCancelled;
+    if (cancelled && !keepInFeed({ isCancelled: true, updatedAt }, now)) continue;
+    const prefix = prefixOf(s.tenantId);
+    events.push({
+      uid: shiftUid(s.id),
+      summary: `${cancelled ? "Abgesagt: " : ""}${prefix ? `${prefix} · ` : ""}Helfereinsatz: ${s.title}${s.event ? ` (${s.event.title})` : ""}`,
+      description: s.note,
+      location: s.event?.location ?? null,
+      url: `${baseUrl}/shifts`,
+      startsAt: s.startsAt,
+      endsAt: s.endsAt,
+      status: cancelled ? "CANCELLED" : "CONFIRMED",
+      categories: ["Helfereinsatz"],
+      updatedAt,
+      created: s.createdAt,
+    });
+  }
+
+  // Kurstage, die schon als Anlass mit Zusage im Feed sind, nicht doppelt aufführen
+  const rsvpEventIds = new Set(rsvps.map((r) => r.event.id));
+  for (const cs of sessions) {
+    if (cs.eventId && rsvpEventIds.has(cs.eventId)) continue;
+    const updatedAt = cs.event?.updatedAt && cs.event.updatedAt > cs.course.updatedAt ? cs.event.updatedAt : cs.course.updatedAt;
+    const cancelled = !!cs.event?.isCancelled;
+    if (cancelled && !keepInFeed({ isCancelled: true, updatedAt }, now)) continue;
+    const prefix = prefixOf(cs.course.tenantId);
+    const role = cs.course.leaderUserId === user.id ? " (Leitung)" : "";
+    events.push({
+      uid: `course-session-${cs.id}@standchef.ch`,
+      summary: `${cancelled ? "Abgesagt: " : ""}${prefix ? `${prefix} · ` : ""}${cs.course.name}: ${cs.title}${role}`,
+      location: cs.event?.location ?? null,
+      url: `${baseUrl}/courses/${cs.course.id}`,
+      startsAt: cs.startsAt,
+      endsAt: cs.endsAt,
+      status: cancelled ? "CANCELLED" : "CONFIRMED",
+      categories: ["Kurs"],
+      updatedAt,
+      created: cs.course.createdAt,
+    });
+  }
+
+  events.sort((a, b) => a.startsAt.getTime() - b.startsAt.getTime());
+  const ics = buildFeedIcs({ name: "Meine Termine (Standchef)", description: `Anlässe, Reservationen, Einsätze und Kurse von ${user.name}`, events });
   return { ics, filename: "meine-termine.ics" };
 }
 
@@ -112,8 +259,8 @@ export async function buildSingleEventIcs(user: { id: string; isSuperAdmin: bool
   const member = user.memberships.some((m) => m.tenantId === event.tenantId);
   if (!member && !user.isSuperAdmin) return null;
   if (!(await isEventsModuleEnabled(event.tenantId))) return null;
-  const ics = buildIcs({ name: event.tenant.name, events: [toIcsEvent(event, baseUrl)] });
-  const slug = event.title.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 40) || "anlass";
+  const ics = buildFeedIcs({ name: event.tenant.name, events: [toFeedEvent(event, baseUrl)] });
+  const slug = event.title.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 40) || "anlass";
   return { ics, filename: `${slug}.ics` };
 }
 

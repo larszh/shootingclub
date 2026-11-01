@@ -42,7 +42,10 @@ export type Permission =
   | "shifts.manage" // Helfereinsätze planen, Stunden bestätigen
   | "courses.manage" // Kurse (Jungschützen, J+S, Ausbildung) führen
   | "championship.manage" // Jahresmeisterschaft einrichten
-  | "qualifications.manage"; // Qualifikationen erfassen und bestätigen
+  | "qualifications.manage" // Qualifikationen erfassen und bestätigen
+  | "kiosk.sell" // Konsumationen in der Schützenstube erfassen
+  | "kiosk.manage" // Sortiment, Preise, Abrechnung der Schützenstube
+  | "accounting.export"; // Buchhaltungsexport, Kontenplan
 
 const PERMISSION_MIN_ROLE: Record<Permission, TenantRole> = {
   "tenant.manage": "ADMIN",
@@ -68,6 +71,9 @@ const PERMISSION_MIN_ROLE: Record<Permission, TenantRole> = {
   "courses.manage": "TRAINER",
   "championship.manage": "ADMIN",
   "qualifications.manage": "ADMIN",
+  "kiosk.sell": "TRAINER",
+  "kiosk.manage": "ADMIN",
+  "accounting.export": "ADMIN",
 };
 
 export type Actor = { isSuperAdmin: boolean; role: string | null };

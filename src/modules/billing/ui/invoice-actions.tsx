@@ -1,6 +1,7 @@
 "use client";
 
 import { confirmDialog } from "@/components/ui/dialog";
+import { toast } from "@/lib/ui-feedback";
 import { useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Check, RotateCcw, XCircle } from "lucide-react";
@@ -9,7 +10,11 @@ import { markRemindedAction, setFeeInvoiceStatusAction } from "@/modules/billing
 export function FeeInvoiceActions({ id, status }: { id: string; status: string }) {
   const [pending, start] = useTransition();
   const router = useRouter();
-  const set = (s: "OPEN" | "PAID" | "CANCELLED") => start(async () => { await setFeeInvoiceStatusAction(id, s); router.refresh(); });
+  const set = (s: "OPEN" | "PAID" | "CANCELLED") => start(async () => {
+    const r = await setFeeInvoiceStatusAction(id, s);
+    if (!r.ok) toast.error(r.error);
+    router.refresh();
+  });
   return (
     <div className="flex items-center gap-1">
       {status === "OPEN" ? <button type="button" disabled={pending} onClick={() => set("PAID")} className="press h-11 px-3 rounded-control bg-ink text-bg text-xs font-medium inline-flex items-center gap-1"><Check className="h-3.5 w-3.5" /> Bezahlt</button> : null}

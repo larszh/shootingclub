@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { BarChart3, History, ListChecks, Play, Star, Trophy } from "lucide-react";
+import { BarChart3, FileInput, History, ListChecks, Play, Star, Trophy } from "lucide-react";
 import { requireModule } from "@/lib/tenant";
 import { Card, EmptyState, LinkButton, PageHeader, SectionTitle } from "@/components/ui";
 import { listMatches, listPrograms } from "@/modules/scores/queries";
@@ -17,10 +17,19 @@ export default async function ScoresPage() {
     listMatches(ctx, { status: "FINISHED", limit: 5 }),
   ]);
   const favorites = programs.filter((p) => p.favorite);
+  // Resultat-Import schreibt Resultate anderer Mitglieder: nur Trainer und Vorstand
+  const canImport = ctx.can("match.viewAll") || ctx.can("tenant.programs.manage");
 
   return (
     <div>
-      <PageHeader title="Schiessen" subtitle="Programme, Durchgänge und Resultate" action={ctx.can("match.create") ? <LinkButton href="/scores/matches/new" size="sm"><Play className="h-4 w-4" /> Starten</LinkButton> : null} />
+      <PageHeader title="Schiessen" subtitle="Programme, Durchgänge und Resultate" action={
+          ctx.can("match.create") || canImport ? (
+            <div className="flex gap-2">
+              {canImport ? <LinkButton href="/scores/import" variant="secondary" size="sm" aria-label="Resultate importieren"><FileInput className="h-4 w-4" /> <span className="hidden sm:inline">Import</span></LinkButton> : null}
+              {ctx.can("match.create") ? <LinkButton href="/scores/matches/new" size="sm"><Play className="h-4 w-4" /> Starten</LinkButton> : null}
+            </div>
+          ) : null
+        } />
 
       <nav aria-label="Bereiche" className="stagger grid grid-cols-4 gap-2 mb-2">
         <Tile href="/scores/programs" icon={<ListChecks className="h-5 w-5" />} label="Programme" />

@@ -57,11 +57,13 @@ MAIL_FROM="Standchef <noreply@standchef.ch>"
 VAPID_PUBLIC_KEY="<public key>"
 VAPID_PRIVATE_KEY="<private key>"
 VAPID_SUBJECT="mailto:info@standchef.ch"
+# Website-Widgets: nur diese Websites dürfen /embed/... einbetten (Standard "*", Änderung braucht neuen Build)
+EMBED_FRAME_ANCESTORS="https://www.sv-muster.ch"
 ```
 
 Alle Variablen mit Erklärung stehen in `.env.example`.
 
-`APP_URL` muss stimmen: Links in E-Mails (Einladung, Passwort-Reset) zeigen dorthin, Zahlungsanbieter leiten nach der Zahlung dorthin zurück, und der Stripe-Webhook-Endpoint wird daraus gebildet. Die Serverzeit spielt keine Rolle, alle Buchungszeiten werden in Europe/Zurich berechnet.
+`APP_URL` muss stimmen: Links in E-Mails (Einladung, Passwort-Reset) zeigen dorthin, Zahlungsanbieter leiten nach der Zahlung dorthin zurück, und die Webhook-Adressen für Stripe und Payrexx werden daraus gebildet. Die Serverzeit spielt keine Rolle, alle Buchungszeiten werden in Europe/Zurich berechnet.
 
 ## 4. Erstinstallation
 
@@ -209,13 +211,51 @@ Unter **Mehr → Mitgliederbeiträge verwalten → Rechnungsprofil** (`/admin/bi
 
 ## Zahlungsanbieter (pro Verein)
 
-Jeder Verein richtet seinen Anbieter selbst unter **Mehr → Reservationen verwalten → Zahlungsanbieter** ein. Das Geld fliesst direkt auf das Konto des Vereins.
+Jeder Verein richtet seinen Anbieter selbst unter **Mehr → Reservationen verwalten → Zahlungsanbieter** (`/admin/bookings/payments`) ein; ohne Modul «Reservationen» stehen dieselben Formulare im Rechnungsprofil (`/admin/billing/settings`). Das Geld fliesst direkt auf das Konto des Vereins. Geheime Felder werden nie wieder angezeigt (leer lassen = behalten). Der Anbieter gilt danach für Reservationen (Reservations-Einstellungen → «Online-Zahlung») und/oder für Beiträge (Rechnungsprofil → «Online-Zahlung für Beiträge»). **Munitionsrechnungen sind nie online bezahlbar.**
 
-- **Stripe**: Secret Key aus dem Dashboard. Empfohlen: Webhook auf `https://<domain>/api/payments/stripe/<tenant-id>` mit Ereignis `checkout.session.completed`, Signing Secret eintragen. Ohne Webhook wird die Zahlung beim Rücksprung des Mitglieds geprüft.
+- **Payrexx (TWINT, PostFinance, Karte)**:
+  1. Im Payrexx-Backend unter *Einstellungen → API* einen API-Schlüssel anlegen.
+  2. In Standchef **Instanz** (der Teil vor `.payrexx.com`, z.B. `sgmusterhausen`) und **API-Secret** eintragen, optional Zahlarten (z.B. `twint,postfinance_card,visa,mastercard`), aktivieren und «Verbindung testen» (ruft `SignatureCheck` auf).
+  3. Im Payrexx-Backend unter *Webhooks* die Adresse `https://<domain>/api/payments/payrexx/<tenant-id>` hinterlegen (Typ *Transaktion*, JSON oder Formular). Die genaue Adresse mit Vereins-ID zeigt das Formular an. Der Webhook liest den Status immer über die API nach, der Inhalt der Nachricht wird nicht übernommen.
+  4. **Zuschläge für Zahlende ausschalten**: weicht der bezahlte Betrag von der Rechnung ab, wird die Zahlung nicht automatisch verbucht (Eintrag im Protokoll).
+  5. Vor dem Einsatz eine Testzahlung mit kleinem Betrag machen.
+- **Stripe**: Secret Key aus dem Dashboard. Empfohlen: Webhook auf `https://<domain>/api/payments/stripe/<tenant-id>` mit Ereignis `checkout.session.completed`, Signing Secret eintragen. Ohne Webhook wird die Zahlung beim Rücksprung des Mitglieds geprüft. Der Webhook verbucht Reservationen und Beiträge.
 - **Worldline Saferpay**: Customer ID, Terminal ID, JSON-API-Benutzer und -Passwort aus dem Backoffice; Umgebung `test` oder `live`.
-- **SumUp**: API Key (Secret) und Händlercode aus dem SumUp-Dashboard.
+- **SumUp**: API Key (Secret) und Händlercode aus dem SumUp-Dashboard (nur Karte, kein TWINT).
 
-Die Zugangsdaten werden mit einem aus `AUTH_SECRET` abgeleiteten Schlüssel verschlüsselt. **`AUTH_SECRET` nach der Einrichtung nicht mehr ändern**, sonst müssen alle Vereine ihre Anbieter und Speicher-Zugangsdaten (Dateiablage) neu eintragen.
+Die Webhook-Pfade `/api/payments/*` müssen von aussen erreichbar sein (keine Basic-Auth oder IP-Sperre davor). Rückerstattungen erfolgen von Hand im Backoffice des Anbieters; Zahlungen auf bereits bezahlte oder stornierte Rechnungen erhalten den Vermerk «Rückerstattung prüfen».
+
+Die Zugangsdaten werden mit einem aus `AUTH_SECRET` abgeleiteten Schlüssel verschlüsselt. **`AUTH_SECRET` nach der Einrichtung nicht mehr ändern**, sonst müssen alle Vereine ihre Anbieter und Speicher-Zugangsdaten (Dateiablage) neu eintragen; zudem werden alle signierten Ranglisten-Widgets ungültig.
+
+## Website-Widgets (Einbetten auf der Vereinswebsite)
+
+Unter **Einstellungen → Website-Widgets** (`/admin/embed`) schaltet ein Admin die Widgets ein (erzeugt `Tenant.embedToken`), wählt Widget und Optionen und kopiert den iframe-Code, z.B.:
+
+```html
+<iframe src="https://standchef.ch/embed/<token>/calendar?limit=8&theme=auto" title="Termine – Standchef" data-standchef-embed width="100%" height="520" style="width:100%;border:0" loading="lazy" referrerpolicy="no-referrer"></iframe>
+```
+
+- Widgets: `calendar` (Anlässe, `?kind=`, `?limit=`), `times` (Schiesszeiten), `ranking` und `championship` (nur mit signiertem Link aus `/admin/embed`). `?theme=auto|light|dark`.
+- `/embed/*` erhält eine eigene CSP ohne `X-Frame-Options`; `frame-ancestors` kommt aus **`EMBED_FRAME_ANCESTORS`** (durch Leerzeichen oder Kommas getrennt, z.B. `"https://www.sv-muster.ch https://*.muster.ch"`; Standard `*` nur wenn leer. Die eigene Origin der App (`'self'`) ist immer erlaubt, für die Vorschau unter `/admin/embed`. Ist die Variable gesetzt, aber kein Eintrag gültig, gilt `'self'` und der Build gibt eine Warnung aus; `'none'` sperrt jedes Einbetten). Die Variable wird beim Build gelesen: nach einer Änderung `scripts/deploy.sh` bzw. `npm run build` und Neustart. Alle anderen Seiten bleiben gegen Einbetten geschützt.
+- Antworten sind 5 Minuten öffentlich zwischengespeichert (Fehlerseiten 60 s). Widerruf oder «Neu erzeugen» wirkt also spätestens nach 5 Minuten. Hinter Cloudflare den Cache für `/embed/*` nicht länger einstellen.
+
+## Buchhaltung: Export für Banana und bexio
+
+Unter **Einstellungen → Buchhaltung** (`/admin/accounting`, Recht `accounting.export`) einmal den Kontenplan prüfen und anpassen, dann Zeitraum wählen und exportieren:
+
+- **Banana Buchhaltung Plus**: «Banana Buchhaltung» herunterladen (.txt, Tabulator-getrennt, Spalten Date/Doc/Description/AccountDebit/AccountCredit/Amount, Datum JJJJ-MM-TT). In Banana *Aktionen → In Buchhaltung importieren…* → *Buchungen* → Format *Textdatei mit Spaltenüberschriften* wählen, Datei auswählen und die Spaltenzuordnung prüfen. Die Konten müssen im Banana-Kontenplan existieren.
+- **bexio**: «bexio (CSV für manuellen Import)» herunterladen (Semikolon, UTF-8 mit BOM) und im Buchungsimport von bexio die Spalten zuordnen.
+- **CSV**: generisch mit zusätzlichen Spalten (Währung, Bereich, Art) für Excel oder andere Programme.
+
+Das Journal enthält Beiträge, Ersatzabgabe, Schützenstube, Reservationen (auch «Bar / vor Ort» bezahlte: Bank an Reservationen), Munition und Online-Zahlungen. Es wird aus dem aktuellen Stand der Belege berechnet: nur abgeschlossene Zeiträume exportieren. Gebühren der Zahlungsanbieter und Barverkäufe der Schützenstube werden nicht automatisch gebucht. Jeder Export steht im Protokoll.
+
+## Resultat-Import aus elektronischen Trefferanzeigen
+
+`/scores/import` (Trainer und Vorstand) liest Exportdateien von Meyton, SIUS (SIUSData), ShotMarker oder allgemeines CSV (bis 5 MB, über Server Actions; `next.config.ts` erlaubt 10 MB). Die Vorlagen sind **Vorschläge** und mit einer eigenen Exportdatei zu prüfen, da die Spalten je nach Version abweichen. Dieselbe Datei lässt sich pro Verein nur einmal importieren.
+
+## Gemeinsame Anlagen
+
+Ein Verein teilt eine Anlage unter *Reservationen verwalten → Anlagen → <Anlage> → Mit Partnerverein teilen* (Suche über Kurzname oder Beitrittscode, Partnertarif in %). Mitglieder des Partnervereins brauchen dort das Modul «Reservationen» und buchen unter «Buchen → Anlagen von …». Buchungen und Rechnungen gehören dem Eigentümerverein (nur Rechnung, keine Online-Zahlung). Bericht pro Partnerverein mit CSV unter `/admin/bookings/partners`.
 
 ## E-Mail-Versand (SMTP)
 

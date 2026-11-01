@@ -95,6 +95,7 @@ model Tenant {
   calendarToken String?   @unique // geheimer Token für öffentlichen iCal-Feed (Anlässe)
   defaultLocale String    @default("de") // de | fr | it – Sprache für Rechnungen, Mails, Druck
   replyToEmail  String? // Antwortadresse für Mails des Vereins
+  embedToken    String?   @unique // geheimer Token für Widgets auf der Vereinswebsite
   deletedAt     DateTime? // Löschung beantragt (Soft-Delete); endgültig gelöscht nach purgeAfter
   purgeAfter    DateTime?
   createdAt     DateTime  @default(now())
@@ -146,6 +147,11 @@ model Tenant {
   courses            Course[]
   liveBoards         LiveBoard[]
   federalYears       FederalYear[]
+  accountingSettings AccountingSettings?
+  resourceShares     ResourceShare[]         @relation("ShareGuest")
+  scoreImports       ScoreImport[]
+  kioskProducts      KioskProduct[]
+  kioskEntries       KioskEntry[]
 }
 
 model Membership {
@@ -409,6 +415,7 @@ model Resource {
   rangeDays       RangeDay[]
   shootingWindows ShootingWindow[]
   shootingQuotas  ShootingQuota[]
+  shares          ResourceShare[]
 
   @@index([tenantId])
 }
@@ -436,6 +443,7 @@ model Booking {
   startsAt        DateTime
   endsAt          DateTime
   durationMinutes Int
+  viaTenantId     String? // Buchung durch Mitglied eines Partnervereins (gemeinsame Anlage)
   persons         Int       @default(1) // Anzahl Personen
   units           Int       @default(1) // belegte Kapazitätseinheiten (Pauschal exklusiv = Kapazität der Ressource)
   isFlatRate      Boolean   @default(false) // Pauschalpreis (ganze Ressource)
@@ -467,19 +475,23 @@ model Booking {
 }
 
 model Payment {
-  id          String   @id @default(cuid())
-  bookingId   String
-  provider    String // STRIPE | WORLDLINE | SUMUP
-  providerRef String // Checkout-Session / Token / Checkout-ID
-  status      String   @default("PENDING") // PENDING | PAID | FAILED | REFUNDED
-  amountCents Int
-  currency    String
-  detailsJson String?  @db.Text
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id           String   @id @default(cuid())
+  bookingId    String? // Reservation
+  feeInvoiceId String? // Mitgliederbeitrag / Ersatzabgabe online bezahlt
+  tenantId     String? // für Zahlungen ohne Reservation
+  provider     String // STRIPE | WORLDLINE | SUMUP
+  providerRef  String // Checkout-Session / Token / Checkout-ID
+  status       String   @default("PENDING") // PENDING | PAID | FAILED | REFUNDED
+  amountCents  Int
+  currency     String
+  detailsJson  String?  @db.Text
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
 
-  booking Booking @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  booking    Booking?    @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  feeInvoice FeeInvoice? @relation(fields: [feeInvoiceId], references: [id], onDelete: Cascade)
 
+  @@index([feeInvoiceId])
   @@index([bookingId])
   @@index([providerRef])
 }
@@ -521,15 +533,16 @@ model Invoice {
 // ---------------------------------------------------------------------------
 
 model BillingProfile {
-  id          String   @id @default(cuid())
-  tenantId    String   @unique
-  payeeName   String?
-  payeeStreet String?
-  payeeZip    String?
-  payeeCity   String?
-  iban        String?
-  currency    String   @default("CHF")
-  updatedAt   DateTime @updatedAt
+  id                String   @id @default(cuid())
+  tenantId          String   @unique
+  payeeName         String?
+  payeeStreet       String?
+  payeeZip          String?
+  payeeCity         String?
+  iban              String?
+  onlineFeeProvider String   @default("NONE") // NONE | STRIPE | WORLDLINE | SUMUP | PAYREXX – Online-Zahlung von Beiträgen
+  currency          String   @default("CHF")
+  updatedAt         DateTime @updatedAt
 
   tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 }
@@ -602,6 +615,7 @@ model FeeInvoice {
   membership Membership?  @relation(fields: [membershipId], references: [id], onDelete: SetNull)
   user       User?        @relation(fields: [userId], references: [id], onDelete: SetNull)
   category   FeeCategory? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  payments   Payment[]
 
   @@unique([tenantId, number])
   @@index([tenantId, year, status])
@@ -1517,4 +1531,96 @@ model FederalYear {
   tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
   @@unique([tenantId, year])
+}
+
+// ---------------------------------------------------------------------------
+// Buchhaltung, gemeinsame Anlagen, Resultat-Import
+// ---------------------------------------------------------------------------
+
+model AccountingSettings {
+  id                 String   @id @default(cuid())
+  tenantId           String   @unique
+  bankAccount        String   @default("1020") // Bank / Post
+  receivableAccount  String   @default("1100") // Debitoren
+  feeAccount         String   @default("3000") // Mitgliederbeiträge
+  bookingAccount     String   @default("3400") // Standmiete / Reservationen
+  ammoAccount        String   @default("3200") // Munitionsverkauf
+  workFeeAccount     String   @default("3010") // Ersatzabgabe Arbeitsstunden
+  feesExpenseAccount String   @default("6940") // Zahlungsgebühren
+  updatedAt          DateTime @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+}
+
+// Anlage eines Vereins, die ein Partnerverein mitbenutzt
+model ResourceShare {
+  id                 String   @id @default(cuid())
+  resourceId         String
+  guestTenantId      String
+  canBook            Boolean  @default(true)
+  priceFactorPercent Int      @default(100)
+  note               String?
+  createdAt          DateTime @default(now())
+
+  resource    Resource @relation(fields: [resourceId], references: [id], onDelete: Cascade)
+  guestTenant Tenant   @relation("ShareGuest", fields: [guestTenantId], references: [id], onDelete: Cascade)
+
+  @@unique([resourceId, guestTenantId])
+  @@index([guestTenantId])
+}
+
+model ScoreImport {
+  id          String   @id @default(cuid())
+  tenantId    String
+  createdById String?
+  format      String // CSV | MEYTON | SIUS
+  fileName    String
+  fileHash    String
+  rows        Int      @default(0)
+  matchIds    String?  @db.Text // CSV von Match.id
+  createdAt   DateTime @default(now())
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, fileHash])
+}
+
+// Kasse Schützenstube: Konsumationen aufschreiben und periodisch verrechnen
+model KioskProduct {
+  id         String   @id @default(cuid())
+  tenantId   String
+  name       String
+  category   String? // Getränke, Snacks, Scheiben …
+  priceCents Int
+  isActive   Boolean  @default(true)
+  sortOrder  Int      @default(0)
+  createdAt  DateTime @default(now())
+
+  tenant  Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  entries KioskEntry[]
+
+  @@index([tenantId])
+}
+
+model KioskEntry {
+  id              String   @id @default(cuid())
+  tenantId        String
+  userId          String?
+  guestName       String?
+  productId       String?
+  productName     String
+  quantity        Int      @default(1)
+  unitPriceCents  Int
+  totalCents      Int
+  createdById     String?
+  clientId        String?  @unique
+  billedInvoiceId String? // FeeInvoice.id, sobald verrechnet
+  paidCash        Boolean  @default(false)
+  createdAt       DateTime @default(now())
+
+  tenant  Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  product KioskProduct? @relation(fields: [productId], references: [id], onDelete: SetNull)
+
+  @@index([tenantId, createdAt])
+  @@index([userId, billedInvoiceId])
 }

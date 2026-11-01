@@ -3,6 +3,7 @@ import { db } from "@/lib/db";
 import type { AppContext } from "@/lib/tenant";
 import { safeJson } from "@/lib/utils";
 import { computeSlots } from "./availability";
+import { bookingAccess } from "@/modules/sharing/logic";
 import { bookingUnits } from "./pricing";
 import { DEFAULT_DURATIONS, DEFAULT_OPENING_HOURS, durationOptionSchema, openingHoursSchema, type DurationOption, type OpeningHours } from "./types";
 import { z } from "zod";
@@ -70,7 +71,7 @@ export type ResourceView = {
   durationOptions: DurationOption[] | null;
 };
 
-function toResourceView(r: { id: string; name: string; description: string | null; kind: string; capacity: number; maxPersons: number | null; isActive: boolean; sortOrder: number; durationOptionsJson: string | null }): ResourceView {
+export function toResourceView(r: { id: string; name: string; description: string | null; kind: string; capacity: number; maxPersons: number | null; isActive: boolean; sortOrder: number; durationOptionsJson: string | null }): ResourceView {
   const d = r.durationOptionsJson ? z.array(durationOptionSchema).safeParse(safeJson(r.durationOptionsJson, [])) : null;
   return {
     id: r.id, name: r.name, description: r.description, kind: r.kind, capacity: r.capacity, isActive: r.isActive, sortOrder: r.sortOrder,
@@ -140,14 +141,24 @@ export async function getSlotsForDay(tenantId: string, resource: ResourceView, s
 
 const bookingInclude = {
   resource: { select: { id: true, name: true, kind: true } },
+  tenant: { select: { id: true, name: true, slug: true } },
   user: { select: { id: true, name: true, email: true, avatarPath: true, updatedAt: true, street: true, zip: true, city: true } },
   invoice: true,
   payments: { orderBy: { createdAt: "desc" as const } },
 };
 
+/**
+ * Eigene Buchungen: im aktiven Verein und auf gemeinsamen Anlagen anderer Vereine, die über den
+ * aktiven Verein (Partnerverein) gebucht wurden.
+ */
 export async function listMyBookings(ctx: TenantCtx) {
   await expireUnpaidOnlineBookings(ctx.tenant.id);
-  return db.booking.findMany({ where: { tenantId: ctx.tenant.id, userId: ctx.user.id }, include: bookingInclude, orderBy: { startsAt: "desc" }, take: 100 });
+  return db.booking.findMany({
+    where: { userId: ctx.user.id, OR: [{ tenantId: ctx.tenant.id }, { viaTenantId: ctx.tenant.id }] },
+    include: bookingInclude,
+    orderBy: { startsAt: "desc" },
+    take: 100,
+  });
 }
 
 export async function listTenantBookings(tenantId: string, opts?: { status?: string; from?: Date; limit?: number }) {
@@ -160,12 +171,18 @@ export async function listTenantBookings(tenantId: string, opts?: { status?: str
   });
 }
 
+/**
+ * Buchung für Detail, Rechnung und Kalenderdatei. Sichtbar für das buchende Mitglied und die
+ * Verwaltung des Eigentümers; Buchungen über einen Partnerverein zusätzlich nur für das buchende
+ * Mitglied selbst (ohne Mitgliedschaft beim Eigentümer), siehe bookingAccess.
+ */
 export async function getBooking(ctx: TenantCtx, id: string) {
+  if (typeof id !== "string" || !id || id.length > 40) return null;
   const b = await db.booking.findUnique({ where: { id }, include: bookingInclude });
-  if (!b || b.tenantId !== ctx.tenant.id) return null;
-  const isOwner = b.userId === ctx.user.id;
-  if (!isOwner && !ctx.can("tenant.manage")) return null;
-  return { ...b, isOwner };
+  if (!b) return null;
+  const access = bookingAccess(b, { userId: ctx.user.id, activeTenantId: ctx.tenant.id, canManageActive: ctx.can("tenant.manage") });
+  if (!access) return null;
+  return { ...b, isOwner: b.userId === ctx.user.id, isGuest: access === "guest", isOwnerAdmin: b.tenantId === ctx.tenant.id && ctx.can("tenant.manage") };
 }
 export type BookingView = NonNullable<Awaited<ReturnType<typeof getBooking>>>;
 export type BookingRow = Awaited<ReturnType<typeof listMyBookings>>[number];

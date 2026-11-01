@@ -8,6 +8,9 @@ import { getBillingProfile, type BillingProfileView } from "./profile";
 import { ensureReference } from "./reference";
 import { isOverdue } from "./dates";
 import { feeInvoiceSourceLabel, feeInvoiceTitle, isStandaloneFeeInvoice } from "./fee-title";
+import { getOnlineFeeProviderKey } from "./payments";
+import { canPayFeeInvoiceOnline, feeInvoicePayPath, sourceAllowsOnlinePayment } from "@/lib/payments/logic";
+import { providerLabel as paymentProviderLabel, providerMethods } from "@/lib/payments/catalog";
 
 /**
  * Zahlungsübersicht über alle Quellen: Mitgliederbeiträge (FeeInvoice), Reservations-Rechnungen
@@ -53,6 +56,8 @@ export type PaymentItem = {
   href: string;
   /** Druckansicht in neuem Tab öffnen (Rechnungen), Detailseite in der App sonst */
   external: boolean;
+  /** «Online bezahlen» (nur Beitragsrechnungen, nie Munition); null = nicht online bezahlbar */
+  payOnlineHref?: string | null;
 };
 
 /** Bezeichnung eines einzelnen Postens für Listen und Exporte. */
@@ -122,6 +127,10 @@ export type MyPayments = {
   openCount: number;
   overdueCount: number;
   year: string;
+  /** Bezeichnung des Anbieters für Online-Zahlung von Beiträgen, null = nicht eingerichtet */
+  onlineFeeProvider: string | null;
+  /** Zahlarten des Anbieters für Hinweistexte, z.B. «TWINT, PostFinance, Karte» */
+  onlineFeeMethods: string | null;
 };
 
 /** Alle Rechnungen und Zahlungen des angemeldeten Mitglieds im aktiven Verein. */
@@ -130,7 +139,7 @@ export async function listMyPayments(ctx: TenantCtx, now: Date): Promise<MyPayme
   const userId = ctx.user.id;
   const src = enabledSources(ctx);
 
-  const [profile, fees, invoices, online, ammo] = await Promise.all([
+  const [profile, fees, invoices, online, ammo, feeProvider] = await Promise.all([
     getBillingProfile(tenantId, ctx.tenant.name),
     src.fee
       ? db.feeInvoice.findMany({
@@ -150,13 +159,14 @@ export async function listMyPayments(ctx: TenantCtx, now: Date): Promise<MyPayme
       : Promise.resolve([]),
     src.booking
       ? db.payment.findMany({
-          where: { status: { in: ["PAID", "REFUNDED"] }, booking: { tenantId, userId } },
+          where: { status: { in: ["PAID", "REFUNDED"] }, bookingId: { not: null }, booking: { tenantId, userId } },
           select: { id: true, provider: true, status: true, amountCents: true, currency: true, createdAt: true, updatedAt: true, bookingId: true, booking: { select: { paidAt: true, startsAt: true, resource: { select: { name: true } } } } },
           orderBy: { createdAt: "desc" },
           take: 200,
         })
       : Promise.resolve([]),
     src.ammo ? listAmmoInvoicesForUser(userId, tenantId) : Promise.resolve([]),
+    src.fee ? getOnlineFeeProviderKey(tenantId) : Promise.resolve(null),
   ]);
 
   const qrIban = profile.qrIban ? profile.iban : null;
@@ -174,6 +184,7 @@ export async function listMyPayments(ctx: TenantCtx, now: Date): Promise<MyPayme
       issuedAt: f.issuedAt, dueAt: f.dueAt, paidAt: f.paidAt,
       overdue: status === "OPEN" && isOverdue(f.dueAt, now), reference,
       href: `/billing/invoices/${f.id}/print`, external: true,
+      payOnlineHref: sourceAllowsOnlinePayment("FEE") && canPayFeeInvoiceOnline(f, feeProvider) ? feeInvoicePayPath(f.id) : null,
     });
   }
 
@@ -191,6 +202,8 @@ export async function listMyPayments(ctx: TenantCtx, now: Date): Promise<MyPayme
   }
 
   for (const p of online) {
+    // Nur Online-Zahlungen von Reservationen; online bezahlte Beiträge erscheinen als bezahlte Rechnung (FEE).
+    if (!p.booking || !p.bookingId) continue;
     const status: PaymentItem["status"] = p.status === "REFUNDED" ? "REFUNDED" : "PAID";
     items.push({
       key: `ONLINE:${p.id}`, source: "ONLINE", id: p.id, number: "Online",
@@ -226,6 +239,8 @@ export async function listMyPayments(ctx: TenantCtx, now: Date): Promise<MyPayme
     openCount: open.length,
     overdueCount: open.filter((i) => i.overdue).length,
     year,
+    onlineFeeProvider: feeProvider ? paymentProviderLabel(feeProvider) : null,
+    onlineFeeMethods: feeProvider ? providerMethods(feeProvider) : null,
   };
 }
 
@@ -235,7 +250,7 @@ export async function summarizeMyOpenPayments(ctx: TenantCtx, now: Date) {
   const userId = ctx.user.id;
   const src = enabledSources(ctx);
   const [fees, invoices, ammo] = await Promise.all([
-    src.fee ? db.feeInvoice.findMany({ where: { tenantId, userId, status: "OPEN" }, select: { amountCents: true, currency: true, dueAt: true } }) : Promise.resolve([]),
+    src.fee ? db.feeInvoice.findMany({ where: { tenantId, userId, status: "OPEN" }, select: { id: true, status: true, amountCents: true, currency: true, dueAt: true }, orderBy: { dueAt: "asc" } }) : Promise.resolve([]),
     src.booking ? db.invoice.findMany({ where: { tenantId, status: "OPEN", booking: { userId } }, select: { amountCents: true, currency: true, dueAt: true } }) : Promise.resolve([]),
     src.ammo
       ? db.ammoOrder.findMany({ where: { tenantId, userId, status: "ISSUED", paymentStatus: "UNPAID", invoiceNumber: { not: null } }, select: { totalCents: true, currency: true, dueAt: true } })
@@ -247,16 +262,23 @@ export async function summarizeMyOpenPayments(ctx: TenantCtx, now: Date) {
     ...ammo.map((a) => ({ amountCents: a.totalCents, currency: a.currency, dueAt: a.dueAt })),
   ];
   const dues = rows.map((r) => r.dueAt).filter((d): d is Date => !!d).sort((a, b) => a.getTime() - b.getTime());
+  // «Online bezahlen» nur für Beitragsrechnungen (nie Munition): eine Rechnung → direkt zur Zahlseite, sonst Übersicht.
+  const feeProvider = fees.length ? await getOnlineFeeProviderKey(tenantId) : null;
+  const payable = sourceAllowsOnlinePayment("FEE") ? fees.filter((f) => canPayFeeInvoiceOnline(f, feeProvider)) : [];
+  const onlinePay = feeProvider && payable.length
+    ? { href: payable.length === 1 ? feeInvoicePayPath(payable[0]!.id) : "/payments", count: payable.length, provider: paymentProviderLabel(feeProvider), methods: providerMethods(feeProvider) }
+    : null;
   return {
     count: rows.length,
     totals: sumByCurrency(rows),
     overdue: rows.filter((r) => r.dueAt && isOverdue(r.dueAt, now)).length,
     nextDue: dues[0] ?? null,
+    onlinePay,
   };
 }
 
 function providerLabel(p: string) {
-  return p === "STRIPE" ? "Stripe" : p === "WORLDLINE" ? "Worldline" : p === "SUMUP" ? "SumUp" : p;
+  return p === "WORLDLINE" ? "Worldline" : paymentProviderLabel(p);
 }
 
 /* ------------------------------------------------------------------ Verwaltung */

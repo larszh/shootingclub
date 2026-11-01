@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Home, Target, Crosshair, Menu, CalendarDays, Megaphone, MessageCircle, FolderOpen, Package, Wallet, Settings, Users, FileUp, House, History, Server, BadgeCheck, Trophy, Tv, DoorOpen, HandHelping, GraduationCap, Shield } from "lucide-react";
+import { Home, Target, Crosshair, Menu, CalendarDays, Megaphone, MessageCircle, FolderOpen, Package, Wallet, Settings, Users, FileUp, House, History, Server, BadgeCheck, Trophy, Tv, DoorOpen, HandHelping, GraduationCap, Shield, Coffee, FileInput, BookOpenCheck, Code2, Handshake } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { TenantLogo } from "@/components/logo";
 import { Avatar } from "@/components/avatar";
@@ -23,6 +23,8 @@ type NavItem = {
   sideLabel?: string;
   /** Nur sichtbar mit dieser Berechtigung (aus ShellAdmin) */
   requires?: keyof ShellAdmin;
+  /** Nie als eigener Tab in der mobilen Tableiste (nur Seitenleiste und «Mehr») */
+  noTab?: boolean;
 };
 
 type NavGroup = "schiessen" | "verein";
@@ -57,10 +59,12 @@ const NAV: NavItem[] = [
   { href: "/federal", label: "Bundesübungen", icon: BadgeCheck, modules: ["federal"], group: "schiessen" },
   { href: "/championship", label: "Meisterschaft", sideLabel: "Jahresmeisterschaft", icon: Trophy, modules: ["championship"], group: "schiessen" },
   { href: "/admin/live", label: "Live", sideLabel: "Live-Rangliste", icon: Tv, modules: ["scores"], group: "schiessen", requires: "live" },
+  { href: "/scores/import", label: "Import", sideLabel: "Resultat-Import", icon: FileInput, modules: ["scores"], group: "schiessen", requires: "scoreImport", noTab: true },
   { href: "/range", label: "Stand", sideLabel: "Standbetrieb", icon: DoorOpen, modules: ["range"], group: "verein" },
   { href: "/shifts", label: "Helfer", sideLabel: "Helfereinsätze", icon: HandHelping, modules: ["shifts"], group: "verein" },
   { href: "/courses", label: "Kurse", icon: GraduationCap, modules: ["courses"], group: "verein" },
   { href: "/weapons", label: "Waffen", sideLabel: "Vereinswaffen", icon: Shield, modules: ["weapons"], group: "verein", requires: "weapons" },
+  { href: "/kiosk", label: "Stube", sideLabel: "Schützenstube", icon: Coffee, modules: ["kiosk"], group: "verein" },
   // Verwaltung und Verzeichnis liegen mobil unter «Mehr» (Tableiste bleibt bei 5 Einträgen).
   { href: "/me", label: "Mehr", icon: Menu, alsoActive: ["/admin", "/members", "/super", "/help"] },
 ];
@@ -75,17 +79,25 @@ export type ShellAdmin = {
   system?: boolean; // Super-Admin
   live?: boolean; // match.viewAll oder events.manage: Live-Ranglisten
   weapons?: boolean; // weapons.loan: Vereinswaffen
+  scoreImport?: boolean; // match.viewAll oder tenant.programs.manage: Resultat-Import
+  accounting?: boolean; // accounting.export: Buchhaltungsexport
+  kiosk?: boolean; // kiosk.manage: Schützenstube verwalten
 };
 
-function adminLinks(a: ShellAdmin | null | undefined): NavItem[] {
+function adminLinks(a: ShellAdmin | null | undefined, modules: ModuleKey[]): NavItem[] {
   if (!a) return [];
   const out: NavItem[] = [];
+  const on = (m: ModuleKey) => modules.includes(m);
   if (a.settings) out.push({ href: "/admin", label: "Einstellungen", icon: Settings });
   if (a.members) out.push({ href: "/admin/members", label: "Mitglieder", icon: Users });
   if (a.membersManage) {
     out.push({ href: "/admin/members/import", label: "Import", icon: FileUp });
     out.push({ href: "/admin/members/households", label: "Haushalte", icon: House });
   }
+  if (a.settings && on("bookings")) out.push({ href: "/admin/bookings/partners", label: "Partner-Anlagen", icon: Handshake });
+  if (a.kiosk && on("kiosk")) out.push({ href: "/admin/kiosk", label: "Schützenstube verwalten", icon: Coffee });
+  if (a.accounting) out.push({ href: "/admin/accounting", label: "Buchhaltung", icon: BookOpenCheck });
+  if (a.settings) out.push({ href: "/admin/embed", label: "Website-Widgets", icon: Code2 });
   if (a.audit) out.push({ href: "/admin/audit", label: "Protokoll", icon: History });
   if (a.system) out.push({ href: "/super/system", label: "System", icon: Server });
   return out;
@@ -112,20 +124,25 @@ export function AppShell({
   const pathname = usePathname();
   const items = NAV.filter((n) => (!n.modules || n.modules.some((m) => enabledModules.includes(m))) && (!n.requires || !!admin?.[n.requires]));
   const matches = (href: string) => (href === "/" ? pathname === "/" : pathname === href || pathname.startsWith(href + "/"));
-  const isActive = (href: string) => matches(href) || (NAV.find((n) => n.href === href)?.alsoActive ?? []).some(matches);
+  // Ein spezifischerer Eintrag (z.B. /scores/import) gewinnt gegenüber dem übergeordneten (/scores).
+  const isActive = (href: string) =>
+    (matches(href) || (NAV.find((n) => n.href === href)?.alsoActive ?? []).some(matches)) &&
+    !items.some((n) => n.href !== href && n.href.startsWith(href + "/") && matches(n.href));
   // Tableiste: höchstens 5 Einträge, sonst werden die Beschriftungen auf schmalen Geräten abgeschnitten.
   // Überzählige Module sind unter «Mehr» erreichbar (Liste auf /me und Desktop-Seitenleiste).
   const MAX_TABS = 5;
   // Verwaltungsseiten (z.B. Live-Rangliste) nie als eigener Tab, sie liegen mobil unter «Mehr».
-  const tabCandidates = items.filter((n) => !n.href.startsWith("/admin"));
+  const tabCandidates = items.filter((n) => !n.href.startsWith("/admin") && !n.noTab);
   const tabs = tabCandidates.length > MAX_TABS ? [...tabCandidates.filter((n) => n.href !== "/me").slice(0, MAX_TABS - 1), tabCandidates.find((n) => n.href === "/me")!] : tabCandidates;
   const overflowActive = tabs.length < items.length && items.some((n) => !tabs.includes(n) && isActive(n.href));
-  const isTabActive = (href: string) => isActive(href) || (href === "/me" && overflowActive);
+  // Mobil: Unterseiten ohne eigenen Tab (z.B. /scores/import) markieren ihren übergeordneten Tab.
+  const parentTabMatch = tabs.some((t) => t.href !== "/me" && matches(t.href));
+  const isTabActive = (href: string) => (href === "/me" ? (isActive(href) || overflowActive) && !parentTabMatch : isActive(href) || matches(href));
   const chatOn = chatUnread !== null && items.some((n) => n.href === "/chat");
   // Liegt der Chat mobil unter «Mehr», trägt «Mehr» den Zähler, damit nichts übersehen wird.
   const badgeTab = chatOn ? (tabs.some((n) => n.href === "/chat") ? "/chat" : "/me") : null;
   const title = tenant?.name ?? "Standchef";
-  const admins = adminLinks(admin);
+  const admins = adminLinks(admin, enabledModules);
   // Für die Verwaltung: längster passender Link ist aktiv (/admin/members/import nicht zusätzlich /admin)
   // Beansprucht ein Hauptmenü-Eintrag unter /admin (z.B. /admin/live) den Pfad, ist kein Verwaltungslink aktiv.
   const navClaimsAdminPath = items.some((n) => n.href.startsWith("/admin") && matches(n.href));

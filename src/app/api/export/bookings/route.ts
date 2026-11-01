@@ -4,6 +4,7 @@ import { slugify } from "@/lib/utils";
 import { formatQrReference } from "@/lib/qr-reference";
 import { adminExportContext, csvAmount, csvResponse, toCsv } from "@/modules/billing/csv";
 import { listBookingsForExport } from "@/modules/bookings/queries";
+import { partnerNameMap } from "@/modules/sharing/queries";
 import { BOOKING_STATUS, PAYMENT_METHOD_LABEL, paymentStatusView } from "@/modules/bookings/types";
 
 export const dynamic = "force-dynamic";
@@ -29,7 +30,8 @@ export async function GET(req: NextRequest) {
   if (to.getTime() - from.getTime() > 3 * 366 * 86_400_000) return new NextResponse("Zeitraum zu lang (max. 3 Jahre)", { status: 400 });
 
   const list = await listBookingsForExport(ctx.tenant.id, from, to);
-  const header = ["Datum", "Zeit", "Dauer (Min.)", "Ressource", "Personen", "Pauschal", "Mitglied", "E-Mail", "Status", "Grundpreis", "Rabatt", "Rabattgrund", "Total", "Währung", "Zahlungsart", "Zahlungsstatus", "Bezahlt am", "Rechnung", "QR-Referenz", "Bemerkung", "Notiz Verwaltung", "Erstellt"];
+  const partners = await partnerNameMap(list.map((b) => b.viaTenantId));
+  const header = ["Datum", "Zeit", "Dauer (Min.)", "Ressource", "Personen", "Pauschal", "Mitglied", "E-Mail", "Partnerverein", "Status", "Grundpreis", "Rabatt", "Rabattgrund", "Total", "Währung", "Zahlungsart", "Zahlungsstatus", "Bezahlt am", "Rechnung", "QR-Referenz", "Bemerkung", "Notiz Verwaltung", "Erstellt"];
   const rows = list.map((b) => [
     formatDateZurich(b.startsAt, { weekday: undefined }),
     formatTimeRange(b.startsAt, b.endsAt),
@@ -39,6 +41,7 @@ export async function GET(req: NextRequest) {
     b.isFlatRate ? "ja" : "nein",
     b.user?.name ?? "Gast",
     b.user?.email ?? "",
+    b.viaTenantId ? partners[b.viaTenantId] ?? "Partnerverein (gelöscht)" : "",
     BOOKING_STATUS[b.status]?.label ?? b.status,
     csvAmount(b.basePriceCents),
     csvAmount(b.discountCents),
