@@ -5,6 +5,7 @@ import { createHash, createHmac, randomBytes, timingSafeEqual } from "node:crypt
 import bcrypt from "bcryptjs";
 import { db } from "@/lib/db";
 import { describeUserAgent } from "@/lib/user-agent";
+import { accessStatusWhere } from "@/lib/membership-access";
 
 const SESSION_COOKIE = "standchef_session";
 const SESSION_DAYS = 30;
@@ -98,11 +99,11 @@ export const getCurrentUser = cache(async (): Promise<CurrentUser | null> => {
     include: {
       user: {
         include: {
-          // Nur Mitgliedschaften mit Zugang: ausgetretene (status LEFT) und Vereine mit geplanter
+          // Nur Mitgliedschaften mit Zugang: ausgetretene (status LEFT), noch nicht freigegebene (PENDING) und Vereine mit geplanter
           // Löschung (Tenant.deletedAt) zählen nicht. So prüfen auch alle API-Routen, die
           // user.memberships verwenden, automatisch richtig.
           memberships: {
-            where: { status: { not: "LEFT" }, tenant: { deletedAt: null } },
+            where: { status: accessStatusWhere(), tenant: { deletedAt: null } },
             include: { tenant: { select: { id: true, slug: true, name: true, kind: true, logoPath: true, brandColor: true, brandColor2: true, updatedAt: true } } },
             orderBy: { createdAt: "asc" },
           },

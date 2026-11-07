@@ -1,10 +1,12 @@
 /**
  * Demo-Vereinswaffen für den Seed (prisma/seed.ts). Nur relative Imports und kein "server-only".
- * Idempotent: legt nur etwas an, wenn der Verein noch keine Vereinswaffen hat.
+ * Idempotent: legt nur etwas an, wenn der Verein noch keine Vereinswaffen hat. Die Einstellungen
+ * (WeaponSettings) werden nur angelegt, wenn sie fehlen; ein alter Sperrgrund in den Notizen wird ins
+ * eigene Feld übernommen.
  */
 import type { PrismaClient } from "../../generated/prisma/client";
 
-type Db = Pick<PrismaClient, "clubWeapon" | "weaponLoan" | "weaponService">;
+type Db = Pick<PrismaClient, "clubWeapon" | "weaponLoan" | "weaponService" | "weaponSettings">;
 
 const DAY = 86_400_000;
 
@@ -13,7 +15,17 @@ function dbDate(daysFromToday: number) {
   return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
 }
 
+const LEGACY_PREFIX = "Sperrgrund: ";
+
 export async function seedDemoWeapons(db: Db, tenantId: string, userIds: string[]) {
+  // Beispielwerte, bitte beim Kanton bzw. Hersteller prüfen.
+  await db.weaponSettings.upsert({ where: { tenantId }, create: { tenantId, minorReportDays: 30, serviceEveryShotsDefault: 2000 }, update: {} });
+  // Demo-Daten aus früheren Versionen: Sperrgrund aus der ersten Notizzeile ins eigene Feld übernehmen.
+  const legacy = await db.clubWeapon.findMany({ where: { tenantId, status: "BLOCKED", blockReason: null, notes: { startsWith: LEGACY_PREFIX } }, select: { id: true, notes: true } });
+  for (const w of legacy) {
+    const [first = "", ...rest] = (w.notes ?? "").split("\n");
+    await db.clubWeapon.update({ where: { id: w.id }, data: { blockReason: first.slice(LEGACY_PREFIX.length).trim().slice(0, 191) || null, notes: rest.join("\n").trim() || null } });
+  }
   if ((await db.clubWeapon.count({ where: { tenantId } })) > 0) return { created: 0, skipped: true };
   const [adminId, memberId] = [userIds[0] ?? null, userIds[1] ?? userIds[0] ?? null];
 
@@ -30,7 +42,7 @@ export async function seedDemoWeapons(db: Db, tenantId: string, userIds: string[
     data: { tenantId, name: "Luftgewehr LG 1", discipline: "Gewehr 10 m", manufacturer: "Feinwerkbau", model: "800", caliber: "4.5 mm", serialNumber: "DEMO-LG-001", shotCount: 12000, nextServiceAt: dbDate(-3) },
   });
   await db.clubWeapon.create({
-    data: { tenantId, name: "Karabiner K31", discipline: "Gewehr 300 m", manufacturer: "W+F Bern", model: "K31", caliber: "7.5 × 55", serialNumber: "DEMO-K31-001", shotCount: 800, status: "BLOCKED", notes: "Sperrgrund: Abzug klemmt, beim Büchsenmacher\nErbstück, Schenkung 2019" },
+    data: { tenantId, name: "Karabiner K31", discipline: "Gewehr 300 m", manufacturer: "W+F Bern", model: "K31", caliber: "7.5 × 55", serialNumber: "DEMO-K31-001", shotCount: 800, status: "BLOCKED", blockReason: "Abzug klemmt, beim Büchsenmacher", notes: "Erbstück, Schenkung 2019" },
   });
 
   await db.weaponService.createMany({

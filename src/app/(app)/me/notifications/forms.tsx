@@ -8,25 +8,27 @@ import { Spinner } from "@/components/ui/form";
 import { toast } from "@/lib/ui-feedback";
 import { LOCALE_LABELS, type Locale } from "@/lib/i18n/locales";
 import { disablePush, enablePush, getPushState, type PushState } from "@/lib/push/client";
-import { LOCKED_EMAIL_TOPICS, NOTIFY_TOPICS, TOPIC_INFO, type NotifyTopic, type PreferenceMatrix } from "@/lib/push/topics";
+import { LOCKED_EMAIL_TOPICS, NOTIFY_TOPICS, type NotifyTopic, type PreferenceMatrix } from "@/lib/push/topics";
+import { useT } from "@/components/locale";
 import { sendTestNotificationAction, setLocaleAction, setPreferenceAction } from "./actions";
 
 /* ------------------------------------------------------------------ Sprache */
 
 export function LanguageCard({ locale }: { locale: Locale }) {
+  const t = useT();
   const [value, setValue] = useState<Locale>(locale);
   const [pending, start] = useTransition();
   return (
     <Card className="animate-rise p-4 space-y-3">
       <Segmented<Locale>
-        label="Sprache"
+        label={t("shell.notifications.language")}
         value={value}
         onChange={(v) => {
           const prev = value;
           setValue(v);
           start(async () => {
             const res = await setLocaleAction(v);
-            if (res.ok) toast.success(res.message ?? "Gespeichert.");
+            if (res.ok) toast.success(res.message ?? t("shell.common.saved"));
             else {
               setValue(prev);
               toast.error(res.error);
@@ -36,7 +38,7 @@ export function LanguageCard({ locale }: { locale: Locale }) {
         options={(Object.keys(LOCALE_LABELS) as Locale[]).map((l) => ({ value: l, label: LOCALE_LABELS[l], disabled: pending }))}
       />
       <p className="text-sm text-ink-3">
-        Gilt für E-Mails und Benachrichtigungen an dich. Die App selbst ist vorerst auf Deutsch.
+        {t("shell.notifications.languageHint")}
       </p>
     </Card>
   );
@@ -44,16 +46,18 @@ export function LanguageCard({ locale }: { locale: Locale }) {
 
 /* ------------------------------------------------------------- Dieses Gerät */
 
-const STATE_TEXT: Record<PushState, { title: string; text: string }> = {
-  enabled: { title: "Eingeschaltet", text: "Dieses Gerät erhält Benachrichtigungen." },
-  disabled: { title: "Ausgeschaltet", text: "Schalte ein, damit du Neuigkeiten sofort auf diesem Gerät siehst." },
-  denied: { title: "Im Browser blockiert", text: "Du hast Benachrichtigungen für Standchef blockiert. Erlaube sie in den Einstellungen des Browsers bzw. des Telefons (Website-Einstellungen → Benachrichtigungen) und lade die Seite neu." },
-  unsupported: { title: "Nicht möglich", text: "Dieser Browser unterstützt keine Push-Benachrichtigungen. Du erhältst wichtige Nachrichten weiterhin per E-Mail." },
-  "ios-needs-install": { title: "Erst zum Home-Bildschirm hinzufügen", text: "Auf iPhone und iPad funktionieren Benachrichtigungen nur, wenn Standchef als App auf dem Home-Bildschirm liegt (ab iOS 16.4)." },
-  "not-configured": { title: "Noch nicht verfügbar", text: "Push-Benachrichtigungen sind auf diesem Server noch nicht eingerichtet. Du erhältst wichtige Nachrichten per E-Mail." },
+/** Schlüssel-Teil pro Zustand: shell.notifications.state.<x>.title / .text */
+const STATE_KEY: Record<PushState, string> = {
+  enabled: "enabled",
+  disabled: "disabled",
+  denied: "denied",
+  unsupported: "unsupported",
+  "ios-needs-install": "iosInstall",
+  "not-configured": "notConfigured",
 };
 
 export function DeviceCard({ configured, devices }: { configured: boolean; devices: number }) {
+  const t = useT();
   const [state, setState] = useState<PushState | null>(null);
   const [busy, setBusy] = useState(false);
   const [testing, startTest] = useTransition();
@@ -73,24 +77,24 @@ export function DeviceCard({ configured, devices }: { configured: boolean; devic
     try {
       const next = on ? await enablePush() : await disablePush();
       setState(next);
-      if (on && next === "enabled") toast.success("Benachrichtigungen eingeschaltet.");
-      else if (on && next === "denied") toast.error("Benachrichtigungen wurden nicht erlaubt.");
-      else if (!on) toast.success("Auf diesem Gerät ausgeschaltet.");
+      if (on && next === "enabled") toast.success(t("shell.push.enabled"));
+      else if (on && next === "denied") toast.error(t("shell.push.denied"));
+      else if (!on) toast.success(t("shell.notifications.offOnDevice"));
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Das hat nicht geklappt.");
+      toast.error(e instanceof Error ? e.message : t("shell.common.failed"));
     } finally {
       setBusy(false);
     }
   }
 
-  const info = state ? STATE_TEXT[state] : null;
+  const info = state ? { title: t(`shell.notifications.state.${STATE_KEY[state]}.title`), text: t(`shell.notifications.state.${STATE_KEY[state]}.text`) } : null;
   const canToggle = state === "enabled" || state === "disabled";
   const otherDevices = Math.max(0, devices - (state === "enabled" ? 1 : 0));
 
   return (
     <Card className="animate-rise p-4 space-y-4">
       {!state ? (
-        <div className="flex items-center gap-2 text-sm text-ink-3"><Spinner /> Gerät wird geprüft…</div>
+        <div className="flex items-center gap-2 text-sm text-ink-3"><Spinner /> {t("shell.notifications.checking")}</div>
       ) : (
         <>
           <div className="flex items-start gap-3">
@@ -100,7 +104,7 @@ export function DeviceCard({ configured, devices }: { configured: boolean; devic
             <div className="min-w-0 flex-1">
               {canToggle ? (
                 <Switch
-                  label="Push-Benachrichtigungen"
+                  label={t("shell.notifications.push")}
                   description={info?.text}
                   checked={state === "enabled"}
                   disabled={busy || !configured}
@@ -121,9 +125,9 @@ export function DeviceCard({ configured, devices }: { configured: boolean; devic
             <p className="text-sm text-ink-3">
               {state === "enabled"
                 ? otherDevices > 0
-                  ? `Eingeschaltet auf diesem und ${otherDevices} ${otherDevices === 1 ? "weiteren Gerät" : "weiteren Geräten"}.`
-                  : "Nur auf diesem Gerät eingeschaltet."
-                : `Auf ${devices} ${devices === 1 ? "anderem Gerät" : "anderen Geräten"} eingeschaltet.`}
+                  ? t(otherDevices === 1 ? "shell.notifications.onThisAndOne" : "shell.notifications.onThisAndMany", { count: otherDevices })
+                  : t("shell.notifications.onlyThis")
+                : t(devices === 1 ? "shell.notifications.onOtherOne" : "shell.notifications.onOtherMany", { count: devices })}
             </p>
           ) : null}
 
@@ -135,12 +139,12 @@ export function DeviceCard({ configured, devices }: { configured: boolean; devic
               onClick={() =>
                 startTest(async () => {
                   const res = await sendTestNotificationAction();
-                  if (res.ok) toast.success(res.message ?? "Gesendet.");
+                  if (res.ok) toast.success(res.message ?? t("shell.notifications.sent"));
                   else toast.error(res.error);
                 })
               }
             >
-              {testing ? <Spinner /> : <Send className="h-4 w-4" aria-hidden />} Testbenachrichtigung senden
+              {testing ? <Spinner /> : <Send className="h-4 w-4" aria-hidden />} {t("shell.notifications.sendTest")}
             </Button>
           ) : null}
         </>
@@ -150,16 +154,17 @@ export function DeviceCard({ configured, devices }: { configured: boolean; devic
 }
 
 function IosInstallSteps() {
+  const t = useT();
   return (
-    <Alert tone="info" title="So geht’s auf dem iPhone">
+    <Alert tone="info" title={t("shell.notifications.ios.title")}>
       <ol className="mt-1 list-decimal space-y-1 pl-5">
         <li>
-          In Safari unten auf <Share className="inline h-4 w-4 align-[-2px]" aria-label="Teilen" /> «Teilen» tippen.
+          {t("shell.notifications.ios.step1a")} <Share className="inline h-4 w-4 align-[-2px]" aria-label={t("shell.notifications.ios.share")} /> {t("shell.notifications.ios.step1b")}
         </li>
         <li>
-          <SquarePlus className="inline h-4 w-4 align-[-2px]" aria-hidden /> «Zum Home-Bildschirm» wählen.
+          <SquarePlus className="inline h-4 w-4 align-[-2px]" aria-hidden /> {t("shell.notifications.ios.step2")}
         </li>
-        <li>Standchef vom Home-Bildschirm aus öffnen und hier einschalten.</li>
+        <li>{t("shell.notifications.ios.step3")}</li>
       </ol>
     </Alert>
   );
@@ -168,6 +173,7 @@ function IosInstallSteps() {
 /* ------------------------------------------------------------------ Themen */
 
 export function TopicsCard({ prefs, email }: { prefs: PreferenceMatrix; email: string }) {
+  const t = useT();
   const [values, setValues] = useState<PreferenceMatrix>(prefs);
   const [, start] = useTransition();
 
@@ -187,7 +193,7 @@ export function TopicsCard({ prefs, email }: { prefs: PreferenceMatrix; email: s
     <>
       <Card className="animate-rise divide-y divide-line overflow-hidden">
         {NOTIFY_TOPICS.map((topic) => {
-          const info = TOPIC_INFO[topic];
+          const info = { label: t(`notify.topic.${topic}`), hint: t(`shell.notifications.topicHint.${topic}`) };
           const locked = LOCKED_EMAIL_TOPICS.has(topic);
           return (
             <div key={topic} className="p-4" role="group" aria-labelledby={`topic-${topic}`}>
@@ -211,7 +217,7 @@ export function TopicsCard({ prefs, email }: { prefs: PreferenceMatrix; email: s
         })}
       </Card>
       <p className="mt-2.5 text-sm text-ink-3">
-        E-Mails gehen an {email}. Chat-Nachrichten stehen aus Datenschutzgründen nie im Wortlaut in einer E-Mail.
+        {t("shell.notifications.emailInfo", { email })}
       </p>
     </>
   );

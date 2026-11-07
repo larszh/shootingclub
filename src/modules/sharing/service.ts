@@ -28,10 +28,10 @@ export async function guestSlots(g: GuestShare, dateStr: string, durationMinutes
   const raw = await getSlotsForDay(owner.id, resource, settings, dateStr, durationMinutes, { requestedUnits: plan.units });
   const windowed = g.ownerHasRange
     ? applyWindowsToSlots(await loadBookingWindows(owner.id, resource.id), resource.id, dateStr, raw, true)
-    : { slots: raw, hint: null, outside: 0 };
+    : { slots: raw, windows: null, outside: 0 };
   return {
     maxPersons,
-    windowHint: windowed.hint,
+    windowHint: windowed.windows,
     outsideWindow: windowed.outside,
     windowOverride: false,
     slots: windowed.slots.map((s) => {

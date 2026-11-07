@@ -5,6 +5,7 @@ import { db } from "@/lib/db";
 import { getMatch, listPrograms, listTenantMembers } from "@/modules/scores/queries";
 import { toScoreMatch } from "@/modules/scores/sync";
 import type { SnapshotResponse } from "@/lib/offline/types";
+import { getRequestLocale } from "@/lib/i18n";
 
 export const dynamic = "force-dynamic";
 
@@ -30,8 +31,9 @@ export async function GET() {
 
   if (ctx.tenant && ctx.hasModule("scores")) {
     const tctx = ctx as typeof ctx & { tenant: NonNullable<typeof ctx.tenant> };
+    const locale = await getRequestLocale();
     const [programs, members, openIds] = await Promise.all([
-      listPrograms(tctx),
+      listPrograms(tctx, { locale }),
       listTenantMembers(tctx.tenant.id),
       db.match.findMany({
         where: { tenantId: tctx.tenant.id, status: "OPEN", OR: [{ createdById: user.id }, { participants: { some: { userId: user.id } } }] },
@@ -40,7 +42,7 @@ export async function GET() {
         take: OPEN_MATCH_LIMIT,
       }),
     ]);
-    const matches = (await Promise.all(openIds.map((m) => getMatch(tctx, m.id)))).filter((m) => m !== null);
+    const matches = (await Promise.all(openIds.map((m) => getMatch(tctx, m.id, { locale })))).filter((m) => m !== null);
     body.scores = {
       canCreate: ctx.can("match.create"),
       programs: programs.map((p) => ({ id: p.id, name: p.name, discipline: p.discipline, scoringMode: p.scoringMode, stages: p.stages, totals: p.totals, favorite: p.favorite })),

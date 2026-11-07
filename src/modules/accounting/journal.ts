@@ -1,4 +1,4 @@
-import { zurichParts } from "@/lib/time";
+import { zurichParts, zurichToUtc } from "@/lib/time";
 import type { AccountKey, AccountPlan } from "./types";
 
 /**
@@ -15,11 +15,19 @@ import type { AccountKey, AccountPlan } from "./types";
  * - Rechnung nach Ausstellung storniert (cancelledAt): Ertragskonto / Debitoren (Gegenbuchung)
  * - Online-Zahlung ohne Rechnung (Reservation direkt bezahlt): Bank / Ertragskonto,
  *   Rückerstattung: Ertragskonto / Bank
- * - Barzahlung ohne Rechnung (Reservation «Bar / vor Ort»): Bank / Ertragskonto am Zahlungsdatum,
- *   Rückerstattung: Ertragskonto / Bank
+ * - Barzahlung ohne Rechnung (Reservation «Bar / vor Ort»): Kasse / Ertragskonto am Zahlungsdatum,
+ *   Rückerstattung: Ertragskonto / Kasse
+ * - Barverkäufe der Schützenstube (Einträge «bar»): eine Buchung pro Kalendertag Kasse / Ertrag
+ *   Schützenstube (optional, `includeKioskCash`, Standard an)
+ *
+ * Storno- und Erstattungsdatum: aus den Spalten cancelledAt/refundedAt der Belege; ältere Belege ohne
+ * Spalte (oder mit aus updatedAt nachgetragener Spalte) aus dem Protokoll (events.ts), sonst die letzte Änderung (reversalDate).
+ *
+ * Gebühren der Zahlungsanbieter werden nicht gebucht: die Anbieter melden sie nicht pro Zahlung.
+ * Sie gehören anhand der Abrechnung des Anbieters von Hand auf feesExpenseAccount.
  *
  * Ertragskonto nach Art: Mitgliederbeitrag und Vereinsrechnung → feeAccount, Ersatzabgabe →
- * workFeeAccount, Schützenstube (Kiosk) → feeAccount (der Kontenplan hat kein eigenes Kiosk-Konto),
+ * workFeeAccount, Schützenstube (Rechnungen und Barverkäufe) → kioskAccount,
  * Reservation → bookingAccount, Munition → ammoAccount.
  *
  * Das Journal bildet den aktuellen Stand der Belege ab: Wird eine Zahlung zurückgesetzt, verschwindet
@@ -27,13 +35,13 @@ import type { AccountKey, AccountPlan } from "./types";
  */
 
 export type RevenueKind = "fee" | "workfee" | "kiosk" | "booking" | "ammo";
-export type DocSource = "FEE" | "BOOKING" | "AMMO" | "ONLINE" | "CASH";
+export type DocSource = "FEE" | "BOOKING" | "AMMO" | "ONLINE" | "CASH" | "KIOSK";
 export type EntryType = "issue" | "payment" | "reversal" | "refund";
 
 export const REVENUE_ACCOUNT: Record<RevenueKind, AccountKey> = {
   fee: "feeAccount",
   workfee: "workFeeAccount",
-  kiosk: "feeAccount",
+  kiosk: "kioskAccount",
   booking: "bookingAccount",
   ammo: "ammoAccount",
 };
@@ -59,6 +67,7 @@ export const SOURCE_LABEL: Record<DocSource, string> = {
   AMMO: "Munition",
   ONLINE: "Online-Zahlungen",
   CASH: "Barzahlungen",
+  KIOSK: "Schützenstube bar",
 };
 
 export type OnlinePayment = {
@@ -73,7 +82,7 @@ export type OnlinePayment = {
 
 export type InvoiceDoc = {
   type: "invoice";
-  source: Exclude<DocSource, "ONLINE" | "CASH">;
+  source: Exclude<DocSource, "ONLINE" | "CASH" | "KIOSK">;
   id: string;
   number: string;
   kind: RevenueKind;
@@ -93,10 +102,10 @@ export type InvoiceDoc = {
   onlinePayments: OnlinePayment[];
 };
 
-/** Zahlung ohne Rechnung: Reservation online bezahlt (ONLINE) oder bar vor Ort (CASH). */
+/** Zahlung ohne Rechnung: Reservation online bezahlt (ONLINE) oder bar vor Ort (CASH), Barverkäufe der Schützenstube (KIOSK). */
 export type PaymentDoc = {
   type: "payment";
-  source: "ONLINE" | "CASH";
+  source: "ONLINE" | "CASH" | "KIOSK";
   id: string;
   /** Belegnummer (Online-Zahlungen ohne Rechnung haben keine eigene Nummer) */
   number: string;
@@ -160,7 +169,51 @@ export function isPaidOnline(invoicePaidAt: Date | null, paymentSettledAt: Date[
   return paymentSettledAt.some((t) => Math.abs(t.getTime() - invoicePaidAt.getTime()) <= ONLINE_SETTLE_WINDOW_MS);
 }
 
-export type JournalOptions = { from: string; to: string };
+/** Spielraum zwischen Spalte und Protokolleintrag desselben Statuswechsels (Uhren App/Datenbank). */
+export const REVERSAL_LOG_TOLERANCE_MS = 60_000;
+
+/**
+ * Datum einer Gegenbuchung (Storno, Rückerstattung): Spalte am Beleg, sonst der protokollierte
+ * Statuswechsel (ältere Belege), sonst die letzte Änderung.
+ * Liegt der Protokolleintrag deutlich vor der Spalte, wurde die Spalte nachträglich aus `updatedAt`
+ * nachgetragen (Migration Wave D, ältere Belege mit späterer Bearbeitung): dann gilt das Protokoll.
+ * Beim Statuswechsel wird die Spalte gesetzt und erst danach protokolliert (Protokoll ≥ Spalte).
+ */
+export function reversalDate(column: Date | null | undefined, logged: Date | null | undefined, fallback: Date): Date {
+  if (column && logged && logged.getTime() < column.getTime() - REVERSAL_LOG_TOLERANCE_MS) return logged;
+  return column ?? logged ?? fallback;
+}
+
+export type KioskCashEntry = { createdAt: Date; totalCents: number };
+
+/**
+ * Barverkäufe der Schützenstube als ein Beleg pro Kalendertag (Schweizer Zeit). Belegnummer
+ * «KASSE-JJJJMMTT», Datum Mittag des Tages (eindeutig im richtigen Tag). Stornierte Einträge sind
+ * gelöscht und fehlen deshalb.
+ */
+export function kioskCashDocuments(entries: KioskCashEntry[], currency: string): PaymentDoc[] {
+  const days = new Map<string, { cents: number; count: number }>();
+  for (const e of entries) {
+    if (e.totalCents <= 0) continue;
+    const d = zurichParts(e.createdAt).dateStr;
+    const g = days.get(d) ?? { cents: 0, count: 0 };
+    g.cents += e.totalCents;
+    g.count += 1;
+    days.set(d, g);
+  }
+  return [...days.entries()].sort((a, b) => (a[0] < b[0] ? -1 : 1)).map(([d, g]) => ({
+    type: "payment", source: "KIOSK", id: `kiosk-cash-${d}`, number: `KASSE-${d.replaceAll("-", "")}`, kind: "kiosk",
+    label: `Schützenstube ${d.slice(8, 10)}.${d.slice(5, 7)}.${d.slice(0, 4)} (${g.count} ${g.count === 1 ? "Position" : "Positionen"})`,
+    payment: { id: `kiosk-cash-${d}`, provider: "CASH", amountCents: g.cents, currency, paidAt: zurichToUtc(d, "12:00"), refundedAt: null },
+  }));
+}
+
+export type JournalOptions = {
+  from: string;
+  to: string;
+  /** Barverkäufe der Schützenstube buchen (Kasse / Ertrag Schützenstube). Standard: true */
+  includeKioskCash?: boolean;
+};
 
 /** Alle Buchungen der Belege im Zeitraum [from, to] (inklusive), sortiert nach Datum und Beleg. */
 export function buildJournal(docs: JournalDocument[], accounts: AccountPlan, opts: JournalOptions): JournalEntry[] {
@@ -177,11 +230,14 @@ export function buildJournal(docs: JournalDocument[], accounts: AccountPlan, opt
     const base = { doc: cleanText(d.number, 64), source: d.source, kind: d.kind, docId: d.id };
 
     if (d.type === "payment") {
+      if (d.source === "KIOSK" && opts.includeKioskCash === false) continue;
       const p = d.payment;
-      const via = d.source === "CASH" ? "Barzahlung" : `Online-Zahlung ${providerLabel(p.provider)}`;
-      push({ ...base, type: "payment", date: day(p.paidAt), text: `${via} ${d.label}`, debit: bank, credit: revenue, amountCents: p.amountCents, currency: p.currency });
+      // Bargeld (Reservation bar, Theke) auf die Kasse, Online-Zahlungen auf die Bank.
+      const money = d.source === "ONLINE" ? bank : accounts.cashAccount;
+      const via = d.source === "KIOSK" ? "Barverkäufe" : d.source === "CASH" ? "Barzahlung" : `Online-Zahlung ${providerLabel(p.provider)}`;
+      push({ ...base, type: "payment", date: day(p.paidAt), text: `${via} ${d.label}`, debit: money, credit: revenue, amountCents: p.amountCents, currency: p.currency });
       if (p.refundedAt) {
-        push({ ...base, type: "refund", date: day(p.refundedAt), text: `Rückerstattung ${via} ${d.label}`, debit: revenue, credit: bank, amountCents: p.amountCents, currency: p.currency });
+        push({ ...base, type: "refund", date: day(p.refundedAt), text: `Rückerstattung ${via} ${d.label}`, debit: revenue, credit: money, amountCents: p.amountCents, currency: p.currency });
       }
       continue;
     }

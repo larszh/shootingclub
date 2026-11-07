@@ -2,19 +2,23 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { ChevronRight, Plus, ShieldCheck } from "lucide-react";
 import { Badge, Card, EmptyState, LinkButton, LinkTabs, PageHeader } from "@/components/ui";
-import { formatDateTimeZurich } from "@/lib/time";
+import { formatDateTime, getRequestLocale, getT } from "@/lib/i18n";
 import { requireRange } from "@/modules/range/guard";
 import { listIncidents } from "@/modules/range/queries";
-import { INCIDENT_HINT, INCIDENT_STATUS, kindLabel, severityInfo } from "@/modules/range/types";
+import { incidentStatusInfo, kindLabel, severityInfo } from "@/modules/range/types";
 import { rangeTabs } from "@/modules/range/nav";
 import { RangeTabs } from "@/modules/range/ui/range-tabs";
 
-export const metadata: Metadata = { title: "Vorfälle" };
+export async function generateMetadata(): Promise<Metadata> {
+  return { title: getT(await getRequestLocale())("shooting.range.tab./range/incidents") };
+}
 
 export default async function IncidentsPage({ searchParams }: { searchParams: Promise<{ f?: string }> }) {
   const ctx = await requireRange();
   const sp = await searchParams;
   const isManager = ctx.can("range.manage");
+  const locale = await getRequestLocale();
+  const t = getT(locale);
   const filter = isManager ? (sp.f === "closed" ? "closed" : sp.f === "all" ? "all" : "open") : "mine";
   const rows = await listIncidents(ctx.tenant.id, {
     reportedById: isManager ? undefined : ctx.user.id,
@@ -23,21 +27,21 @@ export default async function IncidentsPage({ searchParams }: { searchParams: Pr
 
   return (
     <div className="space-y-4">
-      <PageHeader title="Vorfälle" subtitle={isManager ? "Alle Meldungen des Vereins" : "Deine Meldungen"} action={<LinkButton href="/range/incidents/new" size="sm" className="h-11"><Plus className="h-4 w-4" /> Melden</LinkButton>} />
-      <RangeTabs tabs={rangeTabs({ duty: ctx.can("range.duty"), manage: isManager })} />
+      <PageHeader title={t("shooting.range.tab./range/incidents")} subtitle={t(isManager ? "shooting.incident.subtitleAll" : "shooting.incident.subtitleMine")} action={<LinkButton href="/range/incidents/new" size="sm" className="h-11"><Plus className="h-4 w-4" /> {t("shooting.incident.report")}</LinkButton>} />
+      <RangeTabs tabs={rangeTabs({ duty: ctx.can("range.duty"), manage: isManager })} locale={locale} />
       {isManager ? (
-        <LinkTabs active={filter} label="Vorfälle filtern" items={[{ value: "open", href: "/range/incidents", label: "Offen" }, { value: "closed", href: "/range/incidents?f=closed", label: "Abgeschlossen" }, { value: "all", href: "/range/incidents?f=all", label: "Alle" }]} />
+        <LinkTabs active={filter} label={t("shooting.incident.filter")} items={[{ value: "open", href: "/range/incidents", label: t("shooting.incident.status.OPEN") }, { value: "closed", href: "/range/incidents?f=closed", label: t("shooting.incident.status.CLOSED") }, { value: "all", href: "/range/incidents?f=all", label: t("shooting.incident.filter.all") }]} />
       ) : null}
       {rows.length ? (
         <Card className="animate-rise divide-y divide-line overflow-hidden">
           {rows.map((r) => {
-            const sev = severityInfo(r.severity);
-            const st = INCIDENT_STATUS[r.status] ?? INCIDENT_STATUS.OPEN!;
+            const sev = severityInfo(r.severity, t);
+            const st = incidentStatusInfo(r.status, t);
             return (
               <Link key={r.id} href={`/range/incidents/${r.id}`} className="flex min-h-16 items-center gap-3 px-4 py-3 hover:bg-surface-2">
                 <div className="min-w-0 flex-1">
-                  <div className="truncate font-medium">{kindLabel(r.kind)}{r.location ? ` · ${r.location}` : ""}</div>
-                  <div className="truncate text-xs text-ink-3">{formatDateTimeZurich(r.occurredAt)}{r.reporterName ? ` · ${r.reporterName}` : ""}</div>
+                  <div className="truncate font-medium">{kindLabel(r.kind, t)}{r.location ? ` · ${r.location}` : ""}</div>
+                  <div className="truncate text-xs text-ink-3">{formatDateTime(r.occurredAt, locale)}{r.reporterName ? ` · ${r.reporterName}` : ""}</div>
                 </div>
                 <div className="flex shrink-0 flex-col items-end gap-1">
                   <Badge tone={sev.tone}>{sev.label}</Badge>
@@ -49,9 +53,9 @@ export default async function IncidentsPage({ searchParams }: { searchParams: Pr
           })}
         </Card>
       ) : (
-        <EmptyState icon={<ShieldCheck className="h-5 w-5" />} title="Keine Vorfälle" text="Beinahe-Unfälle zu melden hilft, Unfälle zu verhindern." action={<LinkButton href="/range/incidents/new">Vorfall melden</LinkButton>} />
+        <EmptyState icon={<ShieldCheck className="h-5 w-5" />} title={t("shooting.incident.empty.title")} text={t("shooting.incident.empty.text")} action={<LinkButton href="/range/incidents/new">{t("shooting.incident.new")}</LinkButton>} />
       )}
-      <p className="text-xs text-ink-3">{INCIDENT_HINT}</p>
+      <p className="text-xs text-ink-3">{t("shooting.incident.hint")}</p>
     </div>
   );
 }

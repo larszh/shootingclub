@@ -1,10 +1,13 @@
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { requireModule } from "@/lib/tenant";
+import { getRequestLocale, getT } from "@/lib/i18n";
 import { getConversationDetail, listTenantMembersForPicker } from "@/modules/chat/queries";
 import { ConversationView } from "@/modules/chat/ui/conversation-view";
 
-export const metadata: Metadata = { title: "Chat" };
+export async function generateMetadata(): Promise<Metadata> {
+  return { title: getT(await getRequestLocale())("money.chat.title") };
+}
 
 export default async function ConversationPage({ params }: { params: Promise<{ id: string }> }) {
   const ctx = await requireModule("chat");
@@ -22,6 +25,7 @@ export default async function ConversationPage({ params }: { params: Promise<{ i
       detail={detail}
       tenantMembers={tenantMembers}
       canManageClub={ctx.can("tenant.manage")}
+      locale={await getRequestLocale()}
     />
   );
 }

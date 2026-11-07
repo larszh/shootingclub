@@ -3,6 +3,7 @@
 import { startTransition } from "react";
 import { useFormStatus } from "react-dom";
 import { Button } from "./index";
+import { useT } from "@/components/locale";
 
 /**
  * onSubmit-Handler für Formulare mit useActionState, der die Eingaben behält.
@@ -28,13 +29,14 @@ export function submitKeepingValues(formAction: (formData: FormData) => void) {
 
 export function SubmitButton({ children, pendingText, disabled, pending: pendingProp, ...props }: React.ComponentProps<typeof Button> & { pendingText?: string; /** Ladezustand von aussen, z.B. bei submitKeepingValues() */ pending?: boolean }) {
   const status = useFormStatus();
+  const t = useT();
   const pending = status.pending || !!pendingProp;
   return (
     // Eigenes `disabled` darf den Ladezustand nicht aufheben (sonst Doppel-Absenden).
     <Button type="submit" {...props} disabled={pending || disabled} aria-busy={pending || undefined}>
       {pending ? (
         <span className="inline-flex items-center gap-2">
-          <Spinner /> {pendingText ?? "Bitte warten…"}
+          <Spinner /> {pendingText ?? t("shell.ui.pleaseWait")}
         </span>
       ) : (
         children

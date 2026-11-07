@@ -39,8 +39,26 @@ export const INCIDENT_STATUS: Record<string, { label: string; tone: Tone }> = {
   CLOSED: { label: "Abgeschlossen", tone: "ok" },
 };
 
-export const kindLabel = (k: string) => INCIDENT_KINDS.find((x) => x.key === k)?.label ?? k;
-export const severityInfo = (s: string) => INCIDENT_SEVERITIES.find((x) => x.key === s) ?? INCIDENT_SEVERITIES[0];
+/** Übersetzt einen Schlüssel, Rückfall auf den deutschen Text, wenn kein Übersetzer oder kein Eintrag da ist. */
+const tr = (t: ((key: string) => string) | undefined, key: string, de: string) => {
+  if (!t) return de;
+  const v = t(key);
+  return v === key ? de : v;
+};
+
+export const kindLabel = (k: string, t?: (key: string) => string) => {
+  const de = INCIDENT_KINDS.find((x) => x.key === k)?.label;
+  return de ? tr(t, `shooting.incident.kind.${k}`, de) : k;
+};
+export const severityInfo = (s: string, t?: (key: string) => string) => {
+  const info = INCIDENT_SEVERITIES.find((x) => x.key === s) ?? INCIDENT_SEVERITIES[0];
+  return t ? { ...info, label: tr(t, `shooting.incident.severity.${info.key}`, info.label) } : info;
+};
+export const incidentStatusInfo = (s: string, t?: (key: string) => string) => {
+  const key = s in INCIDENT_STATUS ? s : "OPEN";
+  const info = INCIDENT_STATUS[key]!;
+  return { ...info, label: tr(t, `shooting.incident.status.${key}`, info.label) };
+};
 
 export const DISCIPLINE_SUGGESTIONS = ["Gewehr 300 m", "Pistole 25 m", "Pistole 50 m", "Kleinkaliber 50 m", "Luftgewehr 10 m", "Luftpistole 10 m", "Armbrust"];
 

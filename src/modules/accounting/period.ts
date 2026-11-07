@@ -7,7 +7,12 @@ export type PeriodKind = "year" | "quarter" | "month" | "custom";
 
 export type Period = { kind: PeriodKind; from: string; to: string; year: number; quarter: number; month: number; label: string };
 
-export type PeriodParams = { period?: string; year?: string; q?: string; m?: string; from?: string; to?: string };
+export type PeriodParams = { period?: string; year?: string; q?: string; m?: string; from?: string; to?: string; kioskCash?: string };
+
+/** Barverkäufe der Schützenstube buchen? Standard ja; «0» lässt sie weg (wer die Kasse separat führt). */
+export function includeKioskCashParam(v: string | null | undefined): boolean {
+  return v !== "0";
+}
 
 export const MONTH_NAMES = ["Januar", "Februar", "März", "April", "Mai", "Juni", "Juli", "August", "September", "Oktober", "November", "Dezember"];
 

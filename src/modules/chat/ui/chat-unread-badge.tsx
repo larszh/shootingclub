@@ -2,6 +2,8 @@
 
 import { useEffect, useState } from "react";
 import { cn } from "@/lib/utils";
+import { getT, type Locale } from "@/lib/i18n/core";
+import { tPlural } from "@/modules/billing/ui/i18n";
 import { chatStreamUserId, subscribeChatStream } from "./stream-client";
 
 /**
@@ -9,7 +11,7 @@ import { chatStreamUserId, subscribeChatStream } from "./stream-client";
  * `initial` kommt vom Server (getUnreadChatCount); danach live über den Chat-Stream.
  * Rendert nichts bei 0.
  */
-export function ChatUnreadBadge({ initial, className }: { initial: number; className?: string }) {
+export function ChatUnreadBadge({ initial, className, locale = "de" }: { initial: number; className?: string; locale?: Locale }) {
   const [state, setState] = useState({ initial, count: initial });
   // Neuer Wert vom Server (z.B. nach router.refresh) hat Vorrang.
   if (state.initial !== initial) setState({ initial, count: initial });
@@ -49,7 +51,7 @@ export function ChatUnreadBadge({ initial, className }: { initial: number; class
   return (
     <span
       className={cn("inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-accent px-1.5 text-[11px] font-semibold tabular-nums leading-none text-accent-ink", className)}
-      aria-label={count === 1 ? "1 ungelesene Nachricht" : `${count} ungelesene Nachrichten`}
+      aria-label={tPlural(getT(locale), "money.chat.unread", count)}
       role="status"
     >
       {label}

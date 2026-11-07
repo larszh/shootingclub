@@ -13,7 +13,7 @@ import { ensureReference, tenantQrIban } from "./reference";
 import { isQrIban } from "@/lib/qr-reference";
 import { todayZurich, zurichParts } from "@/lib/time";
 import { dueDateInDays } from "./dates";
-import { feeInvoicesToCreate, householdInvoiceCovering, householdMemberAuditRows, type FeeSnapshot } from "./fee-run";
+import { backfillHouseholdInvoiceMembers, feeInvoicesToCreate, householdInvoiceCovering, householdMemberAuditRows, householdMemberRows, type FeeSnapshot } from "./fee-run";
 import { audit } from "@/lib/audit";
 import { notify } from "@/lib/notify";
 import { formatDate, formatMoneyLocale, getT } from "@/lib/i18n/core";
@@ -194,12 +194,17 @@ async function createInvoicesLocked(tenantId: string, actor: { id: string; name:
   const billing = await billingDefaults(tenantId);
   const created = await db.$transaction(async (tx) => {
     await tx.$queryRaw`SELECT id FROM \`FeeRun\` WHERE id = ${run.id} FOR UPDATE`;
+    // Ältere Haushaltsrechnungen des Jahres ohne festgehaltene Mitglieder einmalig nachtragen.
+    await backfillHouseholdInvoiceMembers(tx, tenantId, run.year);
     const out = [];
     for (const m of await pick(tx)) {
       const inv = await createInvoiceFor(tx, tenantId, run, m, billing);
       if (!inv) continue;
       // Haushaltsrechnung: festhalten, welche Mitgliedschaften sie enthält (bestimmt die Abdeckung bei späteren Läufen).
-      if (m.covers?.length) await tx.auditLog.createMany({ data: householdMemberAuditRows(tenantId, inv, m.covers, actor) });
+      if (m.covers?.length) {
+        await tx.feeInvoiceMember.createMany({ data: householdMemberRows(tenantId, inv.id, m.covers.map((c) => c.membershipId)), skipDuplicates: true });
+        await tx.auditLog.createMany({ data: householdMemberAuditRows(tenantId, inv, m.covers, actor) });
+      }
       out.push(inv);
     }
     return out;
@@ -262,6 +267,7 @@ export async function createSingleInvoiceAction(membershipId: string, year: numb
   const ctx = await requireBillingAdmin();
   const m = await db.membership.findUnique({ where: { id: membershipId }, include: { user: true, feeCategory: true, feeInvoices: { where: { year, status: { not: "CANCELLED" } } } } });
   if (!m || m.tenantId !== ctx.tenant.id) return fail("Nicht gefunden");
+  if (m.status === "PENDING") return fail("Der Beitritt wartet noch auf Freigabe.");
   if (m.feeInvoices.length) return fail("Für dieses Jahr existiert bereits eine Rechnung.");
   // Mitglied ist schon in der Haushaltsrechnung eines anderen Haushaltsmitglieds enthalten.
   const covered = await householdInvoiceCovering(db, ctx.tenant.id, m.id, year);
@@ -301,17 +307,29 @@ export async function setFeeInvoiceStatusAction(id: string, status: "OPEN" | "PA
   const ctx = await requireBillingAdmin();
   if (!["OPEN", "PAID", "CANCELLED"].includes(status)) return fail("Ungültiger Status");
   if (note !== undefined && (typeof note !== "string" || note.length > 500)) return fail("Notiz ist ungültig oder zu lang.");
-  const inv = await db.feeInvoice.findUnique({ where: { id } });
-  if (!inv || inv.tenantId !== ctx.tenant.id) return fail("Nicht gefunden");
-  if (inv.status === status && note === undefined) return ok();
-  const blocked = await kioskReopenBlocked(db, inv, status);
-  if (blocked) return fail(blocked);
-  const paidAt = status === "PAID" ? (inv.status === "PAID" && inv.paidAt ? inv.paidAt : new Date()) : null;
-  // Eine neue Notiz ersetzt die sichtbare Notiz, der interne Mahnzähler bleibt erhalten.
-  const reminders = reminderCount(inv.paymentNote, null);
-  const paymentNote = note !== undefined ? joinNoteLines(reminders && /Gemahnt:/.test(inv.paymentNote ?? "") ? `Gemahnt: ${reminders}×` : null, [note.trim()]) : undefined;
-  await db.feeInvoice.update({ where: { id }, data: { status, paidAt, ...(paymentNote !== undefined ? { paymentNote } : {}) } });
-  if (inv.status !== "CANCELLED" && status === "CANCELLED") {
+  const found = await db.feeInvoice.findUnique({ where: { id }, select: { tenantId: true } });
+  if (!found || found.tenantId !== ctx.tenant.id) return fail("Nicht gefunden");
+  // Zeile sperren und auf dem gesperrten Stand entscheiden: «Wieder freigeben» (Schützenstube) sperrt
+  // dieselbe Zeile, sonst könnte eine gleichzeitige Freigabe die Reaktivierung durchrutschen lassen.
+  const result = await db.$transaction(async (tx) => {
+    await tx.$queryRaw`SELECT id FROM \`FeeInvoice\` WHERE id = ${id} AND tenantId = ${ctx.tenant.id} FOR UPDATE`;
+    const inv = await tx.feeInvoice.findUnique({ where: { id } });
+    if (!inv || inv.tenantId !== ctx.tenant.id) return { error: "Nicht gefunden" };
+    if (inv.status === status && note === undefined) return { error: null, prev: inv.status, changed: false };
+    const blocked = await kioskReopenBlocked(tx, inv, status);
+    if (blocked) return { error: blocked };
+    const paidAt = status === "PAID" ? (inv.status === "PAID" && inv.paidAt ? inv.paidAt : new Date()) : null;
+    // Eine neue Notiz ersetzt die sichtbare Notiz, der interne Mahnzähler bleibt erhalten.
+    const reminders = reminderCount(inv.paymentNote, null);
+    const paymentNote = note !== undefined ? joinNoteLines(reminders && /Gemahnt:/.test(inv.paymentNote ?? "") ? `Gemahnt: ${reminders}×` : null, [note.trim()]) : undefined;
+    // Storno-Datum für die Buchhaltung: beim Wechsel auf storniert setzen, beim Reaktivieren löschen.
+    const cancelledAt = status === "CANCELLED" ? (inv.status === "CANCELLED" && inv.cancelledAt ? inv.cancelledAt : new Date()) : null;
+    await tx.feeInvoice.update({ where: { id }, data: { status, paidAt, cancelledAt, ...(paymentNote !== undefined ? { paymentNote } : {}) } });
+    return { error: null, prev: inv.status, changed: true };
+  });
+  if (result.error !== null) return fail(result.error);
+  if (!result.changed) return ok();
+  if (result.prev !== "CANCELLED" && status === "CANCELLED") {
     await recordAccountingEvent({ tenantId: ctx.tenant.id, kind: "cancel", entity: "FeeInvoice", entityId: id, actorId: ctx.user.id, actorName: ctx.user.name });
   }
   revalidate();

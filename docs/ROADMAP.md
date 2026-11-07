@@ -54,19 +54,29 @@ Details im README.
 - **Integration**: Navigation, Verwaltungslinks, «Online bezahlen» auf der Startseite, FAQ, Demo-Daten, Datenexport und Kontolöschung inkl. Schützenstube.
 - **Offen aus Welle C**: Live-Test mit einer Payrexx-Testinstanz vor dem Einsatz; Gebühren der Zahlungsanbieter und Barverkäufe der Schützenstube werden nicht automatisch gebucht; Rückerstattungen nur von Hand im Backoffice des Anbieters; X/Y-Trefferlage beim Import wird nicht gespeichert; Partner-Rechnungen erscheinen nicht unter «Zahlungen» des Gastvereins.
 
+### Welle D: Sprachen, Verband, Reste (erledigt)
+- **Übersetzungen FR/IT der Mitgliederseiten**: App-Hülle (Navigation, «Mehr», Offline-Hinweis), Startseite, alle `/me`-Seiten, Hilfe/FAQ, Anmeldung, Registrierung, Einladung, Passwort, 404/Fehler, Verein wählen (Onboarding); Zahlungen, Beiträge und Online-Zahlung, Anlässe und Mitteilungen, Chat, «Meine Konsumationen»; Reservationen (Liste, Assistent, Detail, Bezahlen, Partner-Anlage, Rückkehr vom Zahlungsanbieter); Punkteerfassung, Schiessnachweis, Check-in, Helfereinsätze, Kurse, Meisterschaft «Mein Stand», Bundesübungen (Mitgliederansicht), Scheiben. `<html lang>` und Sprache für nicht angemeldete Personen (Cookie, Vereinssprache, Browser). Französisch mit Schweizer Schreibweise («société de tir», Guillemets mit schmalem geschütztem Leerzeichen), Italienisch mit «società di tiro». Wörterbücher `src/lib/i18n/extra/{shell,money,shooting,bookings}.ts` mit Tests auf Vollständigkeit und Platzhalter.
+- **Kantonal-/Regionalverband** (`/association`, `/admin/association`, `/super/associations`): Super-Admins legen Verbände an und ernennen Verbandsadmins (ADMIN/VIEWER). Vereine treten per Code mit Einwilligung bei, der Verband gibt frei. Dashboard pro Jahr (Mitglieder, Obligatorisch, Feldschiessen, offene Bestätigungen, Fristen), vereinsübergreifende Rangliste (nur globale Programme; Namen nur bei «Namen teilen»), CSV und Druck. Beenden jederzeit, Zugriff endet sofort.
+- **Beitritt mit Freigabe** (`Tenant.joinApproval`): Beitritt per Code erzeugt eine Anfrage (Membership `PENDING`) ohne Zugang; Freigabe/Ablehnung unter `/admin/members/requests` (`members.approve`), Zähler in der Navigation, Warteseite mit «Zurückziehen». Einladungen per E-Mail gelten weiter sofort (auch für wartende Anfragen).
+- **Reservationen**: Serien für Trainer (`/bookings/series`, `bookings.series`) mit Vorschau und Konfliktprüfung (Öffnungszeiten, Sperren, Kapazität, Schiesszeiten), Storno einzeln oder ganz; Bestätigungs-Mail bei eigener Buchung und Storno; Erinnerung 24 h vorher (Job `bookings` in `REMINDER_HOOKS`, idempotent über `Booking.reminderSentAt`).
+- **Offen aus Welle B erledigt**: Feldschiessen-Auszeichnungen mit Limitentabelle pro Programm/Jahr (`/federal/awards`, Druckliste, CSV, keine offiziellen Limiten eingebaut); `WeaponSettings` (Meldefrist Minderjährige, Wartungsintervall) und `ClubWeapon.blockReason`; Pro-rata-Arbeitsstunden; Nachname/Vorname im SAT-Export.
+- **Offen aus Welle C erledigt**: Storno- und Rückerstattungsdatum als eigene Felder (Buchhaltung bucht am richtigen Tag); Barverkäufe der Schützenstube als Tagesbuchung (Kasse/Ertrag Schützenstube); Tab «Einzelrechnungen» mit Schutz gegen Doppelverrechnung bei Schützenstube-Rechnungen; Haushaltsrechnungen über `FeeInvoiceMember` (ältere Rechnungen werden einmalig nachgetragen); Partner-Rechnungen unter «Zahlungen» des Gastvereins mit Bankverbindung des Eigentümers; Mitgliedernummern natürlich sortiert.
+- **Integration**: Navigation (Beitrittsanfragen mit Zähler, Verband, Verbände), FAQ (6 neue Einträge in DE/FR/IT), Datenexport und Kontolöschung mit Serien, Verbandsrollen und offenen Anfragen, Demo-Daten (Trainingsserie, Beitrittsanfrage, Demo-Kantonalverband `KSVDEMO1`, FS-Limiten als Beispiel), wartende Mitglieder in allen Modulen ausgeschlossen (`accessStatusWhere()`).
+- **Offen aus Welle D**:
+  - Admin-, Trainer- und Verbandsseiten sind weiterhin nur Deutsch (Verwaltung, Serien, Beitrittsanfragen, Verband, Auszeichnungen, Buchhaltung, Einzelrechnungen). Ebenso das Mitgliederverzeichnis `/members`, einige Server-Meldungen aus Helfereinsätzen, Kursen, Meisterschaft und Partnerbuchung, der Massstabshinweis auf der Scheiben-Detailseite und die Ausweichbezeichnung «Partnerverein».
+  - Beträge in allen Sprachen im Format «CHF 4’380.00» (bewusst, gegen Unterschiede zwischen Server und Browser).
+  - Gebühren der Zahlungsanbieter werden weiter von Hand gebucht (kein Anbieter liefert die Gebühr pro Zahlung).
+  - Auszeichnungs-Kategorien nur nach Alter; Waffenkategorien (Stgw 90/57, Karabiner) über eigene Programme.
+  - Partnerbuchungen über die gemeinsame Anlage und Online-Bezahlung lösen noch keine Bestätigungs-Mail aus.
+  - Laufzeit-Prüfung im Browser (Playwright) für die neuen Seiten steht aus; geprüft mit Typprüfung, Lint, Unit-Tests und Produktions-Build.
+
 ## Nächste Wellen
 
-### Welle D
-- **Übersetzungen der Mitgliederseiten** (FR/IT): Zahlungen, Anlässe, Reservationen, Chat, Punkteerfassung, Schützenstube, danach Login/Registrierung und Admin-Seiten.
-- **Kantonalverband**: Ansicht über mehrere Vereine (z.B. Obligatorisch-Statistik, Meldungen, Jahresmeisterschaft).
-- **bexio-API**: Buchungen und Debitoren direkt übertragen statt CSV-Import.
-- **Live-Import aus elektronischen Trefferanzeigen**: Resultate während des Schiessens übernehmen (Meyton/SIUS-Schnittstelle, später Polytronic), angebunden an die Live-Rangliste.
-
-### Mehrsprachigkeit, nächste Schritte
-1. App-Shell und /me übersetzen, `<html lang>` aus `getRequestLocale()`.
-2. Häufigste Mitgliederseiten (Zahlungen, Anlässe, Reservationen, Chat, Punkteerfassung).
-3. Login, Registrierung, Einladung.
-4. Admin-Seiten.
+### Welle E
+- **bexio-API**: Buchungen und Debitoren direkt übertragen statt CSV-Import. Braucht einen Partnerzugang bei bexio (OAuth-App, Freigabe durch bexio) und eine Testfirma; bis dahin bleibt der Export (CSV/Banana) der Weg.
+- **Live-Import aus elektronischen Trefferanzeigen**: Resultate während des Schiessens übernehmen (Meyton/SIUS-Schnittstelle, später Polytronic), angebunden an die Live-Rangliste. Braucht Zugang zu den Herstellerschnittstellen (Dokumentation, teils Lizenz) und eine Anlage mit echter Hardware zum Testen; der Datei-Import aus Welle C deckt den Ablauf nach dem Schiessen ab.
+- **Übersetzung der Admin-Seiten** (FR/IT) und des Verbandsbereichs.
+- **E2E-Tests** (Playwright) für Beitritt mit Freigabe, Serienbuchung, Verband und die Sprachumschaltung.
 
 ## Optimierungen (noch nicht umgesetzt)
 
@@ -74,12 +84,11 @@ Details im README.
 - **Live-Wettkampf**: Gegner sehen die Eingabe des anderen in Echtzeit (Server-Sent Events oder Polling alle paar Sekunden auf der Match-Seite).
 - **Vereinsmeisterschaft**: Vergleich mit dem eigenen Schnitt (die Wertung selbst ist mit der Jahresmeisterschaft umgesetzt).
 - **Trefferbild**: Optional pro Schuss die Lage auf der Scheibe antippen (x/y), daraus Streukreis und Mittelpunkt berechnen. Kombiniert Modul Scheiben und Punkte.
-- **Beitritt mit Freigabe** durch Admin (statt sofort per Code), Gäste nachträglich einem Konto zuordnen.
+- **Gäste nachträglich einem Konto zuordnen** (Beitritt mit Freigabe ist mit Welle D umgesetzt).
 - **Programm-Import/-Export** als JSON, damit Vereine Programme tauschen können.
 - **Scheiben-Druck**: Vektor-PDF serverseitig (z.B. mit `pdf-lib`) statt Browser-Druck.
-- **Reservationen, nächste Schritte**: Wiederkehrende Buchungen (jeden Dienstag), Serienbuchung für Trainer, E-Mail-Bestätigung und Erinnerung, automatische Rückerstattung bei Storno (Stripe-Refund-API), Gästebuchungen ohne Konto mit Bezahlung, Preisregeln nach Rolle (Mitglieder gratis, Gäste zahlen) und Tageszeit (Nebenzeiten günstiger).
-- **Mitgliederbeiträge, nächste Schritte**: Rechnung als PDF-Anhang per E-Mail, Teilzahlungen, Familienrabatte, pro-rata-Beitrag bei Austritt. Beitragsübersicht zählt Haushaltsmitglieder ohne eigene Rechnung noch als «nicht verrechnet».
-- **Mitgliedernummern** numerisch sortieren (heute Textsortierung: «10» vor «9»).
+- **Reservationen, nächste Schritte** (Serien, Bestätigung und Erinnerung sind mit Welle D umgesetzt): automatische Rückerstattung bei Storno (Stripe-Refund-API), Gästebuchungen ohne Konto mit Bezahlung, Preisregeln nach Rolle (Mitglieder gratis, Gäste zahlen) und Tageszeit (Nebenzeiten günstiger).
+- **Mitgliederbeiträge, nächste Schritte**: Rechnung als PDF-Anhang per E-Mail, Teilzahlungen, Familienrabatte, pro-rata-Beitrag bei Austritt.
 
 ### Technik
 - **Datenbank**: MySQL/MariaDB bleibt (CloudPanel). Bei Bedarf später PostgreSQL mit Row-Level-Security pro Tenant als zweite Verteidigungslinie; das Schema ist dafür vorbereitet.
@@ -87,6 +96,5 @@ Details im README.
 - **Storage-Adapter** für S3/Cloudflare R2 statt lokalem Dateisystem.
 - **Tests**: Playwright-E2E für die Kernflüsse (Login inkl. 2FA, Durchgang, Druck, Einladung). Unit-Tests (Vitest) bestehen bereits.
 - **Soft-Delete** auch für Durchgänge (Vereine sind erledigt).
-- **Haushaltsrechnungen explizit verknüpfen** (sobald Migrationen wieder möglich sind): Join-Tabelle `FeeInvoiceMember` (`invoiceId`, `membershipId`) oder ein Feld `coveredMembershipIds` an der Beitragsrechnung. Heute wird die Abdeckung aus `householdId`, `createdAt` und der Bezeichnung «(n Mitglieder)» abgeleitet (`householdCoverage` in `src/modules/billing/fee-run-plan.ts`).
 - **Deploy ohne Ausfall**: in ein separates `distDir` bauen und umschalten, damit ein abgebrochener Build nie ein halbes `.next` hinterlässt.
 - **Caching**: Programme und Scheiben pro Tenant mit `unstable_cache`/Tags, Invalidierung über Actions.

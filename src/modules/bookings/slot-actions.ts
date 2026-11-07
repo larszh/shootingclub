@@ -5,7 +5,7 @@ import { getBookingSettings, getResource, getSlotsForDay, expireUnpaidOnlineBook
 import { maxPersonsFor, planRequest, quotePrice } from "./pricing";
 import { isCalendarDate } from "./types";
 import { loadBookingWindows } from "@/modules/range/booking-window";
-import { applyWindowsToSlots } from "@/modules/range/logic";
+import { applyWindowsToSlots, type DayWindows } from "@/modules/range/logic";
 
 export type SlotDto = {
   time: string; available: boolean; reason?: string;
@@ -17,8 +17,8 @@ export type SlotDto = {
 
 export type SlotsResult = {
   slots: SlotDto[]; error?: string; maxPersons?: number;
-  /** Bewilligte Schiesszeiten des Tages (Modul «Standbetrieb»), null wenn keine gelten. */
-  windowHint?: string | null;
+  /** Bewilligte Schiesszeiten des Tages (Modul «Standbetrieb»), null wenn keine gelten. Text: windowHintLabel(). */
+  windowHint?: DayWindows | null;
   /** Anzahl Zeiten ausserhalb der Schiesszeiten. */
   outsideWindow?: number;
   /** Zeiten ausserhalb der Schiesszeiten bleiben wählbar (Verwaltung, Buchung erhält einen Vermerk). */
@@ -43,11 +43,11 @@ async function slotsFor(tenantId: string, resourceId: string, dateStr: string, d
   const raw = await getSlotsForDay(tenantId, resource, settings, dateStr, durationMinutes, { bypassLimits, requestedUnits: plan.units });
   const windowed = windowMode
     ? applyWindowsToSlots(await loadBookingWindows(tenantId, resource.id), resource.id, dateStr, raw, windowMode.block)
-    : { slots: raw, hint: null, outside: 0 };
+    : { slots: raw, windows: null, outside: 0 };
   const slots = windowed.slots;
   return {
     maxPersons,
-    windowHint: windowed.hint,
+    windowHint: windowed.windows,
     outsideWindow: windowed.outside,
     windowOverride: !!windowMode && !windowMode.block && windowed.outside > 0,
     slots: slots.map((s) => {

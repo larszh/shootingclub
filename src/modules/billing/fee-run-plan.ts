@@ -4,6 +4,7 @@
  * Zahler (Summe der Beiträge, Bezeichnung «Familie Muster (3 Mitglieder)»).
  */
 import { getT } from "@/lib/i18n/core";
+import { hasTenantAccess } from "@/lib/membership-access";
 import { HOUSEHOLD_INVOICE_RE, householdInvoiceLabel } from "../members/types";
 
 export type FeeSnapshot = {
@@ -18,8 +19,9 @@ export type FeeCandidateInvoice = {
   number?: string;
   issuedAt?: Date;
   /**
-   * Nur Haushaltsrechnungen: die beim Anlegen festgehaltenen Mitgliedschaften, die darin enthalten sind.
-   * undefined/null = nicht festgehalten (ältere Rechnung), dann gilt die Schätzung über den Haushalt.
+   * Nur Haushaltsrechnungen: die darin enthaltenen Mitgliedschaften (Tabelle FeeInvoiceMember, bei
+   * älteren Rechnungen aus dem Protokoll). undefined/null = nicht festgehalten, dann gilt die Schätzung
+   * über den Haushalt.
    */
   members?: string[] | null;
 };
@@ -99,8 +101,8 @@ export function planFeeInvoices(candidates: FeeCandidate[], households: FeeHouse
   // Bereits verrechnet: eigene Rechnung oder durch eine Haushaltsrechnung abgedeckt (auch über Ausgetretene).
   const covered = householdCoverage(candidates);
   const billed = (c: FeeCandidate) => c.invoices.length > 0 || covered.has(c.membershipId);
-  // Ausgetretene erhalten keine Rechnung mehr.
-  const active = candidates.filter((c) => c.status !== "LEFT");
+  // Ausgetretene und Beitritte, die noch auf Freigabe warten, erhalten keine Rechnung.
+  const active = candidates.filter((c) => hasTenantAccess(c.status));
   const out: FeeSnapshot[] = [];
   const hh = new Map(households.map((h) => [h.id, h]));
   const groups = new Map<string, FeeCandidate[]>();
@@ -138,6 +140,67 @@ export function planFeeInvoices(candidates: FeeCandidate[], households: FeeHouse
       amountCents: sum,
       covers: open.map((m) => ({ membershipId: m.membershipId, name: m.name })),
     });
+  }
+  return out;
+}
+
+/* ------------------------------------------------------------------ Haushaltsrechnungen festhalten */
+
+/** Anzahl Mitglieder aus der Bezeichnung «Familie Muster (3 Mitglieder)», sonst null. */
+export function householdCountFromLabel(categoryName: string): number | null {
+  const m = /\((\d+) (?:Mitglieder|membres|membri)\)$/.exec(categoryName);
+  return m ? Number(m[1]) : null;
+}
+
+export type LegacyHouseholdInvoice = { id: string; membershipId: string | null; categoryName: string; issuedAt: Date };
+
+/**
+ * Einmalige Ableitung für ältere Haushaltsrechnungen ohne festgehaltene Mitglieder: die zahlende
+ * Mitgliedschaft plus die Mitglieder desselben Haushalts ohne eigene Rechnung, die vor der Rechnung
+ * erfasst wurden (gleiche Schätzung wie householdCoverage). Nur wenn die Anzahl genau der Bezeichnung
+ * «(n Mitglieder)» entspricht, sonst null (dann bleibt die Schätzung beim Lesen).
+ * `list`: alle Mitgliedschaften des Vereins mit ihren nicht stornierten Rechnungen des Jahres.
+ */
+export function deriveHouseholdMembers(inv: LegacyHouseholdInvoice, list: CoverageInput[]): string[] | null {
+  const expected = householdCountFromLabel(inv.categoryName);
+  if (!expected || !inv.membershipId) return null;
+  const payer = list.find((c) => c.membershipId === inv.membershipId);
+  if (!payer?.householdId) return null;
+  const others = list.filter((c) =>
+    c.membershipId !== payer.membershipId && c.householdId === payer.householdId && c.invoices.length === 0 && (!c.createdAt || c.createdAt <= inv.issuedAt));
+  // Die zahlende Person ist enthalten, wenn sie selbst einen Beitrag hatte; sonst nur die übrigen.
+  const withPayer = [payer.membershipId, ...others.map((c) => c.membershipId)];
+  if (withPayer.length === expected) return withPayer;
+  if (others.length === expected) return others.map((c) => c.membershipId);
+  return null;
+}
+
+/* ------------------------------------------------------------------ Übersicht */
+
+export type FeeCoverageStats = {
+  /** Mitglieder mit Zugang (ohne Ausgetretene und wartende Beitritte) und Beitrag > 0 */
+  withFee: number;
+  /** davon mit eigener Rechnung */
+  ownInvoice: number;
+  /** davon in der Haushaltsrechnung eines anderen Haushaltsmitglieds enthalten */
+  household: number;
+  /** davon noch ohne Rechnung (weder eigene noch Haushaltsrechnung) */
+  notInvoiced: number;
+};
+
+/** Wer ist verrechnet? Haushaltsmitglieder ohne eigene Rechnung zählen als verrechnet, wenn eine Haushaltsrechnung sie abdeckt. */
+export function feeCoverageStats(candidates: FeeCandidate[]): FeeCoverageStats {
+  const covered = householdCoverage(candidates);
+  const out: FeeCoverageStats = { withFee: 0, ownInvoice: 0, household: 0, notInvoiced: 0 };
+  for (const c of candidates) {
+    if (!hasTenantAccess(c.status)) continue;
+    const own = c.invoices.length > 0;
+    const inHousehold = !own && covered.has(c.membershipId);
+    if (!hasFee(c) && !own && !inHousehold) continue;
+    out.withFee++;
+    if (own) out.ownInvoice++;
+    else if (inHousehold) out.household++;
+    else out.notInvoiced++;
   }
   return out;
 }

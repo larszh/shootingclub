@@ -3,9 +3,14 @@ import { db } from "@/lib/db";
 import type { AppContext } from "@/lib/tenant";
 import { zurichParts } from "@/lib/time";
 import { isOverdue } from "./dates";
-import { householdCoverage, planFeeInvoices } from "./fee-run-plan";
+import { accessStatusWhere, hasTenantAccess } from "@/lib/membership-access";
+import { feeCoverageStats, householdCoverage, planFeeInvoices } from "./fee-run-plan";
 import { loadFeeCandidates, withInvoiceMembers } from "./fee-run";
 import { userAvatarUrl } from "@/components/avatar";
+import { paymentReviewFromDetails } from "@/lib/payments/logic";
+import { kioskReopenBlockedIds } from "@/modules/kiosk/invoice-guard";
+import { standaloneInvoiceHints, standaloneKind } from "./standalone-hints";
+import { reminderCount, visiblePaymentNote } from "./types";
 
 type TenantCtx = AppContext & { tenant: NonNullable<AppContext["tenant"]> };
 
@@ -24,7 +29,8 @@ export async function listCategories(tenantId: string, opts?: { includeInactive?
 /** Mitglieder mit Kategorie, Beitrag und Rechnungsstatus für ein Jahr. */
 export async function listMembersForBilling(tenantId: string, year: number) {
   const members = await withInvoiceMembers(db, tenantId, await db.membership.findMany({
-    where: { tenantId },
+    // Wartende Beitritte (PENDING) erhalten noch keine Rechnung
+    where: { tenantId, status: { not: "PENDING" } },
     include: {
       user: { select: { id: true, name: true, email: true, street: true, zip: true, city: true, avatarPath: true, updatedAt: true } },
       feeCategory: true,
@@ -92,11 +98,12 @@ export async function getFeeInvoice(ctx: TenantCtx, id: string) {
 }
 
 export async function feeStats(tenantId: string, year: number) {
-  const [invoices, members, withCategory] = await Promise.all([
+  const [invoices, members, withCategory, { candidates }] = await Promise.all([
     db.feeInvoice.findMany({ where: { tenantId, year }, select: { status: true, amountCents: true, dueAt: true } }),
-    // Ausgetretene zählen nicht mit (erhalten keine Rechnung mehr)
-    db.membership.count({ where: { tenantId, status: { not: "LEFT" } } }),
-    db.membership.count({ where: { tenantId, status: { not: "LEFT" }, OR: [{ feeCategoryId: { not: null } }, { feeAmountOverrideCents: { not: null } }] } }),
+    // Ausgetretene und wartende Beitritte zählen nicht mit (erhalten keine Rechnung)
+    db.membership.count({ where: { tenantId, status: accessStatusWhere() } }),
+    db.membership.count({ where: { tenantId, status: accessStatusWhere(), OR: [{ feeCategoryId: { not: null } }, { feeAmountOverrideCents: { not: null } }] } }),
+    loadFeeCandidates(db, tenantId, year),
   ]);
   const now = new Date();
   const open = invoices.filter((i) => i.status === "OPEN");
@@ -108,6 +115,8 @@ export async function feeStats(tenantId: string, year: number) {
     paid: invoices.filter((i) => i.status === "PAID").length,
     openCents: open.reduce((a, i) => a + i.amountCents, 0),
     paidCents: invoices.filter((i) => i.status === "PAID").reduce((a, i) => a + i.amountCents, 0),
+    /** Mitglieder mit Beitrag: eigene Rechnung, in einer Haushaltsrechnung enthalten, noch nicht verrechnet */
+    coverage: feeCoverageStats(candidates),
   };
 }
 
@@ -120,6 +129,53 @@ export async function feeRunPreview(tenantId: string, year: number) {
   const separate = planFeeInvoices(candidates, [], false).length;
   const combined = planFeeInvoices(candidates, households, true).length;
   const covered = householdCoverage(candidates);
-  const alreadyInvoiced = candidates.filter((c) => c.status !== "LEFT" && (c.invoices.length > 0 || covered.has(c.membershipId))).length;
+  const alreadyInvoiced = candidates.filter((c) => hasTenantAccess(c.status) && (c.invoices.length > 0 || covered.has(c.membershipId))).length;
   return { members: separate, invoicesCombined: combined, invoicesSeparate: separate, alreadyInvoiced };
+}
+
+/**
+ * Einzelrechnungen (ohne Jahreslauf: Schützenstube, Ersatzabgabe) eines Jahres für die Verwaltung,
+ * mit Art, verknüpften Konsumationen, Online-Zahlungen und Hinweisen (Rückerstattung, Doppelverrechnung).
+ */
+export async function listStandaloneInvoices(tenantId: string, year: number) {
+  const rows = await db.feeInvoice.findMany({
+    where: { tenantId, year, runId: null },
+    orderBy: [{ issuedAt: "desc" }, { number: "desc" }],
+    take: 2000,
+    select: {
+      id: true, number: true, memberName: true, categoryName: true, amountCents: true, currency: true, status: true, issuedAt: true, dueAt: true,
+      paidAt: true, cancelledAt: true, paymentNote: true, remindedAt: true, runId: true, reference: true,
+      payments: { where: { status: { in: ["PAID", "REFUNDED"] } }, select: { status: true, provider: true, amountCents: true, detailsJson: true }, orderBy: { createdAt: "asc" } },
+    },
+  });
+  const ids = rows.map((r) => r.id);
+  const [groups, blocked] = await Promise.all([
+    ids.length ? db.kioskEntry.groupBy({ by: ["billedInvoiceId"], where: { tenantId, billedInvoiceId: { in: ids } }, _count: { _all: true } }) : Promise.resolve([]),
+    kioskReopenBlockedIds(db, tenantId, rows),
+  ]);
+  const entries = new Map(groups.map((g) => [g.billedInvoiceId!, g._count._all]));
+  return rows.map((r) => {
+    const kioskEntries = entries.get(r.id) ?? 0;
+    const kind = standaloneKind(r.categoryName, kioskEntries);
+    const payments = r.payments.map((p) => ({ status: p.status, provider: p.provider, amountCents: p.amountCents, review: paymentReviewFromDetails(p.detailsJson) }));
+    const reopenBlocked = blocked.has(r.id);
+    const now = new Date();
+    return {
+      id: r.id, number: r.number, memberName: r.memberName, categoryName: r.categoryName, amountCents: r.amountCents, currency: r.currency,
+      status: r.status, issuedAt: r.issuedAt, dueAt: r.dueAt, paidAt: r.paidAt, cancelledAt: r.cancelledAt,
+      overdue: r.status === "OPEN" && isOverdue(r.dueAt, now),
+      reminders: reminderCount(r.paymentNote, r.remindedAt),
+      note: visiblePaymentNote(r.paymentNote),
+      kind, kioskEntries, reopenBlocked,
+      onlinePaid: payments.filter((p) => p.status === "PAID").length,
+      hints: standaloneInvoiceHints({ status: r.status, amountCents: r.amountCents, paymentNote: r.paymentNote, payments, kind, reopenBlocked }),
+    };
+  });
+}
+export type StandaloneInvoiceRow = Awaited<ReturnType<typeof listStandaloneInvoices>>[number];
+
+/** Jahre mit Einzelrechnungen (neueste zuerst). */
+export async function standaloneInvoiceYears(tenantId: string) {
+  const rows = await db.feeInvoice.groupBy({ by: ["year"], where: { tenantId, runId: null }, orderBy: { year: "desc" } });
+  return rows.map((r) => r.year);
 }

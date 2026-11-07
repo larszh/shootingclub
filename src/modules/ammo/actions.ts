@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { db } from "@/lib/db";
+import { accessStatusWhere } from "@/lib/membership-access";
 import { fail, ok, type ActionResult } from "@/lib/action-result";
 import { parseMoneyToCents } from "@/lib/money";
 import { requireAmmo, requireAmmoAdmin } from "./guard";
@@ -213,7 +214,7 @@ export async function cancelMyOrderAction(id: string): Promise<ActionResult> {
   if (!idSchema.safeParse(id).success) return fail("Ungültige Anfrage");
   const res = await db.ammoOrder.updateMany({
     where: { id, tenantId: ctx.tenant.id, userId: ctx.user.id, status: { in: ["ORDERED", "APPROVED"] } },
-    data: { status: "CANCELLED" },
+    data: { status: "CANCELLED", cancelledAt: new Date() },
   });
   if (res.count === 0) return fail("Diese Bestellung kann nicht mehr storniert werden.");
   revalidate();
@@ -250,7 +251,8 @@ export async function counterSaleAction(input: { userId: string; lines: OrderLin
   const note = orderNoteSchema.safeParse(input.note ?? "");
   if (!idSchema.safeParse(input.userId).success || !lines.success) return fail("Ungültige Eingabe.");
   if (!note.success) return fail(note.error.issues[0]?.message ?? "Bemerkung zu lang.");
-  const member = await db.membership.findUnique({ where: { userId_tenantId: { userId: input.userId, tenantId: ctx.tenant.id } }, select: { id: true } });
+  // Nur Mitglieder mit Zugang (keine wartenden Beitritte, keine Ausgetretenen).
+  const member = await db.membership.findFirst({ where: { tenantId: ctx.tenant.id, userId: input.userId, status: accessStatusWhere(), user: { deletedAt: null } }, select: { id: true } });
   if (!member) return fail("Mitglied nicht gefunden.");
   const settings = await db.ammoSettings.findUnique({ where: { tenantId: ctx.tenant.id }, select: { requireIdCheck: true } });
   if ((settings?.requireIdCheck ?? true) && !input.idChecked) return fail("Bitte zuerst die Berechtigung prüfen und bestätigen.");
@@ -263,7 +265,7 @@ export async function counterSaleAction(input: { userId: string; lines: OrderLin
     return ok({ id: order.id, invoiceNumber: res.invoiceNumber }, res.invoiceNumber ? `Verkauft und ausgegeben. Rechnung ${res.invoiceNumber}.` : "Verkauft und ausgegeben.");
   } catch (e) {
     // Ausgabe gescheitert (z.B. Bestand): die eben angelegte Bestellung nicht offen liegen lassen.
-    if (orderId) await db.ammoOrder.updateMany({ where: { id: orderId, tenantId: ctx.tenant.id, status: { in: ["ORDERED", "APPROVED"] } }, data: { status: "CANCELLED", paymentNote: "Direktverkauf abgebrochen" } });
+    if (orderId) await db.ammoOrder.updateMany({ where: { id: orderId, tenantId: ctx.tenant.id, status: { in: ["ORDERED", "APPROVED"] } }, data: { status: "CANCELLED", cancelledAt: new Date(), paymentNote: "Direktverkauf abgebrochen" } });
     revalidate();
     return handle(e);
   }
@@ -285,12 +287,12 @@ export async function cancelOrderAction(id: string, opts?: { restock?: boolean }
       if (!order) throw new AmmoError("Bestellung nicht gefunden.");
       if (order.status === "CANCELLED") throw new AmmoError("Die Bestellung ist bereits storniert.");
       if (order.status !== "ISSUED") {
-        const res = await tx.ammoOrder.updateMany({ where: { id, tenantId, status: { in: ["ORDERED", "APPROVED"] } }, data: { status: "CANCELLED" } });
+        const res = await tx.ammoOrder.updateMany({ where: { id, tenantId, status: { in: ["ORDERED", "APPROVED"] } }, data: { status: "CANCELLED", cancelledAt: new Date() } });
         if (res.count === 0) throw new AmmoError("Die Bestellung wurde inzwischen bearbeitet.");
         return "Bestellung storniert.";
       }
       if (order.paymentStatus === "PAID") throw new AmmoError("Die Rechnung ist bereits bezahlt. Zuerst als unbezahlt markieren.");
-      const res = await tx.ammoOrder.updateMany({ where: { id, tenantId, status: "ISSUED" }, data: { status: "CANCELLED", paymentStatus: "CANCELLED" } });
+      const res = await tx.ammoOrder.updateMany({ where: { id, tenantId, status: "ISSUED" }, data: { status: "CANCELLED", paymentStatus: "CANCELLED", cancelledAt: order.paymentStatus === "CANCELLED" && order.cancelledAt ? order.cancelledAt : new Date() } });
       if (res.count === 0) throw new AmmoError("Die Bestellung wurde inzwischen bearbeitet.");
       invoiceCancelled = Boolean(order.invoiceNumber);
       if (opts?.restock) {
@@ -328,7 +330,7 @@ export async function setPaymentStatusAction(id: string, status: "UNPAID" | "PAI
   const ctx = await requireAmmoAdmin();
   const parsed = paymentSchema.safeParse({ status, note });
   if (!idSchema.safeParse(id).success || !parsed.success) return fail(parsed.success ? "Ungültige Anfrage" : (parsed.error.issues[0]?.message ?? "Ungültige Eingabe"));
-  const order = await db.ammoOrder.findFirst({ where: { id, tenantId: ctx.tenant.id }, select: { invoiceNumber: true, status: true, paymentStatus: true, paidAt: true } });
+  const order = await db.ammoOrder.findFirst({ where: { id, tenantId: ctx.tenant.id }, select: { invoiceNumber: true, status: true, paymentStatus: true, paidAt: true, cancelledAt: true } });
   if (!order || !order.invoiceNumber) return fail("Zu dieser Bestellung gibt es keine Rechnung.");
   if (order.status !== "ISSUED") return fail("Die Bestellung ist storniert; der Zahlungsstatus lässt sich nicht mehr ändern.");
   const n = parsed.data.note;
@@ -337,6 +339,8 @@ export async function setPaymentStatusAction(id: string, status: "UNPAID" | "PAI
     data: {
       paymentStatus: parsed.data.status,
       paidAt: parsed.data.status === "PAID" ? (order.paymentStatus === "PAID" && order.paidAt ? order.paidAt : new Date()) : null,
+      // Storno-Datum für die Buchhaltung: beim Wechsel auf storniert setzen, beim Reaktivieren löschen.
+      cancelledAt: parsed.data.status === "CANCELLED" ? (order.paymentStatus === "CANCELLED" && order.cancelledAt ? order.cancelledAt : new Date()) : null,
       ...(n !== undefined ? { paymentNote: n || null } : {}),
     },
   });

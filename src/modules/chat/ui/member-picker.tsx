@@ -5,6 +5,8 @@ import { Check, Search } from "lucide-react";
 import { Avatar } from "@/components/avatar";
 import { Input } from "@/components/ui";
 import { cn } from "@/lib/utils";
+import { getT, type Locale } from "@/lib/i18n/core";
+import { tPlural } from "@/modules/billing/ui/i18n";
 import type { PickerMember } from "../queries";
 
 function normalize(s: string) {
@@ -21,9 +23,10 @@ export function MemberPicker({
   onToggle,
   onPick,
   name,
-  emptyText = "Keine weiteren Mitglieder im Verein.",
+  emptyText,
   disabled,
   maxHeightClass = "max-h-[55dvh]",
+  locale = "de",
 }: {
   members: PickerMember[];
   selected?: ReadonlySet<string>;
@@ -33,7 +36,9 @@ export function MemberPicker({
   emptyText?: string;
   disabled?: boolean;
   maxHeightClass?: string;
+  locale?: Locale;
 }) {
+  const t = getT(locale);
   const [query, setQuery] = useState("");
   const deferred = useDeferredValue(query);
   const searchId = useId();
@@ -46,18 +51,18 @@ export function MemberPicker({
 
   return (
     <div>
-      <label htmlFor={searchId} className="sr-only">Mitglied suchen</label>
+      <label htmlFor={searchId} className="sr-only">{t("money.chat.picker.searchLabel")}</label>
       <div className="relative">
         <Search className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-ink-3" aria-hidden />
-        <Input id={searchId} type="search" value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Name suchen" className="pl-10" autoComplete="off" enterKeyHint="search" />
+        <Input id={searchId} type="search" value={query} onChange={(e) => setQuery(e.target.value)} placeholder={t("money.chat.picker.search")} className="pl-10" autoComplete="off" enterKeyHint="search" />
       </div>
-      {multi && selected && selected.size > 0 ? <p className="mt-2 text-sm text-ink-3" aria-live="polite">{selected.size === 1 ? "1 Person gewählt" : `${selected.size} Personen gewählt`}</p> : null}
+      {multi && selected && selected.size > 0 ? <p className="mt-2 text-sm text-ink-3" aria-live="polite">{tPlural(t, "money.chat.picker.selected", selected.size)}</p> : null}
       {members.length === 0 ? (
-        <p className="mt-4 text-sm text-ink-3">{emptyText}</p>
+        <p className="mt-4 text-sm text-ink-3">{emptyText ?? t("money.chat.picker.empty")}</p>
       ) : filtered.length === 0 ? (
-        <p className="mt-4 text-sm text-ink-3">Niemand gefunden.</p>
+        <p className="mt-4 text-sm text-ink-3">{t("money.chat.picker.noneFound")}</p>
       ) : (
-        <ul className={cn("mt-2 -mx-2 overflow-y-auto overscroll-contain", maxHeightClass)} aria-label="Mitglieder">
+        <ul className={cn("mt-2 -mx-2 overflow-y-auto overscroll-contain", maxHeightClass)} aria-label={t("money.chat.members")}>
           {filtered.map((m) => {
             const on = !!selected?.has(m.id);
             return (

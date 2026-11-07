@@ -1,5 +1,5 @@
 import { formatScore } from "@/lib/utils";
-import { formatDay } from "@/modules/scores/analytics";
+import { formatDate, getT, type Locale } from "@/lib/i18n/core";
 
 export type ChartPoint = { date: Date; total: number; isBest?: boolean };
 
@@ -18,7 +18,7 @@ function niceStep(range: number) {
  * Verlauf der Totale als SVG-Liniendiagramm, ohne Chart-Bibliothek.
  * Mit Bestwert- und Durchschnittslinie, Titel/Beschreibung für Screenreader und Tabelle als Alternative.
  */
-export function ProgressChart({ id, title, points, best, avg, max, decimal }: {
+export function ProgressChart({ id, title, points, best, avg, max, decimal, locale = "de" }: {
   id: string;
   title: string;
   points: ChartPoint[];
@@ -26,8 +26,11 @@ export function ProgressChart({ id, title, points, best, avg, max, decimal }: {
   avg: number;
   max: number;
   decimal: boolean;
+  locale?: Locale;
 }) {
   if (points.length === 0) return null;
+  const t = getT(locale);
+  const formatDay = (d: Date) => formatDate(d, locale);
   const values = points.map((p) => p.total);
   let lo = Math.min(...values, avg);
   let hi = Math.max(...values, avg);
@@ -53,7 +56,7 @@ export function ProgressChart({ id, title, points, best, avg, max, decimal }: {
   const first = points[0]!;
   const last = points[points.length - 1]!;
   const fmt = (n: number) => formatScore(n, decimal);
-  const desc = `${points.length} Durchgänge vom ${formatDay(first.date)} bis ${formatDay(last.date)}. Bestwert ${fmt(best)}, Durchschnitt ${fmt(avg)}, zuletzt ${fmt(last.total)} von maximal ${max}.`;
+  const desc = t("shooting.chart.desc", { n: points.length, from: formatDay(first.date), to: formatDay(last.date), best: fmt(best), avg: fmt(avg), last: fmt(last.total), max });
 
   return (
     <figure className="m-0">
@@ -66,10 +69,10 @@ export function ProgressChart({ id, title, points, best, avg, max, decimal }: {
             <stop offset="100%" stopColor="var(--accent)" stopOpacity="0" />
           </linearGradient>
         </defs>
-        {ticks.map((t) => (
-          <g key={t}>
-            <line x1={PAD.l} x2={W - PAD.r} y1={y(t)} y2={y(t)} className="stroke-line" strokeWidth={1} />
-            <text x={PAD.l - 6} y={y(t)} dy="0.32em" textAnchor="end" className="fill-ink-3" fontSize={10}>{decimal ? t.toFixed(1) : Math.round(t)}</text>
+        {ticks.map((tick) => (
+          <g key={tick}>
+            <line x1={PAD.l} x2={W - PAD.r} y1={y(tick)} y2={y(tick)} className="stroke-line" strokeWidth={1} />
+            <text x={PAD.l - 6} y={y(tick)} dy="0.32em" textAnchor="end" className="fill-ink-3" fontSize={10}>{decimal ? tick.toFixed(1) : Math.round(tick)}</text>
           </g>
         ))}
         <path d={area} fill={`url(#${id}-fill)`} />
@@ -86,22 +89,22 @@ export function ProgressChart({ id, title, points, best, avg, max, decimal }: {
         {points.length > 1 ? <text x={W - PAD.r} y={H - 6} textAnchor="end" className="fill-ink-3" fontSize={10}>{formatDay(last.date)}</text> : null}
       </svg>
       <figcaption className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-ink-3">
-        <span className="inline-flex items-center gap-1.5"><span className="inline-block h-0.5 w-5 bg-ink" aria-hidden /> Total</span>
-        <span className="inline-flex items-center gap-1.5"><span className="inline-block w-5 border-t-2 border-dashed border-accent" aria-hidden /> Bestwert {fmt(best)}</span>
-        <span className="inline-flex items-center gap-1.5"><span className="inline-block w-5 border-t-2 border-dotted border-ink-3" aria-hidden /> Durchschnitt {fmt(avg)}</span>
+        <span className="inline-flex items-center gap-1.5"><span className="inline-block h-0.5 w-5 bg-ink" aria-hidden /> {t("shooting.chart.total")}</span>
+        <span className="inline-flex items-center gap-1.5"><span className="inline-block w-5 border-t-2 border-dashed border-accent" aria-hidden /> {t("shooting.chart.bestN", { value: fmt(best) })}</span>
+        <span className="inline-flex items-center gap-1.5"><span className="inline-block w-5 border-t-2 border-dotted border-ink-3" aria-hidden /> {t("shooting.chart.avgN", { value: fmt(avg) })}</span>
       </figcaption>
       <details className="mt-3 text-sm">
-        <summary className="cursor-pointer text-ink-3 hover:text-ink select-none">Als Tabelle anzeigen</summary>
+        <summary className="cursor-pointer text-ink-3 hover:text-ink select-none">{t("shooting.chart.asTable")}</summary>
         <div className="mt-2 max-h-64 overflow-auto rounded-control border border-line">
           <table className="w-full text-left tabular-nums">
             <caption className="sr-only">{title}</caption>
             <thead className="bg-surface-2 text-xs text-ink-3">
-              <tr><th scope="col" className="px-3 py-2 font-medium">Datum</th><th scope="col" className="px-3 py-2 font-medium text-right">Total</th></tr>
+              <tr><th scope="col" className="px-3 py-2 font-medium">{t("shooting.chart.date")}</th><th scope="col" className="px-3 py-2 font-medium text-right">{t("shooting.chart.total")}</th></tr>
             </thead>
             <tbody className="divide-y divide-line">
               {[...points].reverse().map((p, i) => (
                 <tr key={i} className={p.isBest ? "font-semibold" : undefined}>
-                  <td className="px-3 py-1.5">{formatDay(p.date)}{p.isBest ? " · Bestwert" : ""}</td>
+                  <td className="px-3 py-1.5">{formatDay(p.date)}{p.isBest ? ` · ${t("shooting.chart.best")}` : ""}</td>
                   <td className="px-3 py-1.5 text-right">{fmt(p.total)}</td>
                 </tr>
               ))}

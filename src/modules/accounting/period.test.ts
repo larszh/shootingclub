@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { formatDateCh, isIsoDate, resolvePeriod, validateRange } from "./period";
+import { formatDateCh, includeKioskCashParam, isIsoDate, resolvePeriod, validateRange } from "./period";
+import { DEFAULT_ACCOUNTS, toAccountPlan } from "./types";
 
 const TODAY = "2026-10-31";
 
@@ -39,5 +40,23 @@ describe("validateRange / isIsoDate", () => {
 
   it("formatDateCh", () => {
     expect(formatDateCh("2026-03-05")).toBe("05.03.2026");
+  });
+});
+
+describe("includeKioskCashParam", () => {
+  it("Standard an, nur «0» schaltet aus", () => {
+    expect(includeKioskCashParam(undefined)).toBe(true);
+    expect(includeKioskCashParam(null)).toBe(true);
+    expect(includeKioskCashParam("1")).toBe(true);
+    expect(includeKioskCashParam("0")).toBe(false);
+  });
+});
+
+describe("toAccountPlan", () => {
+  it("kennt Kasse und Ertrag Schützenstube, Standard 1000 und 3600", () => {
+    expect(DEFAULT_ACCOUNTS.cashAccount).toBe("1000");
+    expect(DEFAULT_ACCOUNTS.kioskAccount).toBe("3600");
+    expect(toAccountPlan({ cashAccount: " 1001 ", kioskAccount: "" })).toMatchObject({ cashAccount: "1001", kioskAccount: "3600" });
+    expect(toAccountPlan(null)).toEqual(DEFAULT_ACCOUNTS);
   });
 });

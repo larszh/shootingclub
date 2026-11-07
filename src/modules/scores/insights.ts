@@ -5,6 +5,7 @@ import { safeJson } from "@/lib/utils";
 import { firedShots, parseStages, programTotals, type Stage } from "./types";
 import { backfillMatchTotals } from "./sync";
 import { assignRanks, compareEntries, countTopShots, periodRange, round1, weekStreaks, type Period, type RankedEntry } from "./analytics";
+import { localizedProgramName } from "./preset-i18n";
 
 type Ctx = AppContext & { tenant: NonNullable<AppContext["tenant"]> };
 
@@ -43,11 +44,11 @@ function isComplete(status: string, stagesDone: number, stageCount: number) {
 }
 
 /** Programm laden, sofern im aktiven Tenant sichtbar (global oder eigenes). */
-async function visibleProgram(ctx: Ctx, programId: string) {
+async function visibleProgram(ctx: Ctx, programId: string, locale?: string) {
   const p = await db.program.findUnique({ where: { id: programId } });
   if (!p || (p.tenantId && p.tenantId !== ctx.tenant.id)) return null;
   const stages = parseStages(p.stagesJson);
-  return { id: p.id, name: p.name, scoringMode: p.scoringMode, stages, totals: programTotals(stages, p.scoringMode) };
+  return { id: p.id, name: p.tenantId ? p.name : localizedProgramName(p.name, locale), scoringMode: p.scoringMode, stages, totals: programTotals(stages, p.scoringMode) };
 }
 
 // ---------------------------------------------------------------------------
@@ -98,8 +99,9 @@ async function tieBreakDetails(participantIds: string[], stages: Stage[], scorin
  * (pro Mitglied alle Versuche mit dem besten Total, dazu die besten Gäste) werden die Schüsse
  * gelesen, um bei gleichem Total nach Höchstwerten und letzter Serie zu entscheiden.
  */
-export async function getLeaderboard(ctx: Ctx, programId: string, period: Period) {
-  const program = await visibleProgram(ctx, programId);
+/** `locale`: Anzeige des Namens eingebauter globaler Programme in dieser Sprache. */
+export async function getLeaderboard(ctx: Ctx, programId: string, period: Period, locale?: string) {
+  const program = await visibleProgram(ctx, programId, locale);
   if (!program) return null;
   const range = periodRange(period, new Date());
   // Ältere Daten ohne gespeichertes Total einmalig nachführen (begrenzt, danach no-op).
@@ -200,8 +202,8 @@ export type Leaderboard = NonNullable<Awaited<ReturnType<typeof getLeaderboard>>
 
 export type ProgressPoint = { matchId: string; date: Date; total: number; isBest: boolean };
 
-export async function getProgramProgress(ctx: Ctx, programId: string, userId = ctx.user.id) {
-  const program = await visibleProgram(ctx, programId);
+export async function getProgramProgress(ctx: Ctx, programId: string, userId = ctx.user.id, locale?: string) {
+  const program = await visibleProgram(ctx, programId, locale);
   if (!program) return null;
   const parts = await db.matchParticipant.findMany({
     where: { userId, match: { tenantId: ctx.tenant.id, programId }, results: { some: {} } },
@@ -256,13 +258,13 @@ export type ProgramStat = {
 
 export type DistanceStat = { distanceM: number; shots: number; ringShots: number; ringAvg: number | null; hitShots: number; hitRate: number | null };
 
-export async function getUserScoreStats(ctx: Ctx) {
+export async function getUserScoreStats(ctx: Ctx, locale?: string) {
   const now = new Date();
   const parts = await db.matchParticipant.findMany({
     where: { userId: ctx.user.id, match: { tenantId: ctx.tenant.id }, results: { some: {} } },
     include: {
       results: { select: { stageIndex: true, shotsJson: true, total: true } },
-      match: { select: { id: true, date: true, status: true, program: { select: { id: true, name: true, stagesJson: true, scoringMode: true } } } },
+      match: { select: { id: true, date: true, status: true, program: { select: { id: true, name: true, stagesJson: true, scoringMode: true, tenantId: true } } } },
     },
     orderBy: [{ match: { date: "asc" } }, { match: { createdAt: "asc" } }],
     take: 3000,
@@ -305,7 +307,7 @@ export async function getUserScoreStats(ctx: Ctx) {
     if (!cur) {
       byProgram.set(prog.id, {
         programId: prog.id,
-        name: prog.name,
+        name: prog.tenantId ? prog.name : localizedProgramName(prog.name, locale),
         scoringMode: prog.scoringMode,
         decimal: prog.scoringMode === "RINGS_DECIMAL",
         max: programTotals(stages, prog.scoringMode).max,

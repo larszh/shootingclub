@@ -2,11 +2,12 @@ import "server-only";
 import { db } from "@/lib/db";
 import type { Prisma } from "@/generated/prisma/client";
 import { todayZurich } from "@/lib/time";
-import { blockReasonOf, isLoanOverdue, isMinorOn, minorReportState, serviceInfo, type ServiceInfo } from "./logic";
-import { defaultMinorReportDays, shotsSinceServiceMap } from "./service";
+import { effectiveBlockReason, isLoanOverdue, isMinorOn, minorReportState, serviceInfo, type ServiceInfo } from "./logic";
+import { defaultMinorReportDays, getWeaponSettings, shotsSinceServiceMap } from "./service";
+import { accessStatusWhere } from "@/lib/membership-access";
 import { MINOR_REPORT_WARN_DAYS, type WeaponStatus } from "./types";
 
-export { defaultMinorReportDays };
+export { defaultMinorReportDays, getWeaponSettings };
 
 export type WeaponFilter = { status?: WeaponStatus | "due" | "active" | "all"; discipline?: string; q?: string };
 
@@ -49,7 +50,7 @@ export async function listWeapons(tenantId: string, filter: WeaponFilter, withSe
     return {
       id: w.id, name: w.name, discipline: w.discipline, manufacturer: w.manufacturer, model: w.model, caliber: w.caliber,
       serialNumber: withSerial ? w.serialNumber : null, status: w.status, shotCount: w.shotCount, serviceEveryShots: w.serviceEveryShots,
-      nextServiceAt: w.nextServiceAt, blockReason: blockReasonOf(w.notes), shotsSinceService: s,
+      nextServiceAt: w.nextServiceAt, blockReason: effectiveBlockReason(w), shotsSinceService: s,
       service: serviceInfo({ status: w.status, serviceEveryShots: w.serviceEveryShots, nextServiceAt: w.nextServiceAt, shotsSinceService: s }, today),
       openLoan: l ? { id: l.id, borrower: l.user?.name ?? l.borrowerName ?? "Unbekannt", loanedAt: l.loanedAt, dueAt: l.dueAt, overdue: isLoanOverdue({ dueAt: l.dueAt, returnedAt: null }, now), isMinor: l.isMinor } : null,
     };
@@ -100,7 +101,7 @@ export async function getWeapon(tenantId: string, id: string, withSerial: boolea
   return {
     ...w,
     serialNumber: withSerial ? w.serialNumber : null,
-    blockReason: blockReasonOf(w.notes),
+    blockReason: effectiveBlockReason(w),
     shotsSinceService: since,
     service: serviceInfo({ status: w.status, serviceEveryShots: w.serviceEveryShots, nextServiceAt: w.nextServiceAt, shotsSinceService: since }, todayZurich()),
     loans: w.loans.map((l) => ({
@@ -155,11 +156,11 @@ export async function getLoan(tenantId: string, id: string) {
   return { ...l, borrower: l.user?.name ?? l.borrowerName ?? "Unbekannt", issuedByName: l.issuedById ? names.get(l.issuedById) ?? null : null };
 }
 
-/** Mitglieder für die Ausleihe (ohne ausgetretene und gelöschte Konten), mit Minderjährigkeit heute. */
+/** Mitglieder für die Ausleihe (ohne ausgetretene, wartende und gelöschte Konten), mit Minderjährigkeit heute. */
 export async function memberOptions(tenantId: string) {
   const today = todayZurich();
   const rows = await db.membership.findMany({
-    where: { tenantId, status: { not: "LEFT" }, user: { deletedAt: null } },
+    where: { tenantId, status: accessStatusWhere(), user: { deletedAt: null } },
     select: { memberNumber: true, user: { select: { id: true, name: true, birthDate: true } } },
     orderBy: { user: { name: "asc" } },
   });

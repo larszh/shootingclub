@@ -4,6 +4,7 @@ import type { AppContext } from "@/lib/tenant";
 import { safeJson } from "@/lib/utils";
 import { computeSlots } from "./availability";
 import { bookingAccess } from "@/modules/sharing/logic";
+import { accessStatusWhere } from "@/lib/membership-access";
 import { bookingUnits } from "./pricing";
 import { DEFAULT_DURATIONS, DEFAULT_OPENING_HOURS, durationOptionSchema, openingHoursSchema, type DurationOption, type OpeningHours } from "./types";
 import { z } from "zod";
@@ -161,12 +162,23 @@ export async function listMyBookings(ctx: TenantCtx) {
   });
 }
 
-export async function listTenantBookings(tenantId: string, opts?: { status?: string; from?: Date; limit?: number }) {
+/**
+ * Buchungen des Vereins. Standard: PENDING nach Eingang (älteste zuerst), sonst neueste Startzeit
+ * zuerst. `order: "asc"` liefert die nächsten Termine zuerst (z.B. «Kommende Buchungen» ab `from`,
+ * sonst schneiden Serien mit vielen Terminen die nächsten weg). `openInvoice` filtert in der
+ * Datenbank auf offene Rechnungen statt auf einem Ausschnitt.
+ */
+export async function listTenantBookings(tenantId: string, opts?: { status?: string; from?: Date; limit?: number; order?: "asc" | "desc"; openInvoice?: boolean }) {
   await expireUnpaidOnlineBookings(tenantId);
   return db.booking.findMany({
-    where: { tenantId, ...(opts?.status ? { status: opts.status } : {}), ...(opts?.from ? { startsAt: { gte: opts.from } } : {}) },
+    where: {
+      tenantId,
+      ...(opts?.status ? { status: opts.status } : {}),
+      ...(opts?.from ? { startsAt: { gte: opts.from } } : {}),
+      ...(opts?.openInvoice ? { invoice: { status: "OPEN" } } : {}),
+    },
     include: bookingInclude,
-    orderBy: opts?.status === "PENDING" ? { createdAt: "asc" } : { startsAt: "desc" },
+    orderBy: opts?.order ? { startsAt: opts.order } : opts?.status === "PENDING" ? { createdAt: "asc" } : { startsAt: "desc" },
     take: opts?.limit ?? 200,
   });
 }
@@ -224,7 +236,7 @@ export function cancellationInfo(b: { startsAt: Date; status: string }, cancella
 export async function listMembersForBooking(tenantId: string) {
   const rows = await db.membership.findMany({
     // Ausgetretene und gelöschte Konten nicht zur Auswahl anbieten.
-    where: { tenantId, status: { not: "LEFT" }, user: { deletedAt: null } },
+    where: { tenantId, status: accessStatusWhere(), user: { deletedAt: null } },
     include: { user: { select: { id: true, name: true, email: true, avatarPath: true, updatedAt: true } } },
     orderBy: { user: { name: "asc" } },
   });

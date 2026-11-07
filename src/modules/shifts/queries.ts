@@ -4,11 +4,12 @@ import { db } from "@/lib/db";
 import { zurichParts, zurichToUtc } from "@/lib/time";
 import { isValidOn } from "@/modules/qualifications/types";
 import { MEMBER_STATUSES } from "@/modules/members/types";
+import { accessStatusWhere } from "@/lib/membership-access";
 import { ersatzCategoryPrefix, hoursBalance, memberHours, missingQualification, parseStatuses, staffing, defaultShiftHours } from "./logic";
 
-export type WorkSettings = { enabled: boolean; requiredHours: number; ratePerMissingHourCents: number; statuses: string[] };
+export type WorkSettings = { enabled: boolean; requiredHours: number; ratePerMissingHourCents: number; statuses: string[]; proRata: boolean };
 
-const ALLOWED_STATUSES = MEMBER_STATUSES.filter((s) => s !== "LEFT");
+const ALLOWED_STATUSES = MEMBER_STATUSES.filter((s) => s !== "LEFT" && (s as string) !== "PENDING");
 
 export async function getWorkSettings(tenantId: string): Promise<WorkSettings> {
   const s = await db.workHoursSettings.findUnique({ where: { tenantId } });
@@ -17,6 +18,7 @@ export async function getWorkSettings(tenantId: string): Promise<WorkSettings> {
     requiredHours: s?.requiredHours ?? 0,
     ratePerMissingHourCents: s?.ratePerMissingHourCents ?? 0,
     statuses: parseStatuses(s?.appliesToStatuses ?? "ACTIVE", ALLOWED_STATUSES),
+    proRata: s?.proRata ?? false,
   };
 }
 
@@ -37,7 +39,7 @@ export function yearRange(year: number) {
 /** Mitglieder für Auswahllisten (ohne Ausgetretene und gelöschte Konten). */
 export async function shiftMemberOptions(tenantId: string) {
   const rows = await db.membership.findMany({
-    where: { tenantId, status: { not: "LEFT" }, user: { deletedAt: null } },
+    where: { tenantId, status: accessStatusWhere(), user: { deletedAt: null } },
     select: { memberNumber: true, user: { select: { id: true, name: true } } },
     orderBy: { user: { name: "asc" } },
   });
@@ -208,11 +210,11 @@ async function hoursByUser(tenantId: string, year: number, userId?: string) {
 export async function myHoursSummary(tenantId: string, userId: string, year: number) {
   const [settings, membership, hours] = await Promise.all([
     getWorkSettings(tenantId),
-    db.membership.findUnique({ where: { userId_tenantId: { userId, tenantId } }, select: { status: true, workHoursExempt: true } }),
+    db.membership.findUnique({ where: { userId_tenantId: { userId, tenantId } }, select: { status: true, workHoursExempt: true, joinedAt: true, leftAt: true } }),
     hoursByUser(tenantId, year, userId),
   ]);
   const h = hours.get(userId) ?? { shiftHours: 0, logHours: 0, total: 0, pendingLogHours: 0 };
-  const balance = hoursBalance(membership ?? { status: "LEFT", workHoursExempt: true }, h.total, settings);
+  const balance = hoursBalance(membership ?? { status: "LEFT", workHoursExempt: true }, h.total, settings, year);
   return { settings, hours: h, balance, exempt: !!membership?.workHoursExempt };
 }
 
@@ -225,8 +227,8 @@ export async function hoursOverview(tenantId: string, year: number) {
   const [settings, members, hours, invoices] = await Promise.all([
     getWorkSettings(tenantId),
     db.membership.findMany({
-      where: { tenantId, status: { not: "LEFT" }, user: { deletedAt: null } },
-      select: { id: true, status: true, workHoursExempt: true, memberNumber: true, user: { select: { id: true, name: true } } },
+      where: { tenantId, status: accessStatusWhere(), user: { deletedAt: null } },
+      select: { id: true, status: true, workHoursExempt: true, memberNumber: true, joinedAt: true, leftAt: true, user: { select: { id: true, name: true } } },
       orderBy: { user: { name: "asc" } },
     }),
     hoursByUser(tenantId, year),
@@ -238,8 +240,8 @@ export async function hoursOverview(tenantId: string, year: number) {
   const invoiceByUser = new Map(invoices.filter((i) => i.userId).map((i) => [i.userId!, i]));
   const rows = members.map((m) => {
     const h = hours.get(m.user.id) ?? { shiftHours: 0, logHours: 0, total: 0, pendingLogHours: 0 };
-    const b = hoursBalance(m, h.total, settings);
-    return { membershipId: m.id, userId: m.user.id, name: m.user.name, memberNumber: m.memberNumber, status: m.status, exempt: m.workHoursExempt, ...h, ...b, invoice: invoiceByUser.get(m.user.id) ?? null };
+    const b = hoursBalance(m, h.total, settings, year);
+    return { membershipId: m.id, userId: m.user.id, name: m.user.name, memberNumber: m.memberNumber, status: m.status, exempt: m.workHoursExempt, joinedAt: m.joinedAt, ...h, ...b, invoice: invoiceByUser.get(m.user.id) ?? null };
   });
   return { settings, rows };
 }

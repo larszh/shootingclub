@@ -7,6 +7,7 @@ import { backfillMatchTotals } from "@/modules/scores/sync";
 import { runShiftReminders } from "@/modules/shifts/service";
 import { runWeaponReminders } from "@/modules/weapons/service";
 import { runFederalReminders } from "@/modules/federal/service";
+import { bookingReminders } from "@/modules/bookings/reminders";
 
 const MIN = 60_000;
 const HOUR = 60 * MIN;
@@ -21,6 +22,7 @@ const REMINDER_HOOKS: Array<{ name: string; fn: () => Promise<unknown> }> = [
   { name: "shifts", fn: () => runShiftReminders() }, // 07–22 Uhr: Schicht in 24 h, Unterbesetzung, ablaufende Qualifikationen
   { name: "weapons", fn: () => runWeaponReminders() }, // ab 08 Uhr: überfällige Ausleihen, Meldefristen Minderjährige, Wartung
   { name: "federal", fn: () => runFederalReminders() }, // Fristen 14/3 Tage vorher, Vorabend-Erinnerung Obligatorisch
+  { name: "bookings", fn: () => bookingReminders() }, // 07–21 Uhr: Reservation in den nächsten 24 h (Booking.reminderSentAt + dedupeKey)
 ];
 
 /** Alle Plattform-Jobs registrieren. Wird vom Runner einmal pro Prozess aufgerufen. */

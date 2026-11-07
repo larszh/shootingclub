@@ -3,9 +3,11 @@
 import { useState } from "react";
 import { Check, Share2 } from "lucide-react";
 import { Button } from "@/components/ui";
+import { getT, type Locale } from "@/lib/i18n/core";
 
 /** Teilt den Anlass über das Teilen-Menü des Geräts, sonst wird der Text kopiert. */
-export function ShareButton({ title, text, path }: { title: string; text: string; path: string }) {
+export function ShareButton({ title, text, path, locale = "de" }: { title: string; text: string; path: string; locale?: Locale }) {
+  const t = getT(locale);
   const [copied, setCopied] = useState(false);
   async function share() {
     const url = new URL(path, window.location.origin).toString();
@@ -21,7 +23,7 @@ export function ShareButton({ title, text, path }: { title: string; text: string
     try {
       await navigator.clipboard.writeText(full);
     } catch {
-      window.prompt("Text kopieren:", full);
+      window.prompt(t("money.share.copyPrompt"), full);
       return;
     }
     setCopied(true);
@@ -29,7 +31,7 @@ export function ShareButton({ title, text, path }: { title: string; text: string
   }
   return (
     <Button type="button" variant="secondary" onClick={share} className="flex-1">
-      {copied ? <><Check className="h-4 w-4" /> Kopiert</> : <><Share2 className="h-4 w-4" /> Teilen</>}
+      {copied ? <><Check className="h-4 w-4" /> {t("money.copy.copied")}</> : <><Share2 className="h-4 w-4" /> {t("money.share.share")}</>}
     </Button>
   );
 }

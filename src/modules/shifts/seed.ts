@@ -28,7 +28,7 @@ export async function seedDemoShifts(db: Db, tenantId: string, userIds: string[]
 
   await db.workHoursSettings.upsert({
     where: { tenantId },
-    create: { tenantId, enabled: true, requiredHours: 8, ratePerMissingHourCents: 3000, appliesToStatuses: "ACTIVE,JUNIOR" },
+    create: { tenantId, enabled: true, requiredHours: 8, ratePerMissingHourCents: 3000, appliesToStatuses: "ACTIVE,JUNIOR", proRata: true },
     update: {},
   });
 

@@ -664,3 +664,27 @@ export function presetOfficialUpdate(existing: ExistingProgram, preset: ProgramP
   }
   return Object.keys(patch).length ? patch : null;
 }
+
+// ---------------------------------------------------------------------------
+// Feldschiessen-Auszeichnungen: Beispiel-Vorbelegung (keine offiziellen Werte)
+// ---------------------------------------------------------------------------
+
+/**
+ * Beispiel für die Limitentabelle eines Feldschiessen-Programms (Format siehe src/modules/federal/awards.ts:
+ * «Kategorie;Alter von;Alter bis;Limite;Auszeichnung»). Die Zahlen sind bewusst nur Platzhalter, damit der
+ * Verein das Format sieht; massgebend sind die Limiten der Ausschreibung des jeweiligen Jahres.
+ * Gerechnet als Anteil des Programm-Maximums, damit das Beispiel zur Wertung passt.
+ */
+export function fsAwardExample(maxScore: number | null | undefined): string {
+  const max = maxScore && maxScore > 0 ? maxScore : 90;
+  const at = (share: number) => Math.round(max * share);
+  return [
+    "# Beispiel, bitte prüfen – Limiten gemäss Ausschreibung eintragen",
+    `Jugend;;20;${at(0.62)};Kranz (Beispiel)`,
+    `Jugend;;20;${at(0.58)};Anerkennungskarte (Beispiel)`,
+    `Elite;21;59;${at(0.64)};Kranz (Beispiel)`,
+    `Elite;21;59;${at(0.6)};Anerkennungskarte (Beispiel)`,
+    `Veteranen;60;;${at(0.62)};Kranz (Beispiel)`,
+    `Veteranen;60;;${at(0.58)};Anerkennungskarte (Beispiel)`,
+  ].join("\n");
+}

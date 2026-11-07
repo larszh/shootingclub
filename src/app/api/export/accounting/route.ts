@@ -6,13 +6,13 @@ import { slugify } from "@/lib/utils";
 import { csvResponse } from "@/modules/billing/csv";
 import { getAccountingJournal } from "@/modules/accounting/queries";
 import { exportFilename, renderJournal } from "@/modules/accounting/format";
-import { validateRange } from "@/modules/accounting/period";
+import { includeKioskCashParam, validateRange } from "@/modules/accounting/period";
 import { EXPORT_FORMATS, isExportFormat } from "@/modules/accounting/types";
 
 export const dynamic = "force-dynamic";
 
 /**
- * Buchhaltungsexport (accounting.export): ?format=banana|bexio|csv&from=YYYY-MM-DD&to=YYYY-MM-DD.
+ * Buchhaltungsexport (accounting.export): ?format=banana|bexio|csv&from=YYYY-MM-DD&to=YYYY-MM-DD[&kioskCash=0].
  * Banana als Textdatei mit Tabulatoren, bexio und allgemein als CSV mit Semikolon.
  */
 export async function GET(req: NextRequest) {
@@ -33,7 +33,8 @@ export async function GET(req: NextRequest) {
   const range = validateRange(sp.get("from"), sp.get("to"));
   if (!range.ok) return new NextResponse(range.error, { status: 400 });
 
-  const { entries } = await getAccountingJournal(ctx.tenant.id, range.from, range.to);
+  const includeKioskCash = includeKioskCashParam(sp.get("kioskCash"));
+  const { entries } = await getAccountingJournal(ctx.tenant.id, range.from, range.to, { includeKioskCash });
   const body = renderJournal(format, entries);
   const filename = exportFilename(format, slugify(ctx.tenant.name) || ctx.tenant.slug, range.from, range.to);
 
@@ -43,7 +44,7 @@ export async function GET(req: NextRequest) {
     action: "accounting.export",
     entity: "Tenant",
     entityId: ctx.tenant.id,
-    detail: `${EXPORT_FORMATS.find((f) => f.key === format)?.label ?? format}, ${range.from} bis ${range.to}: ${entries.length} Buchungen`,
+    detail: `${EXPORT_FORMATS.find((f) => f.key === format)?.label ?? format}, ${range.from} bis ${range.to}: ${entries.length} Buchungen${includeKioskCash ? "" : " (ohne Barverkäufe Schützenstube)"}`,
   });
 
   if (format !== "banana") return csvResponse(body, filename);

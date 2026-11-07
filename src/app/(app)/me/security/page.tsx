@@ -3,12 +3,14 @@ import { ShieldCheck } from "lucide-react";
 import { getAppContext } from "@/lib/tenant";
 import { currentSessionHash, SESSION_START_ACTION } from "@/lib/auth";
 import { db } from "@/lib/db";
-import { formatDateTimeZurich, formatDateZurich } from "@/lib/time";
+import { formatDate, formatDateTime, getRequestLocale, getT, type TFunction } from "@/lib/i18n";
 import { Badge, Card, PageHeader, SectionTitle } from "@/components/ui";
 import { countRecoveryCodes } from "@/modules/core/two-factor";
 import { PasswordCard, SessionsCard, TwoFactorCard } from "./forms";
 
-export const metadata: Metadata = { title: "Sicherheit" };
+export async function generateMetadata(): Promise<Metadata> {
+  return { title: getT(await getRequestLocale())("shell.me.row.security") };
+}
 
 async function loadSecurity(userId: string) {
   const [user, sessions, current] = await Promise.all([
@@ -28,46 +30,59 @@ async function loadSecurity(userId: string) {
   return [user, sessions.map((s) => ({ ...s, device: device.get(s.id) ?? null })), current] as const;
 }
 
+/**
+ * Gerätebezeichnung in der Sprache des Mitglieds. Beim Anmelden wird sie deutsch gespeichert
+ * («Safari auf iPhone», «Unbekanntes Gerät», siehe describeUserAgent und auth.ts).
+ */
+function deviceLabel(label: string | null, t: TFunction): string | null {
+  if (!label) return null;
+  if (label === "Unbekanntes Gerät") return t("shell.security.unknownDevice");
+  const m = /^(.+) auf (.+)$/.exec(label);
+  return m ? t("shell.security.deviceOn", { browser: m[1]!, os: m[2]! }) : label;
+}
+
 export default async function SecurityPage() {
   const ctx = await getAppContext();
   const [user, sessions, current] = await loadSecurity(ctx.user.id);
   const enabled = !!user?.totpEnabledAt;
   const recoveryLeft = enabled ? await countRecoveryCodes(ctx.user.id) : 0;
+  const locale = await getRequestLocale();
+  const t = getT(locale);
 
   return (
     <div>
-      <PageHeader title="Sicherheit" subtitle="Passwort, Zwei-Faktor-Anmeldung und angemeldete Geräte" back={{ href: "/me", label: "Mehr" }} />
+      <PageHeader title={t("shell.me.row.security")} subtitle={t("shell.security.subtitle")} back={{ href: "/me", label: t("shell.nav.more") }} />
 
       <Card className="animate-rise flex items-start gap-3 p-4">
         <span className={enabled ? "mt-0.5 text-ok" : "mt-0.5 text-ink-3"} aria-hidden><ShieldCheck className="h-6 w-6" /></span>
         <div className="min-w-0">
-          <p className="font-semibold">{enabled ? "Gut geschützt" : "Grundschutz aktiv"}</p>
+          <p className="font-semibold">{enabled ? t("shell.security.wellProtected") : t("shell.security.basic")}</p>
           <p className="text-sm text-ink-3">
             {enabled
-              ? `Zwei-Faktor-Anmeldung ist seit ${formatDateZurich(user!.totpEnabledAt!, { weekday: undefined })} aktiv.`
-              : "Dein Konto ist mit Passwort geschützt. Mit der Zwei-Faktor-Anmeldung wird es noch sicherer."}
+              ? t("shell.security.twofaSince", { date: formatDate(user!.totpEnabledAt!, locale) })
+              : t("shell.security.basicText")}
           </p>
-          {user?.passwordSetAt ? <p className="mt-1 text-xs text-ink-3">Passwort zuletzt gesetzt: {formatDateZurich(user.passwordSetAt, { weekday: undefined })}</p> : null}
+          {user?.passwordSetAt ? <p className="mt-1 text-xs text-ink-3">{t("shell.security.passwordSet", { date: formatDate(user.passwordSetAt, locale) })}</p> : null}
         </div>
       </Card>
 
-      <SectionTitle>Passwort ändern</SectionTitle>
+      <SectionTitle>{t("shell.security.changePassword")}</SectionTitle>
       <PasswordCard email={ctx.user.email} />
 
       <SectionTitle>
-        <span className="inline-flex items-center gap-2">Zwei-Faktor-Anmeldung {enabled ? <Badge tone="ok">Aktiv</Badge> : <Badge tone="outline">Aus</Badge>}</span>
+        <span className="inline-flex items-center gap-2">{t("shell.security.twofa")} {enabled ? <Badge tone="ok">{t("shell.security.on")}</Badge> : <Badge tone="outline">{t("shell.security.off")}</Badge>}</span>
       </SectionTitle>
       <TwoFactorCard enabled={enabled} recoveryLeft={recoveryLeft} />
 
-      <SectionTitle>Angemeldete Geräte</SectionTitle>
+      <SectionTitle>{t("shell.security.devices")}</SectionTitle>
       <SessionsCard
         sessions={sessions.map((s) => ({
           id: s.id,
           current: s.tokenHash === current,
-          device: s.device?.label ?? null,
+          device: deviceLabel(s.device?.label ?? null, t),
           ip: s.device?.ip ?? null,
-          since: formatDateTimeZurich(s.createdAt),
-          until: formatDateZurich(s.expiresAt, { weekday: undefined }),
+          since: formatDateTime(s.createdAt, locale),
+          until: formatDate(s.expiresAt, locale),
         }))}
       />
     </div>

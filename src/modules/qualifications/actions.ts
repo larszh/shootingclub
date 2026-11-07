@@ -3,10 +3,17 @@
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { db } from "@/lib/db";
+import { accessStatusWhere } from "@/lib/membership-access";
 import { audit } from "@/lib/audit";
 import { fail, ok, type ActionResult } from "@/lib/action-result";
+import { getRequestLocale, getT } from "@/lib/i18n";
 import { requireTenant } from "@/lib/tenant";
 import { dayToDbDate, QUALIFICATION_KIND_KEYS, qualificationLabel } from "./types";
+
+/** Fehlende Berechtigung, in der Sprache der Person. */
+async function noRight() {
+  return fail(getT(await getRequestLocale())("money.err.noPermission"));
+}
 
 const idSchema = z.string().min(1).max(40);
 const optDay = z.string().trim().transform((v) => v || null).pipe(z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Bitte ein gültiges Datum wählen.").nullable());
@@ -39,7 +46,7 @@ const revalidate = () => {
 /** Qualifikation erfassen oder bearbeiten (qualifications.manage). Erfassende Person gilt als «geprüft von». */
 export async function saveQualificationAction(_prev: ActionResult | null, fd: FormData): Promise<ActionResult> {
   const ctx = await manageCtx();
-  if (!ctx) return fail("Dafür fehlt dir die Berechtigung.");
+  if (!ctx) return noRight();
   const id = str(fd, "id") || null;
   if (id && !idSchema.safeParse(id).success) return fail("Ungültige Anfrage.");
   const parsed = schema.safeParse({
@@ -53,7 +60,7 @@ export async function saveQualificationAction(_prev: ActionResult | null, fd: Fo
   }
   const v = parsed.data;
   const tenantId = ctx.tenant.id;
-  const member = await db.membership.findFirst({ where: { tenantId, userId: v.userId, status: { not: "LEFT" }, user: { deletedAt: null } }, select: { user: { select: { name: true } } } });
+  const member = await db.membership.findFirst({ where: { tenantId, userId: v.userId, status: accessStatusWhere(), user: { deletedAt: null } }, select: { user: { select: { name: true } } } });
   if (!member) return fail("Mitglied nicht gefunden.", { userId: "Mitglied nicht gefunden." });
   const data = {
     userId: v.userId, kind: v.kind, label: v.label, number: v.number, note: v.note,
@@ -75,7 +82,7 @@ export async function saveQualificationAction(_prev: ActionResult | null, fd: Fo
 
 export async function deleteQualificationAction(id: string): Promise<ActionResult> {
   const ctx = await manageCtx();
-  if (!ctx) return fail("Dafür fehlt dir die Berechtigung.");
+  if (!ctx) return noRight();
   if (!idSchema.safeParse(id).success) return fail("Ungültige Anfrage.");
   const tenantId = ctx.tenant.id;
   const q = await db.qualification.findFirst({ where: { id, tenantId }, select: { kind: true, label: true, user: { select: { name: true } } } });

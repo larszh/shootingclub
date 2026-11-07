@@ -164,7 +164,7 @@ function LendDialog({ weapons, members, defaultReportDays, onClose }: { weapons:
         {isMinor ? (
           <div className="space-y-2">
             <Alert tone="warn">{MINOR_HINT}</Alert>
-            <Field label="Meldefrist in Tagen" hint="Vorschlag des Vereins (zuletzt verwendet). Frist beim Kanton erfragen.">
+            <Field label="Meldefrist in Tagen" hint="Vorschlag aus den Einstellungen des Vereins (Vereinswaffen → Einstellungen). Frist beim Kanton erfragen.">
               <Input value={reportDays} onChange={(e) => setReportDays(e.target.value.replace(/\D/g, "").slice(0, 3))} inputMode="numeric" className="w-28" />
             </Field>
           </div>

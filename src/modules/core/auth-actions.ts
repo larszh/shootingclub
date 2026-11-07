@@ -25,9 +25,11 @@ import {
 import { fail, ok, type ActionResult } from "@/lib/action-result";
 import { safeNextPath } from "@/lib/utils";
 import { todayZurich } from "@/lib/time";
-import { getTenantLocale } from "@/lib/i18n";
+import { getTenantLocale, getVisitorLocale } from "@/lib/i18n";
 import { setActiveTenantCookie } from "@/lib/tenant";
 import { audit } from "@/lib/audit";
+import { joinStatusFor } from "./join-approval";
+import { announceJoinRequest } from "./join-notify";
 import { RESET_MINUTES, mailPasswordReset, mailSecurityNotice } from "@/lib/mail/platform-mails";
 import { acceptInvitationForUser, findInvitation, findValidAuthToken } from "@/modules/core/invitations";
 import { verifySecondFactor } from "@/modules/core/two-factor";
@@ -66,21 +68,27 @@ export async function registerAction(_prev: ActionResult | null, formData: FormD
   if (existing) return fail("Diese E-Mail ist bereits registriert. Bitte melde dich an oder nutze «Passwort vergessen».", { email: "Bereits registriert" });
 
   let tenantId: string | null = null;
+  let joinStatus: "ACTIVE" | "PENDING" = "ACTIVE";
   if (joinCode) {
     const joinLimited = throttle(`join-ip:${ip}`, THROTTLE.joinCode.limit, THROTTLE.joinCode.windowMs);
     if (joinLimited) return fail(joinLimited);
     const t = await db.tenant.findUnique({ where: { joinCode } });
     if (!t || t.deletedAt) return fail("Beitrittscode nicht gefunden.", { joinCode: "Unbekannter Code" });
     tenantId = t.id;
+    // Beitritt mit Freigabe: Mitgliedschaft wartet auf die Verwaltung (kein Zugang bis dahin).
+    joinStatus = joinStatusFor(t);
   }
 
   // Registrierung aus einer Einladung: bei passender E-Mail tritt die Person direkt bei (unten).
   const inviteToken = String(formData.get("invite") ?? "");
   const inv = inviteToken ? await findInvitation(inviteToken) : null;
   const inviteMatches = !!inv && inv.state === "open" && inv.email === email;
-  // Neue Konten übernehmen die Sprache des Vereins, dem sie beitreten (keine eigene Wahl bei der Registrierung).
+  // Neue Konten übernehmen die auf den Anmeldeseiten gewählte Sprache (Cookie standchef_locale, sonst
+  // Accept-Language), andernfalls die Sprache des Vereins, dem sie beitreten.
+  // Eingeladene Personen sind bereits freigegeben (Einladung für denselben Verein).
+  if (inviteMatches && inv!.tenantId === tenantId) joinStatus = "ACTIVE";
   const joinTenantId = tenantId ?? (inviteMatches ? inv!.tenantId : null);
-  const locale = joinTenantId ? await getTenantLocale(joinTenantId) : undefined;
+  const locale = (await getVisitorLocale()) ?? (joinTenantId ? await getTenantLocale(joinTenantId) : undefined);
 
   const userCount = await db.user.count();
   const user = await db.user.create({
@@ -92,10 +100,13 @@ export async function registerAction(_prev: ActionResult | null, formData: FormD
       locale,
       // Allererster Benutzer wird automatisch Super-Admin (Bootstrap ohne Seed).
       isSuperAdmin: userCount === 0,
-      memberships: tenantId ? { create: { tenantId, role: "MEMBER", status: "ACTIVE", joinedAt: new Date(`${todayZurich()}T00:00:00Z`) } } : undefined,
+      memberships: tenantId ? { create: { tenantId, role: "MEMBER", status: joinStatus, joinedAt: joinStatus === "ACTIVE" ? new Date(`${todayZurich()}T00:00:00Z`) : null } } : undefined,
     },
+    include: { memberships: { select: { id: true, tenantId: true } } },
   });
   await createSession(user.id);
+  const pendingMembership = tenantId && joinStatus === "PENDING" ? user.memberships.find((m) => m.tenantId === tenantId) : null;
+  if (pendingMembership) await announceJoinRequest(pendingMembership.tenantId, pendingMembership.id, user);
 
   if (inviteToken) {
     if (inv && inviteMatches) {
@@ -108,6 +119,7 @@ export async function registerAction(_prev: ActionResult | null, formData: FormD
     }
     redirect(`/invite/${encodeURIComponent(inviteToken)}`);
   }
+  if (pendingMembership) redirect("/onboarding?requested=1");
   redirect(safeNextPath(formData.get("next")) ?? (tenantId ? "/" : "/onboarding"));
 }
 

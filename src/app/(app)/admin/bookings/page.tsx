@@ -21,8 +21,8 @@ export default async function AdminBookingsPage() {
   const [stats, pending, upcoming, openInvoices] = await Promise.all([
     bookingStats(ctx.tenant.id),
     listTenantBookings(ctx.tenant.id, { status: "PENDING" }),
-    listTenantBookings(ctx.tenant.id, { status: "CONFIRMED", from: new Date(), limit: 30 }),
-    listTenantBookings(ctx.tenant.id, { limit: 300 }).then((all) => all.filter((b) => b.invoice?.status === "OPEN")),
+    listTenantBookings(ctx.tenant.id, { status: "CONFIRMED", from: new Date(), limit: 30, order: "asc" }),
+    listTenantBookings(ctx.tenant.id, { openInvoice: true, limit: 300 }),
   ]);
   const month = monthRange(todayZurich());
   const partners = await partnerNameMap([...pending, ...upcoming, ...openInvoices].map((b) => b.viaTenantId));

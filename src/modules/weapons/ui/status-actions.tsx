@@ -2,7 +2,7 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { Archive, Ban, CheckCircle2, Trash2, Wrench } from "lucide-react";
+import { Archive, Ban, CheckCircle2, Pencil, Trash2, Wrench } from "lucide-react";
 import { Alert, Button, Field, Input } from "@/components/ui";
 import { ActionButton } from "@/components/ui/action-button";
 import { Dialog } from "@/components/ui/dialog";
@@ -11,7 +11,7 @@ import { toast } from "@/lib/ui-feedback";
 import { deleteWeaponAction, setWeaponStatusAction } from "@/modules/weapons/actions";
 
 /** Statuswechsel für Waffenverantwortliche: sperren (mit Grund), in Wartung, ausmustern, freigeben, löschen. */
-export function StatusActions({ weapon }: { weapon: { id: string; name: string; status: string; hasLoans: boolean } }) {
+export function StatusActions({ weapon }: { weapon: { id: string; name: string; status: string; hasLoans: boolean; blockReason?: string | null } }) {
   const router = useRouter();
   const [blockOpen, setBlockOpen] = useState(false);
   const s = weapon.status;
@@ -30,6 +30,9 @@ export function StatusActions({ weapon }: { weapon: { id: string; name: string; 
       {s !== "BLOCKED" && s !== "RETIRED" ? (
         <Button variant="secondary" onClick={() => setBlockOpen(true)}><Ban className="h-4 w-4" /> Sperren</Button>
       ) : null}
+      {s === "BLOCKED" ? (
+        <Button variant="secondary" onClick={() => setBlockOpen(true)}><Pencil className="h-4 w-4" /> Sperrgrund ändern</Button>
+      ) : null}
       {s !== "RETIRED" ? (
         <ActionButton variant="secondary" action={() => setWeaponStatusAction(weapon.id, "RETIRED")}
           confirm={{ title: `${weapon.name} ausmustern?`, message: "Die Waffe kann danach nicht mehr ausgeliehen werden. Ausleih- und Wartungsnachweise bleiben erhalten.", confirmLabel: "Ausmustern", tone: "danger" }}>
@@ -42,14 +45,14 @@ export function StatusActions({ weapon }: { weapon: { id: string; name: string; 
           <Trash2 className="h-4 w-4" /> Löschen
         </ActionButton>
       ) : null}
-      {blockOpen ? <BlockDialog id={weapon.id} name={weapon.name} onClose={() => setBlockOpen(false)} /> : null}
+      {blockOpen ? <BlockDialog id={weapon.id} name={weapon.name} initial={s === "BLOCKED" ? weapon.blockReason ?? "" : ""} change={s === "BLOCKED"} onClose={() => setBlockOpen(false)} /> : null}
     </div>
   );
 }
 
-function BlockDialog({ id, name, onClose }: { id: string; name: string; onClose: () => void }) {
+function BlockDialog({ id, name, initial, change, onClose }: { id: string; name: string; initial: string; change: boolean; onClose: () => void }) {
   const router = useRouter();
-  const [reason, setReason] = useState("");
+  const [reason, setReason] = useState(initial);
   const [error, setError] = useState<string | null>(null);
   const [pending, start] = useTransition();
   function submit() {
@@ -68,8 +71,8 @@ function BlockDialog({ id, name, onClose }: { id: string; name: string; onClose:
     });
   }
   return (
-    <Dialog open onClose={onClose} title="Waffe sperren" description={name}
-      footer={<Button variant="danger" onClick={submit} disabled={pending}>{pending ? <Spinner /> : <Ban className="h-4 w-4" />} Sperren</Button>}>
+    <Dialog open onClose={onClose} title={change ? "Sperrgrund ändern" : "Waffe sperren"} description={name}
+      footer={<Button variant="danger" onClick={submit} disabled={pending}>{pending ? <Spinner /> : <Ban className="h-4 w-4" />} {change ? "Speichern" : "Sperren"}</Button>}>
       <div className="space-y-3 pb-2">
         <Field label="Grund" hint="z.B. «Abzug defekt, zur Reparatur»"><Input value={reason} onChange={(e) => setReason(e.target.value)} maxLength={191} data-autofocus /></Field>
         {error ? <Alert>{error}</Alert> : null}

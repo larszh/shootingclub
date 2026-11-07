@@ -28,7 +28,7 @@ export default async function InvitationsPage() {
   return (
     <div>
       <PageHeader title="Mitglieder einladen" subtitle="Per E-Mail mit persönlichem Link" back={{ href: "/admin/members", label: "Mitglieder" }} />
-      <MembersNav active="invitations" canManage counts={{ invitations: open, households }} />
+      <MembersNav active="invitations" canApprove={ctx.can("members.approve")} tenantId={ctx.tenant.id} canManage counts={{ invitations: open, households }} />
 
       <SectionTitle>Einladung senden</SectionTitle>
       <InviteForm canInviteAdmin={ctx.can("tenant.manage")} />

@@ -4,9 +4,11 @@ import { useState, useTransition } from "react";
 import { CreditCard } from "lucide-react";
 import { Alert, Button } from "@/components/ui";
 import { isNavigationError, isNetworkError } from "@/lib/ui-feedback";
+import { getT, type Locale } from "@/lib/i18n/core";
 import { payFeeInvoiceOnlineAction } from "./actions";
 
-export function PayFeeInvoiceButton({ invoiceId, label }: { invoiceId: string; label: string }) {
+export function PayFeeInvoiceButton({ invoiceId, label, locale = "de" }: { invoiceId: string; label: string; locale?: Locale }) {
+  const t = getT(locale);
   const [pending, start] = useTransition();
   const [err, setErr] = useState<string | null>(null);
   return (
@@ -23,12 +25,12 @@ export function PayFeeInvoiceButton({ invoiceId, label }: { invoiceId: string; l
               if (r && !r.ok) setErr(r.error);
             } catch (e) {
               if (isNavigationError(e)) throw e;
-              setErr(isNetworkError(e) ? "Keine Verbindung. Bitte versuche es nochmals, sobald du wieder online bist." : "Das hat nicht geklappt. Bitte nochmals versuchen.");
+              setErr(isNetworkError(e) ? t("money.err.offline") : t("money.err.generic"));
             }
           })
         }
       >
-        <CreditCard className="h-5 w-5" aria-hidden /> {pending ? "Weiterleitung…" : label}
+        <CreditCard className="h-5 w-5" aria-hidden /> {pending ? t("money.pay.redirecting") : label}
       </Button>
       {err ? <div className="mt-2"><Alert>{err}</Alert></div> : null}
     </div>

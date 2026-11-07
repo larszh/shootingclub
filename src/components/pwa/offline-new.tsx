@@ -7,6 +7,7 @@ import { MatchSetup } from "@/modules/scores/ui/match-setup";
 import { getActiveSnapshot } from "@/lib/offline/store";
 import { todayZurich } from "@/lib/time";
 import type { OfflineSnapshot } from "@/lib/offline/types";
+import { useT } from "@/components/locale";
 
 type State = { status: "loading" } | { status: "missing"; reason: "session" | "snapshot" | "permission" } | { status: "ready"; snapshot: OfflineSnapshot; today: string };
 
@@ -24,6 +25,7 @@ async function load(): Promise<State> {
 
 /** Durchgang ohne Verbindung einrichten (Daten aus dem Offline-Snapshot). */
 export function OfflineNewMatch() {
+  const t = useT();
   const [state, setState] = useState<State>({ status: "loading" });
   useEffect(() => {
     let cancelled = false;
@@ -38,21 +40,19 @@ export function OfflineNewMatch() {
   return (
     <div>
       <div className="mb-5">
-        <a href="/offline" className="inline-flex items-center gap-1 text-sm text-ink-3 hover:text-ink mb-2"><span aria-hidden>←</span> Übersicht</a>
-        <PageHeader title="Durchgang starten" subtitle={state.status === "ready" ? `${state.snapshot.tenantName} · ohne Verbindung` : "Programm und Teilnehmer wählen"} />
+        <a href="/offline" className="inline-flex items-center gap-1 text-sm text-ink-3 hover:text-ink mb-2"><span aria-hidden>←</span> {t("shell.sync.overview")}</a>
+        <PageHeader title={t("shell.offline.startMatch")} subtitle={state.status === "ready" ? t("shell.offline.startMatchOffline", { club: state.snapshot.tenantName }) : t("shell.offline.startMatchHint")} />
       </div>
       {state.status === "loading" ? (
         <div className="space-y-3"><Skeleton className="h-11" /><Skeleton className="h-60" /></div>
       ) : state.status === "missing" ? (
         <EmptyState
           icon={<CloudOff className="h-5 w-5" />}
-          title={state.reason === "permission" ? "Keine Berechtigung" : "Keine Offline-Daten"}
+          title={state.reason === "permission" ? t("shell.offline.noPermission") : t("shell.offline.noData")}
           text={
-            state.reason === "permission"
-              ? "Du darfst in diesem Verein keine Durchgänge starten."
-              : "Öffne Standchef einmal mit Internetverbindung, damit Programme und Mitglieder für den Offline-Betrieb gespeichert werden."
+            state.reason === "permission" ? t("shell.offline.noPermissionText") : t("shell.offline.noDataPrepare")
           }
-          action={<a href="/offline" className="press inline-flex h-11 items-center rounded-control bg-ink px-4 font-medium text-bg">Zur Übersicht</a>}
+          action={<a href="/offline" className="press inline-flex h-11 items-center rounded-control bg-ink px-4 font-medium text-bg">{t("shell.offline.toOverview")}</a>}
         />
       ) : (
         <MatchSetup

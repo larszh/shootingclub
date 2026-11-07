@@ -3,18 +3,24 @@ import Link from "next/link";
 import { ChevronDown, Coffee } from "lucide-react";
 import { Alert, Badge, Card, EmptyState, LinkButton, PageHeader, SectionTitle, StatCard } from "@/components/ui";
 import { formatMoney } from "@/lib/money";
-import { formatDateTimeZurich, formatDateZurich } from "@/lib/time";
+import { formatDate, formatDateTime, getRequestLocale, getT } from "@/lib/i18n";
 import { requireKiosk } from "@/modules/kiosk/guard";
 import { myKiosk } from "@/modules/kiosk/queries";
 import { FEE_INVOICE_STATUS } from "@/modules/billing/types";
 import { getBillingProfile } from "@/modules/billing/profile";
+import { tPlural } from "@/modules/billing/ui/i18n";
 
-export const metadata: Metadata = { title: "Meine Konsumationen" };
+export async function generateMetadata(): Promise<Metadata> {
+  return { title: getT(await getRequestLocale())("money.kiosk.title") };
+}
 
 /** Eigene Konsumationen: offen (noch nicht verrechnet), Rechnungen und Barbezüge. */
 export default async function MyKioskPage({ searchParams }: { searchParams: Promise<{ denied?: string }> }) {
   const ctx = await requireKiosk();
   const sp = await searchParams;
+  const locale = await getRequestLocale();
+  const t = getT(locale);
+  const when = (d: Date) => formatDateTime(d, locale);
   const [{ open, openCents, invoices, recentCash }, profile] = await Promise.all([
     myKiosk(ctx.tenant.id, ctx.user.id),
     getBillingProfile(ctx.tenant.id, ctx.tenant.name),
@@ -24,46 +30,46 @@ export default async function MyKioskPage({ searchParams }: { searchParams: Prom
 
   return (
     <div>
-      <PageHeader title="Meine Konsumationen" subtitle="Schützenstube" back={seller ? { href: "/kiosk", label: "Theke" } : undefined} />
-      {sp.denied ? <Alert className="mb-4">Dafür fehlt dir die Berechtigung.</Alert> : null}
+      <PageHeader title={t("money.kiosk.title")} subtitle={t("money.kiosk.subtitle")} back={seller ? { href: "/kiosk", label: t("money.kiosk.counter") } : undefined} />
+      {sp.denied ? <Alert className="mb-4">{t("money.err.noPermission")}</Alert> : null}
 
       <div className="mb-4 grid grid-cols-2 gap-3">
-        <StatCard label="Offen, noch nicht verrechnet" value={formatMoney(openCents, cur)} tone={openCents ? "warn" : "neutral"} hint={`${open.length} ${open.length === 1 ? "Eintrag" : "Einträge"}`} />
-        <StatCard label="Rechnungen" value={invoices.length} href="/payments" hint="unter «Zahlungen»" />
+        <StatCard label={t("money.kiosk.openNotBilled")} value={formatMoney(openCents, cur)} tone={openCents ? "warn" : "neutral"} hint={tPlural(t, "money.kiosk.entries", open.length)} />
+        <StatCard label={t("money.billing.invoices")} value={invoices.length} href="/payments" hint={t("money.kiosk.underPayments")} />
       </div>
 
-      <SectionTitle>Offen</SectionTitle>
+      <SectionTitle>{t("money.status.OPEN")}</SectionTitle>
       {open.length ? (
         <Card className="animate-rise mb-2 divide-y divide-line overflow-hidden">
           {open.map((e) => (
             <div key={e.id} className="flex min-h-12 items-center gap-3 px-4 py-2">
               <div className="min-w-0 flex-1">
                 <div className="truncate text-[15px]"><span className="font-medium tabular-nums">{e.quantity} ×</span> {e.productName}</div>
-                <div className="text-xs text-ink-3">{formatDateTimeZurich(e.createdAt)}</div>
+                <div className="text-xs text-ink-3">{when(e.createdAt)}</div>
               </div>
               <span className="shrink-0 font-medium tabular-nums">{formatMoney(e.totalCents, cur)}</span>
             </div>
           ))}
           <div className="flex min-h-12 items-center justify-between bg-surface-2 px-4 py-2 font-semibold">
-            <span>Total offen</span><span className="tabular-nums">{formatMoney(openCents, cur)}</span>
+            <span>{t("money.kiosk.totalOpen")}</span><span className="tabular-nums">{formatMoney(openCents, cur)}</span>
           </div>
         </Card>
       ) : (
-        <EmptyState icon={<Coffee className="h-5 w-5" />} title="Nichts offen" text="Konsumationen auf Rechnung erscheinen hier, bis sie verrechnet werden." />
+        <EmptyState icon={<Coffee className="h-5 w-5" />} title={t("money.payments.nothingOpen.title")} text={t("money.kiosk.emptyOpen")} />
       )}
-      {open.length ? <p className="mb-4 text-xs text-ink-3">Offene Konsumationen werden periodisch mit einer QR-Rechnung verrechnet. Diese erscheint dann unter «Zahlungen».</p> : null}
+      {open.length ? <p className="mb-4 text-xs text-ink-3">{t("money.kiosk.openNote")}</p> : null}
 
-      <SectionTitle action={<Link href="/payments" className="text-sm text-accent">Zahlungen</Link>}>Verrechnet</SectionTitle>
+      <SectionTitle action={<Link href="/payments" className="text-sm text-accent">{t("money.payments.title")}</Link>}>{t("money.kiosk.billed")}</SectionTitle>
       {invoices.length ? (
         <Card className="animate-rise mb-4 divide-y divide-line overflow-hidden">
           {invoices.map((i) => {
-            const st = FEE_INVOICE_STATUS[i.status] ?? { label: i.status, tone: "neutral" as const };
+            const st = { label: FEE_INVOICE_STATUS[i.status] ? t(`money.status.${i.status}`) : i.status, tone: FEE_INVOICE_STATUS[i.status]?.tone ?? ("neutral" as const) };
             return (
               <details key={i.id} className="group">
                 <summary className="press flex min-h-14 cursor-pointer list-none items-center gap-3 px-4 py-2 hover:bg-surface-2 [&::-webkit-details-marker]:hidden">
                   <div className="min-w-0 flex-1">
                     <div className="flex flex-wrap items-center gap-1.5"><span className="truncate font-medium">{i.categoryName}</span><Badge tone={st.tone}>{st.label}</Badge></div>
-                    <div className="text-xs text-ink-3">Nr. {i.number} · {formatDateZurich(i.issuedAt, { weekday: undefined })}{i.status === "OPEN" ? ` · zahlbar bis ${formatDateZurich(i.dueAt, { weekday: undefined })}` : ""} · {i.items.length} {i.items.length === 1 ? "Position" : "Positionen"}</div>
+                    <div className="text-xs text-ink-3">{t("money.kiosk.number", { number: i.number })} · {formatDate(i.issuedAt, locale)}{i.status === "OPEN" ? ` · ${t("money.due.payableUntil", { date: formatDate(i.dueAt, locale) })}` : ""} · {tPlural(t, "money.kiosk.positions", i.items.length)}</div>
                   </div>
                   <span className="shrink-0 font-medium tabular-nums">{formatMoney(i.amountCents, i.currency)}</span>
                   <ChevronDown className="h-4 w-4 shrink-0 text-ink-3 transition-transform group-open:rotate-180" aria-hidden />
@@ -74,33 +80,33 @@ export default async function MyKioskPage({ searchParams }: { searchParams: Prom
                       {i.items.map((e) => (
                         <li key={e.id} className="flex min-h-11 items-center gap-3 px-4 py-1.5">
                           <div className="min-w-0 flex-1">
-                            <div className="truncate text-sm"><span className="tabular-nums">{e.quantity} ×</span> {e.productName} <span className="text-ink-3">à {formatMoney(e.unitPriceCents, i.currency)}</span></div>
-                            <div className="text-xs text-ink-3">{formatDateTimeZurich(e.createdAt)}</div>
+                            <div className="truncate text-sm"><span className="tabular-nums">{e.quantity} ×</span> {e.productName} <span className="text-ink-3">{t("money.kiosk.unitPrice", { price: formatMoney(e.unitPriceCents, i.currency) })}</span></div>
+                            <div className="text-xs text-ink-3">{when(e.createdAt)}</div>
                           </div>
                           <span className="shrink-0 text-sm tabular-nums">{formatMoney(e.totalCents, i.currency)}</span>
                         </li>
                       ))}
                     </ul>
-                  ) : <p className="px-4 py-2 text-sm text-ink-3">Keine Positionen mehr verknüpft.</p>}
+                  ) : <p className="px-4 py-2 text-sm text-ink-3">{t("money.kiosk.noPositions")}</p>}
                   <div className="px-4 py-2">
-                    <Link href="/payments" className="inline-flex min-h-11 items-center text-sm font-medium text-accent">Bezahlen und QR-Rechnung unter «Zahlungen»</Link>
+                    <Link href="/payments" className="inline-flex min-h-11 items-center text-sm font-medium text-accent">{t("money.kiosk.payHint")}</Link>
                   </div>
                 </div>
               </details>
             );
           })}
         </Card>
-      ) : <p className="mb-4 text-sm text-ink-3">Noch keine Rechnungen der Schützenstube.</p>}
+      ) : <p className="mb-4 text-sm text-ink-3">{t("money.kiosk.noInvoices")}</p>}
 
       {recentCash.length ? (
         <>
-          <SectionTitle>Bar bezahlt (letzte 90 Tage)</SectionTitle>
+          <SectionTitle>{t("money.kiosk.cash90")}</SectionTitle>
           <Card className="animate-rise mb-4 divide-y divide-line overflow-hidden">
             {recentCash.map((e) => (
               <div key={e.id} className="flex min-h-12 items-center gap-3 px-4 py-2">
                 <div className="min-w-0 flex-1">
                   <div className="truncate text-[15px]"><span className="tabular-nums">{e.quantity} ×</span> {e.productName}</div>
-                  <div className="text-xs text-ink-3">{formatDateTimeZurich(e.createdAt)}</div>
+                  <div className="text-xs text-ink-3">{when(e.createdAt)}</div>
                 </div>
                 <span className="shrink-0 text-sm tabular-nums text-ink-2">{formatMoney(e.totalCents, cur)}</span>
               </div>
@@ -109,7 +115,7 @@ export default async function MyKioskPage({ searchParams }: { searchParams: Prom
         </>
       ) : null}
 
-      <LinkButton href="/payments" variant="secondary">Alle Rechnungen und Zahlungen</LinkButton>
+      <LinkButton href="/payments" variant="secondary">{t("money.kiosk.allInvoices")}</LinkButton>
     </div>
   );
 }

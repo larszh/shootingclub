@@ -13,6 +13,8 @@ import {
   type ConfirmOptions,
 } from "@/lib/ui-feedback";
 import { buttonClasses } from "./index";
+import { useT } from "@/components/locale";
+import type { TFunction } from "@/lib/i18n/core";
 
 export { confirmDialog };
 export type { ConfirmOptions };
@@ -46,6 +48,7 @@ export type DialogProps = {
  * den Hintergrund, aria-modal und Rückgabe des Fokus an das auslösende Element.
  */
 export function Dialog({ open, onClose, title, description, children, footer, variant = "auto", dismissible = true, initialFocusRef, icon, className, size = "md" }: DialogProps) {
+  const t = useT();
   const ref = useRef<HTMLDialogElement>(null);
   const returnFocus = useRef<HTMLElement | null>(null);
   const onCloseRef = useRef(onClose);
@@ -145,7 +148,7 @@ export function Dialog({ open, onClose, title, description, children, footer, va
               <button
                 type="button"
                 onClick={() => onCloseRef.current()}
-                aria-label="Dialog schliessen"
+                aria-label={t("shell.ui.closeDialog")}
                 className="press -mr-2 -mt-1 flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-ink-3 hover:bg-surface-2 hover:text-ink focus-visible:outline-2 focus-visible:outline-accent"
               >
                 <X className="h-5 w-5" />
@@ -176,14 +179,15 @@ export function DialogHost() {
  * tatsächlich vom Löschen spricht – sonst neutral (Absagen, Stornieren usw. bitte
  * immer explizit als confirmLabel angeben).
  */
-function defaultConfirmLabel(title: string, danger: boolean) {
-  return danger && /löschen/i.test(title) ? "Löschen" : "Bestätigen";
+function defaultConfirmLabel(title: string, danger: boolean, t: TFunction) {
+  return danger && /löschen|supprim|elimin|cancell/i.test(title) ? t("shell.ui.delete") : t("shell.ui.confirm");
 }
 
 function ConfirmView({ req }: { req: ReturnType<typeof getConfirmQueue>[number] }) {
   const cancelRef = useRef<HTMLButtonElement>(null);
   const confirmRef = useRef<HTMLButtonElement>(null);
   const danger = req.tone === "danger";
+  const t = useT();
   return (
     <Dialog
       open
@@ -201,10 +205,10 @@ function ConfirmView({ req }: { req: ReturnType<typeof getConfirmQueue>[number] 
       footer={
         <>
           <button ref={cancelRef} type="button" className={buttonClasses("secondary", "lg", "w-full sm:w-auto sm:h-11")} onClick={() => resolveConfirm(req.id, false)}>
-            {req.cancelLabel ?? "Abbrechen"}
+            {req.cancelLabel ?? t("shell.common.cancel")}
           </button>
           <button ref={confirmRef} type="button" className={buttonClasses(danger ? "danger" : "primary", "lg", "w-full sm:w-auto sm:h-11")} onClick={() => resolveConfirm(req.id, true)}>
-            {req.confirmLabel ?? defaultConfirmLabel(req.title, danger)}
+            {req.confirmLabel ?? defaultConfirmLabel(req.title, danger, t)}
           </button>
         </>
       }

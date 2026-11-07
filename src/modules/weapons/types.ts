@@ -105,3 +105,18 @@ export const serviceSchema = z.object({
 export const shotsSchema = z.number().int("Schusszahl: ganze Zahl.").min(0, "Schusszahl ab 0.").max(100_000, "Schusszahl zu gross.").nullable();
 
 export const blockReasonSchema = z.string().trim().min(1, "Bitte einen Grund angeben.").max(191, "Grund: maximal 191 Zeichen.");
+
+/** Einstellungen pro Verein (WeaponSettings). Fehlt der Datensatz, gelten die Standardwerte. */
+export const weaponSettingsSchema = z.object({
+  minorReportDays: optInt(1, 365, "Meldefrist: 1 bis 365 Tage.").transform((v) => v ?? DEFAULT_MINOR_REPORT_DAYS),
+  serviceEveryShotsDefault: optInt(1, 10_000_000, "Wartungsintervall: ganze Zahl ab 1."),
+});
+export type WeaponSettingsInput = z.infer<typeof weaponSettingsSchema>;
+export type WeaponSettingsView = { minorReportDays: number; serviceEveryShotsDefault: number | null; saved: boolean };
+
+/** Datensatz → Einstellungen mit Rückfall auf die Standardwerte. */
+export function resolveWeaponSettings(row: { minorReportDays: number; serviceEveryShotsDefault: number | null } | null | undefined): WeaponSettingsView {
+  const days = row && Number.isInteger(row.minorReportDays) && row.minorReportDays >= 1 && row.minorReportDays <= 365 ? row.minorReportDays : DEFAULT_MINOR_REPORT_DAYS;
+  const every = row?.serviceEveryShotsDefault && row.serviceEveryShotsDefault > 0 ? row.serviceEveryShotsDefault : null;
+  return { minorReportDays: days, serviceEveryShotsDefault: every, saved: !!row };
+}

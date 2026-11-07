@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-  KIOSK_RELEASED_NOTE, MAX_OFFLINE_AGE_MS, canUndo, cartTotal, isKioskReleasedNote, saleTime, cashByDay, groupByCategory, groupForBilling, invoiceCategoryName, invoiceYear, isBatchId, isDayKey, lineClientId, normalizeCart,
+  KIOSK_RELEASED_NOTE, KIOSK_REOPEN_BLOCKED, MAX_OFFLINE_AGE_MS, isKioskInvoiceName, kioskReopenDecision, kioskReopenNeedsCount, canUndo, cartTotal, isKioskReleasedNote, saleTime, cashByDay, groupByCategory, groupForBilling, invoiceCategoryName, invoiceYear, isBatchId, isDayKey, lineClientId, normalizeCart,
   periodDays, periodLabel, periodPresets, periodToUtcRange, resolvePeriod, sumCents, validatePeriod,
 } from "./logic";
 
@@ -156,5 +156,41 @@ describe("Freigabe stornierter Rechnungen", () => {
     expect(isKioskReleasedNote(`Gemahnt: 1×\n${KIOSK_RELEASED_NOTE} 01.11.2026`)).toBe(true);
     expect(isKioskReleasedNote("Online (Payrexx)")).toBe(false);
     expect(isKioskReleasedNote(null)).toBe(false);
+  });
+});
+
+describe("kioskReopenDecision", () => {
+  const kiosk = { status: "CANCELLED", runId: null, categoryName: "Schützenstube Oktober 2026", paymentNote: null };
+
+  it("erkennt Schützenstube-Rechnungen an der Bezeichnung", () => {
+    expect(isKioskInvoiceName("Schützenstube Oktober 2026")).toBe(true);
+    expect(isKioskInvoiceName("Ersatzabgabe Arbeitsstunden 2026")).toBe(false);
+  });
+
+  it("nur Statuswechsel aus «storniert» werden geprüft", () => {
+    expect(kioskReopenDecision({ ...kiosk, status: "OPEN" }, "PAID", 0)).toBeNull();
+    expect(kioskReopenDecision(kiosk, "CANCELLED", 0)).toBeNull();
+  });
+
+  it("freigegebene Einträge sperren Reaktivieren und Bezahlt", () => {
+    const released = { ...kiosk, paymentNote: `${KIOSK_RELEASED_NOTE} 05.11.2026` };
+    expect(kioskReopenDecision(released, "OPEN", null)).toBe(KIOSK_REOPEN_BLOCKED);
+    expect(kioskReopenDecision(released, "PAID", 3)).toBe(KIOSK_REOPEN_BLOCKED);
+    // Auch ein Jahreslauf mit Markierung (sollte nie vorkommen) bleibt gesperrt.
+    expect(kioskReopenDecision({ ...released, runId: "run1" }, "OPEN", null)).toBe(KIOSK_REOPEN_BLOCKED);
+    expect(kioskReopenNeedsCount(released, "OPEN")).toBe(false);
+  });
+
+  it("Schützenstube-Rechnung ohne verknüpfte Einträge (Notiz gekürzt) bleibt gesperrt", () => {
+    expect(kioskReopenNeedsCount(kiosk, "OPEN")).toBe(true);
+    expect(kioskReopenDecision(kiosk, "OPEN", 0)).toBe(KIOSK_REOPEN_BLOCKED);
+    expect(kioskReopenDecision(kiosk, "OPEN", 4)).toBeNull();
+  });
+
+  it("andere Rechnungen dürfen reaktiviert werden", () => {
+    const other = { ...kiosk, categoryName: "Ersatzabgabe Arbeitsstunden 2026" };
+    expect(kioskReopenNeedsCount(other, "OPEN")).toBe(false);
+    expect(kioskReopenDecision(other, "OPEN", null)).toBeNull();
+    expect(kioskReopenDecision({ ...kiosk, runId: "run1" }, "OPEN", null)).toBeNull();
   });
 });

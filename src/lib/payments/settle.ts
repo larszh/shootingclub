@@ -107,7 +107,7 @@ export async function settlePayment(paymentId: string, reported: { amountCents?:
       const [inv] = await tx.$queryRaw<{ status: string; paymentNote: string | null }[]>`SELECT status, paymentNote FROM \`FeeInvoice\` WHERE id = ${p.feeInvoice.id} FOR UPDATE`;
       if (inv) {
         const base = feeInvoiceSettlement(inv, label);
-        // Storniert und Schützenstube-Einträge freigegeben: die Konsumationen sind bereits neu verrechnet.
+        // Storniert und Schützenstube-Einträge freigegeben: die Konsumationen sind bereits freigegeben (wieder offen bzw. neu verrechnet).
         const s = base.action === "NOTE_ONLY" && inv.status === "CANCELLED" && isKioskReleasedNote(inv.paymentNote)
           ? { ...base, note: `Online (${label}) nach Storno und Freigabe bezahlt – Rückerstattung nötig` }
           : base;

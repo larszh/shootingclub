@@ -4,6 +4,8 @@ import type { Prisma } from "@/generated/prisma/client";
 import { isTenantRole } from "@/lib/permissions";
 import { todayZurich } from "@/lib/time";
 import { userAvatarUrl } from "@/components/avatar";
+import { sortByMemberNumber } from "./number-sort";
+import { accessStatusWhere } from "@/lib/membership-access";
 import { MEMBER_PAGE_SIZE, dateOnly, displayEmail, isMemberStatus, isMinor, isPlaceholderEmail, type MemberFilters } from "./types";
 
 /** Zugang zur App: Passwort gesetzt, Einladung offen, nie eingeladen oder keine E-Mail. */
@@ -32,9 +34,10 @@ export function memberWhere(tenantId: string, f: MemberFilters): Prisma.Membersh
     and.push({ OR: [{ user: { name: { contains: q } } }, { user: { email: { contains: q } } }, { memberNumber: { contains: q } }, { licenseNumber: { contains: q } }, { user: { phone: { contains: q } } }] });
   }
   if (f.status === "all") {
-    // alle, auch Ausgetretene
+    // alle, auch Ausgetretene (Beitrittsanfragen nie: die stehen unter /admin/members/requests)
+    and.push({ status: { not: "PENDING" } });
   } else if (isMemberStatus(f.status)) and.push({ status: f.status });
-  else and.push({ status: { not: "LEFT" } });
+  else and.push({ status: accessStatusWhere() });
   if (f.role && isTenantRole(f.role)) and.push({ role: f.role });
   if (f.cat === "none") and.push({ feeCategoryId: null });
   else if (f.cat) and.push({ feeCategoryId: f.cat });
@@ -79,16 +82,25 @@ export type MemberListRow = {
   access: AccessState;
 };
 
+/**
+ * Sortierung «Mitgliedernummer»: die Datenbank sortiert Text («10» vor «9»). Deshalb hier alle IDs
+ * mit Nummer und Name laden (höchstens 5000), natürlich sortieren und danach seitenweise laden.
+ */
+async function idsByMemberNumber(where: Prisma.MembershipWhereInput, take = 5000) {
+  const rows = await db.membership.findMany({ where, select: { id: true, memberNumber: true, user: { select: { name: true } } }, take });
+  return sortByMemberNumber(rows.map((r) => ({ id: r.id, memberNumber: r.memberNumber, name: r.user.name }))).map((r) => r.id);
+}
+
 export async function listMembers(tenantId: string, f: MemberFilters) {
   const where = memberWhere(tenantId, f);
   const total = await db.membership.count({ where });
   const pages = Math.max(1, Math.ceil(total / MEMBER_PAGE_SIZE));
   const page = Math.min(f.page, pages);
-  const rows = await db.membership.findMany({
-    where,
+  const pageIds = f.sort === "number" ? (await idsByMemberNumber(where)).slice((page - 1) * MEMBER_PAGE_SIZE, page * MEMBER_PAGE_SIZE) : null;
+  const unordered = await db.membership.findMany({
+    where: pageIds ? { AND: [where, { id: { in: pageIds } }] } : where,
     orderBy: memberOrder(f.sort),
-    skip: (page - 1) * MEMBER_PAGE_SIZE,
-    take: MEMBER_PAGE_SIZE,
+    ...(pageIds ? {} : { skip: (page - 1) * MEMBER_PAGE_SIZE, take: MEMBER_PAGE_SIZE }),
     select: {
       id: true, role: true, status: true, memberNumber: true, licenseNumber: true, joinedAt: true,
       feeCategory: { select: { name: true } },
@@ -101,6 +113,8 @@ export async function listMembers(tenantId: string, f: MemberFilters) {
       },
     },
   });
+  const position = new Map((pageIds ?? []).map((id, i) => [id, i]));
+  const rows = pageIds ? [...unordered].sort((a, b) => (position.get(a.id) ?? 0) - (position.get(b.id) ?? 0)) : unordered;
   const today = todayZurich();
   const items: MemberListRow[] = rows.map((m) => ({
     id: m.id,
@@ -124,6 +138,7 @@ export async function listMembers(tenantId: string, f: MemberFilters) {
 
 /** IDs aller Treffer (für «alle auswählen»), höchstens 5000. */
 export async function listMemberIds(tenantId: string, f: MemberFilters) {
+  if (f.sort === "number") return idsByMemberNumber(memberWhere(tenantId, f));
   const rows = await db.membership.findMany({ where: memberWhere(tenantId, f), select: { id: true }, orderBy: memberOrder(f.sort), take: 5000 });
   return rows.map((r) => r.id);
 }

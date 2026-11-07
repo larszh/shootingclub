@@ -6,7 +6,8 @@ import { formatDateZurich, todayZurich, zurichParts } from "@/lib/time";
 import type { Prisma } from "@/generated/prisma/client";
 import { MODULES } from "@/lib/modules";
 import { inferReportDays, isLoanOverdue, isMinorOn, isoWeekKey, minorReportState, reportDueFrom, serviceInfo, statusAfterReturn } from "./logic";
-import { DEFAULT_MINOR_REPORT_DAYS, MINOR_REPORT_WARN_DAYS } from "./types";
+import { DEFAULT_MINOR_REPORT_DAYS, MINOR_REPORT_WARN_DAYS, resolveWeaponSettings, type WeaponSettingsView } from "./types";
+import { accessStatusWhere } from "@/lib/membership-access";
 
 /**
  * Vereinswaffen: Ausleihe, Rückgabe, Wartungsstand und Erinnerungen.
@@ -49,12 +50,20 @@ export async function shotsSinceServiceMap(tenantId: string, weaponIds: string[]
   return map;
 }
 
+/** Einstellungen des Vereins (WeaponSettings); ohne Datensatz die Standardwerte. */
+export async function getWeaponSettings(tenantId: string, client: Client = db): Promise<WeaponSettingsView> {
+  const row = await client.weaponSettings.findUnique({ where: { tenantId }, select: { minorReportDays: true, serviceEveryShotsDefault: true } });
+  return resolveWeaponSettings(row);
+}
+
 /**
- * Vorgeschlagene Meldefrist (Tage) für Abgaben an Minderjährige: die zuletzt im Verein verwendete Frist,
- * sonst DEFAULT_MINOR_REPORT_DAYS. So bleibt die Frist pro Verein einstellbar (im Ausleihdialog), ohne
- * eigenes Einstellungsmodell. Werte bitte beim Kanton prüfen.
+ * Meldefrist (Tage) für Abgaben an Minderjährige: aus den Einstellungen des Vereins. Hat der Verein noch
+ * keine Einstellungen gespeichert, gilt die zuletzt verwendete Frist (Verhalten vor den Einstellungen),
+ * sonst DEFAULT_MINOR_REPORT_DAYS. Werte bitte beim Kanton prüfen.
  */
 export async function defaultMinorReportDays(tenantId: string, client: Client = db) {
+  const settings = await getWeaponSettings(tenantId, client);
+  if (settings.saved) return settings.minorReportDays;
   const last = await client.weaponLoan.findFirst({
     where: { tenantId, isMinor: true, reportDueAt: { not: null } },
     orderBy: { loanedAt: "desc" },
@@ -66,7 +75,7 @@ export async function defaultMinorReportDays(tenantId: string, client: Client = 
 /**
  * Leiht eine Vereinswaffe aus. Schlägt fehl, wenn die Waffe nicht verfügbar ist (Statuswechsel
  * AVAILABLE → LOANED ist bedingt und damit sicher gegen parallele Ausleihen). Mitglieder müssen zum
- * Verein gehören (nicht ausgetreten). Minderjährig wird bei Mitgliedern zusätzlich aus dem
+ * Verein gehören (nicht ausgetreten, nicht wartend auf Freigabe). Minderjährig wird bei Mitgliedern zusätzlich aus dem
  * Geburtsdatum abgeleitet; dann wird die Meldefrist gesetzt (loanedAt + reportDays bzw. Vereinsstandard).
  */
 export async function createWeaponLoan(l: {
@@ -80,7 +89,7 @@ export async function createWeaponLoan(l: {
   note?: string | null;
   /** optional: Rückgabe bis */
   dueAt?: Date | null;
-  /** optional: Meldefrist in Tagen bei Minderjährigen (Standard: zuletzt verwendet bzw. 30) */
+  /** optional: Meldefrist in Tagen bei Minderjährigen (Standard: Einstellungen des Vereins) */
   reportDays?: number | null;
 }): Promise<{ ok: true; id: string } | { ok: false; error: string }> {
   const name = l.borrowerName?.trim().slice(0, 191) || null;
@@ -92,7 +101,7 @@ export async function createWeaponLoan(l: {
   let displayName = name;
   if (l.userId) {
     const m = await db.membership.findFirst({
-      where: { tenantId: l.tenantId, userId: l.userId, status: { not: "LEFT" }, user: { deletedAt: null } },
+      where: { tenantId: l.tenantId, userId: l.userId, status: accessStatusWhere(), user: { deletedAt: null } },
       select: { user: { select: { name: true, birthDate: true } } },
     });
     if (!m) return { ok: false, error: "Mitglied nicht gefunden." };

@@ -23,7 +23,7 @@ export default async function MembersAdminPage({ searchParams }: { searchParams:
     canManage ? db.invitation.count({ where: { tenantId: ctx.tenant.id, acceptedAt: null, expiresAt: { gt: new Date() } } }) : Promise.resolve(0),
     canManage ? db.household.count({ where: { tenantId: ctx.tenant.id } }) : Promise.resolve(0),
   ]);
-  const activeCount = Object.entries(options.statusCounts).reduce((s, [k, n]) => (k === "LEFT" ? s : s + n), 0);
+  const activeCount = Object.entries(options.statusCounts).reduce((s, [k, n]) => (k === "LEFT" || k === "PENDING" ? s : s + n), 0);
   const query = filtersToQuery({ ...filters, page: 1 });
   const pageHref = (p: number) => `/admin/members${filtersToQuery({ ...filters, page: p })}`;
 
@@ -35,7 +35,7 @@ export default async function MembersAdminPage({ searchParams }: { searchParams:
         back={ctx.can("tenant.manage") ? { href: "/admin", label: "Einstellungen" } : { href: "/me", label: "Mehr" }}
         action={canManage ? <LinkButton href="/admin/members/invitations" size="sm"><UserPlus className="h-4 w-4" /> Einladen</LinkButton> : undefined}
       />
-      <MembersNav active="list" canManage={canManage} counts={{ invitations: openInvites, households: householdCount }} />
+      <MembersNav active="list" canApprove={ctx.can("members.approve")} tenantId={ctx.tenant.id} canManage={canManage} counts={{ invitations: openInvites, households: householdCount }} />
 
       <MemberFilterBar
         filters={filters}

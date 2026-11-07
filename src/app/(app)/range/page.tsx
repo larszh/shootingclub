@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { DoorClosed, DoorOpen, QrCode, Settings } from "lucide-react";
 import { db } from "@/lib/db";
+import { getRequestLocale, getT, type TFunction } from "@/lib/i18n";
 import { todayZurich } from "@/lib/time";
 import { Alert, Badge, Card, LinkButton, LinkTabs, PageHeader, SectionTitle } from "@/components/ui";
 import { requireRange } from "@/modules/range/guard";
@@ -9,7 +10,6 @@ import { getActiveRules, getDayBoard, getMyOpenVisit, listMemberOptions, listOpe
 import { toBoardVisits } from "@/modules/range/board";
 import { dbDateKey } from "@/modules/range/logic";
 import { dayTitle, fmtDay, fmtTime } from "@/modules/range/format";
-import { RESPONSIBILITY_HINT } from "@/modules/range/types";
 import { rangeTabs } from "@/modules/range/nav";
 import { RangeTabs } from "@/modules/range/ui/range-tabs";
 import { EmergencyBox } from "@/modules/range/ui/emergency-box";
@@ -18,7 +18,9 @@ import { OpenDayForm } from "@/modules/range/ui/open-day-form";
 import { hasValidQualification } from "@/modules/qualifications/service";
 import { listAvailableWeapons } from "@/modules/weapons/service";
 
-export const metadata: Metadata = { title: "Heute am Stand" };
+export async function generateMetadata(): Promise<Metadata> {
+  return { title: getT(await getRequestLocale())("shooting.range.today") };
+}
 
 const DUTY_QUALIFICATIONS = ["SCHUETZENMEISTER", "RANGE_OFFICER"];
 
@@ -29,14 +31,16 @@ export default async function RangeTodayPage({ searchParams }: { searchParams: P
   const isDuty = ctx.can("range.duty");
   const isManager = ctx.can("range.manage");
   const today = todayZurich();
+  const locale = await getRequestLocale();
+  const t = getT(locale);
   const [openDays, rules] = await Promise.all([listOpenDays(tenantId), getActiveRules(tenantId)]);
   const todayDays = openDays.filter((d) => dbDateKey(d.date) === today);
   const tabs = rangeTabs({ duty: isDuty, manage: isManager });
   const header = (
     <PageHeader
-      title="Heute am Stand"
+      title={t("shooting.range.today")}
       subtitle={ctx.tenant.name}
-      action={isManager ? <LinkButton href="/admin/range" variant="secondary" size="sm" className="h-11" aria-label="Standbetrieb einrichten"><Settings className="h-4 w-4" /></LinkButton> : undefined}
+      action={isManager ? <LinkButton href="/admin/range" variant="secondary" size="sm" className="h-11" aria-label={t("shooting.range.setup")}><Settings className="h-4 w-4" /></LinkButton> : undefined}
     />
   );
 
@@ -46,18 +50,18 @@ export default async function RangeTodayPage({ searchParams }: { searchParams: P
     return (
       <div className="space-y-4">
         {header}
-        <RangeTabs tabs={tabs} />
-        {sp.denied ? <Alert tone="warn">Dafür fehlt dir die Berechtigung.</Alert> : null}
-        <StatusCard days={todayDays} />
+        <RangeTabs tabs={tabs} locale={locale} />
+        {sp.denied ? <Alert tone="warn">{t("shooting.range.denied")}</Alert> : null}
+        <StatusCard days={todayDays} t={t} />
         {mine ? (
           <Card className="flex items-center justify-between gap-3 p-4">
-            <div className="min-w-0"><div className="font-medium">Du bist eingecheckt</div><div className="text-sm text-ink-3">seit {fmtTime(mine.checkedInAt)}</div></div>
-            <LinkButton href="/range/checkin" variant="secondary" className="shrink-0">Auschecken</LinkButton>
+            <div className="min-w-0"><div className="font-medium">{t("shooting.checkin.checkedIn")}</div><div className="text-sm text-ink-3">{t("shooting.range.checkedInSince", { time: fmtTime(mine.checkedInAt) })}</div></div>
+            <LinkButton href="/range/checkin" variant="secondary" className="shrink-0">{t("shooting.checkin.checkOut")}</LinkButton>
           </Card>
         ) : todayDays.length ? (
-          <LinkButton href="/range/checkin" size="lg" className="h-14 w-full">Einchecken</LinkButton>
+          <LinkButton href="/range/checkin" size="lg" className="h-14 w-full">{t("shooting.checkin.checkIn")}</LinkButton>
         ) : null}
-        <EmergencyBox hasRules={!!rules} />
+        <EmergencyBox hasRules={!!rules} locale={locale} />
       </div>
     );
   }
@@ -66,7 +70,7 @@ export default async function RangeTodayPage({ searchParams }: { searchParams: P
   // Standardmässig nur ein Standbuch von heute öffnen; alte (nicht abgeschlossene) nur auf Auswahl.
   const selected = sp.new ? undefined : (openDays.find((d) => d.id === sp.day) ?? todayDays[0]);
   const staleDays = openDays.filter((d) => dbDateKey(d.date) !== today);
-  const dayTabLabel = (d: (typeof openDays)[number]) => `${dayTitle(d)}${dbDateKey(d.date) !== today ? ` (${fmtDay(d.date, { weekday: undefined, year: undefined })})` : ""}`;
+  const dayTabLabel = (d: (typeof openDays)[number]) => `${dayTitle(d, t)}${dbDateKey(d.date) !== today ? ` (${fmtDay(d.date, { weekday: undefined, year: undefined }, locale)})` : ""}`;
   const [resources, members] = await Promise.all([listRangeResources(tenantId), listMemberOptions(tenantId)]);
 
   if (!selected) {
@@ -75,30 +79,30 @@ export default async function RangeTodayPage({ searchParams }: { searchParams: P
     return (
       <div className="space-y-4">
         {header}
-        <RangeTabs tabs={tabs} />
+        <RangeTabs tabs={tabs} locale={locale} />
         {openDays.length ? (
-          <LinkTabs active="new" label="Offene Standbücher" items={[...openDays.map((d) => ({ value: d.id, href: `/range?day=${d.id}`, label: dayTabLabel(d) })), { value: "new", href: "/range?new=1", label: "+ Neu" }]} />
+          <LinkTabs active="new" label={t("shooting.range.openLogs")} items={[...openDays.map((d) => ({ value: d.id, href: `/range?day=${d.id}`, label: dayTabLabel(d) })), { value: "new", href: "/range?new=1", label: t("shooting.range.newLog") }]} />
         ) : null}
         {staleDays.length ? (
           <Alert tone="warn">
-            {staleDays.length === 1 ? "Ein Standbuch eines früheren Tages ist noch offen" : `${staleDays.length} Standbücher früherer Tage sind noch offen`}. Bitte abschliessen:{" "}
+            {t(`shooting.range.stale.${staleDays.length === 1 ? "one" : "other"}`, { n: staleDays.length })}{" "}
             {staleDays.map((d, i) => (
-              <span key={d.id}>{i ? ", " : ""}<Link href={`/range?day=${d.id}`} className="inline-flex min-h-11 items-center font-medium underline">{fmtDay(d.date)} · {dayTitle(d)}</Link></span>
+              <span key={d.id}>{i ? ", " : ""}<Link href={`/range?day=${d.id}`} className="inline-flex min-h-11 items-center font-medium underline">{fmtDay(d.date, undefined, locale)} · {dayTitle(d, t)}</Link></span>
             ))}
           </Alert>
         ) : null}
-        <StatusCard days={todayDays} />
+        <StatusCard days={todayDays} t={t} />
         <OpenDayForm resources={resources} members={members.map((m) => ({ userId: m.userId, name: m.name }))} currentUserId={ctx.user.id} currentQualified={qualified} />
         {lastClosed ? (
-          <Link href={`/range/log/${lastClosed.id}`} className="block text-sm text-ink-3 hover:text-ink">Zuletzt: {fmtDay(lastClosed.date)} · {dayTitle(lastClosed)} →</Link>
+          <Link href={`/range/log/${lastClosed.id}`} className="block text-sm text-ink-3 hover:text-ink">{t("shooting.range.lastClosed", { date: fmtDay(lastClosed.date, undefined, locale), title: dayTitle(lastClosed, t) })}</Link>
         ) : null}
-        <SectionTitle>Mitglieder-Check-in</SectionTitle>
+        <SectionTitle>{t("shooting.range.memberCheckin")}</SectionTitle>
         <Card className="flex items-center gap-3 p-4">
           <QrCode className="h-8 w-8 shrink-0 text-ink-3" aria-hidden />
-          <p className="min-w-0 flex-1 text-sm text-ink-2">QR-Code im Schützenhaus aufhängen: Mitglieder scannen ihn und checken sich selbst ein.</p>
-          <LinkButton href="/range/qr" variant="secondary" size="sm" className="h-11 shrink-0" target="_blank">Drucken</LinkButton>
+          <p className="min-w-0 flex-1 text-sm text-ink-2">{t("shooting.range.qrText")}</p>
+          <LinkButton href="/range/qr" variant="secondary" size="sm" className="h-11 shrink-0" target="_blank">{t("shooting.range.print")}</LinkButton>
         </Card>
-        <EmergencyBox hasRules={!!rules} />
+        <EmergencyBox hasRules={!!rules} locale={locale} />
       </div>
     );
   }
@@ -115,19 +119,19 @@ export default async function RangeTodayPage({ searchParams }: { searchParams: P
   let dutyWarning: string | null = null;
   if (board.day.dutyUserId) {
     const ok = await hasValidQualification(tenantId, board.day.dutyUserId, DUTY_QUALIFICATIONS).catch(() => false);
-    if (!ok) dutyWarning = "Für den Standdienst ist keine gültige Qualifikation als Schützenmeister oder Standchef erfasst. Bitte prüfen, ob die Aufsicht gemäss Vorgaben sichergestellt ist.";
+    if (!ok) dutyWarning = t("shooting.range.dutyWarning");
   }
 
   return (
     <div className="space-y-4">
       {header}
-      <RangeTabs tabs={tabs} />
+      <RangeTabs tabs={tabs} locale={locale} />
       {openDays.length > 1 || resources.length ? (
-        <LinkTabs active={selected.id} label="Offene Standbücher" items={[...openDays.map((d) => ({ value: d.id, href: `/range?day=${d.id}`, label: dayTabLabel(d), count: d._count.visits })), { value: "new", href: "/range?new=1", label: "+ Neu" }]} />
+        <LinkTabs active={selected.id} label={t("shooting.range.openLogs")} items={[...openDays.map((d) => ({ value: d.id, href: `/range?day=${d.id}`, label: dayTabLabel(d), count: d._count.visits })), { value: "new", href: "/range?new=1", label: t("shooting.range.newLog") }]} />
       ) : null}
       <DayBoard
         key={selected.id}
-        day={{ id: board.day.id, title: dayTitle(board.day), dateLabel: fmtDay(board.day.date, { weekday: "long", month: "long" }), isToday: dbDateKey(board.day.date) === today, dutyUserId: board.day.dutyUserId, dutyName: board.day.dutyName, notes: board.day.notes }}
+        day={{ id: board.day.id, title: dayTitle(board.day, t), dateLabel: fmtDay(board.day.date, { weekday: "long", month: "long" }, locale), isToday: dbDateKey(board.day.date) === today, dutyUserId: board.day.dutyUserId, dutyName: board.day.dutyName, notes: board.day.notes }}
         visits={visits}
         members={members.map((m) => ({ userId: m.userId, name: m.name, memberNumber: m.memberNumber, avatarUrl: m.avatarUrl }))}
         weapons={weapons}
@@ -136,18 +140,18 @@ export default async function RangeTodayPage({ searchParams }: { searchParams: P
         rulesActive={!!rules}
         year={Number(today.slice(0, 4))}
       />
-      <EmergencyBox hasRules={!!rules} />
-      <p className="text-xs text-ink-3">{RESPONSIBILITY_HINT}</p>
+      <EmergencyBox hasRules={!!rules} locale={locale} />
+      <p className="text-xs text-ink-3">{t("shooting.range.responsibility")}</p>
     </div>
   );
 }
 
-function StatusCard({ days }: { days: Array<{ id: string; dutyName: string | null; openedAt: Date; resource: { name: string } | null; _count: { visits: number } }> }) {
+function StatusCard({ days, t }: { t: TFunction; days: Array<{ id: string; dutyName: string | null; openedAt: Date; resource: { name: string } | null; _count: { visits: number } }> }) {
   if (!days.length) {
     return (
       <Card className="animate-rise flex items-center gap-3 p-4">
         <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-surface-2 text-ink-3"><DoorClosed className="h-6 w-6" aria-hidden /></span>
-        <div><div className="text-lg font-semibold">Stand geschlossen</div><div className="text-sm text-ink-3">Heute ist noch kein Standbuch offen.</div></div>
+        <div><div className="text-lg font-semibold">{t("shooting.range.closed")}</div><div className="text-sm text-ink-3">{t("shooting.range.closedText")}</div></div>
       </Card>
     );
   }
@@ -157,8 +161,8 @@ function StatusCard({ days }: { days: Array<{ id: string; dutyName: string | nul
         <div key={d.id} className="flex items-center gap-3 p-4">
           <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-ok/10 text-ok"><DoorOpen className="h-6 w-6" aria-hidden /></span>
           <div className="min-w-0 flex-1">
-            <div className="flex items-center gap-2"><span className="text-lg font-semibold">Stand offen</span><Badge tone="ok">{dayTitle(d)}</Badge></div>
-            <div className="truncate text-sm text-ink-3">Standdienst: {d.dutyName ?? "–"} · seit {fmtTime(d.openedAt)} · {d._count.visits} {d._count.visits === 1 ? "Person" : "Personen"} am Stand</div>
+            <div className="flex items-center gap-2"><span className="text-lg font-semibold">{t("shooting.range.open")}</span><Badge tone="ok">{dayTitle(d, t)}</Badge></div>
+            <div className="truncate text-sm text-ink-3">{t(`shooting.range.openInfo.${d._count.visits === 1 ? "one" : "other"}`, { name: d.dutyName ?? "–", time: fmtTime(d.openedAt), n: d._count.visits })}</div>
           </div>
         </div>
       ))}

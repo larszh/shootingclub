@@ -252,6 +252,38 @@ export function isKioskReleasedNote(paymentNote: string | null | undefined) {
   return (paymentNote ?? "").includes(KIOSK_RELEASED_NOTE);
 }
 
+/** Bezeichnung einer Schützenstube-Rechnung (siehe invoiceCategoryName). */
+export function isKioskInvoiceName(categoryName: string) {
+  return categoryName.startsWith("Schützenstube ");
+}
+
+export const KIOSK_REOPEN_BLOCKED =
+  "Die Einträge dieser Schützenstube-Rechnung wurden freigegeben (wieder offen bzw. neu verrechnet). Die stornierte Rechnung kann nicht mehr reaktiviert werden.";
+
+/**
+ * Darf eine stornierte Rechnung wieder geöffnet oder als bezahlt markiert werden? Rein (ohne DB).
+ * Nein, wenn ihre Schützenstube-Einträge freigegeben wurden (Markierung in der Zahlungsnotiz) oder
+ * wenn eine Schützenstube-Einzelrechnung keine verknüpften Einträge mehr hat (Notiz gekürzt):
+ * die Konsumationen sind dann offen oder auf einer neuen Rechnung und würden doppelt verlangt.
+ * `linkedEntries`: Anzahl Einträge mit billedInvoiceId = Rechnung (null = nicht gezählt).
+ * Gibt eine Fehlermeldung oder null zurück.
+ */
+export function kioskReopenDecision(
+  inv: { status: string; runId: string | null; categoryName: string; paymentNote: string | null },
+  next: string,
+  linkedEntries: number | null,
+): string | null {
+  if (inv.status !== "CANCELLED" || next === "CANCELLED") return null;
+  if (isKioskReleasedNote(inv.paymentNote)) return KIOSK_REOPEN_BLOCKED;
+  if (inv.runId || !isKioskInvoiceName(inv.categoryName)) return null;
+  return linkedEntries === 0 ? KIOSK_REOPEN_BLOCKED : null;
+}
+
+/** Braucht kioskReopenDecision die Anzahl verknüpfter Einträge? */
+export function kioskReopenNeedsCount(inv: { status: string; runId: string | null; categoryName: string; paymentNote: string | null }, next: string) {
+  return inv.status === "CANCELLED" && next !== "CANCELLED" && !isKioskReleasedNote(inv.paymentNote) && !inv.runId && isKioskInvoiceName(inv.categoryName);
+}
+
 /** clientId der n-ten Position einer Erfassung (eindeutig in KioskEntry.clientId). */
 export function lineClientId(batchId: string, index: number) {
   return `${batchId}:${index}`;

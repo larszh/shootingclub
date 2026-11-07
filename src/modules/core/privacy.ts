@@ -3,6 +3,7 @@ import { randomBytes } from "node:crypto";
 import { strToU8, zipSync, type Zippable } from "fflate";
 import { db } from "@/lib/db";
 import { audit } from "@/lib/audit";
+import { accessStatusWhere } from "@/lib/membership-access";
 import { hashPassword } from "@/lib/auth";
 import { deleteStoredFile } from "@/lib/storage";
 import { enqueueMail, renderMail } from "@/lib/mail";
@@ -45,7 +46,7 @@ export async function collectPersonalData(userId: string) {
   const [
     user, memberships, participations, bookings, feeInvoices, ammoOrders, rsvps, messages, files, prefs, pushCount, sessionCount,
     rangeVisits, guestsHosted, rulesAcceptances, qualifications, courseParticipations, weaponLoans, shiftAssignments, workLogs, incidentsReported, rangeDuties,
-    kioskEntries,
+    kioskEntries, bookingSeries, associationRoles,
   ] = await Promise.all([
     db.user.findUnique({
       where: { id: userId },
@@ -66,17 +67,17 @@ export async function collectPersonalData(userId: string) {
     }),
     db.booking.findMany({
       where: { userId },
-      select: { startsAt: true, endsAt: true, persons: true, isFlatRate: true, status: true, paymentMethod: true, paymentStatus: true, totalCents: true, discountCents: true, currency: true, note: true, createdAt: true, cancelledAt: true, paidAt: true, tenant: { select: { name: true } }, resource: { select: { name: true } }, invoice: { select: { number: true, issuedAt: true, dueAt: true, status: true, amountCents: true, paidAt: true } } },
+      select: { startsAt: true, endsAt: true, persons: true, isFlatRate: true, status: true, paymentMethod: true, paymentStatus: true, totalCents: true, discountCents: true, currency: true, note: true, createdAt: true, cancelledAt: true, refundedAt: true, paidAt: true, seriesId: true, tenant: { select: { name: true } }, resource: { select: { name: true } }, invoice: { select: { number: true, issuedAt: true, dueAt: true, status: true, amountCents: true, paidAt: true, cancelledAt: true } } },
       orderBy: { startsAt: "desc" },
     }),
     db.feeInvoice.findMany({
       where: { userId },
-      select: { number: true, year: true, memberName: true, memberAddress: true, categoryName: true, amountCents: true, currency: true, issuedAt: true, dueAt: true, status: true, paidAt: true, tenant: { select: { name: true } } },
+      select: { number: true, year: true, memberName: true, memberAddress: true, categoryName: true, amountCents: true, currency: true, issuedAt: true, dueAt: true, status: true, paidAt: true, cancelledAt: true, tenant: { select: { name: true } } },
       orderBy: { issuedAt: "desc" },
     }),
     db.ammoOrder.findMany({
       where: { userId },
-      select: { status: true, totalCents: true, currency: true, invoiceNumber: true, invoiceIssuedAt: true, dueAt: true, paymentStatus: true, paidAt: true, issuedAt: true, createdAt: true, note: true, tenant: { select: { name: true } }, items: { select: { productName: true, caliber: true, quantity: true, unitLabel: true, totalCents: true } } },
+      select: { status: true, totalCents: true, currency: true, invoiceNumber: true, invoiceIssuedAt: true, dueAt: true, paymentStatus: true, paidAt: true, cancelledAt: true, issuedAt: true, createdAt: true, note: true, tenant: { select: { name: true } }, items: { select: { productName: true, caliber: true, quantity: true, unitLabel: true, totalCents: true } } },
       orderBy: { createdAt: "desc" },
     }),
     db.eventRsvp.findMany({
@@ -164,6 +165,17 @@ export async function collectPersonalData(userId: string) {
       orderBy: { createdAt: "desc" },
       take: 50_000,
     }),
+    // Welle D: wiederkehrende Reservationen (Serien) und Rollen in Verbänden
+    db.bookingSeries.findMany({
+      where: { userId },
+      select: { weekdays: true, startTime: true, endTime: true, fromDate: true, untilDate: true, persons: true, note: true, status: true, createdAt: true, tenant: { select: { name: true } }, resource: { select: { name: true } } },
+      orderBy: { createdAt: "desc" },
+    }),
+    db.associationAdmin.findMany({
+      where: { userId },
+      select: { role: true, createdAt: true, association: { select: { name: true, region: true, deletedAt: true } } },
+      orderBy: { createdAt: "desc" },
+    }),
   ]);
   if (!user) return null;
   const kioskInvoiceIds = [...new Set(kioskEntries.map((k) => k.billedInvoiceId).filter((id): id is string => !!id))];
@@ -191,6 +203,8 @@ export async function collectPersonalData(userId: string) {
       feeCategory: m.feeCategory?.name ?? null, feeOverride: chf(m.feeAmountOverrideCents), household: m.household?.name ?? null,
       guardian: m.guardianName || m.guardianEmail || m.guardianPhone ? { name: m.guardianName, email: m.guardianEmail, phone: m.guardianPhone } : null,
       since: iso(m.createdAt),
+      // PENDING = Beitrittsanfrage, noch ohne Zugang zum Verein
+      waitingForApproval: m.status === "PENDING",
     })),
     results: participations.map((p) => ({
       club: p.match.tenant.name, date: iso(p.match.date), title: p.match.title, program: p.match.program.name, scoring: p.match.program.scoringMode,
@@ -200,12 +214,12 @@ export async function collectPersonalData(userId: string) {
     bookings: bookings.map((b) => ({
       club: b.tenant.name, resource: b.resource.name, startsAt: iso(b.startsAt), endsAt: iso(b.endsAt), persons: b.persons, flatRate: b.isFlatRate,
       status: b.status, payment: b.paymentMethod, paymentStatus: b.paymentStatus, total: chf(b.totalCents), discount: chf(b.discountCents), currency: b.currency,
-      note: b.note, createdAt: iso(b.createdAt), cancelledAt: iso(b.cancelledAt), paidAt: iso(b.paidAt),
-      invoice: b.invoice ? { number: b.invoice.number, issuedAt: iso(b.invoice.issuedAt), dueAt: iso(b.invoice.dueAt), status: b.invoice.status, amount: chf(b.invoice.amountCents), paidAt: iso(b.invoice.paidAt) } : null,
+      note: b.note, createdAt: iso(b.createdAt), cancelledAt: iso(b.cancelledAt), refundedAt: iso(b.refundedAt), paidAt: iso(b.paidAt), partOfSeries: !!b.seriesId,
+      invoice: b.invoice ? { number: b.invoice.number, issuedAt: iso(b.invoice.issuedAt), dueAt: iso(b.invoice.dueAt), status: b.invoice.status, amount: chf(b.invoice.amountCents), paidAt: iso(b.invoice.paidAt), cancelledAt: iso(b.invoice.cancelledAt) } : null,
     })),
     invoices: {
-      fees: feeInvoices.map((f) => ({ club: f.tenant.name, number: f.number, year: f.year, name: f.memberName, address: f.memberAddress, category: f.categoryName, amount: chf(f.amountCents), currency: f.currency, issuedAt: iso(f.issuedAt), dueAt: iso(f.dueAt), status: f.status, paidAt: iso(f.paidAt) })),
-      ammo: ammoOrders.map((o) => ({ club: o.tenant.name, status: o.status, invoiceNumber: o.invoiceNumber, total: chf(o.totalCents), currency: o.currency, orderedAt: iso(o.createdAt), issuedAt: iso(o.issuedAt), invoiceIssuedAt: iso(o.invoiceIssuedAt), dueAt: iso(o.dueAt), paymentStatus: o.paymentStatus, paidAt: iso(o.paidAt), note: o.note, items: o.items.map((i) => ({ product: i.productName, caliber: i.caliber, quantity: i.quantity, unit: i.unitLabel, total: chf(i.totalCents) })) })),
+      fees: feeInvoices.map((f) => ({ club: f.tenant.name, number: f.number, year: f.year, name: f.memberName, address: f.memberAddress, category: f.categoryName, amount: chf(f.amountCents), currency: f.currency, issuedAt: iso(f.issuedAt), dueAt: iso(f.dueAt), status: f.status, paidAt: iso(f.paidAt), cancelledAt: iso(f.cancelledAt) })),
+      ammo: ammoOrders.map((o) => ({ club: o.tenant.name, status: o.status, invoiceNumber: o.invoiceNumber, total: chf(o.totalCents), currency: o.currency, orderedAt: iso(o.createdAt), issuedAt: iso(o.issuedAt), invoiceIssuedAt: iso(o.invoiceIssuedAt), dueAt: iso(o.dueAt), paymentStatus: o.paymentStatus, paidAt: iso(o.paidAt), cancelledAt: iso(o.cancelledAt), note: o.note, items: o.items.map((i) => ({ product: i.productName, caliber: i.caliber, quantity: i.quantity, unit: i.unitLabel, total: chf(i.totalCents) })) })),
     },
     rsvps: rsvps.map((r) => ({ club: r.event.tenant.name, event: r.event.title, startsAt: iso(r.event.startsAt), status: r.status, guests: r.guests, note: r.note, updatedAt: iso(r.updatedAt) })),
     chatMessages: messages.map((m) => ({ club: m.conversation.tenant.name, conversation: m.conversation.kind === "GROUP" ? m.conversation.title ?? "Gruppe" : "Direktnachricht", sentAt: iso(m.createdAt), editedAt: iso(m.editedAt), text: m.body })),
@@ -237,6 +251,13 @@ export async function collectPersonalData(userId: string) {
       status: k.paidCash ? "BAR" : k.billedInvoiceId ? "VERRECHNET" : "OFFEN",
       invoiceNumber: k.billedInvoiceId ? (kioskInvoiceNumber.get(k.billedInvoiceId) ?? null) : null,
     })),
+    bookingSeries: bookingSeries.map((b) => ({
+      club: b.tenant.name, resource: b.resource.name, weekdays: b.weekdays, startTime: b.startTime, endTime: b.endTime,
+      from: day(b.fromDate), until: day(b.untilDate), persons: b.persons, note: b.note, status: b.status, createdAt: iso(b.createdAt),
+    })),
+    // Verbände sehen nur zusammengefasste Zahlen der Vereine; Namen nur, wenn ein Verein «Namen teilen»
+    // eingeschaltet hat (berechnet beim Anzeigen, nichts davon wird beim Verband gespeichert).
+    associationRoles: associationRoles.map((a) => ({ association: a.association.name, region: a.association.region, role: a.role, since: iso(a.createdAt), dissolved: !!a.association.deletedAt })),
   };
 }
 
@@ -253,8 +274,12 @@ export async function buildPersonalExportZip(userId: string): Promise<Uint8Array
     "Profil, Mitgliedschaften, Resultate, Reservationen, Rechnungen (Beiträge, Reservationen, Munition),",
     "Anmeldungen zu Anlässen, deine Chat-Nachrichten (nur Text), die Liste deiner hochgeladenen Dateien,",
     "Standbesuche und betreute Gäste, akzeptierte Standordnungen, Qualifikationen, Kurse (Präsenz, Resultate),",
-    "Waffenausleihen, Helfereinsätze und Arbeitsstunden, gemeldete Vorfälle, Standdienste",
-    "und deine Konsumationen in der Schützenstube.",
+    "Waffenausleihen, Helfereinsätze und Arbeitsstunden, gemeldete Vorfälle, Standdienste,",
+    "deine Konsumationen in der Schützenstube, wiederkehrende Reservationen (Serien),",
+    "offene Beitrittsanfragen (Mitgliedschaft mit Status PENDING) und Rollen in Verbänden.",
+    "",
+    "Verbände erhalten von Standchef keine Personendaten, nur zusammengefasste Zahlen der Vereine.",
+    "Dein Name erscheint in einer Verbandsrangliste nur, wenn dein Verein «Namen teilen» eingeschaltet hat.",
     "",
     "Die Dateien selbst kannst du in der Dateiablage deines Vereins herunterladen.",
   ].join("\r\n");
@@ -268,13 +293,13 @@ export async function buildPersonalExportZip(userId: string): Promise<Uint8Array
 /** Vereine, in denen der Benutzer einziger Inhaber ist (Löschung dann nicht möglich). */
 export async function soleOwnerTenants(userId: string): Promise<Array<{ id: string; name: string }>> {
   const owned = await db.membership.findMany({
-    where: { userId, role: "OWNER", status: { not: "LEFT" }, tenant: { deletedAt: null } },
+    where: { userId, role: "OWNER", status: accessStatusWhere(), tenant: { deletedAt: null } },
     select: { tenantId: true, tenant: { select: { name: true } } },
   });
   if (!owned.length) return [];
   const others = await db.membership.groupBy({
     by: ["tenantId"],
-    where: { tenantId: { in: owned.map((o) => o.tenantId) }, role: "OWNER", status: { not: "LEFT" }, userId: { not: userId }, user: { deletedAt: null } },
+    where: { tenantId: { in: owned.map((o) => o.tenantId) }, role: "OWNER", status: accessStatusWhere(), userId: { not: userId }, user: { deletedAt: null } },
     _count: { _all: true },
   });
   const covered = new Set(others.map((o) => o.tenantId));
@@ -316,7 +341,12 @@ export async function pseudonymizeUser(userId: string): Promise<{ email: string;
         data: { status: "CANCELLED", cancelledAt: now, paymentStatus: "NOT_REQUIRED", adminNote: [b.adminNote, cancelNote].filter(Boolean).join(" ").slice(-191) },
       }),
     ),
-    db.invoice.updateMany({ where: { bookingId: { in: futureBookingIds }, status: "OPEN" }, data: { status: "CANCELLED" } }),
+    db.invoice.updateMany({ where: { bookingId: { in: futureBookingIds }, status: "OPEN" }, data: { status: "CANCELLED", cancelledAt: now } }),
+    // Serien (wiederkehrende Reservationen) enden; künftige Termine sind oben schon storniert.
+    db.bookingSeries.updateMany({ where: { userId, status: "ACTIVE" }, data: { status: "CANCELLED" } }),
+    db.bookingSeries.updateMany({ where: { userId }, data: { note: null } }),
+    // Rollen in Verbänden entfallen ganz (keine Nachweispflicht).
+    db.associationAdmin.deleteMany({ where: { userId } }),
     // Noch nicht versandte Mails an die bisherige Adresse entfallen (die Löschbestätigung wird danach eingereiht).
     db.mailMessage.updateMany({ where: { toEmail: user.email, status: "QUEUED" }, data: { status: "SKIPPED", lastError: "Konto gelöscht" } }),
     db.session.deleteMany({ where: { userId } }),
@@ -327,6 +357,8 @@ export async function pseudonymizeUser(userId: string): Promise<{ email: string;
     db.programFavorite.deleteMany({ where: { userId } }),
     db.targetFavorite.deleteMany({ where: { userId } }),
     db.invitation.deleteMany({ where: { email: user.email, acceptedAt: null } }),
+    // Offene Beitrittsanfragen haben keine Geschichte: ganz entfernen.
+    db.membership.deleteMany({ where: { userId, status: "PENDING" } }),
     // Mitgliedschaften enden; Beitragsrechnungen bleiben über membershipId verknüpft.
     db.membership.updateMany({ where: { userId, status: { not: "LEFT" } }, data: { status: "LEFT", leftAt: today } }),
     db.membership.updateMany({ where: { userId }, data: { role: "MEMBER", licenseNumber: null, guardianName: null, guardianEmail: null, guardianPhone: null, adminNote: null, householdId: null } }),
@@ -388,10 +420,25 @@ export async function sendAccountDeletedMail(to: { email: string; name: string; 
 }
 
 /** Audit-Eintrag für eine Kontolöschung (ohne Personendaten). */
-export async function auditAccountDeletion(userId: string, tenantIds: string[]) {
+/**
+ * Vereine, die von einer Kontolöschung betroffen sind – vor pseudonymizeUser lesen, weil dort
+ * offene Beitrittsanfragen (PENDING) gelöscht werden und sonst im Verein spurlos verschwinden.
+ */
+export async function accountDeletionTenants(userId: string): Promise<{ memberTenantIds: string[]; pending: Array<{ tenantId: string; membershipId: string }> }> {
+  const rows = await db.membership.findMany({ where: { userId, status: { not: "LEFT" } }, select: { id: true, tenantId: true, status: true } });
+  return {
+    memberTenantIds: rows.filter((r) => r.status !== "PENDING").map((r) => r.tenantId),
+    pending: rows.filter((r) => r.status === "PENDING").map((r) => ({ tenantId: r.tenantId, membershipId: r.id })),
+  };
+}
+
+export async function auditAccountDeletion(userId: string, tenants: { memberTenantIds: string[]; pending: Array<{ tenantId: string; membershipId: string }> }) {
   await audit({ actorId: userId, actorName: DELETED_USER_NAME, action: "user.delete.self", entity: "User", entityId: userId, detail: "Konto pseudonymisiert" });
-  for (const tenantId of tenantIds) {
+  for (const tenantId of tenants.memberTenantIds) {
     await audit({ tenantId, actorId: userId, actorName: DELETED_USER_NAME, action: "member.delete.self", entity: "User", entityId: userId, detail: "Konto gelöscht, Mitgliedschaft beendet" });
+  }
+  for (const p of tenants.pending) {
+    await audit({ tenantId: p.tenantId, actorId: userId, actorName: DELETED_USER_NAME, action: "member.join.withdraw", entity: "Membership", entityId: p.membershipId, detail: "Beitrittsanfrage durch Kontolöschung zurückgezogen" });
   }
 }
 

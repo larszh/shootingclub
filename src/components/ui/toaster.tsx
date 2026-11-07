@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { CheckCircle2, Info, X, XCircle } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useT } from "@/components/locale";
 import { dismissToast, getServerToasts, getToasts, subscribeToasts, toast, type ToastItem } from "@/lib/ui-feedback";
 
 export { toast, dismissToast };
@@ -19,15 +20,16 @@ export function useToasts() {
  */
 export function Toaster() {
   const items = useToasts();
+  const t = useT();
   return (
     <div
       role="region"
-      aria-label="Benachrichtigungen"
+      aria-label={t("shell.ui.notifications")}
       className="no-print pointer-events-none fixed inset-x-0 z-[60] flex flex-col items-center gap-2 px-3 bottom-[calc(env(safe-area-inset-bottom)+5.25rem)] md:inset-x-auto md:right-6 md:bottom-6 md:items-end md:px-0"
     >
       <ol aria-live="polite" aria-relevant="additions text" className="flex w-full max-w-sm flex-col gap-2">
-        {items.map((t) => (
-          <ToastCard key={t.id + t.createdAt} item={t} />
+        {items.map((it) => (
+          <ToastCard key={it.id + it.createdAt} item={it} />
         ))}
       </ol>
     </div>
@@ -41,6 +43,7 @@ const toneStyle = {
 } as const;
 
 function ToastCard({ item }: { item: ToastItem }) {
+  const t = useT();
   const [paused, setPaused] = useState(false);
   const [dx, setDx] = useState(0);
   const [leaving, setLeaving] = useState(false);
@@ -100,7 +103,7 @@ function ToastCard({ item }: { item: ToastItem }) {
         <Icon className={cn("mt-0.5 h-5 w-5 shrink-0", cls)} aria-hidden />
         <div className="min-w-0 flex-1 text-[15px] leading-snug">
           <p className="font-medium">
-            <span className="sr-only">{item.tone === "error" ? "Fehler: " : item.tone === "success" ? "Erledigt: " : ""}</span>
+            <span className="sr-only">{item.tone === "error" ? t("shell.ui.toastError") : item.tone === "success" ? t("shell.ui.toastSuccess") : ""}</span>
             {item.message}
           </p>
           {item.description ? <p className="mt-0.5 text-sm text-ink-3">{item.description}</p> : null}
@@ -120,7 +123,7 @@ function ToastCard({ item }: { item: ToastItem }) {
         <button
           type="button"
           onClick={close}
-          aria-label="Hinweis schliessen"
+          aria-label={t("shell.ui.closeNotice")}
           className="press -my-1 flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-ink-3 hover:bg-surface-2 hover:text-ink focus-visible:outline-2 focus-visible:outline-accent"
         >
           <X className="h-4 w-4" />

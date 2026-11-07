@@ -3,8 +3,10 @@
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { db } from "@/lib/db";
+import { accessStatusWhere } from "@/lib/membership-access";
 import { audit } from "@/lib/audit";
 import { fail, ok, type ActionResult } from "@/lib/action-result";
+import { getRequestLocale, getT } from "@/lib/i18n";
 import { requireModule } from "@/lib/tenant";
 import { formatMoney, parseMoneyToCents } from "@/lib/money";
 import { createStandaloneFeeInvoice, finalizeStandaloneFeeInvoices, standaloneInvoiceDefaults } from "@/modules/billing/standalone-invoice";
@@ -16,7 +18,10 @@ import {
 import { entryInputSchema, firstIssue, productSchema, type EntryInput } from "./types";
 
 const idSchema = z.string().min(1).max(40);
-const NO_RIGHT = "Dafür fehlt dir die Berechtigung.";
+/** Fehlende Berechtigung, in der Sprache der Person. */
+async function noRight() {
+  return fail(getT(await getRequestLocale())("money.err.noPermission"));
+}
 const str = (fd: FormData, k: string) => (fd.get(k) === null ? "" : String(fd.get(k)));
 
 const revalidate = () => {
@@ -47,7 +52,7 @@ const isUniqueError = (e: unknown) => typeof e === "object" && e !== null && (e 
 
 export async function saveProductAction(_prev: ActionResult | null, fd: FormData): Promise<ActionResult> {
   const ctx = await manageCtx();
-  if (!ctx) return fail(NO_RIGHT);
+  if (!ctx) return noRight();
   const priceRaw = str(fd, "price").trim();
   if (!priceRaw || !/^\d+([.,]\d{1,2})?$/.test(priceRaw)) return fail("Bitte einen gültigen Preis eingeben.", { price: "z.B. 4.50" });
   const sortRaw = str(fd, "sortOrder").trim();
@@ -87,7 +92,7 @@ export async function saveProductAction(_prev: ActionResult | null, fd: FormData
 
 export async function setProductActiveAction(id: string, active: boolean): Promise<ActionResult> {
   const ctx = await manageCtx();
-  if (!ctx) return fail(NO_RIGHT);
+  if (!ctx) return noRight();
   if (!idSchema.safeParse(id).success) return fail("Produkt nicht gefunden.");
   const r = await db.kioskProduct.updateMany({ where: { id, tenantId: ctx.tenant.id }, data: { isActive: !!active } });
   if (!r.count) return fail("Produkt nicht gefunden.");
@@ -98,7 +103,7 @@ export async function setProductActiveAction(id: string, active: boolean): Promi
 /** Löscht ein Produkt. Bestehende Einträge behalten Name und Preis (Momentaufnahme). */
 export async function deleteProductAction(id: string): Promise<ActionResult> {
   const ctx = await manageCtx();
-  if (!ctx) return fail(NO_RIGHT);
+  if (!ctx) return noRight();
   if (!idSchema.safeParse(id).success) return fail("Produkt nicht gefunden.");
   const p = await db.kioskProduct.findFirst({ where: { id, tenantId: ctx.tenant.id }, select: { id: true, name: true } });
   if (!p) return fail("Produkt nicht gefunden.");
@@ -120,7 +125,7 @@ export async function deleteProductAction(id: string): Promise<ActionResult> {
  */
 export async function recordEntriesAction(input: EntryInput): Promise<ActionResult<{ batchId: string; totalCents: number; duplicate: boolean }>> {
   const ctx = await sellCtx();
-  if (!ctx) return fail(NO_RIGHT);
+  if (!ctx) return noRight();
   const parsed = entryInputSchema.safeParse(input);
   if (!parsed.success) return fail(firstIssue(parsed.error));
   const v = parsed.data;
@@ -134,7 +139,7 @@ export async function recordEntriesAction(input: EntryInput): Promise<ActionResu
 
   let who = "Gast";
   if (v.userId) {
-    const m = await db.membership.findFirst({ where: { tenantId, userId: v.userId, status: { not: "LEFT" }, user: { deletedAt: null } }, select: { user: { select: { name: true } } } });
+    const m = await db.membership.findFirst({ where: { tenantId, userId: v.userId, status: accessStatusWhere(), user: { deletedAt: null } }, select: { user: { select: { name: true } } } });
     if (!m) return fail("Mitglied nicht gefunden oder ausgetreten.");
     who = m.user.name;
   } else if (v.guestName) {
@@ -184,7 +189,7 @@ export async function recordEntriesAction(input: EntryInput): Promise<ActionResu
 /** Letzte Erfassung rückgängig machen (nur eigene, unverrechnete, höchstens 2 Minuten alt). */
 export async function undoBatchAction(batchId: string): Promise<ActionResult> {
   const ctx = await sellCtx();
-  if (!ctx) return fail(NO_RIGHT);
+  if (!ctx) return noRight();
   if (!isBatchId(batchId)) return fail("Erfassung nicht gefunden.");
   const tenantId = ctx.tenant.id;
   const where = {
@@ -214,7 +219,7 @@ export async function undoBatchAction(batchId: string): Promise<ActionResult> {
 /** Storniert (löscht) einen noch nicht verrechneten Eintrag. */
 export async function stornoEntryAction(id: string): Promise<ActionResult> {
   const ctx = await manageCtx();
-  if (!ctx) return fail(NO_RIGHT);
+  if (!ctx) return noRight();
   if (!idSchema.safeParse(id).success) return fail("Eintrag nicht gefunden.");
   const tenantId = ctx.tenant.id;
   const e = await db.kioskEntry.findFirst({ where: { id, tenantId }, select: { id: true, productName: true, quantity: true, totalCents: true, billedInvoiceId: true, userId: true, guestName: true, paidCash: true } });
@@ -239,7 +244,7 @@ export async function stornoEntryAction(id: string): Promise<ActionResult> {
  */
 export async function billKioskAction(input: { from: string; to: string; userIds: string[] }): Promise<ActionResult<{ count: number; totalCents: number }>> {
   const ctx = await manageCtx();
-  if (!ctx) return fail(NO_RIGHT);
+  if (!ctx) return noRight();
   const period: Period = { from: String(input?.from ?? ""), to: String(input?.to ?? "") };
   const pErr = validatePeriod(period);
   if (pErr) return fail(pErr);
@@ -304,7 +309,7 @@ export async function billKioskAction(input: { from: string; to: string; userIds
  */
 export async function releaseCancelledAction(): Promise<ActionResult<{ count: number }>> {
   const ctx = await manageCtx();
-  if (!ctx) return fail(NO_RIGHT);
+  if (!ctx) return noRight();
   const tenantId = ctx.tenant.id;
   try {
     const billed = await db.kioskEntry.findMany({ where: { tenantId, billedInvoiceId: { not: null } }, distinct: ["billedInvoiceId"], select: { billedInvoiceId: true } });

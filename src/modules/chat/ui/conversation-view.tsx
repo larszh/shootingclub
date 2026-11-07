@@ -10,11 +10,13 @@ import { Dialog, confirmDialog } from "@/components/ui/dialog";
 import { Spinner } from "@/components/ui/form";
 import { toast } from "@/lib/ui-feedback";
 import { cn } from "@/lib/utils";
+import { getT, type Locale } from "@/lib/i18n/core";
+import { localizeMessage, tPlural } from "@/modules/billing/ui/i18n";
 import { deleteMessageAction, editMessageAction, setMutedAction } from "../actions";
 import type { ConversationDetail, PickerMember } from "../queries";
 import { EDIT_WINDOW_MS, MAX_MESSAGE_LENGTH, type ChatMessageDTO, type ChatReadDTO, type MessagesResponse } from "../types";
 import { ConversationAvatar } from "./conversation-list";
-import { dayKey, dayLabel, useNow } from "./format";
+import { chatTitle, dayKey, dayLabel, useNow } from "./format";
 import { GroupInfoSheet } from "./group-info-sheet";
 import { DayDivider, MessageBubble, UnreadDivider, type BubbleState } from "./message-bubble";
 import { addToOutbox, deliverEntry, flushOutbox, newClientId, onDelivered, removeFromOutbox, retryEntry, useOutbox } from "./outbox";
@@ -67,12 +69,15 @@ export function ConversationView({
   detail,
   tenantMembers,
   canManageClub,
+  locale = "de",
 }: {
   me: { id: string; name: string; avatarUrl: string | null };
   detail: ConversationDetail;
   tenantMembers: PickerMember[];
   canManageClub: boolean;
+  locale?: Locale;
 }) {
+  const t = useMemo(() => getT(locale), [locale]);
   const id = detail.id;
   const router = useRouter();
   const online = useOnlineStatus();
@@ -309,13 +314,13 @@ export function ConversationView({
         setMessages((list) => mergeMessages(list, data.messages));
         setHasMore(data.hasMore);
       } catch {
-        toast.error("Ältere Nachrichten konnten nicht geladen werden.");
+        toast.error(t("money.chat.olderFailed"));
       } finally {
         loadingRef.current = false;
         setLoadingOlder(false);
       }
     },
-    [id],
+    [id, t],
   );
 
   function onScroll() {
@@ -358,7 +363,7 @@ export function ConversationView({
     const body = text.replace(/\r\n/g, "\n").trim();
     if (!body) return;
     if (body.length > MAX_MESSAGE_LENGTH) {
-      toast.error(`Höchstens ${MAX_MESSAGE_LENGTH} Zeichen.`);
+      toast.error(t("money.chat.maxChars", { max: MAX_MESSAGE_LENGTH }));
       return;
     }
     if (editing) return saveEdit(body);
@@ -368,7 +373,7 @@ export function ConversationView({
     setText("");
     textareaRef.current?.focus();
     void deliverEntry(me.id, entry).then((r) => {
-      if (!r.ok && !r.retry) toast.error(r.error);
+      if (!r.ok && !r.retry) toast.error(localizeMessage(r.error, locale));
     });
   }
 
@@ -386,7 +391,7 @@ export function ConversationView({
         receive([res.data]);
         setEditing(null);
         setText("");
-      } else if (!res.ok) toast.error(res.error);
+      } else if (!res.ok) toast.error(localizeMessage(res.error, locale));
     });
   }
 
@@ -403,10 +408,10 @@ export function ConversationView({
         setUploads((list) => list.filter((u) => u.clientId !== up.clientId));
         return;
       }
-      const error = data.error ?? "Der Anhang konnte nicht gesendet werden.";
+      const error = data.error ?? t("money.chat.attachFailed");
       setUploads((list) => list.map((u) => (u.clientId === up.clientId ? { ...u, status: "failed", error } : u)));
     } catch {
-      setUploads((list) => list.map((u) => (u.clientId === up.clientId ? { ...u, status: "failed", error: "Keine Verbindung." } : u)));
+      setUploads((list) => list.map((u) => (u.clientId === up.clientId ? { ...u, status: "failed", error: t("money.chat.noConnection") } : u)));
     }
   }
 
@@ -415,7 +420,7 @@ export function ConversationView({
     e.target.value = "";
     if (!file) return;
     if (!navigator.onLine) {
-      toast.error("Anhänge können nur mit Verbindung gesendet werden.");
+      toast.error(t("money.chat.attachOffline"));
       return;
     }
     const up: Upload = { clientId: newClientId(), file, createdAt: new Date().toISOString(), status: "uploading" };
@@ -451,7 +456,7 @@ export function ConversationView({
   function startEdit(m: ChatMessageDTO) {
     setSelected(null);
     if (!canChange(m)) {
-      toast.error("Nachrichten können nur 15 Minuten lang bearbeitet werden.");
+      toast.error(t("money.chat.editWindow"));
       return;
     }
     setEditing(m);
@@ -466,32 +471,32 @@ export function ConversationView({
 
   async function remove(m: ChatMessageDTO) {
     setSelected(null);
-    const ok = await confirmDialog({ title: "Nachricht löschen?", message: "Sie wird für alle als «Nachricht gelöscht» angezeigt.", tone: "danger", confirmLabel: "Löschen" });
+    const ok = await confirmDialog({ title: t("money.chat.deleteConfirm.title"), message: t("money.chat.deleteConfirm.message"), tone: "danger", confirmLabel: t("money.chat.delete") });
     if (!ok) return;
     const res = await deleteMessageAction(m.id);
     if (res.ok && res.data) {
       receive([res.data]);
       if (editing?.id === m.id) cancelEdit();
-    } else if (!res.ok) toast.error(res.error);
+    } else if (!res.ok) toast.error(localizeMessage(res.error, locale));
   }
 
   async function copy(m: ChatMessageDTO) {
     setSelected(null);
     try {
       await navigator.clipboard.writeText(m.body);
-      toast.success("Text kopiert");
+      toast.success(t("money.chat.textCopied"));
     } catch {
-      toast.error("Kopieren nicht möglich.");
+      toast.error(t("money.chat.copyFailed"));
     }
   }
 
   async function toggleMute(v: boolean) {
     setMutedOverride({ base: detail.muted, value: v });
     const res = await setMutedAction(id, v);
-    if (res.ok) toast.success(res.message ?? (v ? "Stummgeschaltet." : "Stummschaltung aufgehoben."));
+    if (res.ok) toast.success(res.message ?? (v ? t("money.chat.mutedDone") : t("money.chat.unmutedDone")));
     else {
       setMutedOverride(null);
-      toast.error(res.error);
+      toast.error(localizeMessage(res.error, locale));
     }
   }
 
@@ -514,9 +519,9 @@ export function ConversationView({
     let receipt: string | null = null;
     if (lastOwn) {
       const readers = otherMembers.filter((m) => (reads[m.userId] ?? "") >= lastOwn!.createdAt).length;
-      if (!isGroup) receipt = readers > 0 ? "Gelesen" : "Gesendet";
-      else if (otherMembers.length > 0 && readers === otherMembers.length) receipt = "Von allen gelesen";
-      else receipt = readers > 0 ? `Gelesen von ${readers}` : "Gesendet";
+      if (!isGroup) receipt = readers > 0 ? t("money.chat.read") : t("money.chat.sent");
+      else if (otherMembers.length > 0 && readers === otherMembers.length) receipt = t("money.chat.readByAll");
+      else receipt = readers > 0 ? t("money.chat.readBy", { n: readers }) : t("money.chat.sent");
     }
 
     type Item = { msg: ChatMessageDTO; state: BubbleState; error?: string; localFile?: { name: string; size: number }; retry?: () => void; discard?: () => void };
@@ -529,7 +534,7 @@ export function ConversationView({
         error: e.error,
         retry: () =>
           void retryEntry(me.id, e.clientId)?.then((r) => {
-            if (r && !r.ok && !r.retry) toast.error(r.error);
+            if (r && !r.ok && !r.retry) toast.error(localizeMessage(r.error, locale));
           }),
         discard: () => removeFromOutbox(me.id, e.clientId),
       });
@@ -556,7 +561,7 @@ export function ConversationView({
       const m = item.msg;
       const day = dayKey(m.createdAt);
       if (day !== prevDay) {
-        out.push({ kind: "day", key: `day-${day}`, label: dayLabel(m.createdAt, now) });
+        out.push({ kind: "day", key: `day-${day}`, label: dayLabel(m.createdAt, now, locale) });
         prevDay = day;
         prevSender = undefined;
       }
@@ -589,17 +594,15 @@ export function ConversationView({
     return out;
     // uploadFile ist eine stabile Hilfsfunktion dieser Komponente (nur Setter und id).
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [messages, pendingForConv, uploads, reads, otherMembers, isGroup, me.id, me.name, me.avatarUrl, id, online, now, openedReadAt, openedLatestAt]);
+  }, [messages, pendingForConv, uploads, reads, otherMembers, isGroup, me.id, me.name, me.avatarUrl, id, online, now, openedReadAt, openedLatestAt, locale, t]);
 
   const selectedOwn = selected?.senderId === me.id;
   const selectedChangeable = selected ? selectedOwn && !selected.deletedAt : false;
   const selectedAdminDelete = selected ? isGroup && detail.myRole === "ADMIN" && !selected.deletedAt : false;
   const subtitle = isGroup
-    ? detail.members.length === 1
-      ? "1 Mitglied"
-      : `${detail.members.length} Mitglieder`
+    ? tPlural(t, "money.chat.memberCount", detail.members.length)
     : detail.otherLeft
-      ? "Nicht mehr im Verein"
+      ? t("money.chat.otherLeft")
       : null;
   const remaining = MAX_MESSAGE_LENGTH - text.length;
 
@@ -615,13 +618,13 @@ export function ConversationView({
     >
       {/* Kopf */}
       <header className="flex shrink-0 items-center gap-1 border-b border-line bg-bg/95 px-2 py-1.5 backdrop-blur md:rounded-t-card md:border md:bg-surface">
-        <Link href="/chat" aria-label="Zurück zur Übersicht" className="press flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-ink-2 hover:bg-surface-2 focus-visible:outline-2 focus-visible:outline-accent">
+        <Link href="/chat" aria-label={t("money.chat.back")} className="press flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-ink-2 hover:bg-surface-2 focus-visible:outline-2 focus-visible:outline-accent">
           <ArrowLeft className="h-5 w-5" aria-hidden />
         </Link>
         <button type="button" onClick={() => setInfoOpen(true)} className="press flex min-h-11 min-w-0 flex-1 items-center gap-2.5 rounded-control px-1 text-left hover:bg-surface-2 focus-visible:outline-2 focus-visible:outline-accent">
           <ConversationAvatar item={{ kind: detail.kind, isClub: detail.isClub, avatarUrl: detail.avatarUrl, avatarName: detail.title }} size={36} />
           <span className="min-w-0">
-            <span className="block truncate font-semibold leading-tight">{detail.title}</span>
+            <span className="block truncate font-semibold leading-tight">{chatTitle(detail.title, locale)}</span>
             {subtitle ? <span className="block truncate text-xs text-ink-3">{subtitle}</span> : null}
           </span>
         </button>
@@ -629,7 +632,7 @@ export function ConversationView({
           type="button"
           onClick={() => void toggleMute(!muted)}
           aria-pressed={muted}
-          aria-label={muted ? "Stummschaltung aufheben" : "Stummschalten"}
+          aria-label={muted ? t("money.chat.unmute") : t("money.chat.mute")}
           className="press flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-ink-2 hover:bg-surface-2 focus-visible:outline-2 focus-visible:outline-accent"
         >
           {muted ? <BellOff className="h-5 w-5" aria-hidden /> : <Bell className="h-5 w-5" aria-hidden />}
@@ -637,7 +640,7 @@ export function ConversationView({
         <button
           type="button"
           onClick={() => setInfoOpen(true)}
-          aria-label={isGroup ? "Gruppeninfo" : "Infos zur Unterhaltung"}
+          aria-label={isGroup ? t("money.chat.groupInfo") : t("money.chat.convInfo")}
           className="press flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-ink-2 hover:bg-surface-2 focus-visible:outline-2 focus-visible:outline-accent"
         >
           <Info className="h-5 w-5" aria-hidden />
@@ -646,10 +649,10 @@ export function ConversationView({
 
       {!online ? (
         <div className="flex shrink-0 items-center gap-2 bg-warn px-4 py-2 text-sm text-warn-ink" role="status">
-          <WifiOff className="h-4 w-4 shrink-0" aria-hidden /> Offline – Nachrichten werden gesendet, sobald wieder Verbindung besteht.
+          <WifiOff className="h-4 w-4 shrink-0" aria-hidden /> {t("money.chat.offline")}
         </div>
       ) : streamStatus === "degraded" ? (
-        <div className="shrink-0 bg-surface-2 px-4 py-1.5 text-xs text-ink-3" role="status">Live-Verbindung unterbrochen – neue Nachrichten werden alle paar Sekunden abgefragt.</div>
+        <div className="shrink-0 bg-surface-2 px-4 py-1.5 text-xs text-ink-3" role="status">{t("money.chat.degraded")}</div>
       ) : null}
 
       {/* Nachrichten */}
@@ -661,33 +664,33 @@ export function ConversationView({
           role="log"
           aria-live="polite"
           aria-relevant="additions"
-          aria-label={`Nachrichten mit ${detail.title}`}
+          aria-label={t("money.chat.logLabel", { title: chatTitle(detail.title, locale) })}
         >
           {hasMore ? (
             <div className="flex justify-center py-3">
               {loadingOlder ? (
-                <span className="inline-flex items-center gap-2 text-sm text-ink-3"><Spinner /> Ältere Nachrichten…</span>
+                <span className="inline-flex items-center gap-2 text-sm text-ink-3"><Spinner /> {t("money.chat.olderLoading")}</span>
               ) : (
                 <Button type="button" variant="ghost" size="sm" className="min-h-11" onClick={() => messages[0] && void loadOlder(messages[0].id)}>
-                  Ältere Nachrichten laden
+                  {t("money.chat.loadOlder")}
                 </Button>
               )}
             </div>
           ) : messages.length > 0 ? (
-            <p className="py-4 text-center text-xs text-ink-3">Beginn der Unterhaltung</p>
+            <p className="py-4 text-center text-xs text-ink-3">{t("money.chat.start")}</p>
           ) : null}
 
           {rows.length === 0 ? (
             <div className="flex h-full flex-col items-center justify-center px-6 text-center text-ink-3">
-              <p className="font-medium text-ink-2">Noch keine Nachrichten</p>
-              <p className="mt-1 text-sm">{isGroup ? "Schreib die erste Nachricht an die Gruppe." : `Schreib ${detail.title} die erste Nachricht.`}</p>
+              <p className="font-medium text-ink-2">{t("money.chat.noMessages")}</p>
+              <p className="mt-1 text-sm">{isGroup ? t("money.chat.firstGroup") : t("money.chat.firstDirect", { name: chatTitle(detail.title, locale) })}</p>
             </div>
           ) : (
             rows.map((r) =>
               r.kind === "day" ? (
                 <DayDivider key={r.key} label={r.label} />
               ) : r.kind === "unread" ? (
-                <UnreadDivider key={r.key} id="chat-unread-marker" />
+                <UnreadDivider key={r.key} id="chat-unread-marker" locale={locale} />
               ) : (
                 <MessageBubble
                   key={r.key}
@@ -702,6 +705,7 @@ export function ConversationView({
                   onOpenActions={r.state === "sent" ? () => setSelected(r.msg) : undefined}
                   onRetry={r.retry}
                   onDiscard={r.discard}
+                  locale={locale}
                 />
               ),
             )
@@ -716,10 +720,10 @@ export function ConversationView({
               "press absolute bottom-3 right-3 inline-flex h-11 items-center gap-1.5 rounded-full border border-line bg-surface px-3 text-sm font-medium shadow-lg focus-visible:outline-2 focus-visible:outline-accent",
               newCount > 0 && "border-accent bg-accent text-accent-ink",
             )}
-            aria-label={newCount > 0 ? `${newCount} neue Nachrichten anzeigen` : "Zum Ende springen"}
+            aria-label={newCount > 0 ? t("money.chat.showNew", { n: newCount }) : t("money.chat.jumpEnd")}
           >
             <ArrowDown className="h-4 w-4" aria-hidden />
-            {newCount > 0 ? (newCount === 1 ? "1 neue Nachricht" : `${newCount} neue Nachrichten`) : null}
+            {newCount > 0 ? tPlural(t, "money.chat.newCount", newCount) : null}
           </button>
         ) : null}
       </div>
@@ -729,8 +733,8 @@ export function ConversationView({
         {editing ? (
           <div className="mb-2 flex items-center gap-2 rounded-control bg-accent-soft px-3 py-1.5 text-sm text-accent">
             <Pencil className="h-4 w-4 shrink-0" aria-hidden />
-            <span className="min-w-0 flex-1 truncate">Nachricht bearbeiten</span>
-            <button type="button" onClick={cancelEdit} aria-label="Bearbeiten abbrechen" className="press -my-1 flex h-9 w-9 items-center justify-center rounded-full hover:bg-surface focus-visible:outline-2 focus-visible:outline-accent">
+            <span className="min-w-0 flex-1 truncate">{t("money.chat.editing")}</span>
+            <button type="button" onClick={cancelEdit} aria-label={t("money.chat.cancelEdit")} className="press -my-1 flex h-9 w-9 items-center justify-center rounded-full hover:bg-surface focus-visible:outline-2 focus-visible:outline-accent">
               <X className="h-4 w-4" aria-hidden />
             </button>
           </div>
@@ -749,14 +753,14 @@ export function ConversationView({
                 <button
                   type="button"
                   onClick={() => fileRef.current?.click()}
-                  aria-label="Datei anhängen"
+                  aria-label={t("money.chat.attach")}
                   className="press flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-ink-2 hover:bg-surface-2 focus-visible:outline-2 focus-visible:outline-accent"
                 >
                   <Paperclip className="h-5 w-5" aria-hidden />
                 </button>
               </>
             ) : null}
-            <label htmlFor="chat-input" className="sr-only">Nachricht</label>
+            <label htmlFor="chat-input" className="sr-only">{t("money.chat.message")}</label>
             <textarea
               id="chat-input"
               ref={textareaRef}
@@ -765,37 +769,37 @@ export function ConversationView({
               onKeyDown={onKeyDown}
               rows={1}
               maxLength={MAX_MESSAGE_LENGTH}
-              placeholder="Nachricht schreiben"
+              placeholder={t("money.chat.placeholder")}
               enterKeyHint="enter"
               className="max-h-40 min-h-11 flex-1 resize-none rounded-[22px] border border-line bg-surface px-4 py-2.5 text-[16px] leading-snug text-ink placeholder:text-ink-3 focus:border-ink focus:outline-none focus:ring-2 focus:ring-ink/10"
             />
             <button
               type="submit"
               disabled={!text.trim() || savingEdit}
-              aria-label={editing ? "Änderung speichern" : "Senden"}
+              aria-label={editing ? t("money.chat.saveEdit") : t("money.chat.send")}
               className="press flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-accent text-accent-ink disabled:opacity-40 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
             >
               {savingEdit ? <Spinner /> : editing ? <Check className="h-5 w-5" aria-hidden /> : <SendHorizontal className="h-5 w-5" aria-hidden />}
             </button>
           </form>
         ) : (
-          <p className="px-2 py-2 text-center text-sm text-ink-3">Diese Person ist nicht mehr im Verein. Neue Nachrichten sind nicht möglich.</p>
+          <p className="px-2 py-2 text-center text-sm text-ink-3">{t("money.chat.cannotWrite")}</p>
         )}
-        {remaining < 300 ? <p className={cn("mt-1 px-14 text-right text-xs tabular-nums", remaining < 0 ? "text-danger" : "text-ink-3")}>{remaining} Zeichen übrig</p> : null}
+        {remaining < 300 ? <p className={cn("mt-1 px-14 text-right text-xs tabular-nums", remaining < 0 ? "text-danger" : "text-ink-3")}>{t("money.chat.charsLeft", { n: remaining })}</p> : null}
       </div>
 
       {/* Aktionen zu einer Nachricht */}
-      <Dialog open={!!selected} onClose={() => setSelected(null)} title="Nachricht" variant="auto" size="sm">
+      <Dialog open={!!selected} onClose={() => setSelected(null)} title={t("money.chat.message")} variant="auto" size="sm">
         {selected ? (
           <div className="-mx-2 flex flex-col pb-2">
             {selected.body ? (
               <button type="button" onClick={() => void copy(selected)} className="press flex min-h-12 items-center gap-3 rounded-control px-3 text-left hover:bg-surface-2 focus-visible:outline-2 focus-visible:outline-accent">
-                <Copy className="h-5 w-5 text-ink-3" aria-hidden /> Text kopieren
+                <Copy className="h-5 w-5 text-ink-3" aria-hidden /> {t("money.chat.copyText")}
               </button>
             ) : null}
             {selectedChangeable && selected.body ? (
               <button type="button" onClick={() => startEdit(selected)} className="press flex min-h-12 items-center gap-3 rounded-control px-3 text-left hover:bg-surface-2 focus-visible:outline-2 focus-visible:outline-accent">
-                <Pencil className="h-5 w-5 text-ink-3" aria-hidden /> Bearbeiten
+                <Pencil className="h-5 w-5 text-ink-3" aria-hidden /> {t("money.chat.edit")}
               </button>
             ) : null}
             {selectedChangeable || selectedAdminDelete ? (
@@ -804,17 +808,17 @@ export function ConversationView({
                 onClick={() => {
                   if (!selectedAdminDelete && !canChange(selected)) {
                     setSelected(null);
-                    toast.error("Nachrichten können nur 15 Minuten lang gelöscht werden.");
+                    toast.error(t("money.chat.deleteWindow"));
                     return;
                   }
                   void remove(selected);
                 }}
                 className="press flex min-h-12 items-center gap-3 rounded-control px-3 text-left text-danger hover:bg-danger/10 focus-visible:outline-2 focus-visible:outline-accent"
               >
-                <Trash2 className="h-5 w-5" aria-hidden /> Löschen
+                <Trash2 className="h-5 w-5" aria-hidden /> {t("money.chat.delete")}
               </button>
             ) : null}
-            {selectedOwn ? <p className="px-3 pt-2 text-xs text-ink-3">Eigene Nachrichten lassen sich 15 Minuten lang bearbeiten und löschen.</p> : null}
+            {selectedOwn ? <p className="px-3 pt-2 text-xs text-ink-3">{t("money.chat.ownHint")}</p> : null}
           </div>
         ) : null}
       </Dialog>
@@ -828,6 +832,7 @@ export function ConversationView({
         canManageClub={canManageClub}
         muted={muted}
         onToggleMute={(v) => void toggleMute(v)}
+        locale={locale}
       />
     </div>
   );

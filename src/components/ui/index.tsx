@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { cn } from "@/lib/utils";
+import { BackLabel } from "./back-label";
 
 type ButtonVariant = "primary" | "secondary" | "ghost" | "danger";
 type ButtonSize = "sm" | "md" | "lg";
@@ -96,7 +97,7 @@ export function PageHeader({ title, subtitle, action, back }: { title: string; s
     <div className="animate-fade mb-5">
       {back ? (
         <Link href={back.href} className="-ml-2 -mt-3 -mb-1 inline-flex min-h-11 items-center gap-1 px-2 text-sm text-ink-3 hover:text-ink">
-          <span aria-hidden>←</span> {back.label ?? "Zurück"}
+          <span aria-hidden>←</span> {back.label ?? <BackLabel />}
         </Link>
       ) : null}
       <div className="flex items-start justify-between gap-3">

@@ -62,7 +62,7 @@ export default async function ShiftHoursPage({ searchParams }: { searchParams: P
 
       <div className="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
         <StatCard label="Geleistet total" value={`${formatHours(totalDone)} h`} />
-        <StatCard label="Pflichtig" value={subject.length} hint={settings.enabled ? `Soll ${formatHours(settings.requiredHours)} h` : "ausgeschaltet"} />
+        <StatCard label="Pflichtig" value={subject.length} hint={settings.enabled ? `Soll ${formatHours(settings.requiredHours)} h${settings.proRata ? " (pro rata)" : ""}` : "ausgeschaltet"} />
         <StatCard label="Fehlende Stunden" value={`${formatHours(missingSum)} h`} tone={missingSum ? "warn" : "ok"} />
         <StatCard label="Rapporte offen" value={pending.length} tone={pending.length ? "warn" : "neutral"} />
       </div>
@@ -97,6 +97,7 @@ export default async function ShiftHoursPage({ searchParams }: { searchParams: P
               <div className="flex flex-wrap items-center gap-1.5">
                 <span className="font-medium">{r.name}</span>
                 {r.exempt ? <Badge tone="outline">befreit</Badge> : !r.subject ? <Badge tone="outline">{statusLabel(r.status)}</Badge> : null}
+                {r.proRata ? <Badge tone="outline">pro rata {r.months}/12{r.joinedAt ? ` · Eintritt ${dayFmt(r.joinedAt)}` : ""}</Badge> : null}
                 {r.invoice ? <Badge tone={r.invoice.status === "PAID" ? "ok" : "accent"}>{r.invoice.number}{r.invoice.status === "PAID" ? " bezahlt" : ""}</Badge> : null}
               </div>
               <div className="text-xs text-ink-3">
@@ -117,6 +118,7 @@ export default async function ShiftHoursPage({ searchParams }: { searchParams: P
           <p className="mb-3 text-sm text-ink-3">
             Pro Mitglied mit fehlenden Stunden eine Rechnung «Ersatzabgabe Arbeitsstunden {year} (x h)» mit QR-Zahlteil, Ansatz {formatMoney(settings.ratePerMissingHourCents)} pro Stunde.
             Am besten erst nach Jahresende und nachdem alle Einsätze bestätigt sind. Ansatz und Soll bitte mit dem Vereinsbeschluss abgleichen.
+            {settings.proRata ? " Bei Eintritt im Lauf des Jahres gilt das anteilige Soll (Monate/12, auf 0.5 h gerundet)." : ""}
             {billed.length ? ` Bereits verrechnet: ${billed.length}.` : ""}
           </p>
           <ErsatzPanel year={year} candidates={candidates} blocker={blocker} />

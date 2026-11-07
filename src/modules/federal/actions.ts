@@ -7,8 +7,10 @@ import { db } from "@/lib/db";
 import { audit } from "@/lib/audit";
 import { requireModule } from "@/lib/tenant";
 import { fail, ok, type ActionResult } from "@/lib/action-result";
-import { canEditYear, listOfficialPrograms } from "./queries";
+import { accessStatusWhere } from "@/lib/membership-access";
+import { canEditYear, listFsPrograms, listOfficialPrograms } from "./queries";
 import { dayToDbDate } from "./types";
+import { awardLinesToRows, parseAwardLines } from "./awards";
 
 const dayField = z
   .string()
@@ -105,7 +107,7 @@ export async function startFederalMatchAction(_prev: ActionResult | null, formDa
   let userIds: string[] = [];
   if (takeRsvps && event.rsvps.length) {
     const members = await db.membership.findMany({
-      where: { tenantId: ctx.tenant.id, userId: { in: event.rsvps.map((r) => r.userId) }, status: { not: "LEFT" }, user: { deletedAt: null } },
+      where: { tenantId: ctx.tenant.id, userId: { in: event.rsvps.map((r) => r.userId) }, status: accessStatusWhere(), user: { deletedAt: null } },
       select: { userId: true, user: { select: { name: true } } },
       orderBy: { user: { name: "asc" } },
     });
@@ -137,4 +139,48 @@ export async function startFederalMatchAction(_prev: ActionResult | null, formDa
   revalidatePath("/federal");
   revalidatePath("/scores");
   redirect(`/scores/matches/${match.id}`);
+}
+
+// ---------------------------------------------------------------------------
+// Feldschiessen-Auszeichnungen
+// ---------------------------------------------------------------------------
+
+const awardSchema = z.object({
+  programId: z.string().trim().min(1, "Programm fehlt").max(64),
+  year: z.coerce.number().int().min(2000, "Ungültiges Jahr").max(2100, "Ungültiges Jahr"),
+  text: z.string().max(20_000, "Text zu lang"),
+});
+
+/**
+ * Limitentabelle eines Feldschiessen-Programms für ein Jahr speichern (ersetzt die bisherigen Limiten).
+ * Leerer Text löscht die Limiten. Schützenmeister (results.verify) oder Admin (tenant.manage).
+ */
+export async function saveAwardLimitsAction(_prev: ActionResult | null, formData: FormData): Promise<ActionResult> {
+  const ctx = await requireModule("federal");
+  if (!canEditYear(ctx)) return fail("Keine Berechtigung");
+  const parsed = awardSchema.safeParse({ programId: formData.get("programId"), year: formData.get("year"), text: formData.get("text") ?? "" });
+  if (!parsed.success) return fail(parsed.error.issues[0]?.message ?? "Ungültige Eingabe");
+  const { programId, year, text } = parsed.data;
+  const programs = await listFsPrograms(ctx.tenant.id);
+  const program = programs.find((p) => p.id === programId);
+  if (!program) return fail("Programm nicht verfügbar (Feldschiessen-Programm wählen).");
+  const { lines, errors } = parseAwardLines(text, program.max);
+  if (errors.length) return fail(errors.slice(0, 3).join(" "), { text: errors.slice(0, 5).join(" ") });
+  const rows = awardLinesToRows(lines);
+  const tenantId = ctx.tenant.id;
+  await db.$transaction([
+    db.awardLimit.deleteMany({ where: { tenantId, programId, year } }),
+    ...(rows.length ? [db.awardLimit.createMany({ data: rows.map((r) => ({ ...r, tenantId, programId, year })) })] : []),
+  ]);
+  await audit({
+    tenantId,
+    actorId: ctx.user.id,
+    action: "federal.awards.update",
+    entity: "AwardLimit",
+    entityId: `${programId}:${year}`,
+    detail: `${program.name} ${year}: ${rows.length} Limiten${rows.length ? ` (${rows.map((r) => `${r.category} ${r.award} ${r.minScore}`).join(", ")})` : ""}`.slice(0, 1900),
+  });
+  revalidatePath("/federal");
+  revalidatePath("/federal/awards");
+  return ok(undefined, rows.length ? `${rows.length} ${rows.length === 1 ? "Limite" : "Limiten"} gespeichert` : "Limiten entfernt");
 }

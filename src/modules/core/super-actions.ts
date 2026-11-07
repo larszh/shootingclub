@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { db } from "@/lib/db";
 import { audit } from "@/lib/audit";
+import { accessStatusWhere } from "@/lib/membership-access";
 import { requireSuperAdmin } from "@/lib/tenant";
 import { fail, ok, type ActionResult } from "@/lib/action-result";
 import { enqueueMail, renderMail } from "@/lib/mail";
@@ -14,7 +15,7 @@ import { purgeDateFrom } from "./tenant-purge";
 async function notifyOwnersOfDeletion(tenant: { id: string; name: string; defaultLocale: string }, purgeAfter: Date) {
   try {
     const owners = await db.membership.findMany({
-      where: { tenantId: tenant.id, role: "OWNER", status: { not: "LEFT" }, user: { deletedAt: null } },
+      where: { tenantId: tenant.id, role: "OWNER", status: accessStatusWhere(), user: { deletedAt: null } },
       select: { user: { select: { email: true, name: true, locale: true } } },
     });
     for (const { user } of owners) {

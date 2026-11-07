@@ -1,14 +1,16 @@
 import { Skeleton } from "@/components/ui";
+import { getRequestLocale, getT } from "@/lib/i18n";
 
 /**
  * Ladeansicht nur für das Dashboard. Liegt bewusst in der Route-Group (home) statt
  * gruppenweit in (app): sonst würde sie auch die [id]-Detailseiten umschliessen,
  * notFound() liefe erst nach Streaming-Beginn und ergäbe ein «weiches» 404 mit HTTP 200.
  */
-export default function Loading() {
+export default async function Loading() {
+  const t = getT(await getRequestLocale());
   return (
     <div className="animate-fade" role="status" aria-live="polite" aria-busy="true">
-      <span className="sr-only">Wird geladen…</span>
+      <span className="sr-only">{t("shell.ui.loading")}</span>
       <div className="mb-5 flex items-center gap-4">
         <div className="min-w-0 flex-1 space-y-2">
           <Skeleton className="h-4 w-32" />

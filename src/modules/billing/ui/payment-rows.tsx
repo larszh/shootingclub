@@ -3,10 +3,11 @@ import { CalendarDays, ChevronRight, CreditCard, Package, Printer, Receipt } fro
 import { Badge, Card } from "@/components/ui";
 import { CopyButton } from "@/components/ui/controls";
 import { formatMoney } from "@/lib/money";
-import { formatDateZurich } from "@/lib/time";
+import { formatDate, getT, type Locale } from "@/lib/i18n/core";
 import { formatIban, formatQrReference } from "@/lib/qr-reference";
 import { cn } from "@/lib/utils";
-import { PAYMENT_STATUS_LABEL, paymentItemSourceLabel, type PaymentItem, type PaymentSource } from "../overview";
+import { PAYMENT_STATUS_LABEL, type PaymentItem, type PaymentSource } from "../overview";
+import { localizePaymentItem } from "./i18n";
 
 /** Gemeinsame Darstellung der Zahlungsübersicht (Mitglied und Verwaltung). Ohne Client-State. */
 
@@ -32,24 +33,33 @@ export function SourceIcon({ source, tone = "neutral" }: { source: PaymentSource
   );
 }
 
-const day = (d: Date) => formatDateZurich(d, { weekday: undefined });
-
-export function dueText(item: PaymentItem) {
+export function dueText(item: PaymentItem, locale: Locale = "de") {
+  const t = getT(locale);
+  const day = (d: Date) => formatDate(d, locale);
   if (item.status !== "OPEN") {
-    if (item.status === "PAID" && item.paidAt) return `bezahlt am ${day(item.paidAt)}`;
+    if (item.status === "PAID" && item.paidAt) return t("money.due.paidOn", { date: day(item.paidAt) });
     return null;
   }
-  if (!item.dueAt) return "offen";
-  return item.overdue ? `überfällig seit ${day(item.dueAt)}` : `zahlbar bis ${day(item.dueAt)}`;
+  if (!item.dueAt) return t("money.due.open");
+  return item.overdue ? t("money.due.overdueSince", { date: day(item.dueAt) }) : t("money.due.payableUntil", { date: day(item.dueAt) });
+}
+
+function statusBadge(item: PaymentItem, locale: Locale) {
+  const t = getT(locale);
+  if (item.overdue) return { label: t("money.status.OVERDUE"), tone: "danger" as const };
+  return { label: t(`money.status.${item.status}`), tone: PAYMENT_STATUS_LABEL[item.status].tone };
 }
 
 /** Zahlungsangaben eines Vereins für die Kopierknöpfe. */
 export type PayeeInfo = { iban: string | null; payeeName: string; qrIban: boolean };
 
 /** Offene Rechnung als Karte mit Kopierknöpfen für IBAN, Referenz bzw. Zahlungszweck und Betrag. */
-export function OpenPaymentCard({ item, payee }: { item: PaymentItem; payee: PayeeInfo }) {
-  const purpose = (item.number && !item.title.includes(item.number) ? `${item.title} ${item.number}` : item.title).trim();
-  const due = dueText(item);
+export function OpenPaymentCard({ item: raw, payee, locale = "de" }: { item: PaymentItem; payee: PayeeInfo; locale?: Locale }) {
+  const t = getT(locale);
+  const item = localizePaymentItem(raw, locale);
+  // Zahlungszweck bleibt im Wortlaut der Rechnung (QR-Mitteilung), nicht übersetzt.
+  const purpose = (raw.number && !raw.title.includes(raw.number) ? `${raw.title} ${raw.number}` : raw.title).trim();
+  const due = dueText(raw, locale);
   return (
     <Card className={cn("p-4", item.overdue && "border-danger/50")}>
       <div className="flex items-start gap-3">
@@ -57,45 +67,45 @@ export function OpenPaymentCard({ item, payee }: { item: PaymentItem; payee: Pay
         <div className="min-w-0 flex-1">
           <div className="font-semibold leading-snug">{item.title}</div>
           <div className="text-xs text-ink-3">
-            {[item.number, paymentItemSourceLabel(item), item.detail].filter(Boolean).join(" · ")}
+            {[item.number, item.sourceText, item.detail].filter(Boolean).join(" · ")}
           </div>
           {due ? <div className={cn("mt-0.5 text-xs font-medium", item.overdue ? "text-danger" : "text-ink-2")}>{due}</div> : null}
         </div>
         <div className="shrink-0 text-right">
           <div className="text-lg font-semibold tabular-nums">{formatMoney(item.amountCents, item.currency)}</div>
-          <Badge tone={item.overdue ? "danger" : "warn"}>{item.overdue ? "Überfällig" : "Offen"}</Badge>
+          <Badge tone={item.overdue ? "danger" : "warn"}>{item.overdue ? t("money.status.OVERDUE") : t("money.status.OPEN")}</Badge>
         </div>
       </div>
 
       {payee.iban ? (
         <div className="mt-3 rounded-control bg-surface-2 p-3 text-sm">
-          <div className="text-xs text-ink-3">Zahlbar an {payee.payeeName}</div>
+          <div className="text-xs text-ink-3">{t("money.payee.payableTo", { name: payee.payeeName })}</div>
           <div className="mt-0.5 break-all font-mono tabular-nums">{formatIban(payee.iban)}</div>
           {item.reference ? (
             <div className="mt-1.5">
-              <div className="text-xs text-ink-3">Referenz</div>
+              <div className="text-xs text-ink-3">{t("money.payee.reference")}</div>
               <div className="break-all font-mono tabular-nums">{formatQrReference(item.reference)}</div>
             </div>
           ) : payee.qrIban ? (
-            <p className="mt-1.5 text-xs text-ink-3">Bitte mit der QR-Rechnung bezahlen, dort steht die Referenznummer.</p>
+            <p className="mt-1.5 text-xs text-ink-3">{t("money.payee.useQrBill")}</p>
           ) : (
             <div className="mt-1.5">
-              <div className="text-xs text-ink-3">Zahlungszweck</div>
+              <div className="text-xs text-ink-3">{t("money.payee.purpose")}</div>
               <div>{purpose}</div>
             </div>
           )}
           <div className="mt-2.5 flex flex-wrap gap-2">
-            <CopyButton text={payee.iban.replace(/\s+/g, "")} label="IBAN kopieren" copiedMessage="IBAN kopiert" className="min-h-11" />
+            <CopyButton text={payee.iban.replace(/\s+/g, "")} label={t("money.copy.iban")} copiedMessage={t("money.copy.ibanDone")} className="min-h-11" />
             {item.reference ? (
-              <CopyButton text={item.reference} label="Referenz kopieren" copiedMessage="Referenz kopiert" className="min-h-11" />
+              <CopyButton text={item.reference} label={t("money.copy.reference")} copiedMessage={t("money.copy.referenceDone")} className="min-h-11" />
             ) : !payee.qrIban ? (
-              <CopyButton text={purpose} label="Zweck kopieren" copiedMessage="Zahlungszweck kopiert" className="min-h-11" />
+              <CopyButton text={purpose} label={t("money.copy.purpose")} copiedMessage={t("money.copy.purposeDone")} className="min-h-11" />
             ) : null}
-            <CopyButton text={(item.amountCents / 100).toFixed(2)} label="Betrag kopieren" copiedMessage="Betrag kopiert" className="min-h-11" />
+            <CopyButton text={(item.amountCents / 100).toFixed(2)} label={t("money.copy.amount")} copiedMessage={t("money.copy.amountDone")} className="min-h-11" />
           </div>
         </div>
       ) : (
-        <p className="mt-3 text-xs text-ink-3">Die Zahlungsangaben stehen auf der Rechnung.</p>
+        <p className="mt-3 text-xs text-ink-3">{t("money.payee.onInvoice")}</p>
       )}
 
       <Link
@@ -103,17 +113,18 @@ export function OpenPaymentCard({ item, payee }: { item: PaymentItem; payee: Pay
         target={item.external ? "_blank" : undefined}
         className="press mt-3 flex h-11 items-center justify-center gap-2 rounded-control border border-line bg-surface text-[15px] font-medium hover:bg-surface-2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
       >
-        <Printer className="h-4 w-4" aria-hidden /> QR-Rechnung öffnen
+        <Printer className="h-4 w-4" aria-hidden /> {t("money.qr.open")}
       </Link>
     </Card>
   );
 }
 
 /** Kompakte Zeile (erledigte Posten oder Verwaltungsliste). */
-export function PaymentRow({ item, showMember }: { item: PaymentItem; showMember?: boolean }) {
-  const st = item.overdue ? { label: "Überfällig", tone: "danger" as const } : PAYMENT_STATUS_LABEL[item.status];
-  const due = dueText(item);
-  const sub = [showMember ? item.memberName : null, item.number, paymentItemSourceLabel(item), showMember ? null : item.detail].filter(Boolean).join(" · ");
+export function PaymentRow({ item: raw, showMember, locale = "de" }: { item: PaymentItem; showMember?: boolean; locale?: Locale }) {
+  const item = localizePaymentItem(raw, locale);
+  const st = statusBadge(raw, locale);
+  const due = dueText(raw, locale);
+  const sub = [showMember ? item.memberName : null, item.number, item.sourceText, showMember ? null : item.detail].filter(Boolean).join(" · ");
   return (
     <Link
       href={item.href}

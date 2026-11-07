@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Home } from "lucide-react";
 import { requirePermission } from "@/lib/tenant";
 import { db } from "@/lib/db";
+import { accessStatusWhere } from "@/lib/membership-access";
 import { EmptyState, PageHeader, SectionTitle } from "@/components/ui";
 import { userAvatarUrl } from "@/components/avatar";
 import { listHouseholds } from "@/modules/members/queries";
@@ -15,7 +16,7 @@ export default async function HouseholdsPage() {
   const [households, members] = await Promise.all([
     listHouseholds(ctx.tenant.id),
     db.membership.findMany({
-      where: { tenantId: ctx.tenant.id, status: { not: "LEFT" } },
+      where: { tenantId: ctx.tenant.id, status: accessStatusWhere() },
       orderBy: { user: { name: "asc" } },
       select: { id: true, householdId: true, user: { select: { name: true } } },
     }),
@@ -38,7 +39,7 @@ export default async function HouseholdsPage() {
   return (
     <div>
       <PageHeader title="Haushalte" subtitle="Familien erhalten eine gemeinsame Beitragsrechnung" back={{ href: "/admin/members", label: "Mitglieder" }} />
-      <MembersNav active="households" canManage counts={{ households: households.length }} />
+      <MembersNav active="households" canApprove={ctx.can("members.approve")} tenantId={ctx.tenant.id} canManage counts={{ households: households.length }} />
 
       <SectionTitle>Neuer Haushalt</SectionTitle>
       <CreateHouseholdForm members={options} />

@@ -6,6 +6,8 @@ import { adminCreateBookingAction } from "@/modules/bookings/actions";
 import { fetchAdminSlotsAction, type SlotDto, type SlotsResult } from "@/modules/bookings/slot-actions";
 import { formatDuration, type DurationOption } from "@/modules/bookings/types";
 import { basePriceFor, maxPersonsFor, wholeResourceLabel } from "@/modules/bookings/pricing";
+import { windowHintLabel } from "@/modules/bookings/i18n";
+import { getT } from "@/lib/i18n/core";
 import { PersonsStepper } from "./persons-stepper";
 import { Avatar } from "@/components/avatar";
 import { Alert, Card, Field, Input } from "@/components/ui";
@@ -215,7 +217,7 @@ export function AdminBookingForm({ members, resources, durationOptions, currency
             {tooFew ? <p className="mt-2 text-xs text-ink-3">Durchgestrichene Zeiten: Nicht genug Plätze frei für {sel.persons === 1 ? "1 Person" : `${sel.persons} Personen`}.</p> : null}
             {!loading && !slotError && windowInfo?.windowHint ? (
               <p className="mt-2 rounded-control bg-surface-2 px-3 py-2 text-xs text-ink-2">
-                {windowInfo.windowHint}.
+                {windowHintLabel(windowInfo.windowHint, "de", getT("de"))}.
                 {windowInfo.windowOverride ? " Zeiten ausserhalb sind für die Verwaltung buchbar und erhalten einen Vermerk." : windowInfo.outsideWindow ? " Zeiten ausserhalb sind durchgestrichen." : ""}
               </p>
             ) : null}

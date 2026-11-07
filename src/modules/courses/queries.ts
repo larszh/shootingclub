@@ -1,5 +1,6 @@
 import "server-only";
 import { db } from "@/lib/db";
+import { accessStatusWhere } from "@/lib/membership-access";
 import { attendanceIndex, attendanceSummary, completionMatrix, dbDay, parseIdCsv, splitGrantNote } from "./logic";
 
 // --- Programme / Mitglieder ------------------------------------------------------------------------------
@@ -48,7 +49,7 @@ export type CourseMemberOption = {
 /** Mitglieder für Auswahllisten (ohne Ausgetretene und gelöschte Konten). */
 export async function memberOptions(tenantId: string): Promise<CourseMemberOption[]> {
   const rows = await db.membership.findMany({
-    where: { tenantId, status: { not: "LEFT" }, user: { deletedAt: null } },
+    where: { tenantId, status: accessStatusWhere(), user: { deletedAt: null } },
     select: {
       guardianName: true, guardianEmail: true, guardianPhone: true,
       user: { select: { id: true, name: true, email: true, phone: true, birthDate: true, street: true, zip: true, city: true } },
@@ -64,7 +65,7 @@ export async function memberOptions(tenantId: string): Promise<CourseMemberOptio
 /** Leitungs-Auswahl: Mitglieder ab Rolle Trainer zuerst, danach alle übrigen. */
 export async function leaderOptions(tenantId: string) {
   const rows = await db.membership.findMany({
-    where: { tenantId, status: { not: "LEFT" }, user: { deletedAt: null } },
+    where: { tenantId, status: accessStatusWhere(), user: { deletedAt: null } },
     select: { role: true, user: { select: { id: true, name: true } } },
     orderBy: { user: { name: "asc" } },
   });
@@ -243,7 +244,7 @@ export async function listHolders(tenantId: string, kinds: string[]) {
   });
   // Nur aktive Mitglieder (nicht ausgetreten)
   const active = new Set(
-    (await db.membership.findMany({ where: { tenantId, status: { not: "LEFT" }, userId: { in: [...new Set(rows.map((r) => r.user.id))] } }, select: { userId: true } })).map((m) => m.userId),
+    (await db.membership.findMany({ where: { tenantId, status: accessStatusWhere(), userId: { in: [...new Set(rows.map((r) => r.user.id))] } }, select: { userId: true } })).map((m) => m.userId),
   );
   const verifiers = await userNames(rows.map((r) => r.verifiedById));
   return rows.filter((r) => active.has(r.user.id)).map((r) => ({ ...r, verifiedByName: r.verifiedById ? verifiers.get(r.verifiedById) ?? null : null }));

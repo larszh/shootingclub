@@ -4,11 +4,13 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { z } from "zod";
 import { db } from "@/lib/db";
+import { accessStatusWhere } from "@/lib/membership-access";
 import { getCurrentUser } from "@/lib/auth";
 import { setActiveTenantCookie } from "@/lib/tenant";
 import { audit } from "@/lib/audit";
 import { notify, tenantUserIdsWithRole } from "@/lib/notify";
 import { fail, ok, type ActionResult } from "@/lib/action-result";
+import { getRequestLocale, getT } from "@/lib/i18n";
 import { todayZurich, zurichToUtc } from "@/lib/time";
 import { hasValidQualification } from "@/modules/qualifications/service";
 import { createWeaponLoan, returnWeaponLoan } from "@/modules/weapons/service";
@@ -50,7 +52,7 @@ const NO_RIGHT = "Keine Berechtigung.";
 /** Aktives Mitglied des Vereins (nicht ausgetreten, Konto nicht gelöscht). */
 async function activeMember(tenantId: string, userId: string) {
   return db.membership.findFirst({
-    where: { tenantId, userId, status: { not: "LEFT" }, user: { deletedAt: null } },
+    where: { tenantId, userId, status: accessStatusWhere(), user: { deletedAt: null } },
     select: { user: { select: { id: true, name: true, birthDate: true } } },
   });
 }
@@ -407,25 +409,26 @@ export async function switchTenantForCheckInAction(tenantId: string) {
 
 export async function selfCheckInAction(input: { dayId: string; clientId: string; acceptRulesId?: string | null; lane?: string; discipline?: string }): Promise<ActionResult<{ id: string } | { needsRules: string }>> {
   const ctx = await requireRange();
+  const t = getT(await getRequestLocale());
   const extra = visitUpdateSchema.safeParse({ lane: input.lane, discipline: input.discipline });
-  if (!idSchema.safeParse(input.dayId).success || !clientIdSchema.safeParse(input.clientId).success || !extra.success) return fail("Ungültige Anfrage.");
+  if (!idSchema.safeParse(input.dayId).success || !clientIdSchema.safeParse(input.clientId).success || !extra.success) return fail(t("shooting.checkin.msg.invalid"));
   const tenantId = ctx.tenant.id;
   const userId = ctx.user.id;
   // Wiederholung derselben Anfrage (Doppeltipp, Verbindungsabbruch) → bestehender Eintrag.
   const byClient = await db.rangeVisit.findUnique({ where: { clientId: input.clientId }, select: { id: true, tenantId: true, userId: true } });
   if (byClient) {
-    if (byClient.tenantId !== tenantId || byClient.userId !== userId) return fail("Ungültige Anfrage.");
+    if (byClient.tenantId !== tenantId || byClient.userId !== userId) return fail(t("shooting.checkin.msg.invalid"));
     revalidate(); // Antwort ging evtl. verloren: Seite soll den Check-in anzeigen.
-    return ok({ id: byClient.id }, "Du bist eingecheckt.");
+    return ok({ id: byClient.id }, t("shooting.checkin.msg.checkedIn"));
   }
-  if (!(await activeMember(tenantId, userId))) return fail("Nur aktive Mitglieder können sich einchecken.");
+  if (!(await activeMember(tenantId, userId))) return fail(t("shooting.checkin.msg.onlyActive"));
   const day = await openDayOf(tenantId, input.dayId);
-  if (!day) return fail("Der Stand ist nicht (mehr) offen.");
-  if (isStaleDay(day)) return fail("Dieses Standbuch ist nicht von heute. Bitte beim Standdienst melden.");
+  if (!day) return fail(t("shooting.checkin.msg.notOpen"));
+  if (isStaleDay(day)) return fail(t("shooting.checkin.msg.stale"));
   const open = await db.rangeVisit.findFirst({ where: { tenantId, userId, rangeDayId: day.id, checkedOutAt: null }, select: { id: true } });
   if (open) {
     revalidate(); // z.B. zweiter Tab oder Check-in durch den Standdienst: Seite aktualisieren.
-    return ok({ id: open.id }, "Du bist bereits eingecheckt.");
+    return ok({ id: open.id }, t("shooting.checkin.msg.already"));
   }
   const rules = await getActiveRules(tenantId);
   let acceptedAt: Date | null = null;
@@ -444,9 +447,9 @@ export async function selfCheckInAction(input: { dayId: string; clientId: string
       tenantId, rangeDayId: day.id, userId, lane: extra.data.lane, discipline: extra.data.discipline,
       rulesId: rules?.id ?? null, rulesAcceptedAt: acceptedAt, clientId: input.clientId,
     });
-    if (!res) return fail("Ungültige Anfrage.");
+    if (!res) return fail(t("shooting.checkin.msg.invalid"));
     revalidate();
-    return ok({ id: res.visit.id }, "Eingecheckt. Gut Schuss!");
+    return ok({ id: res.visit.id }, t("shooting.checkin.msg.done"));
   } catch (e) {
     return handle(e);
   }
@@ -454,17 +457,18 @@ export async function selfCheckInAction(input: { dayId: string; clientId: string
 
 export async function selfCheckOutAction(visitId: string): Promise<ActionResult> {
   const ctx = await requireRange();
-  if (!idSchema.safeParse(visitId).success) return fail("Ungültige Anfrage.");
+  const t = getT(await getRequestLocale());
+  if (!idSchema.safeParse(visitId).success) return fail(t("shooting.checkin.msg.invalid"));
   const v = await db.rangeVisit.findFirst({ where: { id: visitId, tenantId: ctx.tenant.id, userId: ctx.user.id }, select: { id: true, checkedOutAt: true, clubWeaponId: true, userId: true, guestName: true } });
-  if (!v) return fail("Eintrag nicht gefunden.");
+  if (!v) return fail(t("shooting.checkin.msg.notFound"));
   if (v.checkedOutAt) {
     revalidate();
-    return ok(undefined, "Bereits ausgecheckt.");
+    return ok(undefined, t("shooting.checkin.msg.alreadyOut"));
   }
-  if (await findOpenLoanForVisit(ctx.tenant.id, v)) return fail("Bitte die Vereinswaffe beim Standdienst zurückgeben. Er checkt dich dann aus.");
+  if (await findOpenLoanForVisit(ctx.tenant.id, v)) return fail(t("shooting.checkin.msg.returnWeapon"));
   await db.rangeVisit.updateMany({ where: { id: v.id, tenantId: ctx.tenant.id, checkedOutAt: null }, data: { checkedOutAt: new Date() } });
   revalidate();
-  return ok(undefined, "Ausgecheckt. Danke und bis bald!");
+  return ok(undefined, t("shooting.checkin.msg.out"));
 }
 
 // --- Standordnung (Verwaltung) ------------------------------------------------------------
@@ -630,6 +634,7 @@ export async function deleteQuotaAction(id: string): Promise<ActionResult> {
 
 export async function reportIncidentAction(_prev: ActionResult<{ id: string }> | null, fd: FormData): Promise<ActionResult<{ id: string }>> {
   const ctx = await requireRange();
+  const t = getT(await getRequestLocale());
   const parsed = incidentSchema.safeParse({
     kind: fd.get("kind") ?? "",
     severity: fd.get("severity") ?? "",
@@ -643,16 +648,29 @@ export async function reportIncidentAction(_prev: ActionResult<{ id: string }> |
   });
   if (!parsed.success) {
     const issue = parsed.error.issues[0];
-    return fail(issue?.message ?? "Ungültige Eingabe.", issue ? { [String(issue.path[0])]: issue.message } : undefined);
+    const field = issue ? String(issue.path[0]) : "";
+    const max = issue && issue.code === "too_big" ? Number(issue.maximum) : null;
+    const msg = !issue
+      ? t("shooting.incident.msg.invalid")
+      : max !== null && Number.isFinite(max)
+        ? t("shooting.incident.msg.tooLong", { max })
+        : field === "date"
+          ? t("shooting.incident.msg.dateMissing")
+          : field === "time"
+            ? t("shooting.incident.msg.timeMissing")
+            : field === "description"
+              ? t("shooting.incident.msg.describe")
+              : t("shooting.incident.msg.invalid");
+    return fail(msg, issue ? { [field]: msg } : undefined);
   }
   const i = parsed.data;
   const tenantId = ctx.tenant.id;
   const occurredAt = zurichToUtc(i.date, i.time);
-  if (Number.isNaN(occurredAt.getTime())) return fail("Ungültiges Datum.", { date: "Ungültiges Datum." });
-  if (occurredAt.getTime() > Date.now() + 10 * 60_000) return fail("Der Zeitpunkt liegt in der Zukunft.", { date: "Der Zeitpunkt liegt in der Zukunft." });
+  if (Number.isNaN(occurredAt.getTime())) return fail(t("shooting.incident.msg.badDate"), { date: t("shooting.incident.msg.badDate") });
+  if (occurredAt.getTime() > Date.now() + 10 * 60_000) return fail(t("shooting.incident.msg.future"), { date: t("shooting.incident.msg.future") });
   if (i.clientId) {
     const ex = await db.incident.findUnique({ where: { clientId: i.clientId }, select: { id: true, tenantId: true } });
-    if (ex) return ex.tenantId === tenantId ? ok({ id: ex.id }, "Meldung erfasst.") : fail("Ungültige Anfrage.");
+    if (ex) return ex.tenantId === tenantId ? ok({ id: ex.id }, t("shooting.incident.msg.reported")) : fail(t("shooting.incident.msg.invalidRequest"));
   }
   let incident: { id: string };
   try {
@@ -663,7 +681,7 @@ export async function reportIncidentAction(_prev: ActionResult<{ id: string }> |
   } catch (e) {
     if (isUniqueError(e) && i.clientId) {
       const ex = await db.incident.findUnique({ where: { clientId: i.clientId }, select: { id: true, tenantId: true } });
-      if (ex) return ex.tenantId === tenantId ? ok({ id: ex.id }, "Meldung erfasst.") : fail("Ungültige Anfrage.");
+      if (ex) return ex.tenantId === tenantId ? ok({ id: ex.id }, t("shooting.incident.msg.reported")) : fail(t("shooting.incident.msg.invalidRequest"));
     }
     return handle(e);
   }
@@ -678,7 +696,7 @@ export async function reportIncidentAction(_prev: ActionResult<{ id: string }> |
     });
   }
   revalidate();
-  return ok({ id: incident.id }, "Meldung erfasst. Danke!");
+  return ok({ id: incident.id }, t("shooting.incident.msg.reportedThanks"));
 }
 
 export async function closeIncidentAction(_prev: ActionResult | null, fd: FormData): Promise<ActionResult> {

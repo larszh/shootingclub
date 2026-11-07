@@ -1,5 +1,6 @@
 import "server-only";
 import { db } from "@/lib/db";
+import { accessStatusWhere } from "@/lib/membership-access";
 import { appUrl, enqueueMail, renderMail } from "@/lib/mail";
 import { INTL_LOCALE, getT, normalizeLocale, type Locale } from "@/lib/i18n";
 import { sendPush, truncateText } from "@/lib/push";
@@ -33,6 +34,11 @@ export type NotifyInput = {
   };
   /** Abweichender E-Mail-Text (z.B. Chat: ohne Nachrichteninhalt). */
   emailBody?: string;
+  /**
+   * Fusszeile der E-Mail: «member» (Standard, mit Verein), «noClub» (ohne Verein) oder «joinRequest»
+   * (Person ist noch kein Mitglied, z.B. Ablehnung einer Beitrittsanfrage).
+   */
+  footer?: "member" | "noClub" | "joinRequest";
   /** Gruppierung auf dem Gerät, z.B. chat:<conversationId> */
   tag?: string;
   urgency?: "very-low" | "low" | "normal" | "high";
@@ -40,6 +46,11 @@ export type NotifyInput = {
   dedupeKey?: string;
   /** false = kein Push (nur E-Mail). */
   push?: boolean;
+  /**
+   * true = auch Empfänger mit Beitrittsanfrage (Membership PENDING) erreichen, z.B. die Ablehnung
+   * einer Anfrage. Sonst erhalten nur Mitglieder mit Zugang etwas.
+   */
+  includePending?: boolean;
 };
 
 type Recipient = { id: string; email: string; name: string; locale: Locale };
@@ -56,15 +67,15 @@ const MAIL_KIND: Record<NotifyTopic, string> = {
   system: "notify-system",
 };
 
-async function loadRecipients(tenantId: string | null, userIds: string[]): Promise<Recipient[]> {
+async function loadRecipients(tenantId: string | null, userIds: string[], includePending = false): Promise<Recipient[]> {
   const ids = [...new Set(userIds)].filter((id) => typeof id === "string" && id.length > 0 && id.length <= 64);
   if (!ids.length) return [];
   const users = await db.user.findMany({
     where: {
       id: { in: ids },
       deletedAt: null,
-      // Nur aktuelle Mitglieder des Vereins (ausgetretene erhalten nichts mehr)
-      ...(tenantId ? { memberships: { some: { tenantId, status: { not: "LEFT" } } } } : {}),
+      // Nur aktuelle Mitglieder des Vereins (ausgetretene und wartende erhalten nichts)
+      ...(tenantId ? { memberships: { some: { tenantId, status: includePending ? { not: "LEFT" } : accessStatusWhere() } } } : {}),
     },
     select: { id: true, email: true, name: true, locale: true },
   });
@@ -98,7 +109,7 @@ export async function notify(n: NotifyInput): Promise<void> {
     // Gelöschter (oder unbekannter) Verein: keine Benachrichtigungen mehr
     if (n.tenantId && (!tenant || tenant.deletedAt)) return;
 
-    const recipients = await loadRecipients(n.tenantId, n.userIds);
+    const recipients = await loadRecipients(n.tenantId, n.userIds, n.includePending);
     if (!recipients.length) return;
 
     const prefs = await db.notificationPreference.findMany({
@@ -135,7 +146,12 @@ export async function notify(n: NotifyInput): Promise<void> {
         try {
           const t = getT(r.locale);
           const tx = textsFor(n, r.locale);
-          const footer = tenant ? t("notify.mail.footer", { club: tenant.name }) : t("notify.mail.footerNoClub");
+          const footer =
+            n.footer === "joinRequest"
+              ? t("notify.mail.footerJoinRequest", { club: tenant?.name ?? "" })
+              : n.footer === "noClub" || !tenant
+                ? t("notify.mail.footerNoClub")
+                : t("notify.mail.footer", { club: tenant.name });
           const mail = renderMail({
             locale: r.locale,
             title: tx.title,
@@ -172,6 +188,6 @@ export function notifyInBackground(n: NotifyInput): void {
 
 /** Alle Benutzer eines Vereins mit einer Mindestrolle bzw. Berechtigung (z.B. Admins für Buchungsanfragen). */
 export async function tenantUserIdsWithRole(tenantId: string, roles: string[]): Promise<string[]> {
-  const rows = await db.membership.findMany({ where: { tenantId, role: { in: roles }, status: { not: "LEFT" } }, select: { userId: true } });
+  const rows = await db.membership.findMany({ where: { tenantId, role: { in: roles }, status: accessStatusWhere() }, select: { userId: true } });
   return rows.map((r) => r.userId);
 }

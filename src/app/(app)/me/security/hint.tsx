@@ -3,6 +3,7 @@ import { ShieldAlert } from "lucide-react";
 import { db } from "@/lib/db";
 import { getAppContext } from "@/lib/tenant";
 import { roleAtLeast } from "@/lib/permissions";
+import { getRequestLocale, getT } from "@/lib/i18n";
 
 /**
  * Sanfte Empfehlung für Admins/Inhaber (und Super-Admins), die Zwei-Faktor-Anmeldung einzuschalten.
@@ -15,6 +16,7 @@ export async function TwoFactorHint({ className }: { className?: string }) {
   if (!privileged) return null;
   const row = await db.user.findUnique({ where: { id: ctx.user.id }, select: { totpEnabledAt: true } });
   if (row?.totpEnabledAt) return null;
+  const t = getT(await getRequestLocale());
   return (
     <Link
       href="/me/security"
@@ -22,8 +24,8 @@ export async function TwoFactorHint({ className }: { className?: string }) {
     >
       <ShieldAlert className="mt-0.5 h-5 w-5 shrink-0 text-warn" aria-hidden />
       <span className="min-w-0">
-        <span className="block font-medium">Konto zusätzlich schützen</span>
-        <span className="block text-sm text-ink-3">Als Admin hast du Zugriff auf Mitgliederdaten. Schalte die Zwei-Faktor-Anmeldung ein – dauert 2 Minuten.</span>
+        <span className="block font-medium">{t("shell.security.hintTitle")}</span>
+        <span className="block text-sm text-ink-3">{t("shell.security.hintText")}</span>
       </span>
     </Link>
   );
