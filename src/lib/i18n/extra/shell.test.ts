@@ -34,8 +34,8 @@ describe("Wörterbuch «shell»", () => {
     expect(Object.keys(de).filter((k) => !k.startsWith("shell."))).toEqual([]);
   });
 
-  it("fr und it haben jeden deutschen Schlüssel, keine leeren Texte", () => {
-    for (const lang of [dict.fr, dict.it]) {
+  it("fr, it und en haben jeden deutschen Schlüssel, keine leeren Texte", () => {
+    for (const lang of [dict.fr, dict.it, dict.en]) {
       expect(Object.keys(de).filter((k) => !(k in lang))).toEqual([]);
       expect(Object.keys(lang).filter((k) => !(k in de))).toEqual([]);
       expect(Object.entries(lang).filter(([, v]) => !v.trim()).map(([k]) => k)).toEqual([]);
@@ -49,6 +49,7 @@ describe("Wörterbuch «shell»", () => {
       const p = placeholders(v);
       if (JSON.stringify(placeholders(dict.fr[k] ?? "")) !== JSON.stringify(p)) bad.push(`fr:${k}`);
       if (JSON.stringify(placeholders(dict.it[k] ?? "")) !== JSON.stringify(p)) bad.push(`it:${k}`);
+      if (JSON.stringify(placeholders(dict.en[k] ?? "")) !== JSON.stringify(p)) bad.push(`en:${k}`);
     }
     expect(bad).toEqual([]);
   });
@@ -75,6 +76,7 @@ describe("Wörterbuch «shell»", () => {
     expect(getT("de")("shell.nav.more")).toBe("Mehr");
     expect(getT("fr")("shell.nav.more")).toBe("Plus");
     expect(getT("it")("shell.nav.more")).toBe("Altro");
+    expect(getT("en")("shell.nav.more")).toBe("More");
     expect(getT("fr")("shell.home.cards.op", { year: 2026 })).toBe("Tir obligatoire 2026");
   });
 

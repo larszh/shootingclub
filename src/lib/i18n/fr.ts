@@ -8,6 +8,7 @@ const fr: Record<string, string> = {
   "locale.de": "Allemand",
   "locale.fr": "Français",
   "locale.it": "Italien",
+  "locale.en": "Anglais",
 
   "invoice.title": "Facture",
   "invoice.number": "N°\u00A0{number}",

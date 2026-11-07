@@ -61,15 +61,16 @@ const dm = (s: string) => `${s.slice(8, 10)}.${s.slice(5, 7)}.`;
  * Lesbare Bezeichnung: «Oktober 2026», «Oktober–Dezember 2026», «2026», «Q3 2026» wird bewusst nicht
  * verwendet (Monatsnamen sind für Mitglieder klarer). Sonst «01.09.–15.10.2026».
  */
-export function periodLabel(p: Period): string {
+/** `months`: Monatsnamen der Anzeigesprache (Standard Deutsch, z.B. für Rechnungsbezeichnungen). */
+export function periodLabel(p: Period, months: readonly string[] = MONTHS_DE): string {
   const [fy, fm, fd] = p.from.split("-").map(Number) as [number, number, number];
   const [ty, tm, td] = p.to.split("-").map(Number) as [number, number, number];
   const fullMonths = fd === 1 && td === lastDayOfMonth(ty, tm);
   if (fullMonths) {
     if (fy === ty && fm === 1 && tm === 12) return String(fy);
-    if (fy === ty && fm === tm) return `${MONTHS_DE[fm - 1]} ${fy}`;
-    if (fy === ty) return `${MONTHS_DE[fm - 1]}–${MONTHS_DE[tm - 1]} ${fy}`;
-    return `${MONTHS_DE[fm - 1]} ${fy}–${MONTHS_DE[tm - 1]} ${ty}`;
+    if (fy === ty && fm === tm) return `${months[fm - 1]} ${fy}`;
+    if (fy === ty) return `${months[fm - 1]}–${months[tm - 1]} ${fy}`;
+    return `${months[fm - 1]} ${fy}–${months[tm - 1]} ${ty}`;
   }
   if (p.from === p.to) return dmy(p.from);
   if (fy === ty) return `${dm(p.from)}–${dmy(p.to)}`;

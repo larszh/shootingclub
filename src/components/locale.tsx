@@ -1,7 +1,7 @@
 "use client";
 
 import { createContext, useContext, useMemo, useSyncExternalStore } from "react";
-import { DEFAULT_LOCALE, getT, normalizeLocale, type Locale, type TFunction } from "@/lib/i18n/core";
+import { DEFAULT_LOCALE, getT, isLocale, normalizeLocale, type Locale, type TFunction } from "@/lib/i18n/core";
 
 /**
  * Sprache der aktuellen Seite für Client-Komponenten. Das Root-Layout setzt sie aus
@@ -41,7 +41,7 @@ export function rememberLocale(locale: Locale) {
 function readStoredLocale(): Locale {
   try {
     const v = localStorage.getItem(STORED_LOCALE_KEY);
-    if (v === "de" || v === "fr" || v === "it") return v;
+    if (isLocale(v)) return v;
   } catch {
     // ignorieren
   }

@@ -11,17 +11,19 @@ import { FeeInvoiceActions } from "@/modules/billing/ui/invoice-actions";
 import { Alert, Badge, Button, Card } from "@/components/ui";
 import { Spinner } from "@/components/ui/form";
 import { formatMoney } from "@/lib/money";
-import { formatDateZurich } from "@/lib/time";
-import { cn, plural } from "@/lib/utils";
+import { cn } from "@/lib/utils";
+import { formatDate } from "@/lib/i18n/core";
+import { useLocale, useT } from "@/components/locale";
 
 export type RunInvoiceDto = {
   id: string; memberName: string; number: string; categoryName: string; amountCents: number; currency: string; status: string;
   remindedAt: Date | null; paidAt: Date | null; reminders: number; overdue: boolean; note: string | null;
 };
 
-const d = (x: Date) => formatDateZurich(x, { weekday: undefined });
-
 export function RunInvoiceList({ invoices }: { invoices: RunInvoiceDto[] }) {
+  const t = useT();
+  const locale = useLocale();
+  const d = (x: Date) => formatDate(x, locale);
   const router = useRouter();
   const [selected, setSelected] = useState<Set<string>>(() => new Set());
   const [pending, start] = useTransition();
@@ -41,7 +43,7 @@ export function RunInvoiceList({ invoices }: { invoices: RunInvoiceDto[] }) {
 
   const run = (fn: () => Promise<{ ok: boolean; message?: string; error?: string }>) => start(async () => {
     const r = await fn();
-    setMsg(r.ok ? { ok: true, text: r.message ?? "Erledigt." } : { ok: false, text: r.error ?? "Fehler" });
+    setMsg(r.ok ? { ok: true, text: r.message ?? t("adm1.common.done") } : { ok: false, text: r.error ?? t("adm1.common.error") });
     if (r.ok) {
       setSelected(new Set());
       router.refresh();
@@ -53,7 +55,7 @@ export function RunInvoiceList({ invoices }: { invoices: RunInvoiceDto[] }) {
       {openIds.length ? (
         <label className="mb-2 flex items-center gap-3 px-1 text-sm text-ink-2 cursor-pointer min-h-11">
           <input type="checkbox" checked={allChosen} onChange={toggleAll} className="h-5 w-5 accent-[var(--ink)]" />
-          Alle offenen in dieser Auswahl wählen ({openIds.length})
+          {t("adm1.runlist.selectAllOpen", { n: openIds.length })}
         </label>
       ) : null}
       <Card className="animate-rise divide-y divide-line overflow-hidden">
@@ -63,28 +65,28 @@ export function RunInvoiceList({ invoices }: { invoices: RunInvoiceDto[] }) {
           return (
             <div key={i.id} className={cn("flex flex-wrap items-center gap-x-3 gap-y-1.5 px-4 py-3 sm:flex-nowrap", selected.has(i.id) && "bg-surface-2")}>
               {isOpen ? (
-                <input type="checkbox" checked={selected.has(i.id)} onChange={() => toggle(i.id)} className="h-5 w-5 shrink-0 accent-[var(--ink)]" aria-label={`${i.memberName} auswählen`} />
+                <input type="checkbox" checked={selected.has(i.id)} onChange={() => toggle(i.id)} className="h-5 w-5 shrink-0 accent-[var(--ink)]" aria-label={t("adm1.members.selectOne", { name: i.memberName })} />
               ) : <span className="w-5 shrink-0" />}
               <div className="min-w-0 flex-1">
                 <Link href={`/billing/invoices/${i.id}/print`} target="_blank" className="block truncate font-medium hover:underline">{i.memberName}</Link>
                 <div className="text-xs text-ink-3">
                   {i.number} · {i.categoryName}
-                  {i.paidAt ? ` · bezahlt ${d(i.paidAt)}` : ""}
+                  {i.paidAt ? ` · ${t("adm1.inv.paidOn", { date: d(i.paidAt) })}` : ""}
                 </div>
                 {i.reminders > 0 || i.overdue ? (
                   <div className="mt-0.5 flex flex-wrap gap-1">
-                    {i.overdue ? <span className="inline-flex items-center rounded-full bg-danger/10 px-2.5 py-0.5 text-xs font-medium text-danger">überfällig</span> : null}
-                    {i.reminders > 0 ? <Badge tone="warn">{i.reminders}× gemahnt{i.remindedAt ? `, zuletzt ${d(i.remindedAt)}` : ""}</Badge> : null}
+                    {i.overdue ? <span className="inline-flex items-center rounded-full bg-danger/10 px-2.5 py-0.5 text-xs font-medium text-danger">{t("adm1.inv.overdue")}</span> : null}
+                    {i.reminders > 0 ? <Badge tone="warn">{t("adm1.inv.reminded", { n: i.reminders })}{i.remindedAt ? `, ${t("adm1.inv.lastOn", { date: d(i.remindedAt) })}` : ""}</Badge> : null}
                   </div>
                 ) : null}
                 {i.note ? <div className="mt-0.5 text-xs text-ink-3 line-clamp-1">{i.note}</div> : null}
               </div>
-              <div className="text-right shrink-0"><div className="font-semibold tabular-nums text-sm">{formatMoney(i.amountCents, i.currency)}</div><Badge tone={st.tone}>{st.label}</Badge></div>
+              <div className="text-right shrink-0"><div className="font-semibold tabular-nums text-sm">{formatMoney(i.amountCents, i.currency)}</div><Badge tone={st.tone}>{t(`money.status.${i.status}`)}</Badge></div>
               <div className="flex basis-full justify-end sm:basis-auto"><FeeInvoiceActions id={i.id} status={i.status} /></div>
             </div>
           );
         })}
-        {invoices.length === 0 ? <p className="p-4 text-sm text-ink-3">Keine Rechnungen in dieser Auswahl.</p> : null}
+        {invoices.length === 0 ? <p className="p-4 text-sm text-ink-3">{t("adm1.inv.noneInSelection")}</p> : null}
       </Card>
 
       {msg ? <div className="mt-3"><Alert tone={msg.ok ? "ok" : "error"}>{msg.text}</Alert></div> : null}
@@ -92,11 +94,11 @@ export function RunInvoiceList({ invoices }: { invoices: RunInvoiceDto[] }) {
       {chosen.length ? (
         <div className="sticky bottom-24 md:bottom-4 mt-4 animate-pop">
           <Card className="p-2.5 shadow-lg flex flex-wrap items-center gap-2">
-            <span className="px-1.5 text-sm"><span className="font-semibold">{chosen.length}</span> gewählt · {formatMoney(chosenTotal, invoices[0]?.currency ?? "CHF")}</span>
+            <span className="px-1.5 text-sm">{t("adm1.members.selected", { n: chosen.length })} · {formatMoney(chosenTotal, invoices[0]?.currency ?? "CHF")}</span>
             <div className="ml-auto flex gap-2">
-              <Button type="button" size="sm" variant="secondary" disabled={pending} onClick={() => run(() => markRemindedAction(chosen))}><BellRing className="h-4 w-4" /> Gemahnt</Button>
-              <Button type="button" size="sm" disabled={pending} onClick={async () => { if ((await confirmDialog({ title: `${plural(chosen.length, "Rechnung", "Rechnungen")} als bezahlt markieren?`, confirmLabel: "Als bezahlt markieren" }))) run(() => bulkMarkFeeInvoicesPaidAction(chosen)); }}>
-                {pending ? <Spinner /> : <CheckCheck className="h-4 w-4" />} Als bezahlt markieren
+              <Button type="button" size="sm" variant="secondary" disabled={pending} onClick={() => run(() => markRemindedAction(chosen))}><BellRing className="h-4 w-4" /> {t("adm1.inv.markReminded")}</Button>
+              <Button type="button" size="sm" disabled={pending} onClick={async () => { if ((await confirmDialog({ title: t(chosen.length === 1 ? "adm1.inv.markPaidTitle.one" : "adm1.inv.markPaidTitle.other", { n: chosen.length }), confirmLabel: t("adm1.inv.markPaid") }))) run(() => bulkMarkFeeInvoicesPaidAction(chosen)); }}>
+                {pending ? <Spinner /> : <CheckCheck className="h-4 w-4" />} {t("adm1.inv.markPaid")}
               </Button>
             </div>
           </Card>

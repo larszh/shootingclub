@@ -8,31 +8,35 @@ import { Switch } from "@/components/ui/controls";
 import { Spinner } from "@/components/ui/form";
 import { isNavigationError, toast } from "@/lib/ui-feedback";
 import { cn } from "@/lib/utils";
+import { getT, type Locale, type TFunction } from "@/lib/i18n/core";
 import { IMPORT_MAX_ROWS, suggestMapping, type DuplicateReason, type ImportDecision, type ImportField, type ImportPresetId } from "@/modules/members/import";
 import { analyzeImportAction, commitImportAction, parseImportFileAction, type ImportSummary, type ParsedImport, type PreviewRow } from "@/modules/members/import-actions";
 
 type Step = "upload" | "map" | "preview" | "done";
 
+/** Schlüssel adm1.import.dup.<Grund> */
 const DUPLICATE_REASON: Record<DuplicateReason, string> = {
-  email: "gleiche E-Mail",
-  memberNumber: "gleiche Mitgliedernummer",
-  nameBirth: "Name + Geburtsdatum",
-  name: "gleicher Name – bitte prüfen",
+  email: "adm1.import.dup.email",
+  memberNumber: "adm1.import.dup.memberNumber",
+  nameBirth: "adm1.import.dup.nameBirth",
+  name: "adm1.import.dup.name",
 };
 const SHOW_STEP = 100;
 
 const STEPS: Array<{ id: Step; label: string }> = [
-  { id: "upload", label: "Datei" },
-  { id: "map", label: "Spalten" },
-  { id: "preview", label: "Prüfen" },
-  { id: "done", label: "Fertig" },
+  { id: "upload", label: "adm1.import.step.upload" },
+  { id: "map", label: "adm1.import.step.map" },
+  { id: "preview", label: "adm1.import.step.preview" },
+  { id: "done", label: "adm1.import.step.done" },
 ];
 
-export function ImportWizard({ fields, presets, categoryNames }: {
+export function ImportWizard({ locale, fields, presets, categoryNames }: {
+  locale: Locale;
   fields: Array<{ value: ImportField; label: string }>;
   presets: Array<{ id: ImportPresetId; label: string; hint: string }>;
   categoryNames: string[];
 }) {
+  const t = getT(locale);
   const [step, setStep] = useState<Step>("upload");
   const [pending, start] = useTransition();
   const [error, setError] = useState<string | null>(null);
@@ -52,7 +56,7 @@ export function ImportWizard({ fields, presets, categoryNames }: {
         await fn();
       } catch (e) {
         if (isNavigationError(e)) throw e;
-        setError("Das hat nicht geklappt. Bitte nochmals versuchen.");
+        setError(t("adm1.common.failed"));
       }
     });
 
@@ -92,7 +96,7 @@ export function ImportWizard({ fields, presets, categoryNames }: {
     }
     setSummary(res.data!);
     setStep("done");
-    toast.success("Import abgeschlossen");
+    toast.success(t("adm1.import.doneTitle"));
   });
 
   const restart = () => {
@@ -107,13 +111,13 @@ export function ImportWizard({ fields, presets, categoryNames }: {
 
   return (
     <div>
-      <ol className="mb-4 grid grid-cols-4 gap-1" aria-label="Schritte">
+      <ol className="mb-4 grid grid-cols-4 gap-1" aria-label={t("adm1.import.steps")}>
         {STEPS.map((s, i) => {
           const idx = STEPS.findIndex((x) => x.id === step);
           return (
             <li key={s.id} className="flex flex-col items-center gap-1 text-xs" aria-current={s.id === step ? "step" : undefined}>
               <span className={cn("h-1.5 w-full rounded-full", i <= idx ? "bg-accent" : "bg-line")} />
-              <span className={i === idx ? "font-semibold text-ink" : "text-ink-3"}>{i + 1}. {s.label}</span>
+              <span className={i === idx ? "font-semibold text-ink" : "text-ink-3"}>{i + 1}. {t(s.label)}</span>
             </li>
           );
         })}
@@ -122,11 +126,12 @@ export function ImportWizard({ fields, presets, categoryNames }: {
       {error ? <Alert className="mb-3">{error}</Alert> : null}
 
       {step === "upload" ? (
-        <UploadStep file={file} onFile={setFile} onNext={readFile} pending={pending} presets={presets} />
+        <UploadStep t={t} file={file} onFile={setFile} onNext={readFile} pending={pending} presets={presets} />
       ) : null}
 
       {step === "map" && parsed ? (
         <MapStep
+          t={t}
           parsed={parsed}
           fields={fields}
           presets={presets}
@@ -146,6 +151,7 @@ export function ImportWizard({ fields, presets, categoryNames }: {
 
       {step === "preview" ? (
         <PreviewStep
+          t={t}
           rows={preview}
           decisions={decisions}
           onDecisions={setDecisions}
@@ -157,19 +163,19 @@ export function ImportWizard({ fields, presets, categoryNames }: {
         />
       ) : null}
 
-      {step === "done" && summary ? <DoneStep summary={summary} onRestart={restart} /> : null}
+      {step === "done" && summary ? <DoneStep t={t} summary={summary} onRestart={restart} /> : null}
     </div>
   );
 }
 
-function UploadStep({ file, onFile, onNext, pending, presets }: { file: File | null; onFile: (f: File | null) => void; onNext: () => void; pending: boolean; presets: Array<{ id: string; label: string; hint: string }> }) {
+function UploadStep({ t, file, onFile, onNext, pending, presets }: { t: TFunction; file: File | null; onFile: (f: File | null) => void; onNext: () => void; pending: boolean; presets: Array<{ id: string; label: string; hint: string }> }) {
   return (
     <div className="space-y-3">
       <Card className="animate-rise p-4">
         <label className={cn("flex min-h-36 cursor-pointer flex-col items-center justify-center gap-2 rounded-control border-2 border-dashed p-6 text-center transition-colors", file ? "border-accent bg-accent-soft/40" : "border-line hover:bg-surface-2")}>
           {file ? <FileSpreadsheet className="h-8 w-8 text-accent" /> : <Upload className="h-8 w-8 text-ink-3" />}
-          <span className="font-medium">{file ? file.name : "Datei auswählen"}</span>
-          <span className="text-xs text-ink-3">{file ? `${Math.ceil(file.size / 1024)} KB` : `CSV oder Excel (.xlsx), höchstens 2 MB und ${IMPORT_MAX_ROWS} Zeilen`}</span>
+          <span className="font-medium">{file ? file.name : t("adm1.import.chooseFile")}</span>
+          <span className="text-xs text-ink-3">{file ? `${Math.ceil(file.size / 1024)} KB` : t("adm1.import.fileLimits", { rows: IMPORT_MAX_ROWS })}</span>
           <input
             type="file"
             accept=".csv,.txt,.tsv,.xlsx,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
@@ -178,22 +184,23 @@ function UploadStep({ file, onFile, onNext, pending, presets }: { file: File | n
           />
         </label>
         <Button className="mt-3 w-full" disabled={!file || pending} onClick={onNext}>
-          {pending ? <><Spinner /> Wird gelesen…</> : "Weiter"}
+          {pending ? <><Spinner /> {t("adm1.import.reading")}</> : t("adm1.pager.next")}
         </Button>
       </Card>
       <Card className="p-4 text-sm text-ink-2">
-        <p className="font-medium text-ink">So geht&apos;s</p>
+        <p className="font-medium text-ink">{t("adm1.import.howTo")}</p>
         <ul className="mt-2 list-disc space-y-1 pl-5">
           {presets.map((p) => <li key={p.id}><strong>{p.label}:</strong> {p.hint}</li>)}
-          <li>Erste Zeile = Spaltennamen. Datumsangaben als «31.12.1980».</li>
-          <li>Nichts wird gespeichert, bevor du im letzten Schritt bestätigst. Die Datei selbst wird nicht aufbewahrt.</li>
+          <li>{t("adm1.import.howTo1")}</li>
+          <li>{t("adm1.import.howTo2")}</li>
         </ul>
       </Card>
     </div>
   );
 }
 
-function MapStep({ parsed, fields, presets, preset, mapping, categoryNames, onPreset, onMapping, onBack, onNext, pending }: {
+function MapStep({ t, parsed, fields, presets, preset, mapping, categoryNames, onPreset, onMapping, onBack, onNext, pending }: {
+  t: TFunction;
   parsed: ParsedImport;
   fields: Array<{ value: ImportField; label: string }>;
   presets: Array<{ id: ImportPresetId; label: string }>;
@@ -215,19 +222,19 @@ function MapStep({ parsed, fields, presets, preset, mapping, categoryNames, onPr
     // Jedes Feld nur einmal: bisherige Spalte mit diesem Feld wird «nicht übernommen».
     onMapping(mapping.map((f, i) => (i === col ? field : field !== "ignore" && f === field ? "ignore" : f)));
   };
-  const encodingLabel = parsed.encoding === "xlsx" ? "Excel" : `${parsed.encoding === "windows-1252" ? "Windows-1252" : parsed.encoding.toUpperCase()}, Trennzeichen «${parsed.delimiter === "\t" ? "Tab" : parsed.delimiter}»`;
+  const encodingLabel = parsed.encoding === "xlsx" ? "Excel" : `${parsed.encoding === "windows-1252" ? "Windows-1252" : parsed.encoding.toUpperCase()}, ${t("adm1.import.delimiter", { d: parsed.delimiter === "\t" ? "Tab" : parsed.delimiter })}`;
 
   return (
     <div className="space-y-3">
       <Card className="animate-rise p-4">
         <div className="flex flex-wrap items-end gap-3">
           <label className="block min-w-48 flex-1">
-            <span className="mb-1.5 block text-sm font-medium text-ink-2">Vorlage</span>
+            <span className="mb-1.5 block text-sm font-medium text-ink-2">{t("adm1.import.preset")}</span>
             <Select value={preset} onChange={(e) => onPreset(e.target.value as ImportPresetId)}>
               {presets.map((p) => <option key={p.id} value={p.id}>{p.label}</option>)}
             </Select>
           </label>
-          <p className="pb-3 text-xs text-ink-3">{parsed.fileName} · {parsed.rows.length} Zeilen · {encodingLabel}</p>
+          <p className="pb-3 text-xs text-ink-3">{parsed.fileName} · {t("adm1.import.rows", { n: parsed.rows.length })} · {encodingLabel}</p>
         </div>
       </Card>
 
@@ -236,9 +243,9 @@ function MapStep({ parsed, fields, presets, preset, mapping, categoryNames, onPr
           <div key={i} className="grid gap-2 px-4 py-3 sm:grid-cols-[1fr_220px] sm:items-center">
             <div className="min-w-0">
               <div className="truncate font-medium">{h}</div>
-              <div className="truncate text-xs text-ink-3">{samples[i]!.length ? samples[i]!.join(" · ") : "leer"}</div>
+              <div className="truncate text-xs text-ink-3">{samples[i]!.length ? samples[i]!.join(" · ") : t("adm1.import.empty")}</div>
             </div>
-            <Select value={mapping[i] ?? "ignore"} onChange={(e) => setField(i, e.target.value as ImportField)} aria-label={`Spalte «${h}» übernehmen als`} className={mapping[i] === "ignore" ? "text-ink-3" : undefined}>
+            <Select value={mapping[i] ?? "ignore"} onChange={(e) => setField(i, e.target.value as ImportField)} aria-label={t("adm1.import.mapAs", { col: h })} className={mapping[i] === "ignore" ? "text-ink-3" : undefined}>
               {fields.map((f) => <option key={f.value} value={f.value}>{f.label}</option>)}
             </Select>
           </div>
@@ -246,13 +253,13 @@ function MapStep({ parsed, fields, presets, preset, mapping, categoryNames, onPr
       </Card>
 
       {mapping.includes("category") && categoryNames.length ? (
-        <p className="px-1 text-xs text-ink-3">Kategorien werden über den Namen zugeordnet: {categoryNames.join(", ")}.</p>
+        <p className="px-1 text-xs text-ink-3">{t("adm1.import.categoriesByName", { names: categoryNames.join(", ") })}</p>
       ) : null}
-      {!hasName ? <Alert tone="warn">Bitte mindestens eine Spalte als Name, Vorname oder Nachname zuordnen.</Alert> : null}
+      {!hasName ? <Alert tone="warn">{t("adm1.import.needName")}</Alert> : null}
 
       <div className="flex gap-2">
-        <Button variant="secondary" onClick={onBack} disabled={pending}><ArrowLeft className="h-4 w-4" /> Zurück</Button>
-        <Button className="flex-1" onClick={onNext} disabled={pending || !hasName}>{pending ? <><Spinner /> Wird geprüft…</> : "Weiter zur Vorschau"}</Button>
+        <Button variant="secondary" onClick={onBack} disabled={pending}><ArrowLeft className="h-4 w-4" /> {t("adm1.common.back")}</Button>
+        <Button className="flex-1" onClick={onNext} disabled={pending || !hasName}>{pending ? <><Spinner /> {t("adm1.import.checking")}</> : t("adm1.import.toPreview")}</Button>
       </div>
     </div>
   );
@@ -260,7 +267,8 @@ function MapStep({ parsed, fields, presets, preset, mapping, categoryNames, onPr
 
 type PreviewFilter = "all" | "errors" | "warnings" | "duplicates" | "new";
 
-function PreviewStep({ rows, decisions, onDecisions, sendInvites, onSendInvites, onBack, onCommit, pending }: {
+function PreviewStep({ t, rows, decisions, onDecisions, sendInvites, onSendInvites, onBack, onCommit, pending }: {
+  t: TFunction;
   rows: PreviewRow[];
   decisions: ImportDecision[];
   onDecisions: (d: ImportDecision[]) => void;
@@ -298,18 +306,18 @@ function PreviewStep({ rows, decisions, onDecisions, sendInvites, onSendInvites,
   return (
     <div className="space-y-3">
       <div className="grid grid-cols-3 gap-2.5">
-        <StatCard label="Neu" value={counts.create} tone="ok" />
-        <StatCard label="Aktualisieren" value={counts.update} tone="accent" />
-        <StatCard label="Überspringen" value={counts.skip} tone={counts.errors ? "warn" : "neutral"} hint={counts.errors ? `${counts.errors} mit Fehlern` : undefined} />
+        <StatCard label={t("adm1.import.new")} value={counts.create} tone="ok" />
+        <StatCard label={t("adm1.import.update")} value={counts.update} tone="accent" />
+        <StatCard label={t("adm1.import.skip")} value={counts.skip} tone={counts.errors ? "warn" : "neutral"} hint={counts.errors ? t("adm1.import.withErrors", { n: counts.errors }) : undefined} />
       </div>
 
-      <div className="-mx-4 flex gap-2 overflow-x-auto px-4 pb-1" role="radiogroup" aria-label="Zeilen filtern">
+      <div className="-mx-4 flex gap-2 overflow-x-auto px-4 pb-1" role="radiogroup" aria-label={t("adm1.import.filterRows")}>
         {([
-          ["all", `Alle · ${rows.length}`],
-          ["errors", `Fehler · ${counts.errors}`],
-          ["warnings", `Hinweise · ${counts.warnings}`],
-          ["duplicates", `Bereits erfasst · ${counts.duplicates}`],
-          ["new", `Neu · ${counts.create}`],
+          ["all", `${t("adm1.common.all")} · ${rows.length}`],
+          ["errors", `${t("adm1.import.errors")} · ${counts.errors}`],
+          ["warnings", `${t("adm1.import.warnings")} · ${counts.warnings}`],
+          ["duplicates", `${t("adm1.import.existing")} · ${counts.duplicates}`],
+          ["new", `${t("adm1.import.new")} · ${counts.create}`],
         ] as Array<[PreviewFilter, string]>).map(([v, l]) => (
           <button key={v} type="button" role="radio" aria-checked={filter === v} onClick={() => { setFilter(v); setShown(SHOW_STEP); }}
             className={cn("press h-10 shrink-0 rounded-full px-4 text-sm font-medium whitespace-nowrap", filter === v ? "bg-accent text-accent-ink" : "border border-line bg-surface text-ink-2 hover:bg-surface-2")}>
@@ -320,96 +328,96 @@ function PreviewStep({ rows, decisions, onDecisions, sendInvites, onSendInvites,
 
       {counts.duplicates ? (
         <Card className="flex flex-wrap items-center gap-2 p-3 text-sm">
-          <span className="flex-1 text-ink-2">{counts.duplicates} {counts.duplicates === 1 ? "Person ist" : "Personen sind"} bereits erfasst.</span>
-          <Button variant="secondary" size="sm" className="h-11" onClick={() => setDuplicates("update")}>Alle aktualisieren</Button>
-          <Button variant="secondary" size="sm" className="h-11" onClick={() => setDuplicates("skip")}>Alle überspringen</Button>
+          <span className="flex-1 text-ink-2">{t(counts.duplicates === 1 ? "adm1.import.dupCount.one" : "adm1.import.dupCount.other", { n: counts.duplicates })}</span>
+          <Button variant="secondary" size="sm" className="h-11" onClick={() => setDuplicates("update")}>{t("adm1.import.updateAll")}</Button>
+          <Button variant="secondary" size="sm" className="h-11" onClick={() => setDuplicates("skip")}>{t("adm1.import.skipAll")}</Button>
         </Card>
       ) : null}
 
       <Card className="divide-y divide-line overflow-hidden">
         {visible.slice(0, shown).map(({ r, i }) => (
           <div key={r.line} className="flex flex-wrap items-start gap-3 px-4 py-3 sm:flex-nowrap">
-            <span className="mt-0.5 w-10 shrink-0 text-xs tabular-nums text-ink-3">Z. {r.line}</span>
+            <span className="mt-0.5 w-10 shrink-0 text-xs tabular-nums text-ink-3">{t("adm1.import.lineShort", { n: r.line })}</span>
             <div className="min-w-0 flex-1">
               <div className="flex items-center gap-1.5">
-                {r.errors.length ? <XCircle className="h-4 w-4 shrink-0 text-danger" aria-label="Fehler" /> : r.warnings.length ? <AlertTriangle className="h-4 w-4 shrink-0 text-warn" aria-label="Hinweis" /> : <CheckCircle2 className="h-4 w-4 shrink-0 text-ok" aria-label="In Ordnung" />}
+                {r.errors.length ? <XCircle className="h-4 w-4 shrink-0 text-danger" aria-label={t("adm1.common.error")} /> : r.warnings.length ? <AlertTriangle className="h-4 w-4 shrink-0 text-warn" aria-label={t("adm1.import.warning")} /> : <CheckCircle2 className="h-4 w-4 shrink-0 text-ok" aria-label={t("adm1.import.ok")} />}
                 <span className="truncate font-medium">{r.name}</span>
               </div>
-              <div className="truncate text-xs text-ink-3">{[r.email ?? "ohne E-Mail", r.info].filter(Boolean).join(" · ")}</div>
-              {r.duplicate ? <div className="mt-1"><Badge tone="accent">Bereits erfasst: {r.duplicate.name} ({DUPLICATE_REASON[r.duplicate.reason]})</Badge></div> : null}
-              {r.existingAccount ? <div className="mt-1"><Badge tone="outline">Hat schon ein Konto – erhält eine Einladung</Badge></div> : null}
+              <div className="truncate text-xs text-ink-3">{[r.email ?? t("adm1.import.noEmail"), r.info].filter(Boolean).join(" · ")}</div>
+              {r.duplicate ? <div className="mt-1"><Badge tone="accent">{t("adm1.import.existingAs", { name: r.duplicate.name, reason: t(DUPLICATE_REASON[r.duplicate.reason]) })}</Badge></div> : null}
+              {r.existingAccount ? <div className="mt-1"><Badge tone="outline">{t("adm1.import.hasAccount")}</Badge></div> : null}
               {r.errors.map((e, k) => <p key={`e${k}`} className="mt-1 text-xs text-danger">{e}</p>)}
               {r.warnings.map((w, k) => <p key={`w${k}`} className="mt-1 text-xs text-warn">{w}</p>)}
             </div>
             <Select
               value={decisions[i]}
               onChange={(e) => setOne(i, e.target.value as ImportDecision)}
-              aria-label={`Zeile ${r.line}: Aktion`}
+              aria-label={t("adm1.import.lineAction", { n: r.line })}
               className="w-full sm:w-40"
               disabled={r.errors.length > 0}
             >
-              {!r.errors.length ? <option value="create">{r.duplicate ? "Zusätzlich neu" : "Neu erfassen"}</option> : null}
-              {r.duplicate && !r.errors.length ? <option value="update">Aktualisieren</option> : null}
-              <option value="skip">Überspringen</option>
+              {!r.errors.length ? <option value="create">{t(r.duplicate ? "adm1.import.createExtra" : "adm1.import.create")}</option> : null}
+              {r.duplicate && !r.errors.length ? <option value="update">{t("adm1.import.update")}</option> : null}
+              <option value="skip">{t("adm1.import.skip")}</option>
             </Select>
           </div>
         ))}
-        {!visible.length ? <p className="p-4 text-sm text-ink-3">Keine Zeilen in dieser Ansicht.</p> : null}
+        {!visible.length ? <p className="p-4 text-sm text-ink-3">{t("adm1.import.noRows")}</p> : null}
       </Card>
       {visible.length > shown ? (
-        <Button variant="secondary" className="w-full" onClick={() => setShown((s) => s + SHOW_STEP)}>Weitere {Math.min(SHOW_STEP, visible.length - shown)} anzeigen</Button>
+        <Button variant="secondary" className="w-full" onClick={() => setShown((s) => s + SHOW_STEP)}>{t("adm1.import.showMore", { n: Math.min(SHOW_STEP, visible.length - shown) })}</Button>
       ) : null}
 
       <Card className="p-4">
         <Switch
-          label="Einladungsmail senden"
-          description={`Neue Mitglieder mit E-Mail (${counts.withEmail}) erhalten einen Link, um ein Passwort festzulegen. Geht auch später über die Mitgliederliste.${counts.accounts ? ` Personen mit bestehendem Konto (${counts.accounts}) werden eingeladen und sind Mitglied, sobald sie annehmen.` : ""}`}
+          label={t("adm1.import.sendInvites")}
+          description={`${t("adm1.import.sendInvitesHint", { n: counts.withEmail })}${counts.accounts ? ` ${t("adm1.import.sendInvitesAccounts", { n: counts.accounts })}` : ""}`}
           checked={sendInvites}
           onChange={onSendInvites}
         />
       </Card>
 
       <div className="flex gap-2">
-        <Button variant="secondary" onClick={onBack} disabled={pending}><ArrowLeft className="h-4 w-4" /> Zurück</Button>
+        <Button variant="secondary" onClick={onBack} disabled={pending}><ArrowLeft className="h-4 w-4" /> {t("adm1.common.back")}</Button>
         <Button className="flex-1" onClick={onCommit} disabled={pending || todo === 0}>
-          {pending ? <><Spinner /> Wird übernommen…</> : todo ? `${todo} ${todo === 1 ? "Mitglied" : "Mitglieder"} übernehmen` : "Nichts zu übernehmen"}
+          {pending ? <><Spinner /> {t("adm1.import.committing")}</> : todo ? t(todo === 1 ? "adm1.import.commit.one" : "adm1.import.commit.other", { n: todo }) : t("adm1.import.nothing")}
         </Button>
       </div>
     </div>
   );
 }
 
-function DoneStep({ summary, onRestart }: { summary: ImportSummary; onRestart: () => void }) {
+function DoneStep({ t, summary, onRestart }: { t: TFunction; summary: ImportSummary; onRestart: () => void }) {
   return (
     <div className="space-y-3">
       <Card className="animate-rise p-5 text-center">
         <CheckCircle2 className="mx-auto h-10 w-10 text-ok" />
-        <h2 className="mt-2 text-lg font-semibold">Import abgeschlossen</h2>
+        <h2 className="mt-2 text-lg font-semibold">{t("adm1.import.doneTitle")}</h2>
         <p className="mt-1 text-sm text-ink-3">
-          {summary.created} neu, {summary.updated} aktualisiert, {summary.skipped} übersprungen
-          {summary.invited ? ` · ${summary.invited} Mails verschickt` : ""}
+          {t("adm1.import.doneSummary", { created: summary.created, updated: summary.updated, skipped: summary.skipped })}
+          {summary.invited ? ` · ${t("adm1.import.mailsSent", { n: summary.invited })}` : ""}
         </p>
       </Card>
       {summary.accountInvites ? (
         <Alert tone="ok">
-          {summary.accountInvites} {summary.accountInvites === 1 ? "Person hat" : "Personen haben"} schon ein Konto (z.B. aus einem anderen Verein) und {summary.accountInvites === 1 ? "wurde" : "wurden"} eingeladen. Sie {summary.accountInvites === 1 ? "erscheint" : "erscheinen"} in der Mitgliederliste, sobald {summary.accountInvites === 1 ? "sie die Einladung annimmt" : "sie die Einladung annehmen"}. <Link href="/admin/members/invitations" className="underline">Offene Einladungen</Link>
+          {t(summary.accountInvites === 1 ? "adm1.import.accountInvites.one" : "adm1.import.accountInvites.other", { n: summary.accountInvites })} <Link href="/admin/members/invitations" className="underline">{t("adm1.inv.open")}</Link>
         </Alert>
       ) : null}
       {summary.failed ? (
         <Alert>
-          {summary.failed} Zeilen konnten nicht übernommen werden (Zeilen {summary.failedLines.slice(0, 20).join(", ")}{summary.failedLines.length > 20 ? " …" : ""}). Bitte prüfen und erneut importieren – bereits übernommene Zeilen werden dann als «bereits erfasst» erkannt.
+          {t("adm1.import.failed", { n: summary.failed, lines: `${summary.failedLines.slice(0, 20).join(", ")}${summary.failedLines.length > 20 ? " …" : ""}` })}
           {summary.rowErrors?.length ? (
             <ul className="mt-1.5 list-disc pl-5">
-              {summary.rowErrors.slice(0, 20).map((e) => <li key={e.line}>Zeile {e.line}: {e.error}</li>)}
+              {summary.rowErrors.slice(0, 20).map((e) => <li key={e.line}>{t("adm1.import.lineError", { n: e.line, error: e.error })}</li>)}
             </ul>
           ) : null}
         </Alert>
       ) : null}
       <div className="flex flex-wrap gap-2">
-        <LinkButton href="/admin/members?sort=-created" className="flex-1">Zur Mitgliederliste</LinkButton>
-        <Button variant="secondary" onClick={onRestart}>Weitere Datei</Button>
+        <LinkButton href="/admin/members?sort=-created" className="flex-1">{t("adm1.import.toList")}</LinkButton>
+        <Button variant="secondary" onClick={onRestart}>{t("adm1.import.anotherFile")}</Button>
       </div>
-      <p className="text-center text-xs text-ink-3"><Link href="/admin/members?access=never" className="underline">Mitglieder ohne Zugang anzeigen</Link></p>
+      <p className="text-center text-xs text-ink-3"><Link href="/admin/members?access=never" className="underline">{t("adm1.import.showNoAccess")}</Link></p>
     </div>
   );
 }

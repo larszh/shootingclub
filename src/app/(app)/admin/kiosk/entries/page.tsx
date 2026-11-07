@@ -3,7 +3,8 @@ import Link from "next/link";
 import { Download, ListX } from "lucide-react";
 import { Badge, Button, Card, EmptyState, Input, LinkButton, PageHeader, Select } from "@/components/ui";
 import { formatMoney } from "@/lib/money";
-import { formatDateTimeZurich } from "@/lib/time";
+import { formatDateTime, getRequestLocale, getT } from "@/lib/i18n";
+import { localizePresets } from "@/modules/kiosk/ui/i18n";
 import { cn } from "@/lib/utils";
 import { requireKioskAdmin } from "@/modules/kiosk/guard";
 import { entryMemberOptions, listEntries } from "@/modules/kiosk/queries";
@@ -13,18 +14,18 @@ import { PeriodPicker } from "@/modules/kiosk/ui/period-picker";
 import { StornoEntryButton } from "@/modules/kiosk/ui/entry-buttons";
 import { entryFiltersFrom, type EntrySearchParams } from "@/modules/kiosk/filters";
 
-export const metadata: Metadata = { title: "Schützenstube: Einträge" };
+export async function generateMetadata(): Promise<Metadata> {
+  const t = getT(await getRequestLocale());
+  return { title: `${t("adm1.home.kiosk")}: ${t("adm1.kiosk.tab.entries")}` };
+}
 
-const STATUS = [
-  { value: "all", label: "Alle" },
-  { value: "open", label: "Offen" },
-  { value: "billed", label: "Verrechnet" },
-  { value: "cash", label: "Bar" },
-] as const;
+const STATUS = ["all", "open", "billed", "cash"] as const;
 
 export default async function KioskEntriesPage({ searchParams }: { searchParams: Promise<EntrySearchParams> }) {
   const ctx = await requireKioskAdmin();
   const sp = await searchParams;
+  const locale = await getRequestLocale();
+  const t = getT(locale);
   const tenantId = ctx.tenant.id;
   const { today, period, filters } = entryFiltersFrom(sp);
   const [{ rows, count, totalCents }, members, profile] = await Promise.all([
@@ -43,16 +44,16 @@ export default async function KioskEntriesPage({ searchParams }: { searchParams:
 
   return (
     <div>
-      <PageHeader title="Einträge" subtitle="Alle Konsumationen mit Filter, Storno und Export" back={{ href: "/admin/kiosk", label: "Schützenstube" }}
+      <PageHeader title={t("adm1.kiosk.tab.entries")} subtitle={t("adm1.kiosk.entriesSubtitle")} back={{ href: "/admin/kiosk", label: t("adm1.home.kiosk") }}
         action={<LinkButton href={`/admin/kiosk/entries/export?${qs({ ...base, status: filters.status })}`} variant="secondary" prefetch={false}><Download className="h-4 w-4" /> CSV</LinkButton>} />
 
-      <PeriodPicker basePath="/admin/kiosk/entries" presets={periodPresets(today)} current={period} extra={extra} />
+      <PeriodPicker basePath="/admin/kiosk/entries" presets={localizePresets(t, periodPresets(today))} current={period} extra={extra} />
 
       <div className="mb-3 -mx-4 flex gap-1.5 overflow-x-auto px-4 pb-1 [scrollbar-width:none]">
         {STATUS.map((s) => (
-          <Link key={s.value} href={`/admin/kiosk/entries?${qs({ ...base, status: s.value })}`} aria-current={filters.status === s.value ? "page" : undefined}
-            className={cn("press inline-flex h-11 shrink-0 items-center rounded-full border px-4 text-sm font-medium", filters.status === s.value ? "border-ink bg-ink text-bg" : "border-line bg-surface text-ink-2")}>
-            {s.label}
+          <Link key={s} href={`/admin/kiosk/entries?${qs({ ...base, status: s })}`} aria-current={filters.status === s ? "page" : undefined}
+            className={cn("press inline-flex h-11 shrink-0 items-center rounded-full border px-4 text-sm font-medium", filters.status === s ? "border-ink bg-ink text-bg" : "border-line bg-surface text-ink-2")}>
+            {t(`adm1.kiosk.status.${s}`)}
           </Link>
         ))}
       </div>
@@ -61,33 +62,33 @@ export default async function KioskEntriesPage({ searchParams }: { searchParams:
         <input type="hidden" name="from" value={period.from} />
         <input type="hidden" name="to" value={period.to} />
         <input type="hidden" name="status" value={filters.status} />
-        <Select name="user" defaultValue={filters.userId ?? ""} aria-label="Mitglied">
-          <option value="">Alle Personen</option>
+        <Select name="user" defaultValue={filters.userId ?? ""} aria-label={t("adm1.common.member")}>
+          <option value="">{t("adm1.kiosk.allPersons")}</option>
           {members.map((m) => <option key={m.userId} value={m.userId}>{m.name}</option>)}
         </Select>
-        <Input type="search" name="q" defaultValue={filters.q ?? ""} placeholder="Produkt oder Gast" aria-label="Produkt oder Gast suchen" maxLength={80} />
-        <Button type="submit" variant="secondary">Filtern</Button>
+        <Input type="search" name="q" defaultValue={filters.q ?? ""} placeholder={t("adm1.kiosk.searchPlaceholder")} aria-label={t("adm1.kiosk.searchLabel")} maxLength={80} />
+        <Button type="submit" variant="secondary">{t("adm1.kiosk.filter")}</Button>
       </form>
 
       <div className="mb-2 flex items-baseline justify-between text-sm">
-        <span className="text-ink-3">{count} {count === 1 ? "Eintrag" : "Einträge"}{count > rows.length ? ` (die neuesten ${rows.length} angezeigt, alle im CSV)` : ""}</span>
+        <span className="text-ink-3">{t(count === 1 ? "adm1.kiosk.entries.one" : "adm1.kiosk.entries.other", { n: count })}{count > rows.length ? ` ${t("adm1.kiosk.newestShown", { n: rows.length })}` : ""}</span>
         <span className="font-semibold tabular-nums">{formatMoney(totalCents, cur)}</span>
       </div>
 
       {rows.length ? (
         <Card className="animate-rise divide-y divide-line overflow-hidden">
           {rows.map((e) => {
-            const who = e.memberName ?? (e.guestName ? `Gast: ${e.guestName}` : "Gast");
+            const who = e.memberName ?? (e.guestName ? t("adm1.kiosk.guestNamed", { name: e.guestName }) : t("adm1.kiosk.guest"));
             const label = `${e.quantity}× ${e.productName}, ${who}, ${formatMoney(e.totalCents, cur)}`;
             return (
               <div key={e.id} className="flex min-h-14 items-center gap-3 px-4 py-2">
                 <div className="min-w-0 flex-1">
                   <div className="flex flex-wrap items-center gap-1.5">
                     <span className="font-medium">{who}</span>
-                    {e.paidCash ? <Badge tone="outline">bar</Badge> : e.invoice ? <Badge tone={e.invoice.status === "PAID" ? "ok" : e.invoice.status === "CANCELLED" ? "outline" : "accent"}>{e.invoice.number}{e.invoice.status === "PAID" ? " bezahlt" : e.invoice.status === "CANCELLED" ? " storniert" : ""}</Badge> : e.billedInvoiceId ? <Badge tone="accent">verrechnet</Badge> : <Badge tone="warn">offen</Badge>}
+                    {e.paidCash ? <Badge tone="outline">{t("adm1.kiosk.badge.cash")}</Badge> : e.invoice ? <Badge tone={e.invoice.status === "PAID" ? "ok" : e.invoice.status === "CANCELLED" ? "outline" : "accent"}>{e.invoice.number}{e.invoice.status === "PAID" ? ` ${t("adm1.kiosk.badge.paid")}` : e.invoice.status === "CANCELLED" ? ` ${t("adm1.kiosk.badge.cancelled")}` : ""}</Badge> : e.billedInvoiceId ? <Badge tone="accent">{t("adm1.kiosk.badge.billed")}</Badge> : <Badge tone="warn">{t("adm1.kiosk.badge.open")}</Badge>}
                   </div>
-                  <div className="truncate text-sm text-ink-2"><span className="tabular-nums">{e.quantity} ×</span> {e.productName} à {formatMoney(e.unitPriceCents, cur)}</div>
-                  <div className="text-xs text-ink-3">{formatDateTimeZurich(e.createdAt)}{e.sellerName ? ` · erfasst von ${e.sellerName}` : ""}</div>
+                  <div className="truncate text-sm text-ink-2"><span className="tabular-nums">{e.quantity} ×</span> {e.productName} {t("adm1.kiosk.each", { price: formatMoney(e.unitPriceCents, cur) })}</div>
+                  <div className="text-xs text-ink-3">{formatDateTime(e.createdAt, locale)}{e.sellerName ? ` · ${t("adm1.kiosk.recordedBy", { name: e.sellerName })}` : ""}</div>
                 </div>
                 <span className="shrink-0 font-medium tabular-nums">{formatMoney(e.totalCents, cur)}</span>
                 {!e.billedInvoiceId ? <StornoEntryButton id={e.id} label={label} /> : <span className="w-11 shrink-0" aria-hidden />}
@@ -96,7 +97,7 @@ export default async function KioskEntriesPage({ searchParams }: { searchParams:
           })}
         </Card>
       ) : (
-        <EmptyState icon={<ListX className="h-5 w-5" />} title="Keine Einträge" text="Anderen Zeitraum oder Filter wählen." />
+        <EmptyState icon={<ListX className="h-5 w-5" />} title={t("adm1.kiosk.noEntries")} text={t("adm1.kiosk.noEntriesText")} />
       )}
     </div>
   );

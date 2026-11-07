@@ -50,7 +50,7 @@ describe("standaloneInvoiceHints", () => {
 
   it("erstattete Online-Zahlung als Info", () => {
     const h = standaloneInvoiceHints({ ...base, kind: "workfee", status: "CANCELLED", payments: [{ ...paid(), status: "REFUNDED" }] });
-    expect(h).toEqual([{ tone: "info", text: "Eine Online-Zahlung wurde erstattet." }]);
+    expect(h).toEqual([{ tone: "info", text: "Eine Online-Zahlung wurde erstattet.", key: "adm1.hint.refunded.one", vars: { n: 1 } }]);
   });
 });
 

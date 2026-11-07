@@ -10,6 +10,19 @@ import { DEFAULT_THEME_COLORS } from "@/lib/brand";
 import { unstable_rethrow } from "next/navigation";
 import { DEFAULT_LOCALE, INTL_LOCALE, getRequestLocale, getT, type Locale } from "@/lib/i18n";
 import { LocaleProvider } from "@/components/locale";
+import { ensureOverridesLoaded } from "@/lib/i18n/overrides";
+import { I18nOverrides } from "@/lib/i18n/overrides-client";
+import type { OverrideMap } from "@/lib/i18n/core";
+
+/** Übersteuerte Übersetzungen (Admin → Übersetzungen); bei Fehlern keine. */
+async function translationOverrides(): Promise<OverrideMap> {
+  try {
+    return await ensureOverridesLoaded();
+  } catch (e) {
+    unstable_rethrow(e);
+    return {};
+  }
+}
 
 /** Sprache des Requests; Next-interne Signale (dynamisches Rendering) nicht verschlucken. */
 async function requestLocale(): Promise<Locale> {
@@ -22,7 +35,8 @@ async function requestLocale(): Promise<Locale> {
 }
 
 export async function generateMetadata(): Promise<Metadata> {
-  const t = getT(await requestLocale());
+  const [locale] = await Promise.all([requestLocale(), translationOverrides()]);
+  const t = getT(locale);
   return {
     title: { default: "Standchef", template: "%s · Standchef" },
     description: t("shell.meta.description"),
@@ -66,16 +80,18 @@ export async function generateViewport(): Promise<Viewport> {
 }
 
 export default async function RootLayout({ children }: { children: React.ReactNode }) {
-  const [theme, locale] = await Promise.all([forcedTheme(), requestLocale()]);
+  const [theme, locale, overrides] = await Promise.all([forcedTheme(), requestLocale(), translationOverrides()]);
   return (
     <html lang={INTL_LOCALE[locale]} className={`${GeistSans.variable} ${GeistMono.variable}`} data-theme={theme ?? undefined} suppressHydrationWarning>
       <body>
-        <LocaleProvider locale={locale}>
-          {children}
-          <Toaster />
-          <DialogHost />
-          <ServiceWorkerRegister />
-        </LocaleProvider>
+        <I18nOverrides overrides={overrides}>
+          <LocaleProvider locale={locale}>
+            {children}
+            <Toaster />
+            <DialogHost />
+            <ServiceWorkerRegister />
+          </LocaleProvider>
+        </I18nOverrides>
       </body>
     </html>
   );

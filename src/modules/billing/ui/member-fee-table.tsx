@@ -10,6 +10,7 @@ import { formatMoney } from "@/lib/money";
 import { FEE_INVOICE_STATUS } from "@/modules/billing/types";
 import { cn } from "@/lib/utils";
 import { Avatar } from "@/components/avatar";
+import { useT } from "@/components/locale";
 
 type Member = {
   membershipId: string; name: string; email: string; avatarUrl?: string | null; address: string | null; memberNumber: string | null;
@@ -21,15 +22,17 @@ type Member = {
 type Cat = { id: string; name: string; amountCents: number };
 
 export function MemberFeeTable({ members, categories, currency, year }: { members: Member[]; categories: Cat[]; currency: string; year: number }) {
+  const t = useT();
   return (
     <Card className="animate-rise divide-y divide-line overflow-hidden">
       {members.map((m) => <Row key={m.membershipId} m={m} categories={categories} currency={currency} year={year} />)}
-      {members.length === 0 ? <p className="p-4 text-sm text-ink-3">Keine Mitglieder.</p> : null}
+      {members.length === 0 ? <p className="p-4 text-sm text-ink-3">{t("adm1.fee.noMembers")}</p> : null}
     </Card>
   );
 }
 
 function Row({ m, categories, currency, year }: { m: Member; categories: Cat[]; currency: string; year: number }) {
+  const t = useT();
   const [catId, setCatId] = useState(m.category?.id ?? "");
   const [override, setOverride] = useState(m.overrideCents !== null ? (m.overrideCents / 100).toFixed(2) : "");
   const [memberNumber, setMemberNumber] = useState(m.memberNumber ?? "");
@@ -50,28 +53,28 @@ function Row({ m, categories, currency, year }: { m: Member; categories: Cat[]; 
         <Avatar name={m.name} src={m.avatarUrl ?? null} size={36} tone="soft" />
         <div className="min-w-0 flex-1">
           <div className="font-medium truncate">{m.name}</div>
-          <div className="text-xs text-ink-3 truncate">{m.address ?? <span className="text-warn">Keine Adresse hinterlegt</span>}</div>
+          <div className="text-xs text-ink-3 truncate">{m.address ?? <span className="text-warn">{t("adm1.fee.noAddress")}</span>}</div>
         </div>
         <div className="text-right shrink-0">
           {m.invoice ? (
-            <Link href={`/billing/invoices/${m.invoice.id}/print`} target="_blank" className="block"><Badge tone={st!.tone}>{m.invoice.number} · {st!.label}</Badge></Link>
+            <Link href={`/billing/invoices/${m.invoice.id}/print`} target="_blank" className="block"><Badge tone={st!.tone}>{m.invoice.number} · {t(`money.status.${m.invoice.status}`)}</Badge></Link>
           ) : m.coveredBy ? (
-            <Badge tone="outline">In Haushaltsrechnung{m.coveredBy.number ? ` ${m.coveredBy.number}` : ""}</Badge>
+            <Badge tone="outline">{t("adm1.fee.inHousehold")}{m.coveredBy.number ? ` ${m.coveredBy.number}` : ""}</Badge>
           ) : m.effectiveCents && m.effectiveCents > 0 ? (
-            <button type="button" disabled={pending} onClick={invoice} className="press inline-flex items-center gap-1 h-11 px-3 rounded-control border border-line text-xs font-medium"><FilePlus className="h-3.5 w-3.5" /> Rechnung {year}</button>
+            <button type="button" disabled={pending} onClick={invoice} className="press inline-flex items-center gap-1 h-11 px-3 rounded-control border border-line text-xs font-medium"><FilePlus className="h-3.5 w-3.5" /> {t("adm1.fee.invoiceYear", { year })}</button>
           ) : (
-            <span className="text-xs text-ink-3">kein Beitrag</span>
+            <span className="text-xs text-ink-3">{t("adm1.hh.noFee")}</span>
           )}
         </div>
       </div>
       <div className="mt-2 grid grid-cols-[1fr_90px_80px_40px] gap-2 items-center">
-        <select value={catId} onChange={(e) => setCatId(e.target.value)} className="h-10 rounded-control border border-line bg-surface px-2 text-sm">
-          <option value="">Keine Kategorie</option>
+        <select value={catId} aria-label={t("adm1.members.feeCategory")} onChange={(e) => setCatId(e.target.value)} className="h-10 rounded-control border border-line bg-surface px-2 text-sm">
+          <option value="">{t("adm1.members.noCategory")}</option>
           {categories.map((c) => <option key={c.id} value={c.id}>{c.name} ({c.amountCents ? formatMoney(c.amountCents, currency) : "0"})</option>)}
         </select>
-        <input value={override} onChange={(e) => setOverride(e.target.value)} placeholder={m.category ? (m.category.amountCents / 100).toFixed(2) : "Betrag"} inputMode="decimal" title="Individueller Betrag (überschreibt Kategorie)" className="h-10 rounded-control border border-line bg-surface px-2 text-sm tabular-nums" />
-        <input value={memberNumber} onChange={(e) => setMemberNumber(e.target.value)} placeholder="Nr." title="Mitgliedernummer" className="h-10 rounded-control border border-line bg-surface px-2 text-sm" />
-        <button type="button" onClick={save} disabled={!dirty || pending} className={cn("h-10 w-10 rounded-control flex items-center justify-center", dirty ? "bg-ink text-bg" : saved ? "text-ok" : "text-ink-3/40")} aria-label="Speichern">{pending ? <Spinner /> : <Check className="h-4 w-4" />}</button>
+        <input value={override} onChange={(e) => setOverride(e.target.value)} placeholder={m.category ? (m.category.amountCents / 100).toFixed(2) : t("adm1.common.amount")} inputMode="decimal" title={t("adm1.fee.overrideTitle")} aria-label={t("adm1.fee.overrideTitle")} className="h-10 rounded-control border border-line bg-surface px-2 text-sm tabular-nums" />
+        <input value={memberNumber} onChange={(e) => setMemberNumber(e.target.value)} placeholder={t("adm1.members.col.nr")} title={t("adm1.members.sort.number")} aria-label={t("adm1.members.sort.number")} className="h-10 rounded-control border border-line bg-surface px-2 text-sm" />
+        <button type="button" onClick={save} disabled={!dirty || pending} className={cn("h-10 w-10 rounded-control flex items-center justify-center", dirty ? "bg-ink text-bg" : saved ? "text-ok" : "text-ink-3/40")} aria-label={t("adm1.common.save")}>{pending ? <Spinner /> : <Check className="h-4 w-4" />}</button>
       </div>
       {err ? <p className="mt-1 text-xs text-accent">{err}</p> : null}
     </div>

@@ -1,5 +1,5 @@
 /**
- * Benachrichtigungstexte des Verbandsbereichs in DE/FR/IT. Eigene kleine Tabelle statt eines
+ * Benachrichtigungstexte des Verbandsbereichs in DE/FR/IT/EN. Eigene kleine Tabelle statt eines
  * Wörterbuchs in src/lib/i18n, weil der Verbandsbereich ausserhalb der Vereinssprache läuft
  * (Empfänger bekommen die Texte in ihrer eigenen Sprache, siehe actions.ts).
  */
@@ -12,7 +12,8 @@ type Vars = { association: string; club?: string };
 /** Schmales geschütztes Leerzeichen für französische Guillemets. */
 const NNBSP = " ";
 
-const TEXTS: Record<Locale, Record<AssociationNoticeKey, (v: Vars) => { title: string; body: string }>> = {
+type NoticeTexts = Record<AssociationNoticeKey, (v: Vars) => { title: string; body: string }>;
+const TEXTS: Record<Locale, NoticeTexts> = {
   de: {
     joinRequested: (v) => ({ title: `Beitrittsanfrage für ${v.association}`, body: `Der Verein «${v.club}» möchte dem Verband beitreten. Bitte im Verbandsbereich freigeben oder ablehnen.` }),
     approved: (v) => ({ title: `${v.association}: Beitritt freigegeben`, body: `Der Verband sieht ab sofort die Kennzahlen von «${v.club}», denen ihr zugestimmt habt. Austreten könnt ihr jederzeit unter Einstellungen → Verband.` }),
@@ -36,6 +37,14 @@ const TEXTS: Record<Locale, Record<AssociationNoticeKey, (v: Vars) => { title: s
     removed: (v) => ({ title: `${v.association}: collegamento terminato`, body: `La federazione ha terminato il collegamento con «${v.club}». Nessun dato viene più condiviso.` }),
     clubLeft: (v) => ({ title: `${v.association}: società ritirata`, body: `La società di tiro «${v.club}» ha terminato il collegamento. Le sue cifre non sono più visibili.` }),
     adminAssigned: (v) => ({ title: `Accesso a ${v.association}`, body: `Hai ricevuto l’accesso all’area federazione di «${v.association}». La trovi in Altro → Federazione.` }),
+  },
+  en: {
+    joinRequested: (v) => ({ title: `Membership request for ${v.association}`, body: `The club “${v.club}” would like to join the association. Please approve or decline it in the association area.` }),
+    approved: (v) => ({ title: `${v.association}: membership approved`, body: `From now on, the association sees the figures of “${v.club}” that you have agreed to share. You can leave at any time under Settings → Association.` }),
+    rejected: (v) => ({ title: `${v.association}: request declined`, body: `The membership request of “${v.club}” has been declined by the association. No data is shared.` }),
+    removed: (v) => ({ title: `${v.association}: connection ended`, body: `The association has ended the connection with “${v.club}”. No data is shared any more.` }),
+    clubLeft: (v) => ({ title: `${v.association}: club has left`, body: `The club “${v.club}” has ended the connection. Its figures are no longer visible.` }),
+    adminAssigned: (v) => ({ title: `Access to ${v.association}`, body: `You have been given access to the association area of “${v.association}”. You will find it under More → Association.` }),
   },
 };
 

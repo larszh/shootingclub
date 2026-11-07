@@ -13,6 +13,7 @@ import { Switch } from "@/components/ui/controls";
 import { toast } from "@/lib/ui-feedback";
 import { cn } from "@/lib/utils";
 import { LOCALES, LOCALE_LABELS } from "@/lib/i18n/locales";
+import { getT, type Locale, type TFunction } from "@/lib/i18n/core";
 
 /** Zwischenablage mit Fallback (http, fehlende Berechtigung). */
 async function writeClipboard(text: string): Promise<boolean> {
@@ -37,42 +38,44 @@ async function writeClipboard(text: string): Promise<boolean> {
   }
 }
 
-export function JoinCodeCard({ code, link }: { code: string; link: string }) {
+export function JoinCodeCard({ locale, code, link }: { locale: Locale; code: string; link: string }) {
+  const t = getT(locale);
   const [copied, setCopied] = useState(false);
   const [pending, start] = useTransition();
   const copy = async () => {
     const text = link.startsWith("http") ? link : `${window.location.origin}${link}`;
     if (!(await writeClipboard(text))) {
-      toast.error("Kopieren nicht möglich", { description: "Bitte den Code von Hand weitergeben." });
+      toast.error(t("adm1.join.copyFailed"), { description: t("adm1.join.copyFailedHint") });
       return;
     }
     setCopied(true);
-    toast.success("Beitrittslink kopiert");
+    toast.success(t("adm1.join.copied"));
     setTimeout(() => setCopied(false), 1500);
   };
   return (
     <Card className="animate-rise p-4">
       <div className="flex items-center gap-3">
         <div className="flex-1">
-          <div className="text-xs text-ink-3">Beitrittscode</div>
+          <div className="text-xs text-ink-3">{t("adm1.join.code")}</div>
           <div className="font-mono text-2xl tracking-[0.3em] font-semibold">{code}</div>
         </div>
-        <button type="button" onClick={copy} className="press h-11 shrink-0 px-3 rounded-control border border-line inline-flex items-center gap-2 text-sm font-medium">{copied ? <><Check className="h-4 w-4 text-ok" /> Kopiert</> : <><Copy className="h-4 w-4" /> Link</>}</button>
-        <button type="button" disabled={pending} onClick={async () => { if ((await confirmDialog({ title: "Neuen Code erzeugen?", message: "Der alte Code wird ungültig.", tone: "danger", confirmLabel: "Neu erzeugen" }))) start(() => regenerateJoinCodeAction().then(() => undefined)); }} className="press h-11 w-11 shrink-0 rounded-control border border-line inline-flex items-center justify-center text-ink-3" aria-label="Neuer Code"><RefreshCw className={cn("h-4 w-4", pending && "animate-spin")} /></button>
+        <button type="button" onClick={copy} className="press h-11 shrink-0 px-3 rounded-control border border-line inline-flex items-center gap-2 text-sm font-medium">{copied ? <><Check className="h-4 w-4 text-ok" /> {t("adm1.join.copiedShort")}</> : <><Copy className="h-4 w-4" /> {t("adm1.join.link")}</>}</button>
+        <button type="button" disabled={pending} onClick={async () => { if ((await confirmDialog({ title: t("adm1.join.regenTitle"), message: t("adm1.join.regenMessage"), tone: "danger", confirmLabel: t("adm1.join.regenConfirm") }))) start(() => regenerateJoinCodeAction().then(() => undefined)); }} className="press h-11 w-11 shrink-0 rounded-control border border-line inline-flex items-center justify-center text-ink-3" aria-label={t("adm1.join.newCode")}><RefreshCw className={cn("h-4 w-4", pending && "animate-spin")} /></button>
       </div>
-      <p className="mt-2 text-xs text-ink-3">Mitglieder geben den Code bei der Registrierung oder unter «Mehr» ein.</p>
+      <p className="mt-2 text-xs text-ink-3">{t("adm1.join.hint")}</p>
     </Card>
   );
 }
 
-export function ModuleToggle({ moduleKey, name, description, enabled, planned }: { moduleKey: string; name: string; description: string; enabled: boolean; planned: boolean }) {
+export function ModuleToggle({ locale, moduleKey, name, description, enabled, planned }: { locale: Locale; moduleKey: string; name: string; description: string; enabled: boolean; planned: boolean }) {
+  const t = getT(locale);
   const [on, setOn] = useState(enabled);
   const [pending, start] = useTransition();
   const toggle = (next: boolean) => {
     setOn(next);
     start(async () => {
       let ok = false;
-      let error = "Bitte nochmals versuchen.";
+      let error = t("adm1.common.tryAgain");
       try {
         const res = await setModuleEnabledAction(moduleKey, next);
         ok = res.ok;
@@ -82,7 +85,7 @@ export function ModuleToggle({ moduleKey, name, description, enabled, planned }:
       }
       if (!ok) {
         setOn(!next);
-        toast.error(`${name} konnte nicht ${next ? "aktiviert" : "deaktiviert"} werden`, { description: error });
+        toast.error(t(next ? "adm1.module.enableFailed" : "adm1.module.disableFailed", { name }), { description: error });
       }
     });
   };
@@ -92,45 +95,46 @@ export function ModuleToggle({ moduleKey, name, description, enabled, planned }:
       checked={on}
       onChange={toggle}
       disabled={pending}
-      label={<span className="flex items-center gap-2">{name}{planned ? <Badge tone="outline">bald</Badge> : null}</span>}
+      label={<span className="flex items-center gap-2">{name}{planned ? <Badge tone="outline">{t("adm1.module.soon")}</Badge> : null}</span>}
       description={<span className="text-xs">{description}</span>}
     />
   );
 }
 
-export function TenantSettingsForm({ tenant }: { tenant: { name: string; kind: string; city: string | null; canton: string | null; description: string | null; website: string | null; defaultLocale: string; replyToEmail: string | null } }) {
+export function TenantSettingsForm({ locale, tenant }: { locale: Locale; tenant: { name: string; kind: string; city: string | null; canton: string | null; description: string | null; website: string | null; defaultLocale: string; replyToEmail: string | null } }) {
+  const t = getT(locale);
   const [state, action, pending] = useActionState(updateTenantAction, null);
   return (
     <Card className="animate-rise p-4">
       <form onSubmit={submitKeepingValues(action)} className="space-y-3">
-        <Field label="Name"><Input name="name" defaultValue={tenant.name} required /></Field>
-        <Field label="Art">
+        <Field label={t("adm1.tenant.name")}><Input name="name" defaultValue={tenant.name} required /></Field>
+        <Field label={t("adm1.tenant.kind")}>
           <Select name="kind" defaultValue={tenant.kind}>
-            <option value="CLUB">Verein</option>
-            <option value="RANGE">Schiessanlage / Indoor-Stand</option>
-            <option value="PRIVATE">Privat / Gruppe</option>
+            <option value="CLUB">{t("adm1.tenant.kind.CLUB")}</option>
+            <option value="RANGE">{t("adm1.tenant.kind.RANGE")}</option>
+            <option value="PRIVATE">{t("adm1.tenant.kind.PRIVATE")}</option>
           </Select>
         </Field>
         <div className="grid grid-cols-3 gap-3">
-          <Field label="Ort" className="col-span-2"><Input name="city" defaultValue={tenant.city ?? ""} /></Field>
-          <Field label="Kanton"><Input name="canton" defaultValue={tenant.canton ?? ""} maxLength={2} className="uppercase" /></Field>
+          <Field label={t("adm1.tenant.city")} className="col-span-2"><Input name="city" defaultValue={tenant.city ?? ""} /></Field>
+          <Field label={t("adm1.tenant.canton")}><Input name="canton" defaultValue={tenant.canton ?? ""} maxLength={2} className="uppercase" /></Field>
         </div>
-        <Field label="Kurzbeschreibung" hint="Erscheint im Mitgliederverzeichnis, z.B. Gründungsjahr, Schiessstand, Trainingszeiten." error={state && !state.ok ? state.fieldErrors?.description : undefined}>
+        <Field label={t("adm1.tenant.description")} hint={t("adm1.tenant.descriptionHint")} error={state && !state.ok ? state.fieldErrors?.description : undefined}>
           <Textarea name="description" defaultValue={tenant.description ?? ""} maxLength={2000} rows={3} />
         </Field>
-        <Field label="Webseite" hint="z.B. www.sv-beispiel.ch" error={state && !state.ok ? state.fieldErrors?.website : undefined}>
-          <Input name="website" defaultValue={tenant.website ?? ""} inputMode="url" autoComplete="url" placeholder="www.verein.ch" />
+        <Field label={t("adm1.tenant.website")} hint={t("adm1.tenant.websiteHint")} error={state && !state.ok ? state.fieldErrors?.website : undefined}>
+          <Input name="website" defaultValue={tenant.website ?? ""} inputMode="url" autoComplete="url" placeholder={t("adm1.tenant.websitePlaceholder")} />
         </Field>
-        <Field label="Vereinssprache" hint="Sprache für Rechnungen, QR-Einzahlungsscheine, Druckseiten und Mails an Mitglieder ohne eigene Spracheinstellung." error={state && !state.ok ? state.fieldErrors?.defaultLocale : undefined}>
+        <Field label={t("adm1.tenant.locale")} hint={t("adm1.tenant.localeHint")} error={state && !state.ok ? state.fieldErrors?.defaultLocale : undefined}>
           <Select name="defaultLocale" defaultValue={LOCALES.includes(tenant.defaultLocale as (typeof LOCALES)[number]) ? tenant.defaultLocale : "de"}>
             {LOCALES.map((l) => <option key={l} value={l}>{LOCALE_LABELS[l]}</option>)}
           </Select>
         </Field>
-        <Field label="Antwortadresse für E-Mails" hint="Antworten auf Mails des Vereins gehen an diese Adresse, z.B. vorstand@sv-beispiel.ch. Leer lassen, wenn keine Antworten erwünscht sind." error={state && !state.ok ? state.fieldErrors?.replyToEmail : undefined}>
-          <Input name="replyToEmail" type="email" defaultValue={tenant.replyToEmail ?? ""} inputMode="email" autoComplete="email" placeholder="vorstand@verein.ch" />
+        <Field label={t("adm1.tenant.replyTo")} hint={t("adm1.tenant.replyToHint")} error={state && !state.ok ? state.fieldErrors?.replyToEmail : undefined}>
+          <Input name="replyToEmail" type="email" defaultValue={tenant.replyToEmail ?? ""} inputMode="email" autoComplete="email" placeholder={t("adm1.tenant.replyToPlaceholder")} />
         </Field>
         {state && !state.ok ? <Alert>{state.error}</Alert> : state?.ok && state.message ? <Alert tone="ok">{state.message}</Alert> : null}
-        <SubmitButton variant="secondary" pending={pending}>Speichern</SubmitButton>
+        <SubmitButton variant="secondary" pending={pending}>{t("adm1.common.save")}</SubmitButton>
       </form>
     </Card>
   );
@@ -155,7 +159,7 @@ function previewStyle(mode: "light" | "dark", brand: BrandMode): React.CSSProper
   return { ...vars, colorScheme: mode } as React.CSSProperties;
 }
 
-function BrandPreview({ mode, brand, tenantName, logoUrl }: { mode: "light" | "dark"; brand: BrandMode; tenantName: string; logoUrl: string | null }) {
+function BrandPreview({ t, mode, brand, tenantName, logoUrl }: { t: TFunction; mode: "light" | "dark"; brand: BrandMode; tenantName: string; logoUrl: string | null }) {
   return (
     <div style={previewStyle(mode, brand)} className="rounded-control border border-line bg-bg p-3 text-ink">
       <div className="mb-2 flex items-center gap-2 text-xs font-medium text-ink-3">
@@ -163,21 +167,21 @@ function BrandPreview({ mode, brand, tenantName, logoUrl }: { mode: "light" | "d
           // eslint-disable-next-line @next/next/no-img-element
           <img src={logoUrl} alt="" className="h-5 w-5 rounded object-contain" />
         ) : null}
-        <span className="truncate">{mode === "light" ? "Hell" : "Dunkel"} · {tenantName}</span>
+        <span className="truncate">{t(mode === "light" ? "adm1.brand.light" : "adm1.brand.dark")} · {tenantName}</span>
       </div>
       <div className="rounded-xl border border-line bg-surface p-3 space-y-3">
         <div className="h-1.5 rounded-full brand-gradient" />
         <div className="flex flex-wrap items-center gap-2">
-          <span className="inline-flex h-9 items-center rounded-control bg-accent px-3 text-sm font-medium text-accent-ink">Anmelden</span>
-          <span className="inline-flex h-9 items-center rounded-control border border-line bg-surface px-3 text-sm font-medium">Später</span>
+          <span className="inline-flex h-9 items-center rounded-control bg-accent px-3 text-sm font-medium text-accent-ink">{t("adm1.brand.sampleSignUp")}</span>
+          <span className="inline-flex h-9 items-center rounded-control border border-line bg-surface px-3 text-sm font-medium">{t("adm1.brand.sampleLater")}</span>
         </div>
         <div className="flex flex-wrap gap-1.5">
-          <span className="inline-flex items-center rounded-full bg-accent-soft px-2.5 py-0.5 text-xs font-medium text-accent">Neu</span>
-          <span className="inline-flex items-center rounded-full bg-accent-2 px-2.5 py-0.5 text-xs font-medium text-accent-2-ink">Zweitfarbe</span>
-          <span className="inline-flex items-center rounded-full bg-surface-2 px-2.5 py-0.5 text-xs font-medium text-ink-2">Mitglied</span>
+          <span className="inline-flex items-center rounded-full bg-accent-soft px-2.5 py-0.5 text-xs font-medium text-accent">{t("adm1.brand.sampleNew")}</span>
+          <span className="inline-flex items-center rounded-full bg-accent-2 px-2.5 py-0.5 text-xs font-medium text-accent-2-ink">{t("adm1.brand.secondColor")}</span>
+          <span className="inline-flex items-center rounded-full bg-surface-2 px-2.5 py-0.5 text-xs font-medium text-ink-2">{t("adm1.brand.sampleMember")}</span>
         </div>
         <div className="grid grid-cols-4 rounded-xl border border-line bg-surface pt-1.5 pb-1">
-          {[{ i: Home, l: "Start" }, { i: Crosshair, l: "Schiessen", a: true }, { i: Target, l: "Scheiben" }, { i: Megaphone, l: "Anlässe" }].map(({ i: Icon, l, a }) => (
+          {[{ i: Home, l: t("adm1.brand.navHome") }, { i: Crosshair, l: t("adm1.brand.navShoot"), a: true }, { i: Target, l: t("adm1.brand.navTargets") }, { i: Megaphone, l: t("adm1.brand.navEvents") }].map(({ i: Icon, l, a }) => (
             <span key={l} className="flex flex-col items-center gap-0.5 text-[10px] font-medium">
               <span className={cn("flex h-7 w-11 items-center justify-center rounded-full", a ? "bg-accent text-accent-ink" : "text-ink-3")}><Icon className="h-4 w-4" /></span>
               <span className={a ? "text-ink" : "text-ink-3"}>{l}</span>
@@ -189,13 +193,13 @@ function BrandPreview({ mode, brand, tenantName, logoUrl }: { mode: "light" | "d
   );
 }
 
-function ColorPicker({ label, value, onChange, name, error }: { label: string; value: string; onChange: (v: string) => void; name: string; error?: string }) {
+function ColorPicker({ t, label, value, onChange, name, error }: { t: TFunction; label: string; value: string; onChange: (v: string) => void; name: string; error?: string }) {
   const valid = normalizeHex(value);
   return (
-    <Field label={label} error={error ?? (value && !valid ? "Format #RRGGBB, z.B. #1d64c8" : undefined)}>
+    <Field label={label} error={error ?? (value && !valid ? t("adm1.brand.hexFormat") : undefined)}>
       <div className="flex items-center gap-2">
         <label className="relative h-11 w-14 shrink-0 cursor-pointer overflow-hidden rounded-control border border-line" style={{ background: valid ?? "transparent" }}>
-          <span className="sr-only">Farbe wählen</span>
+          <span className="sr-only">{t("adm1.brand.pickColor")}</span>
           <input type="color" value={valid ?? "#000000"} onChange={(e) => onChange(e.target.value)} className="absolute inset-0 h-full w-full cursor-pointer opacity-0" />
         </label>
         <Input name={name} value={value} onChange={(e) => onChange(e.target.value)} placeholder="#d6232d" maxLength={7} spellCheck={false} autoCapitalize="off" className="font-mono uppercase" />
@@ -204,7 +208,8 @@ function ColorPicker({ label, value, onChange, name, error }: { label: string; v
   );
 }
 
-export function BrandingForm({ tenantName, logoUrl, brandColor, brandColor2 }: { tenantName: string; logoUrl: string | null; brandColor: string | null; brandColor2: string | null }) {
+export function BrandingForm({ locale, tenantName, logoUrl, brandColor, brandColor2 }: { locale: Locale; tenantName: string; logoUrl: string | null; brandColor: string | null; brandColor2: string | null }) {
+  const t = getT(locale);
   const [state, action, pending] = useActionState(updateBrandColorsAction, null);
   const [color, setColor] = useState(brandColor ?? DEFAULT_ACCENT);
   const [useSecond, setUseSecond] = useState(!!brandColor2);
@@ -224,7 +229,7 @@ export function BrandingForm({ tenantName, logoUrl, brandColor, brandColor2 }: {
   const isCustom = !!brandColor;
 
   const reset = async () => {
-    if (!(await confirmDialog({ title: "Farben auf das Standard-Design zurücksetzen?", tone: "danger", confirmLabel: "Zurücksetzen" }))) return;
+    if (!(await confirmDialog({ title: t("adm1.brand.resetTitle"), tone: "danger", confirmLabel: t("adm1.brand.resetConfirm") }))) return;
     startReset(async () => {
       const res = await resetBrandColorsAction();
       if (res.ok) {
@@ -240,12 +245,12 @@ export function BrandingForm({ tenantName, logoUrl, brandColor, brandColor2 }: {
       <Card className="animate-rise p-4">
         <ImageUploader
           kind="logo"
-          title="Vereinslogo"
+          title={t("adm1.brand.logo")}
           name={tenantName}
           currentUrl={logoUrl}
           uploadAction={uploadTenantLogoAction}
           removeAction={removeTenantLogoAction}
-          hint="Erscheint in der Navigation, im Vereinswechsel und im Mitgliederverzeichnis."
+          hint={t("adm1.brand.logoHint")}
         />
       </Card>
 
@@ -253,8 +258,8 @@ export function BrandingForm({ tenantName, logoUrl, brandColor, brandColor2 }: {
         {/* Neues Speichern ersetzt die Meldung eines früheren Zurücksetzens. */}
         <form onSubmit={(e) => { setResetMsg(null); submitKeepingValues(action)(e); }} className="space-y-4">
           <div>
-            <div className="mb-2 text-sm font-medium text-ink-2">Akzentfarbe</div>
-            <div className="grid grid-cols-6 gap-2 sm:grid-cols-12" role="radiogroup" aria-label="Vorlagen">
+            <div className="mb-2 text-sm font-medium text-ink-2">{t("adm1.brand.accent")}</div>
+            <div className="grid grid-cols-6 gap-2 sm:grid-cols-12" role="radiogroup" aria-label={t("adm1.brand.presets")}>
               {BRAND_PRESETS.map((p) => {
                 const active = c1 === p.hex;
                 return (
@@ -268,52 +273,52 @@ export function BrandingForm({ tenantName, logoUrl, brandColor, brandColor2 }: {
             </div>
           </div>
 
-          <ColorPicker label="Eigene Farbe" name="brandColor" value={color} onChange={setColor} error={state && !state.ok ? state.fieldErrors?.brandColor : undefined} />
+          <ColorPicker t={t} label={t("adm1.brand.customColor")} name="brandColor" value={color} onChange={setColor} error={state && !state.ok ? state.fieldErrors?.brandColor : undefined} />
 
           <label className="flex min-h-11 cursor-pointer items-center gap-3">
             <input type="checkbox" checked={useSecond} onChange={(e) => setUseSecond(e.target.checked)} className="h-5 w-5 accent-[var(--accent)]" />
-            <span className="text-sm font-medium">Zweitfarbe verwenden <span className="font-normal text-ink-3">(für Verläufe und Hervorhebungen)</span></span>
+            <span className="text-sm font-medium">{t("adm1.brand.useSecond")} <span className="font-normal text-ink-3">{t("adm1.brand.useSecondHint")}</span></span>
           </label>
           {useSecond ? (
-            <ColorPicker label="Zweitfarbe" name="brandColor2" value={color2} onChange={setColor2} error={state && !state.ok ? state.fieldErrors?.brandColor2 : undefined} />
+            <ColorPicker t={t} label={t("adm1.brand.secondColor")} name="brandColor2" value={color2} onChange={setColor2} error={state && !state.ok ? state.fieldErrors?.brandColor2 : undefined} />
           ) : (
             <input type="hidden" name="brandColor2" value="" />
           )}
 
           <div>
-            <div className="mb-2 text-sm font-medium text-ink-2">Vorschau</div>
+            <div className="mb-2 text-sm font-medium text-ink-2">{t("adm1.brand.preview")}</div>
             <div className="grid gap-2 sm:grid-cols-2">
-              <BrandPreview mode="light" brand={light} tenantName={tenantName} logoUrl={logoUrl} />
-              <BrandPreview mode="dark" brand={dark} tenantName={tenantName} logoUrl={logoUrl} />
+              <BrandPreview t={t} mode="light" brand={light} tenantName={tenantName} logoUrl={logoUrl} />
+              <BrandPreview t={t} mode="dark" brand={dark} tenantName={tenantName} logoUrl={logoUrl} />
             </div>
           </div>
 
           {report?.lowTextContrast ? (
             <div className="flex gap-2 rounded-control bg-warn/10 px-3.5 py-2.5 text-sm text-warn">
               <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
-              <span>Schrift auf dieser Farbe ist schlecht lesbar (Kontrast {report.textOnAccent.toFixed(1)}:1, empfohlen mindestens 4.5:1). Wähle eine dunklere oder kräftigere Farbe.</span>
+              <span>{t("adm1.brand.lowContrast", { ratio: report.textOnAccent.toFixed(1) })}</span>
             </div>
           ) : null}
           {report && !report.lowTextContrast && (report.adjustedLight || report.adjustedDark) ? (
-            <p className="text-xs text-ink-3">Hinweis: Für gute Lesbarkeit wird die Farbe im {report.adjustedLight && report.adjustedDark ? "hellen und dunklen" : report.adjustedLight ? "hellen" : "dunklen"} Modus leicht angepasst.</p>
+            <p className="text-xs text-ink-3">{t(report.adjustedLight && report.adjustedDark ? "adm1.brand.adjustedBoth" : report.adjustedLight ? "adm1.brand.adjustedLight" : "adm1.brand.adjustedDark")}</p>
           ) : report && !report.lowTextContrast && report.textAdjusted ? (
-            <p className="text-xs text-ink-3">Hinweis: Als Schriftfarbe (z.B. in Badges) wird die Farbe leicht angepasst, damit sie gut lesbar bleibt (mindestens 4.5:1).</p>
+            <p className="text-xs text-ink-3">{t("adm1.brand.textAdjusted")}</p>
           ) : null}
           {report2?.lowTextContrast ? (
-            <p className="text-xs text-warn">Auch die Zweitfarbe hat wenig Kontrast zur Schrift ({report2.textOnAccent.toFixed(1)}:1).</p>
+            <p className="text-xs text-warn">{t("adm1.brand.lowContrast2", { ratio: report2.textOnAccent.toFixed(1) })}</p>
           ) : null}
           {gradientUnreadable ? (
-            <p className="text-xs text-warn">Text auf dem Farbverlauf ist schlecht lesbar – die Startkachel wird einfarbig angezeigt.</p>
+            <p className="text-xs text-warn">{t("adm1.brand.gradientUnreadable")}</p>
           ) : null}
 
           {/* resetMsg ist nur gesetzt, wenn das Zurücksetzen nach dem letzten Speichern kam. */}
           {resetMsg ? <Alert tone="ok">{resetMsg}</Alert> : state && !state.ok ? <Alert>{state.error}</Alert> : state?.ok && state.message ? <Alert tone="ok">{state.message}</Alert> : null}
 
           <div className="flex flex-wrap gap-2">
-            <SubmitButton pending={pending}>Farben speichern</SubmitButton>
+            <SubmitButton pending={pending}>{t("adm1.brand.save")}</SubmitButton>
             {isCustom ? (
               <Button type="button" variant="ghost" onClick={reset} disabled={resetting}>
-                {resetting ? <Spinner /> : <RotateCcw className="h-4 w-4" />} Standard
+                {resetting ? <Spinner /> : <RotateCcw className="h-4 w-4" />} {t("adm1.brand.default")}
               </Button>
             ) : null}
           </div>

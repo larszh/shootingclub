@@ -7,18 +7,20 @@ import { audit } from "@/lib/audit";
 import { fail, ok, type ActionResult } from "@/lib/action-result";
 import { requireBillingAdmin } from "@/modules/billing/guard";
 import { providerKeys, providerLabel } from "@/lib/payments/catalog";
+import { getRequestLocale, getT } from "@/lib/i18n";
 
 const schema = z.enum(["NONE", ...providerKeys]);
 
 /** Anbieter für die Online-Zahlung von Beitragsrechnungen wählen (nur eingerichtete, aktivierte). */
 export async function saveOnlineFeeProviderAction(_prev: ActionResult | null, formData: FormData): Promise<ActionResult> {
   const ctx = await requireBillingAdmin();
+  const t = getT(await getRequestLocale());
   const parsed = schema.safeParse(formData.get("onlineFeeProvider") || "NONE");
-  if (!parsed.success) return fail("Unbekannter Anbieter");
+  if (!parsed.success) return fail(t("adm1.online.unknownProvider"));
   const provider = parsed.data;
   if (provider !== "NONE") {
     const cfg = await db.paymentProviderConfig.findUnique({ where: { tenantId_provider: { tenantId: ctx.tenant.id, provider } }, select: { enabled: true } });
-    if (!cfg?.enabled) return fail(`${providerLabel(provider)} ist noch nicht eingerichtet oder nicht aktiviert.`);
+    if (!cfg?.enabled) return fail(t("adm1.online.notEnabled", { provider: providerLabel(provider) }));
   }
   await db.billingProfile.upsert({
     where: { tenantId: ctx.tenant.id },
@@ -29,5 +31,5 @@ export async function saveOnlineFeeProviderAction(_prev: ActionResult | null, fo
   revalidatePath("/admin/billing/settings");
   revalidatePath("/billing");
   revalidatePath("/payments");
-  return ok(undefined, provider === "NONE" ? "Online-Zahlung für Rechnungen ausgeschaltet." : `Mitglieder können offene Rechnungen jetzt mit ${providerLabel(provider)} bezahlen.`);
+  return ok(undefined, provider === "NONE" ? t("adm1.online.switchedOff") : t("adm1.online.switchedOn", { provider: providerLabel(provider) }));
 }

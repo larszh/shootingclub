@@ -21,7 +21,8 @@ export type FaqText = {
 
 export type FaqAudience = "member" | "admin";
 
-export type FaqSource = { id: string; audience: FaqAudience } & Record<Locale, FaqText>;
+/** en ist optional (Welle E): fehlt die Übersetzung, wird Deutsch angezeigt. */
+export type FaqSource = { id: string; audience: FaqAudience } & Record<Exclude<Locale, "en">, FaqText> & Partial<Record<Locale, FaqText>>;
 
 /** Fertig für die Anzeige in einer Sprache. */
 export type FaqEntry = { id: string; audience: FaqAudience; q: string; a: FaqBlock[]; search: string };
@@ -67,7 +68,7 @@ export function answerLinks(a: FaqBlock[]): string[] {
 export function toEntry(src: FaqSource, locale: Locale): FaqEntry {
   // Französisch: Guillemets und Satzzeichen mit geschütztem Leerzeichen (wie im Wörterbuch).
   const fix = locale === "fr" ? frenchSpacing : (s: string) => s;
-  const t = src[locale];
+  const t = src[locale] ?? src.de;
   const a: FaqBlock[] = t.a.map((b) => ("p" in b ? { p: fix(b.p) } : "ol" in b ? { ol: b.ol.map(fix) } : { ul: b.ul.map(fix) }));
   const q = fix(t.q);
   const answer = a.flatMap(blockTexts).map(plainText).join(" ");

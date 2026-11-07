@@ -15,6 +15,8 @@ import { recordEntriesAction, undoBatchAction } from "@/modules/kiosk/actions";
 import { UNDO_WINDOW_MS, cartTotal, groupByCategory, normalizeCart, MAX_QUANTITY } from "@/modules/kiosk/logic";
 import type { EntryInput } from "@/modules/kiosk/types";
 import { QuantityStepper } from "@/modules/ammo/ui/stepper";
+import { useLocale, useT } from "@/components/locale";
+import { INTL_LOCALE } from "@/lib/i18n/core";
 
 export type KioskCounterMember = { userId: string; name: string; memberNumber: string | null; avatarUrl: string | null };
 export type KioskCounterProduct = { id: string; name: string; category: string | null; priceCents: number; sortOrder: number };
@@ -55,6 +57,7 @@ function writeOutbox(key: string, list: Pending[]) {
 export function KioskCounter({ tenantId, members, recentIds, products, recent, currency }: {
   tenantId: string; members: KioskCounterMember[]; recentIds: string[]; products: KioskCounterProduct[]; recent: KioskRecentBatch[]; currency: string;
 }) {
+  const t = useT();
   const router = useRouter();
   const online = useOnlineStatus();
   const outboxKey = OUTBOX_PREFIX + tenantId;
@@ -122,13 +125,13 @@ export function KioskCounter({ tenantId, members, recentIds, products, recent, c
         if (res === "ok") sent += 1;
       }
       if (sent) {
-        toast.success(`${sent} ${sent === 1 ? "ausstehende Erfassung" : "ausstehende Erfassungen"} übertragen.`);
+        toast.success(t(sent === 1 ? "adm1.counter.flushed.one" : "adm1.counter.flushed.other", { n: sent }));
         router.refresh();
       }
     } finally {
       flushing.current = false;
     }
-  }, [outboxKey, send, router]);
+  }, [outboxKey, send, router, t]);
 
   useEffect(() => {
     const first = setTimeout(() => void flush(), 0);
@@ -169,7 +172,7 @@ export function KioskCounter({ tenantId, members, recentIds, products, recent, c
     setSending(true);
     setError(null);
     const isGuest = customer.kind === "guest";
-    const label = isGuest ? (guestName.trim() ? `Gast ${guestName.trim()}` : "Gast") : member?.name ?? "Mitglied";
+    const label = isGuest ? (guestName.trim() ? t("adm1.kiosk.guestNamed", { name: guestName.trim() }) : t("adm1.kiosk.guest")) : member?.name ?? t("adm1.common.member");
     const batchId = uuid();
     const at = nowMs();
     const p: Pending = {
@@ -191,14 +194,14 @@ export function KioskCounter({ tenantId, members, recentIds, products, recent, c
         toast.error(r.error);
         return;
       }
-      toast.success(r.message ?? "Aufgeschrieben.");
+      toast.success(r.message ?? t("adm1.counter.recorded"));
       setLast({ batchId: p.batchId, label: `${label}: ${formatMoney(total, currency)}`, at: nowMs() });
       reset();
       router.refresh();
     } catch (e) {
       if (isNavigationError(e)) throw e;
       // Keine Verbindung: bleibt in der Warteschlange, die Theke kann weiterarbeiten.
-      toast(`Ohne Verbindung gespeichert (${label}). Wird automatisch übertragen.`);
+      toast(t("adm1.counter.savedOffline", { label }));
       reset();
     } finally {
       submitLock.current = false;
@@ -212,13 +215,13 @@ export function KioskCounter({ tenantId, members, recentIds, products, recent, c
       const r = await undoBatchAction(batchId);
       if (!r.ok) toast.error(r.error);
       else {
-        toast.success(r.message ?? "Rückgängig gemacht.");
+        toast.success(r.message ?? t("adm1.counter.undone"));
         if (last?.batchId === batchId) setLast(null);
         router.refresh();
       }
     } catch (e) {
       if (isNavigationError(e)) throw e;
-      toast.error("Keine Verbindung. Bitte nochmals versuchen.");
+      toast.error(t("adm1.common.offline"));
     } finally {
       setUndoing(null);
     }
@@ -232,16 +235,16 @@ export function KioskCounter({ tenantId, members, recentIds, products, recent, c
     <>
       {!online || outbox.length ? (
         <Alert tone="warn" icon={<CloudOff className="h-4 w-4" />} className="mb-3">
-          {!online ? "Keine Verbindung. Erfassungen werden auf diesem Gerät gespeichert. " : ""}
-          {outbox.length ? `${outbox.length} ${outbox.length === 1 ? "Erfassung wartet" : "Erfassungen warten"} auf Übertragung.` : ""}
-          {online && outbox.length ? <button type="button" onClick={() => void flush()} className="ml-2 underline">Jetzt senden</button> : null}
+          {!online ? `${t("adm1.counter.offline")} ` : ""}
+          {outbox.length ? t(outbox.length === 1 ? "adm1.counter.waiting.one" : "adm1.counter.waiting.other", { n: outbox.length }) : ""}
+          {online && outbox.length ? <button type="button" onClick={() => void flush()} className="ml-2 inline-flex min-h-11 items-center underline">{t("adm1.counter.sendNow")}</button> : null}
         </Alert>
       ) : null}
       {last && lastLeft > 0 ? (
         <Card className="mb-3 flex min-h-14 items-center gap-3 px-4 py-2">
-          <div className="min-w-0 flex-1 text-sm"><span className="font-medium">Erfasst:</span> {last.label}</div>
+          <div className="min-w-0 flex-1 text-sm"><span className="font-medium">{t("adm1.counter.recordedLabel")}</span> {last.label}</div>
           <Button type="button" variant="secondary" disabled={undoing === last.batchId} onClick={() => void undo(last.batchId)}>
-            {undoing === last.batchId ? <Spinner /> : <Undo2 className="h-4 w-4" />} Rückgängig <span className="tabular-nums text-ink-3">{fmtLeft(lastLeft)}</span>
+            {undoing === last.batchId ? <Spinner /> : <Undo2 className="h-4 w-4" />} {t("adm1.counter.undo")} <span className="tabular-nums text-ink-3">{fmtLeft(lastLeft)}</span>
           </Button>
         </Card>
       ) : null}
@@ -261,13 +264,13 @@ export function KioskCounter({ tenantId, members, recentIds, products, recent, c
         <div className="grid gap-3 sm:grid-cols-[1fr_auto]">
           <div className="relative">
             <Search className="pointer-events-none absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-ink-3" aria-hidden />
-            <Input type="search" value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Mitglied suchen (Name oder Nr.)" aria-label="Mitglied suchen" className="h-14 pl-12 text-lg" />
+            <Input type="search" value={query} onChange={(e) => setQuery(e.target.value)} placeholder={t("adm1.counter.searchPlaceholder")} aria-label={t("adm1.counter.searchLabel")} className="h-14 pl-12 text-lg" />
           </div>
           <Button type="button" size="lg" variant="secondary" className="h-14" onClick={() => choose({ kind: "guest" })}>
-            <Banknote className="h-5 w-5" /> Gast bar
+            <Banknote className="h-5 w-5" /> {t("adm1.counter.guestCash")}
           </Button>
         </div>
-        <SectionTitle>{q ? "Treffer" : recentMembers.length ? "Zuletzt bedient, dann alle" : "Mitglieder"}</SectionTitle>
+        <SectionTitle>{t(q ? "adm1.counter.hits" : recentMembers.length ? "adm1.counter.recentThenAll" : "adm1.members.title")}</SectionTitle>
         {hits.length ? (
           <div className="stagger grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4">
             {hits.map((m) => (
@@ -276,13 +279,13 @@ export function KioskCounter({ tenantId, members, recentIds, products, recent, c
                 <Avatar name={m.name} src={m.avatarUrl} size={40} tone="soft" />
                 <span className="min-w-0 flex-1">
                   <span className="block truncate text-[15px] font-medium">{m.name}</span>
-                  <span className="block truncate text-xs text-ink-3">{recentIds.includes(m.userId) && !q ? "zuletzt" : m.memberNumber ? `Nr. ${m.memberNumber}` : " "}</span>
+                  <span className="block truncate text-xs text-ink-3">{recentIds.includes(m.userId) && !q ? t("adm1.counter.recent") : m.memberNumber ? t("adm1.members.numberShort", { nr: m.memberNumber }) : " "}</span>
                 </span>
               </button>
             ))}
           </div>
         ) : (
-          <EmptyState icon={<Search className="h-5 w-5" />} title="Niemand gefunden" text="Anderen Namen versuchen oder als Gast bar erfassen." />
+          <EmptyState icon={<Search className="h-5 w-5" />} title={t("adm1.counter.nobody")} text={t("adm1.counter.nobodyText")} />
         )}
         <RecentList recent={recent} now={now} undoing={undoing} onUndo={(id) => void undo(id)} currency={currency} fmtLeft={fmtLeft} />
       </div>
@@ -299,13 +302,13 @@ export function KioskCounter({ tenantId, members, recentIds, products, recent, c
           {member ? (
             <>
               <div className="text-lg font-semibold">{member.name}</div>
-              <div className="text-xs text-ink-3">{member.memberNumber ? `Nr. ${member.memberNumber} · ` : ""}{paidCash ? "bezahlt bar" : "auf Rechnung"}</div>
+              <div className="text-xs text-ink-3">{member.memberNumber ? `${t("adm1.members.numberShort", { nr: member.memberNumber })} · ` : ""}{t(paidCash ? "adm1.counter.paidCash" : "adm1.counter.onAccount")}</div>
             </>
           ) : (
-            <Input value={guestName} onChange={(e) => setGuestName(e.target.value)} maxLength={80} placeholder="Gast (Name optional)" aria-label="Name des Gasts (optional)" />
+            <Input value={guestName} onChange={(e) => setGuestName(e.target.value)} maxLength={80} placeholder={t("adm1.counter.guestPlaceholder")} aria-label={t("adm1.counter.guestLabel")} />
           )}
         </div>
-        <Button type="button" variant="secondary" onClick={() => choose(null)}><ArrowLeft className="h-4 w-4" /> Wechseln</Button>
+        <Button type="button" variant="secondary" onClick={() => choose(null)}><ArrowLeft className="h-4 w-4" /> {t("adm1.counter.change")}</Button>
       </Card>
 
       {/* Breite nach dem eigenen Platz (Container), nicht nach dem Bildschirm: daneben stehen Seitenleiste und Warenkorb. */}
@@ -313,12 +316,12 @@ export function KioskCounter({ tenantId, members, recentIds, products, recent, c
         <div className="min-w-0">
           {groups.length ? groups.map((g) => (
             <section key={g.category}>
-              <SectionTitle>{g.category}</SectionTitle>
+              <SectionTitle>{g.category === "Weitere" ? t("adm1.prod.otherCategory") : g.category}</SectionTitle>
               <div className="grid grid-cols-[repeat(auto-fill,minmax(min(9.5rem,100%),1fr))] gap-2">
                 {g.items.map((p) => {
                   const n = qty[p.id] ?? 0;
                   return (
-                    <button key={p.id} type="button" onClick={() => add(p.id, 1)} aria-label={`${p.name}, ${formatMoney(p.priceCents, currency)}${n ? `, ${n} gewählt` : ""}`}
+                    <button key={p.id} type="button" onClick={() => add(p.id, 1)} aria-label={`${p.name}, ${formatMoney(p.priceCents, currency)}${n ? `, ${t("adm1.counter.chosen", { n })}` : ""}`}
                       className={cn("press flex min-h-24 min-w-0 flex-col justify-between gap-2 rounded-card border-2 bg-surface p-3 text-left hover:bg-surface-2", n ? "border-ink" : "border-line")}>
                       <span className="hyphens-auto text-[17px] font-semibold leading-snug break-words">{p.name}</span>
                       <span className="flex min-h-8 items-center justify-between gap-2">
@@ -330,7 +333,7 @@ export function KioskCounter({ tenantId, members, recentIds, products, recent, c
                 })}
               </div>
             </section>
-          )) : <EmptyState icon={<NotebookPen className="h-5 w-5" />} title="Kein Sortiment" text="Die Verwaltung legt die Produkte unter «Schützenstube verwalten → Sortiment» an." />}
+          )) : <EmptyState icon={<NotebookPen className="h-5 w-5" />} title={t("adm1.counter.noProducts")} text={t("adm1.counter.noProductsText")} />}
         </div>
 
         <div className="sticky bottom-24 z-10 mt-4 md:bottom-4 @2xl:bottom-auto @2xl:top-4 @2xl:mt-11">
@@ -351,22 +354,22 @@ export function KioskCounter({ tenantId, members, recentIds, products, recent, c
                   );
                 })}
               </ul>
-            ) : <p className="text-sm text-ink-3">Produkte antippen, um sie hinzuzufügen.</p>}
+            ) : <p className="text-sm text-ink-3">{t("adm1.counter.tapProducts")}</p>}
             {member ? (
               <label className={cn("flex min-h-11 cursor-pointer items-center gap-3 rounded-control border px-3", paidCash ? "border-ok bg-ok/10" : "border-line")}>
                 <input type="checkbox" checked={paidCash} onChange={(e) => setPaidCash(e.target.checked)} className="h-5 w-5 accent-[var(--ink)]" />
-                <span className="text-sm font-medium">Bar bezahlt (nicht auf Rechnung)</span>
+                <span className="text-sm font-medium">{t("adm1.counter.paidCashToggle")}</span>
               </label>
-            ) : <Badge tone="warn">Gast: bar bezahlt</Badge>}
+            ) : <Badge tone="warn">{t("adm1.counter.guestPaidCash")}</Badge>}
             {error ? <Alert>{error}</Alert> : null}
             <div className="flex items-end justify-between gap-2">
               <div className="text-2xl font-semibold tabular-nums">{formatMoney(total, currency)}</div>
               {lines.length ? (
-                <button type="button" onClick={() => setQty({})} className="inline-flex h-11 items-center gap-1 rounded-full px-3 text-sm text-ink-3 hover:bg-surface-2"><Trash2 className="h-4 w-4" /> Leeren</button>
+                <button type="button" onClick={() => setQty({})} className="inline-flex h-11 items-center gap-1 rounded-full px-3 text-sm text-ink-3 hover:bg-surface-2"><Trash2 className="h-4 w-4" /> {t("adm1.counter.clear")}</button>
               ) : null}
             </div>
             <Button type="button" size="lg" className="w-full" disabled={sending || !lines.length} onClick={() => void submit()} aria-busy={sending || undefined}>
-              {sending ? <span className="inline-flex items-center gap-2"><Spinner /> Bitte warten…</span> : member && !paidCash ? <><NotebookPen className="h-5 w-5" /> Aufschreiben</> : <><Banknote className="h-5 w-5" /> Bar erfassen</>}
+              {sending ? <span className="inline-flex items-center gap-2"><Spinner /> {t("adm1.counter.wait")}</span> : member && !paidCash ? <><NotebookPen className="h-5 w-5" /> {t("adm1.counter.record")}</> : <><Banknote className="h-5 w-5" /> {t("adm1.counter.recordCash")}</>}
             </Button>
           </Card>
         </div>
@@ -378,23 +381,26 @@ export function KioskCounter({ tenantId, members, recentIds, products, recent, c
 function RecentList({ recent, now, undoing, onUndo, currency, fmtLeft }: {
   recent: KioskRecentBatch[]; now: number; undoing: string | null; onUndo: (batchId: string) => void; currency: string; fmtLeft: (s: number) => string;
 }) {
+  const t = useT();
+  const locale = useLocale();
   if (!recent.length) return null;
+  const timeFmt = new Intl.DateTimeFormat(INTL_LOCALE[locale], { timeZone: "Europe/Zurich", hour: "2-digit", minute: "2-digit" });
   return (
     <>
-      <SectionTitle>Heute von dir erfasst</SectionTitle>
+      <SectionTitle>{t("adm1.counter.todayByYou")}</SectionTitle>
       <Card className="divide-y divide-line overflow-hidden">
         {recent.map((b) => {
           const left = now && !b.billed ? Math.max(0, Math.ceil((b.createdAtMs + UNDO_WINDOW_MS - now) / 1000)) : 0;
-          const time = new Intl.DateTimeFormat("de-CH", { timeZone: "Europe/Zurich", hour: "2-digit", minute: "2-digit" }).format(new Date(b.createdAtMs));
+          const time = timeFmt.format(new Date(b.createdAtMs));
           return (
             <div key={b.batchId} className="flex min-h-14 items-center gap-3 px-4 py-2">
               <div className="min-w-0 flex-1">
-                <div className="flex flex-wrap items-center gap-1.5 text-sm"><span className="font-medium">{b.who}</span>{b.paidCash ? <Badge tone="outline">bar</Badge> : null}</div>
+                <div className="flex flex-wrap items-center gap-1.5 text-sm"><span className="font-medium">{b.who}</span>{b.paidCash ? <Badge tone="outline">{t("adm1.kiosk.badge.cash")}</Badge> : null}</div>
                 <div className="truncate text-xs text-ink-3">{time} · {b.items.join(", ")}</div>
               </div>
               <span className="shrink-0 text-sm font-medium tabular-nums">{formatMoney(b.totalCents, currency)}</span>
               {left > 0 ? (
-                <Button type="button" variant="ghost" size="sm" className="h-11" disabled={undoing === b.batchId} onClick={() => onUndo(b.batchId)} aria-label={`Erfassung ${b.who} rückgängig machen`}>
+                <Button type="button" variant="ghost" size="sm" className="h-11" disabled={undoing === b.batchId} onClick={() => onUndo(b.batchId)} aria-label={t("adm1.counter.undoLabel", { who: b.who })}>
                   <Undo2 className="h-4 w-4" /> <span className="tabular-nums">{fmtLeft(left)}</span>
                 </Button>
               ) : null}

@@ -1,6 +1,6 @@
 import type { FaqSource } from "./faq-types";
 
-/** Hilfe für Leitung und Vorstand (Deutsch, Französisch, Italienisch). Auszeichnung siehe faq-types.ts. */
+/** Hilfe für Leitung und Vorstand (Deutsch, Französisch, Italienisch, Englisch). Auszeichnung siehe faq-types.ts. */
 export const ADMIN_FAQ: FaqSource[] = [
   {
     id: "logo-farben",
@@ -42,6 +42,19 @@ export const ADMIN_FAQ: FaqSource[] = [
           ],
         },
         { p: "Con il pulsante «Standard» torni in qualsiasi momento ai colori di Standchef." },
+      ],
+    },
+    en: {
+      q: "How do I set the logo and club colours?",
+      keywords: "logo colours accent colour brand colour CI corporate design branding club settings secondary colour",
+      a: [
+        {
+          ol: [
+            "Upload the logo under [Club](/admin) (square works best, PNG or JPG).",
+            "Choose an accent colour and optionally a secondary colour. The app adapts buttons, highlights and the browser bar – light and dark.",
+          ],
+        },
+        { p: "With the “Default” button you can return to the Standchef colours at any time." },
       ],
     },
   },
@@ -96,6 +109,22 @@ export const ADMIN_FAQ: FaqSource[] = [
         { p: "Se il codice è stato diffuso, puoi generarne uno nuovo – quello vecchio non vale più." },
       ],
     },
+    en: {
+      q: "How do I invite members and assign roles?",
+      keywords: "invite members join code share link roles admin trainer owner member remove",
+      a: [
+        { p: "Under [Club](/admin) you will find the join code and invitation link to share (e.g. via WhatsApp or email). Under [Members](/admin/members) you add existing accounts by email and assign roles." },
+        {
+          ul: [
+            "**Member**: own results, targets, bookings.",
+            "**Trainer**: sees all results, runs events.",
+            "**Admin**: manages the club, modules, members, fees.",
+            "**Owner**: like admin, can also appoint owners.",
+          ],
+        },
+        { p: "If the code has been passed on, you can generate a new one – the old one then no longer works." },
+      ],
+    },
   },
   {
     id: "zahlungsanbieter",
@@ -148,6 +177,22 @@ export const ADMIN_FAQ: FaqSource[] = [
         { p: "Il denaro arriva direttamente sul conto della società; i fornitori addebitano commissioni. Le fatture delle munizioni non sono mai pagabili online (solo QR-fattura). Esegui un pagamento di prova prima di iniziare." },
       ],
     },
+    en: {
+      q: "How do I set up online payment (Payrexx/TWINT, Stripe, Worldline, SumUp)?",
+      keywords: "payment provider online payment Payrexx TWINT PostFinance Stripe Worldline Saferpay SumUp credit card API secret instance webhook fees bookings",
+      a: [
+        {
+          ol: [
+            "Under [Bookings → Payment providers](/admin/bookings/payments) (without the “Bookings” module: [Billing profile](/admin/billing/settings)), choose the provider and enter the credentials from your merchant account. Secrets are stored encrypted and never shown again.",
+            "**Payrexx**: enter the instance name (the part before `.payrexx.com`) and API secret, then “Test connection”. In the Payrexx back end under Webhooks, add the address shown `/api/payments/payrexx/<club ID>` (type transaction). Leave surcharges for payers switched off.",
+            "**Stripe**: add the webhook address shown in the Stripe dashboard (event checkout.session.completed).",
+            "For bookings: in the [booking settings](/admin/bookings/settings), activate “Online payment” and choose the provider.",
+            "For fees: in the [billing profile](/admin/billing/settings) under “Online payment for fees”, choose the provider.",
+          ],
+        },
+        { p: "The money goes directly to the club’s account; the providers charge fees for this. Ammunition invoices can never be paid online (QR bill only). Please make a test payment before going live." },
+      ],
+    },
   },
   {
     id: "rechnungsprofil",
@@ -192,6 +237,20 @@ export const ADMIN_FAQ: FaqSource[] = [
           ],
         },
         { p: "Con un QR-IBAN viene generato automaticamente un numero di riferimento, così i pagamenti si attribuiscono facilmente." },
+      ],
+    },
+    en: {
+      q: "How do I create fee invoices with a QR code?",
+      keywords: "billing profile IBAN QR-IBAN payee fee categories annual run reminder paid",
+      a: [
+        {
+          ol: [
+            "Under [Billing profile](/admin/billing/settings), enter the payee, address and IBAN.",
+            "Create [categories](/admin/billing/categories) (e.g. active, passive, junior shooters) and assign them to the members.",
+            "Under [Fees](/admin/billing), start the annual run – everyone receives their invoice with a QR payment part.",
+          ],
+        },
+        { p: "With a QR-IBAN a reference number is generated automatically, which makes it easy to match payments." },
       ],
     },
   },
@@ -246,6 +305,22 @@ export const ADMIN_FAQ: FaqSource[] = [
         { p: "Al salvataggio Standchef verifica la connessione con un piccolo file di prova. Se in seguito cambi posizione, i file esistenti non vengono spostati automaticamente." },
       ],
     },
+    en: {
+      q: "Where are the files stored? (server, S3/AWS, Hetzner, Nextcloud)",
+      keywords: "file storage storage location storage server local S3 AWS Amazon Hetzner Object Storage Nextcloud WebDAV app password bucket access key quota",
+      a: [
+        { p: "Under [File storage & location](/admin/files) you choose where the club’s files are kept. The credentials are stored encrypted." },
+        {
+          ul: [
+            "**Server** (default): on the Standchef server. Nothing to set up.",
+            "**S3 / AWS**: your own bucket at Amazon, e.g. in Zurich (`eu-central-2`). Enter bucket, region, access key and secret key. The key only needs read, write and delete rights in this bucket.",
+            "**S3 / Hetzner**: Hetzner Object Storage. Choose the location (Falkenstein, Nuremberg or Helsinki), then enter the bucket and S3 access key from the Hetzner console.",
+            "**Nextcloud** (WebDAV): address of the folder, e.g. `https://cloud.example.ch/remote.php/dav/files/verein/Standchef`, user name and an **app password** (Nextcloud → Personal settings → Security → New app password), not the normal password.",
+          ],
+        },
+        { p: "When saving, Standchef checks the connection with a small test file. If you change the storage location later, existing files are not moved automatically." },
+      ],
+    },
   },
   {
     id: "offene-posten",
@@ -272,6 +347,14 @@ export const ADMIN_FAQ: FaqSource[] = [
       a: [
         { p: "In [Partite aperte](/admin/payments) vedi tutte le fatture non pagate di quote, prenotazioni e munizioni con i totali per ambito. Quelle scadute sono segnate in rosso; con «Solo scadute» le filtri. Con «CSV» esporti l’elenco per la contabilità." },
         { p: "Il modo più rapido per registrare i pagamenti è l’[importazione bancaria](/admin/billing/import): carica l’estratto conto camt.053 o camt.054 dall’e-banking. Standchef attribuisce i pagamenti tramite riferimento QR o numero di fattura e importo – anche per le fatture delle munizioni." },
+      ],
+    },
+    en: {
+      q: "How do I keep track of outstanding invoices?",
+      keywords: "outstanding items debtors overdue reminder bank import camt CSV export fees bookings ammunition mark as paid",
+      a: [
+        { p: "Under [Outstanding items](/admin/payments) you see all unpaid invoices from fees, bookings and ammunition with totals per area. Overdue ones are marked in red; filter them with “Overdue only”. Use “CSV” to export the list for the accounts." },
+        { p: "The fastest way to record payments is the [bank import](/admin/billing/import): upload the account statement as camt.053 or camt.054 from your e-banking. Standchef matches the payments via the QR reference or invoice number and amount – including ammunition invoices." },
       ],
     },
   },
@@ -320,6 +403,20 @@ export const ADMIN_FAQ: FaqSource[] = [
         { p: "Alla consegna viene creata la fattura con sezione di pagamento QR. Pagamento in contanti, con carta o online volutamente non esistono per le munizioni: la fattura documenta ogni consegna a una persona precisa. La società resta responsabile del rispetto delle prescrizioni legali." },
       ],
     },
+    en: {
+      q: "How do I set up ammunition sales?",
+      keywords: "ammunition range of products products calibre price stock issue check ID approval invoice sale counter",
+      a: [
+        {
+          ol: [
+            "Switch on the “Ammunition” module under [Club](/admin) and fill in the [billing profile](/admin/billing/settings) with the IBAN.",
+            "Under [Manage ammunition](/admin/ammo), enter the range of products with calibre, sales unit and price, optionally with stock.",
+            "In the settings, decide whether orders must be approved and whether the ID is checked when the ammunition is issued.",
+          ],
+        },
+        { p: "When the ammunition is issued, the invoice with a QR payment part is created. Cash, card or online payment deliberately do not exist for ammunition: the invoice documents every supply to a specific person. The club remains responsible for complying with the legal requirements." },
+      ],
+    },
   },
   {
     id: "amtlich-bestaetigen",
@@ -364,6 +461,20 @@ export const ADMIN_FAQ: FaqSource[] = [
           ],
         },
         { p: "Per la notifica ci sono un’esportazione CSV e un elenco stampabile per SAT-Admin. Standchef non salva numeri AVS. La responsabilità della notifica resta al capo tiro." },
+      ],
+    },
+    en: {
+      q: "How do I confirm official results (obligatory programme, field shooting)?",
+      keywords: "confirm officially range officer obligatory programme field shooting minimum score zeros attempt SAT-Admin export remaining deadlines",
+      a: [
+        {
+          ol: [
+            "In the programme, set the official type (OP, FS) and the pass rules. Please check the values against the current requirements (DDPS/SSV/canton).",
+            "Under [Federal exercises](/federal), start a pass for the obligatory programme event; registered members are taken over.",
+            "In the pass, tap “Confirm officially” for each person. The result is then locked for the shooters.",
+          ],
+        },
+        { p: "For reporting there is a CSV export and a print list for SAT-Admin. Standchef does not store AHV numbers. Responsibility for the report remains with the range officer." },
       ],
     },
   },
@@ -412,6 +523,20 @@ export const ADMIN_FAQ: FaqSource[] = [
         { p: "Gli incidenti li segnali in «Incidenti». L’app aiuta a documentare, la responsabilità allo stand resta al capo stand." },
       ],
     },
+    en: {
+      q: "How do I keep the range log as range chief?",
+      keywords: "range log range chief range duty open close guests ID minors half-days incident handover",
+      a: [
+        {
+          ol: [
+            "Under [Range operations](/range), tap “Open range” – for one range or the whole facility.",
+            "Members check themselves in via QR code; you record guests directly (name, year of birth, “ID checked”).",
+            "At the end, “Close day”: open visits are checked out and the shooting half-days are suggested.",
+          ],
+        },
+        { p: "You report incidents under “Incidents”. The app helps with documentation; responsibility at the range remains with the range chief." },
+      ],
+    },
   },
   {
     id: "schiesszeiten",
@@ -438,6 +563,14 @@ export const ADMIN_FAQ: FaqSource[] = [
       a: [
         { p: "In [Regolamento dello stand](/admin/range/rules) scrivi e pubblichi il regolamento; i membri lo confermano al check-in. In [Orari di tiro](/admin/range/times) registri gli orari autorizzati e il contingente annuale di mezze giornate." },
         { p: "Le prenotazioni fuori dagli orari autorizzati vengono rifiutate per i membri. Confronta i valori con l’autorizzazione del vostro Comune o del Cantone." },
+      ],
+    },
+    en: {
+      q: "Where do I enter range rules, shooting hours and quota?",
+      keywords: "range rules shooting hours approved quota half-days bookings outside version publish",
+      a: [
+        { p: "Under [Range rules](/admin/range/rules) you write and publish the range rules; members confirm them when checking in. Under [Shooting hours](/admin/range/times) you enter the approved hours and the half-day quota per year." },
+        { p: "Bookings outside the approved hours are declined for members. Please compare the values with the permit from your municipality or canton." },
       ],
     },
   },
@@ -468,6 +601,14 @@ export const ADMIN_FAQ: FaqSource[] = [
         { p: "Per i minorenni l’app ricorda un eventuale termine di notifica. Verifica con le prescrizioni vigenti (legge sulle armi, Cantone) se e come occorre notificare." },
       ],
     },
+    en: {
+      q: "How do I lend out a club weapon?",
+      keywords: "club weapons loan receipt return shot counter maintenance minors report blocked",
+      a: [
+        { p: "Under [Club weapons](/weapons), open an available weapon and choose “Lend” – to a member or with a free-text name. You can print the receipt and have it signed. On return you enter the number of shots; if maintenance is due, the weapon is automatically set to “Maintenance”." },
+        { p: "For minors, the app reminds you of any reporting deadline. Please check against the current requirements (Weapons Act, canton) whether and how a report must be made." },
+      ],
+    },
   },
   {
     id: "munitionskontrolle",
@@ -494,6 +635,14 @@ export const ADMIN_FAQ: FaqSource[] = [
       a: [
         { p: "In [Controllo delle munizioni](/admin/ammo/stock) registri entrate, consegne allo stand, riprese e correzioni. Le vendite tramite il modulo munizioni vengono registrate automaticamente. Con l’inventario allinei le scorte contate." },
         { p: "La panoramica annuale mostra i movimenti separati per finanziamento (Confederazione, sovvenzionato, commerciale) – da stampare o in CSV." },
+      ],
+    },
+    en: {
+      q: "How do I keep the ammunition control?",
+      keywords: "ammunition control stock receipt issue return correction stocktaking annual overview federal ammunition subsidised",
+      a: [
+        { p: "Under [Ammunition control](/admin/ammo/stock) you book receipts, issues at the range, returns and corrections. Sales via the ammunition module are booked automatically. Use stocktaking to reconcile the counted stock." },
+        { p: "The annual overview shows the movements separated by funding (federal, subsidised, commercial) – for printing or as CSV." },
       ],
     },
   },
@@ -542,6 +691,20 @@ export const ADMIN_FAQ: FaqSource[] = [
         { p: "Fanno stato gli statuti o le decisioni della vostra società." },
       ],
     },
+    en: {
+      q: "How do I plan volunteer shifts and charge the compensation fee?",
+      keywords: "volunteer shifts plan shifts copy working hours compulsory compensation fee invoice confirm done",
+      a: [
+        {
+          ol: [
+            "Under [Volunteer shifts](/admin/shifts), create shifts – for an event or as range duty – and copy them to several dates if needed.",
+            "After the shift, confirm “done”; the hours are credited.",
+            "Under [Settings](/admin/shifts/settings), set the compulsory hours and the rate per missing hour; under “Hours”, charge the compensation fee as a QR bill.",
+          ],
+        },
+        { p: "Your club’s statutes or resolutions are authoritative." },
+      ],
+    },
   },
   {
     id: "qualifikationen",
@@ -568,6 +731,14 @@ export const ADMIN_FAQ: FaqSource[] = [
       a: [
         { p: "In [Qualifiche](/admin/qualifications) registri p. es. capo tiro, monitore G+S o primo soccorso con la relativa validità. Turni e servizio allo stand avvisano se nessuno con la qualifica necessaria è assegnato; prima della scadenza arriva un promemoria." },
         { p: "L’app non sostituisce alcun riconoscimento ufficiale. Non registrare numeri AVS." },
+      ],
+    },
+    en: {
+      q: "What are qualifications for?",
+      keywords: "qualifications range officer J+S instructor first aid range chief valid until expired qualification shooting",
+      a: [
+        { p: "Under [Qualifications](/admin/qualifications) you record e.g. range officer, J+S instructor or first aid with validity. Shifts and range duty warn you if nobody with the required qualification is assigned; there is a reminder before expiry." },
+        { p: "The app does not replace official recognition. Please do not record AHV numbers." },
       ],
     },
   },
@@ -598,6 +769,14 @@ export const ADMIN_FAQ: FaqSource[] = [
         { p: "In «Tiro di qualificazione» definisci le regole e poi assegni le qualifiche. Verifica i dettagli dei tipi di corso con le prescrizioni vigenti (DDPS, UFSPO/G+S)." },
       ],
     },
+    en: {
+      q: "How do I run a junior shooters course or J+S course?",
+      keywords: "courses junior shooters course J+S NDS participants import attendance required programmes course certificate qualification shooting",
+      a: [
+        { p: "Under [Courses](/courses) you create the course, record participants (also via CSV import) and course days. You take attendance on your phone; the attendance list is available as CSV for transfer to the NDS. Required programmes show who has passed what." },
+        { p: "Under “Qualification shooting” you define rules and then grant qualifications. Please check the details of the course types against the current requirements (DDPS, FOSPO/J+S)." },
+      ],
+    },
   },
   {
     id: "live-rangliste",
@@ -623,6 +802,13 @@ export const ADMIN_FAQ: FaqSource[] = [
         { p: "In [Classifica live](/admin/live) crea una visualizzazione per un programma o un evento. Apri il link segreto nel browser dello schermo – senza accesso. La visualizzazione si aggiorna da sola e scade all’ora impostata. Con «Nuovo link» rendi non valido un link che è stato diffuso." },
       ],
     },
+    en: {
+      q: "How do I show the live ranking on the screen in the clubhouse?",
+      keywords: "live ranking screen TV television link QR code display competition results live",
+      a: [
+        { p: "Under [Live ranking](/admin/live), create a display for a programme or an event. Open the secret link in the screen’s browser – no sign-in needed. The display updates itself and expires at the time you set. With “New link” you invalidate a link that has been passed on." },
+      ],
+    },
   },
   {
     id: "meisterschaft-admin",
@@ -646,6 +832,13 @@ export const ADMIN_FAQ: FaqSource[] = [
       keywords: "campionato annuale configurare programmi ponderazione risultati stralciati categorie bonus pubblicare AG classifica stampare",
       a: [
         { p: "In [Campionato annuale](/championship) stabilisci periodo, programmi (obbligatorio, ponderazione) e numero di risultati considerati, se vuoi categorie con bonus. La classifica si calcola continuamente dalle sessioni concluse. Con «Pubblica» la vedono tutti i membri; per l’AG c’è una vista di stampa." },
+      ],
+    },
+    en: {
+      q: "How do I set up the annual championship?",
+      keywords: "set up annual championship programmes weighting discarded results categories bonus publish AGM print ranking",
+      a: [
+        { p: "Under [Annual championship](/championship), set the period, programmes (required, weighting) and number of counted results, optionally categories with a bonus. The ranking is calculated continuously from the finished passes. With “Publish” all members can see it; there is a print view for the AGM." },
       ],
     },
   },
@@ -697,6 +890,21 @@ export const ADMIN_FAQ: FaqSource[] = [
         { p: "È meglio esportare solo periodi chiusi. Le prenotazioni pagate «In contanti / sul posto» sono incluse automaticamente (Banca a Prenotazioni). A mano dovete registrare solo le commissioni dei fornitori di pagamento e le vendite in contanti della buvette." },
       ],
     },
+    en: {
+      q: "How do I transfer the bookings to Banana or bexio?",
+      keywords: "accounting export Banana bexio chart of accounts accounts journal CSV debtors bank annual accounts quarter",
+      a: [
+        {
+          ol: [
+            "Under [Accounting](/admin/accounting), check the chart of accounts once (suggestion based on the Swiss SME chart of accounts, e.g. 1020 bank, 1100 debtors, 3000 fees).",
+            "Choose the period (year, quarter, month) and check the preview.",
+            "**Banana**: download “Banana Accounting” (.txt, columns Date/Doc/Description/AccountDebit/AccountCredit/Amount, date YYYY-MM-DD); in Banana choose “Actions → Import into accounting → Transactions” and the format “Text file with column headers”; the accounts must exist in the Banana chart of accounts.",
+            "**bexio**: download “bexio (CSV for manual import)” and map the columns in the bexio booking import.",
+          ],
+        },
+        { p: "It is best to export only closed periods. Bookings paid “Cash / on site” are included automatically (bank to bookings). You only have to book the payment providers’ fees and the clubhouse cash sales by hand." },
+      ],
+    },
   },
   {
     id: "website-widgets",
@@ -741,6 +949,20 @@ export const ADMIN_FAQ: FaqSource[] = [
           ],
         },
         { p: "Le classifiche mostrano i nomi abbreviati («Anna M.») e solo ciò che autorizzi. Con «Rigenera» tutti i codici precedenti diventano non validi." },
+      ],
+    },
+    en: {
+      q: "How do I show the calendar, shooting hours or rankings on our club website?",
+      keywords: "website widget embed iframe homepage calendar shooting hours ranking annual championship WordPress Jimdo code",
+      a: [
+        {
+          ol: [
+            "Switch on the widgets under [Website widgets](/admin/embed).",
+            "Choose a widget (calendar, hours, ranking, championship), set the options and copy the code.",
+            "Paste the code into the website as an HTML block. The small script (optional) adjusts the height automatically.",
+          ],
+        },
+        { p: "Rankings show names abbreviated (“Anna M.”) and only what you release. With “Regenerate” all previous codes become invalid." },
       ],
     },
   },
@@ -789,6 +1011,20 @@ export const ADMIN_FAQ: FaqSource[] = [
         { p: "I modelli per Meyton, SIUS e ShotMarker sono proposte – le colonne variano a seconda della versione. Verifica con un tuo file di esportazione. Lo stesso file può essere importato una sola volta." },
       ],
     },
+    en: {
+      q: "How do I import results from Meyton, SIUS or ShotMarker?",
+      keywords: "import results import electronic scoring system Meyton SIUS ShotMarker CSV export file mapping",
+      a: [
+        {
+          ol: [
+            "Under [Result import](/scores/import), upload the export file from the scoring system.",
+            "Choose the template and programme and check the column mapping in the preview.",
+            "Assign the shooters to members (or take them over as guests) and import.",
+          ],
+        },
+        { p: "The templates for Meyton, SIUS and ShotMarker are suggestions – the columns differ depending on the version. Please check with your own export file. The same file can only be imported once." },
+      ],
+    },
   },
   {
     id: "schuetzenstube-theke",
@@ -817,6 +1053,14 @@ export const ADMIN_FAQ: FaqSource[] = [
         { p: "Senza Internet le registrazioni vengono salvate temporaneamente sul dispositivo e inviate automaticamente appena torna la connessione." },
       ],
     },
+    en: {
+      q: "How do I record purchases at the clubhouse counter?",
+      keywords: "clubhouse counter kiosk record on account cash guest offline undo tablet",
+      a: [
+        { p: "Under [Clubhouse](/kiosk), choose a member (or “Guest cash”), tap the products and choose “Put on account” or “Record cash”. The last entry can be undone for 2 minutes." },
+        { p: "Without the internet, entries are stored temporarily on the device and sent automatically as soon as there is a connection again." },
+      ],
+    },
   },
   {
     id: "schuetzenstube-admin",
@@ -843,6 +1087,14 @@ export const ADMIN_FAQ: FaqSource[] = [
       a: [
         { p: "In [Gestire la buvette](/admin/kiosk) curi l’assortimento. In «Conteggio» scegli il periodo, verifica l’anteprima e crea le fatture: ogni membro riceve una fattura «Buvette …» con codice QR. Le registrazioni non vengono mai fatturate due volte. «Cassa» mostra le vendite in contanti per giorno." },
         { p: "Per il conteggio servono il modulo «Quote sociali» e un profilo di fatturazione compilato." },
+      ],
+    },
+    en: {
+      q: "How do I bill the clubhouse?",
+      keywords: "clubhouse billing range of products prices invoice till daily takings cancellation export",
+      a: [
+        { p: "Under [Manage clubhouse](/admin/kiosk) you maintain the range of products. Under “Billing”, choose the period, check the preview and create invoices: each member receives a “Clubhouse …” invoice with a QR code. Entries are never invoiced twice. “Till” shows the cash sales per day." },
+        { p: "Billing requires the “Membership fees” module and a completed billing profile." },
       ],
     },
   },
@@ -888,6 +1140,19 @@ export const ADMIN_FAQ: FaqSource[] = [
         { p: "I membri della società partner prenotano secondo le tue regole; prenotazioni e fatture restano alla tua società. In [Impianti partner](/admin/bookings/partners) vedi ore e importi per società partner (con CSV)." },
       ],
     },
+    en: {
+      q: "How do I share a facility with a partner club?",
+      keywords: "share facility partner club shared facility partner rate price factor join code slug billing",
+      a: [
+        {
+          ol: [
+            "Under [Bookings → Facilities](/admin/bookings/resources), open the facility and choose “Share with partner club”.",
+            "Search for the partner club by short name or join code, allow booking and set the partner rate in %.",
+          ],
+        },
+        { p: "Members of the partner club book according to your rules; the bookings and invoices stay with your club. Under [Partner facilities](/admin/bookings/partners) you see hours and amounts per partner club (with CSV)." },
+      ],
+    },
   },
   {
     id: "module",
@@ -914,6 +1179,14 @@ export const ADMIN_FAQ: FaqSource[] = [
       a: [
         { p: "In [Società](/admin) attivi o disattivi i moduli per società: registrazione punti, bersagli, eventi e notizie, prenotazioni, quote sociali, archivio file, chat, munizioni, tiri federali, gestione dello stand, armi della società, turni di volontariato, corsi, campionato annuale e buvette. I moduli disattivati scompaiono dal menu per tutti i membri – i dati restano conservati." },
         { p: "Su mobile i moduli meno usati si trovano in «Altro», sul computer nella barra laterale in «Tiro» e «Società»." },
+      ],
+    },
+    en: {
+      q: "Which modules are there and how do I switch them on?",
+      keywords: "modules switch on switch off score recording targets events bookings membership fees file storage chat ammunition federal exercises range operations club weapons volunteer shifts courses annual championship clubhouse",
+      a: [
+        { p: "Under [Club](/admin) you switch modules on or off per club: score recording, targets, events & news, bookings, membership fees, file storage, chat, ammunition, federal exercises, range operations, club weapons, volunteer shifts, courses, annual championship and clubhouse. Switched-off modules disappear from the menu for all members – data is kept." },
+        { p: "On mobile, less used modules are under “More”; on the computer, in the sidebar under “Shooting” and “Club”." },
       ],
     },
   },
@@ -944,6 +1217,14 @@ export const ADMIN_FAQ: FaqSource[] = [
         { p: "Le persone in attesa non vedono dati della società, non ricevono fatture e non contano come membri. Gli inviti per e-mail restano validi subito." },
       ],
     },
+    en: {
+      q: "How do I check new members before they get access?",
+      keywords: "membership with approval membership requests join code approve decline waiting PENDING requests",
+      a: [
+        { p: "Under [Membership requests](/admin/members/requests) you switch on “Membership with approval”. Anyone who then joins with the join code waits until a person with the admin role approves or declines the request. The administration is notified of every new request." },
+        { p: "Waiting people see no club data, receive no invoices and do not count as members. Invitations by email still apply immediately." },
+      ],
+    },
   },
   {
     id: "serienbuchung",
@@ -970,6 +1251,14 @@ export const ADMIN_FAQ: FaqSource[] = [
       a: [
         { p: "In [Serie](/bookings/series) allenatrici e allenatori creano una serie: impianto, giorni della settimana, orario, periodo e persone. «Verificare le date» mostra ogni data; le date in conflitto (chiuso, bloccato, pieno, fuori dagli orari di tiro) vengono saltate." },
         { p: "Le prenotazioni in serie sono gratuite e confermate subito. Puoi annullare singole date o l’intera serie; le date passate restano conservate." },
+      ],
+    },
+    en: {
+      q: "How do I book a weekly training session?",
+      keywords: "series recurring booking recurring weekly training booking weekdays conflicts cancel trainer",
+      a: [
+        { p: "Under [Series](/bookings/series), trainers create a series: facility, weekdays, time, period and number of people. “Check dates” shows each date; dates with a conflict (closed, blocked, full, outside shooting hours) are skipped." },
+        { p: "Series bookings are free of charge and confirmed immediately. You can cancel individual dates or the whole series; past dates are kept." },
       ],
     },
   },
@@ -1000,6 +1289,14 @@ export const ADMIN_FAQ: FaqSource[] = [
         { p: "I nomi compaiono nella classifica della federazione solo se attivi «Condividere i nomi». Standchef non condivide mai dati di contatto, fatture, chat e file. Puoi terminare il collegamento in qualsiasi momento, l’accesso cessa subito." },
       ],
     },
+    en: {
+      q: "How do I connect the club with the cantonal or regional association?",
+      keywords: "association cantonal association regional association association code share statistics ranking consent share names leave",
+      a: [
+        { p: "Under [Association](/admin/association) you enter the code you receive from the association and confirm the consent. The association approves the request. It then sees aggregated figures: number of members, participation in the obligatory programme and field shooting, deadlines." },
+        { p: "Names only appear in the association ranking if you switch on “Share names”. Standchef never shares contact details, invoices, chat or files. You can end the connection at any time; access ends immediately." },
+      ],
+    },
   },
   {
     id: "feldschiessen-auszeichnungen",
@@ -1026,6 +1323,14 @@ export const ADMIN_FAQ: FaqSource[] = [
       a: [
         { p: "In [Distinzioni](/federal/awards) inserisci per programma e anno i limiti secondo il piano di tiro, una riga per categoria, età da/a, limite e distinzione. Standchef assegna ogni partecipante alla categoria giusta in base all’anno di nascita e mostra la distinzione ottenuta." },
         { p: "Non sono integrati limiti ufficiali: il modello è un esempio e va verificato. Per la consegna ci sono una lista da stampare e un’esportazione CSV." },
+      ],
+    },
+    en: {
+      q: "How does Standchef calculate the field shooting awards?",
+      keywords: "field shooting awards limits wreath recognition card category age announcement print list",
+      a: [
+        { p: "Under [Awards](/federal/awards) you enter the limits per programme and year according to the announcement, one row each for category, age from/to, limit and award. Standchef assigns each participant to the matching category by year of birth and shows the award achieved." },
+        { p: "Official limits are not built in: the template is an example and must be checked. There is a print list and a CSV export for the presentation." },
       ],
     },
   },

@@ -1,6 +1,6 @@
 import type { FaqSource } from "./faq-types";
 
-/** Hilfe für Mitglieder (Deutsch, Französisch, Italienisch). Auszeichnung siehe faq-types.ts. */
+/** Hilfe für Mitglieder (Deutsch, Französisch, Italienisch, Englisch). Auszeichnung siehe faq-types.ts. */
 export const MEMBER_FAQ: FaqSource[] = [
   {
     id: "beitreten",
@@ -45,6 +45,20 @@ export const MEMBER_FAQ: FaqSource[] = [
           ],
         },
         { p: "Puoi far parte di più società e cambiare in qualsiasi momento in «Altro»." },
+      ],
+    },
+    en: {
+      q: "How do I join a club?",
+      keywords: "join code from the committee invitation link register More join another club several clubs switch",
+      a: [
+        { p: "You need your club’s join code (e.g. `7KQ2PX`). You get it from the committee or as an invitation link." },
+        {
+          ol: [
+            "New here: when you **register**, enter the code in the “Join code” field. With an invitation link it is already filled in.",
+            "Already have an account: under [More](/me) → “Join another club / create new”, enter the code.",
+          ],
+        },
+        { p: "You can belong to several clubs and switch at any time under “More”." },
       ],
     },
   },
@@ -96,6 +110,21 @@ export const MEMBER_FAQ: FaqSource[] = [
         { p: "Suggerimento: sul telefono aggiungi Standchef tramite il menu Condividi «Aggiungi alla schermata Home» – così si avvia come un’app." },
       ],
     },
+    en: {
+      q: "How do I record results offline (without reception at the range)?",
+      keywords: "offline without internet reception cellar range synchronisation transfer later sync cache cloud",
+      a: [
+        { p: "Standchef also works without the internet. The only important thing is that you have opened the app **once with a connection** while signed in – then programmes and members are stored on the device." },
+        {
+          ul: [
+            "Without a connection you start passes and record shots as usual. Everything is saved on the device.",
+            "As soon as you are back online, the data is transferred automatically. A small indicator shows how much is still waiting.",
+            "Pages you have opened before can still be viewed offline.",
+          ],
+        },
+        { p: "Tip: on your phone, use the share menu to “Add to Home Screen” – Standchef then starts like an app." },
+      ],
+    },
   },
   {
     id: "durchgang",
@@ -145,6 +174,21 @@ export const MEMBER_FAQ: FaqSource[] = [
         { p: "Con la stella su un [programma](/scores/programs), questo compare nella pagina iniziale per l’avvio rapido." },
       ],
     },
+    en: {
+      q: "How do I start a pass and record shots?",
+      keywords: "start pass programme favourite star opponent guest keypad series save finish",
+      a: [
+        {
+          ol: [
+            "On the home page, tap “Start pass” or choose a favourite programme.",
+            "Optionally add club mates or guests.",
+            "Enter the shots with the large keypad. Each series is saved automatically.",
+            "Finally tap “Finish”. If needed, you can reopen the pass.",
+          ],
+        },
+        { p: "Mark a [programme](/scores/programs) with the star and it appears on the home page for a quick start." },
+      ],
+    },
   },
   {
     id: "scheiben",
@@ -189,6 +233,20 @@ export const MEMBER_FAQ: FaqSource[] = [
           ],
         },
         { p: "Puoi caricare bersagli tuoi in PNG, JPG, SVG o PDF e condividerli con la società." },
+      ],
+    },
+    en: {
+      q: "How do I print targets?",
+      keywords: "print target targets A4 A5 A6 printer scale 100% actual size PDF upload own",
+      a: [
+        {
+          ol: [
+            "Choose a design under [Targets](/targets).",
+            "Under “Print options”, choose the paper size (A4, A5 or A6) and the number of sheets, then print.",
+            "In the print dialogue choose **“Actual size” or scaling 100 %** so that the rings are exactly right.",
+          ],
+        },
+        { p: "You can upload your own targets as PNG, JPG, SVG or PDF and share them with the club." },
       ],
     },
   },
@@ -237,6 +295,20 @@ export const MEMBER_FAQ: FaqSource[] = [
         { p: "Se la società deve approvare, vedi «in attesa di approvazione». Puoi annullare direttamente nella prenotazione fino al termine di annullamento." },
       ],
     },
+    en: {
+      q: "How do I book a lane or the range?",
+      keywords: "book booking lane range room reserve time cancel approval pay online invoice",
+      a: [
+        {
+          ol: [
+            "Under [Book](/bookings), choose the resource (e.g. lane 1).",
+            "Tap the day, duration and a free start time.",
+            "Confirm and – depending on the club – pay by invoice or online.",
+          ],
+        },
+        { p: "If the club has to approve it, you will see “awaiting approval”. You can cancel directly in the booking up to the cancellation deadline." },
+      ],
+    },
   },
   {
     id: "qr-rechnung",
@@ -281,6 +353,20 @@ export const MEMBER_FAQ: FaqSource[] = [
           ],
         },
         { p: "La società registra l’entrata del pagamento. In seguito la fattura risulta «pagata»." },
+      ],
+    },
+    en: {
+      q: "How do I pay fees with the QR bill?",
+      keywords: "fees membership fee QR bill pay banking app scan e-banking Twint payment slip reference",
+      a: [
+        {
+          ol: [
+            "Open the outstanding invoice under [Payments](/payments) (or [Fees](/billing)).",
+            "In your banking app choose “Scan QR bill” and photograph the QR code – amount, account and reference are then already filled in.",
+            "On a computer: print the invoice or save it as a PDF and pay as usual.",
+          ],
+        },
+        { p: "The club records the incoming payment. The invoice is then shown as “paid”." },
       ],
     },
   },
@@ -332,6 +418,21 @@ export const MEMBER_FAQ: FaqSource[] = [
         { p: "Possono passare alcuni giorni prima che la società registri il tuo pagamento. In seguito la fattura risulta «pagata»." },
       ],
     },
+    en: {
+      q: "Where can I see all my invoices and payments?",
+      keywords: "payment overview payments invoices outstanding paid fees booking ammunition online payment IBAN reference copy overdue",
+      a: [
+        { p: "Under [Payments](/payments) (on the phone under “More”) you see everything in one place: membership fees, invoices for bookings, online payments and ammunition invoices." },
+        {
+          ul: [
+            "**Outstanding** shows what you still have to pay. Overdue invoices are marked in red.",
+            "For outstanding invoices, copy the IBAN and reference with one tap and paste them into your e-banking. Or open the QR bill and scan it with your banking or TWINT app.",
+            "**Paid** shows settled invoices, with the total for this year at the top.",
+          ],
+        },
+        { p: "It can take a few days until the club has recorded your payment. The invoice is then shown as “paid”." },
+      ],
+    },
   },
   {
     id: "online-bezahlen",
@@ -381,6 +482,21 @@ export const MEMBER_FAQ: FaqSource[] = [
         { p: "Le **fatture delle munizioni** si pagano sempre con la QR-fattura – per queste non è possibile un pagamento online." },
       ],
     },
+    en: {
+      q: "Can I pay fees online (TWINT, card)?",
+      keywords: "pay online TWINT PostFinance card credit card Payrexx Stripe Worldline SumUp fee compensation fee clubhouse ammunition",
+      a: [
+        { p: "If your club has set up a payment provider, outstanding fee invoices (annual fee, compensation fee, clubhouse) show the **“Pay online”** button – on the home page, under [Payments](/payments) and under [Fees](/billing)." },
+        {
+          ol: [
+            "Tap “Pay online” and confirm on the next page.",
+            "Pay on the provider’s payment page with TWINT, PostFinance or card (the available payment methods depend on the club).",
+            "You then return to Standchef. After a few seconds the invoice is shown as “paid”.",
+          ],
+        },
+        { p: "You always pay **ammunition invoices** with the QR bill – online payment is not possible for them." },
+      ],
+    },
   },
   {
     id: "schuetzenstube",
@@ -407,6 +523,14 @@ export const MEMBER_FAQ: FaqSource[] = [
       a: [
         { p: "Al bancone il team annota le tue bevande e gli spuntini a tuo nome – oppure paghi in contanti. In [Le mie consumazioni](/kiosk/me) vedi cosa è ancora aperto e cosa è già stato fatturato." },
         { p: "La società fa un conteggio periodico (p. es. mensile). Ricevi poi una fattura «Buvette …» che paghi con la QR-fattura o – se configurato – online." },
+      ],
+    },
+    en: {
+      q: "How does the clubhouse work (putting purchases on account)?",
+      keywords: "clubhouse kiosk purchases drinks on account counter pay cash billing invoice my purchases",
+      a: [
+        { p: "At the counter, the counter team puts your drinks and snacks on your name – or you pay in cash. Under [My purchases](/kiosk/me) you can see what is still outstanding and what has already been invoiced." },
+        { p: "The club bills periodically (e.g. monthly). You then receive a “Clubhouse …” invoice, which you pay with the QR bill or – if set up – online." },
       ],
     },
   },
@@ -437,6 +561,14 @@ export const MEMBER_FAQ: FaqSource[] = [
         { p: "La fattura è emessa dalla società proprietaria dell’impianto (QR-fattura, nessun pagamento online). Le tue prenotazioni partner le vedi in «Le mie prenotazioni», contrassegnate con «Impianto di …»." },
       ],
     },
+    en: {
+      q: "Can I book a partner club’s range?",
+      keywords: "partner club partner facility shared facility share other club book reserve partner rate",
+      a: [
+        { p: "If another club shares a facility with your club, it appears under [Book](/bookings) in the group “Facilities of …”. You book as usual; the other club’s rules and opening hours apply, and the price is the agreed partner rate." },
+        { p: "The club that owns the facility issues the invoice (QR bill, no online payment). You can see your partner bookings under “My bookings”, marked “Facility of …”." },
+      ],
+    },
   },
   {
     id: "kalender-abo",
@@ -463,6 +595,14 @@ export const MEMBER_FAQ: FaqSource[] = [
       a: [
         { p: "In [Eventi](/events) trovi il link «Abbonati al calendario». Il tuo calendario personale contiene iscrizioni, prenotazioni (anche presso società partner), turni di volontariato e giorni di corso. Gli appuntamenti annullati vi sono contrassegnati come annullati." },
         { p: "Non condividere il link – è personale." },
+      ],
+    },
+    en: {
+      q: "How can I see events, bookings and volunteer shifts in my phone calendar?",
+      keywords: "subscribe calendar iCal ics Google Calendar Apple Outlook subscription events bookings volunteer shifts courses",
+      a: [
+        { p: "Under [Events](/events) you will find the link “Subscribe to calendar”. Your personal calendar contains your registrations, bookings (also at partner clubs), volunteer shifts and course days. Cancelled dates are marked as cancelled in the calendar." },
+        { p: "Do not pass the link on – it is personal." },
       ],
     },
   },
@@ -532,6 +672,27 @@ export const MEMBER_FAQ: FaqSource[] = [
         { p: "La chat la vedono solo i membri della tua società. Chi lascia la società viene rimosso da tutte le conversazioni." },
       ],
     },
+    en: {
+      q: "How does the chat work?",
+      keywords: "chat write message group direct message unread counter mute image attach file edit delete club group",
+      a: [
+        {
+          ol: [
+            "Under [Chat](/chat), tap “New message” and choose a club member – or create a group with several people.",
+            "Write the message and send it. Attach photos and documents with the paper clip.",
+            "The number on the chat icon shows how many messages you have not yet read.",
+          ],
+        },
+        {
+          ul: [
+            "You can still edit or delete your own messages shortly after sending.",
+            "If it gets too much, mute a conversation. It then no longer counts towards the unread messages.",
+            "Without reception, the message is sent as soon as you are back online.",
+          ],
+        },
+        { p: "Only members of your club can see the chat. Anyone who leaves the club is removed from all conversations." },
+      ],
+    },
   },
   {
     id: "dateien",
@@ -558,6 +719,14 @@ export const MEMBER_FAQ: FaqSource[] = [
       a: [
         { p: "Nell’[archivio file](/files) la società deposita documenti in cartelle, p. es. regolamenti, moduli o foto. Tocca un file per vederlo o scaricarlo." },
         { p: "Alcune cartelle sono visibili solo per gli allenatori o il comitato. A seconda della società puoi anche caricare file tu stesso." },
+      ],
+    },
+    en: {
+      q: "Where can I find regulations, minutes and other documents?",
+      keywords: "file storage files documents regulations minutes form download upload folder PDF photo",
+      a: [
+        { p: "In the [file storage](/files), the club stores documents in folders, e.g. regulations, forms or photos. Tap a file to view or download it." },
+        { p: "Some folders are only visible to trainers or the committee. Depending on the club, you may also upload files yourself." },
       ],
     },
   },
@@ -606,6 +775,20 @@ export const MEMBER_FAQ: FaqSource[] = [
         { p: "**Perché solo con fattura?** Le munizioni possono essere consegnate solo a persone autorizzate e la consegna deve essere tracciabile. Con la fattura è chiaro chi ha ricevuto cosa e quando – senza contanti alla buvette e senza acquisti online, dove nessuno può verificare l’autorizzazione." },
       ],
     },
+    en: {
+      q: "How do I order ammunition – and why only by invoice?",
+      keywords: "order ammunition buy invoice cash card TWINT online ID supply shooting range Weapons Act purchase entitlement",
+      a: [
+        {
+          ol: [
+            "Under [Ammunition](/ammo), choose the type and quantity and order.",
+            "At the next training session, the person in charge hands you the ammunition. Bring an official ID if the club requires it.",
+            "When the ammunition is issued, an invoice with a QR code is created automatically. You will find it under [Payments](/payments).",
+          ],
+        },
+        { p: "**Why only by invoice?** Ammunition may only be supplied to entitled persons, and the supply must be traceable. With the invoice it is clear who received what and when – without cash in the clubhouse and without an online purchase where nobody can check the entitlement." },
+      ],
+    },
   },
   {
     id: "profil",
@@ -631,29 +814,43 @@ export const MEMBER_FAQ: FaqSource[] = [
         { p: "In [Altro](/me) trovi il tuo profilo: caricare una foto, nome, telefono e indirizzo (per le QR-fatture) e aspetto (sistema, chiaro, scuro). Password, autenticazione a due fattori e dispositivi connessi li trovi in [Sicurezza](/me/security)." },
       ],
     },
+    en: {
+      q: "How do I change my profile picture, appearance or password?",
+      keywords: "profile picture photo avatar dark light appearance dark mode password address profile",
+      a: [
+        { p: "Under [More](/me) you will find your profile: upload a photo, name, phone and address (for QR bills) and appearance (System, Light, Dark). You will find your password, two-factor sign-in and signed-in devices under [Security](/me/security)." },
+      ],
+    },
   },
   {
     id: "benachrichtigungen",
     audience: "member",
     de: {
       q: "Wie schalte ich Benachrichtigungen ein oder aus? Wie wechsle ich die Sprache?",
-      keywords: "Benachrichtigung Push Mitteilung E-Mail Mail Sprache Französisch Italienisch langue lingua iPhone Home-Bildschirm",
+      keywords: "Benachrichtigung Push Mitteilung E-Mail Mail Sprache Französisch Italienisch Englisch language langue lingua iPhone Home-Bildschirm",
       a: [
-        { p: "Unter [Mehr → Benachrichtigungen & Sprache](/me/notifications) wählst du die Sprache (Deutsch, Französisch, Italienisch) und pro Thema, ob du eine Push-Mitteilung und/oder eine E-Mail erhältst. Push schaltest du dort pro Gerät ein. Auf iPhone und iPad geht das erst, wenn Standchef über «Teilen → Zum Home-Bildschirm» installiert ist." },
+        { p: "Unter [Mehr → Benachrichtigungen & Sprache](/me/notifications) wählst du die Sprache (Deutsch, Französisch, Italienisch, Englisch) und pro Thema, ob du eine Push-Mitteilung und/oder eine E-Mail erhältst. Push schaltest du dort pro Gerät ein. Auf iPhone und iPad geht das erst, wenn Standchef über «Teilen → Zum Home-Bildschirm» installiert ist." },
       ],
     },
     fr: {
       q: "Comment activer ou désactiver les notifications ? Comment changer de langue ?",
-      keywords: "notification push message e-mail mail langue allemand italien Sprache lingua iPhone écran d’accueil",
+      keywords: "notification push message e-mail mail langue allemand italien anglais Sprache lingua language iPhone écran d’accueil",
       a: [
-        { p: "Sous [Plus → Notifications & langue](/me/notifications), tu choisis la langue (allemand, français, italien) et, pour chaque thème, si tu reçois une notification push et/ou un e-mail. Tu y actives le push par appareil. Sur iPhone et iPad, cela n’est possible qu’une fois Standchef installé via « Partager → Sur l’écran d’accueil »." },
+        { p: "Sous [Plus → Notifications & langue](/me/notifications), tu choisis la langue (allemand, français, italien, anglais) et, pour chaque thème, si tu reçois une notification push et/ou un e-mail. Tu y actives le push par appareil. Sur iPhone et iPad, cela n’est possible qu’une fois Standchef installé via « Partager → Sur l’écran d’accueil »." },
       ],
     },
     it: {
       q: "Come attivo o disattivo le notifiche? Come cambio lingua?",
-      keywords: "notifica push messaggio e-mail mail lingua tedesco francese Sprache langue iPhone schermata Home",
+      keywords: "notifica push messaggio e-mail mail lingua tedesco francese inglese Sprache langue language iPhone schermata Home",
       a: [
-        { p: "In [Altro → Notifiche e lingua](/me/notifications) scegli la lingua (tedesco, francese, italiano) e, per ogni tema, se ricevere una notifica push e/o un’e-mail. Lì attivi il push per dispositivo. Su iPhone e iPad è possibile solo dopo aver installato Standchef con «Condividi → Aggiungi alla schermata Home»." },
+        { p: "In [Altro → Notifiche e lingua](/me/notifications) scegli la lingua (tedesco, francese, italiano, inglese) e, per ogni tema, se ricevere una notifica push e/o un’e-mail. Lì attivi il push per dispositivo. Su iPhone e iPad è possibile solo dopo aver installato Standchef con «Condividi → Aggiungi alla schermata Home»." },
+      ],
+    },
+    en: {
+      q: "How do I switch notifications on or off? How do I change the language?",
+      keywords: "notification push message email mail language English French Italian German langue lingua Sprache iPhone home screen",
+      a: [
+        { p: "Under [More → Notifications & language](/me/notifications) you choose the language (German, French, Italian, English) and, per topic, whether you receive a push notification and/or an email. You switch on push there per device. On iPhone and iPad this only works once Standchef has been installed via “Share → Add to Home Screen”." },
       ],
     },
   },
@@ -684,6 +881,14 @@ export const MEMBER_FAQ: FaqSource[] = [
         { p: "Password dimenticata? Nella pagina di accesso scegli «Password dimenticata?», riceverai un link per e-mail." },
       ],
     },
+    en: {
+      q: "How do I protect my account with two-factor sign-in?",
+      keywords: "two-factor 2FA TOTP authenticator code security recovery code forgot password",
+      a: [
+        { p: "Under [More → Security](/me/security) choose “Switch on two-factor”, scan the QR code with an authenticator app (e.g. Aegis, Google or Microsoft Authenticator) and enter the 6-digit code. Keep the recovery codes in a safe place: they help if you lose your phone. Highly recommended for admins and owners." },
+        { p: "Forgot your password? On the sign-in page choose “Forgot password?” and you will receive a link by email." },
+      ],
+    },
   },
   {
     id: "datenschutz",
@@ -707,6 +912,13 @@ export const MEMBER_FAQ: FaqSource[] = [
       keywords: "protezione dei dati LPD nLPD esportazione dati scaricare eliminare account dimissione",
       a: [
         { p: "In [Altro → Protezione dei dati](/me/privacy) scarichi tutti i tuoi dati come ZIP o elimini il tuo account. Fatture, prenotazioni e risultati restano alla società, ma senza il tuo nome (pseudonimizzati)." },
+      ],
+    },
+    en: {
+      q: "How do I download my data or delete my account?",
+      keywords: "privacy data protection FADP revFADP export download data delete account leave",
+      a: [
+        { p: "Under [More → Privacy](/me/privacy) you can download all your data as a ZIP or delete your account. Invoices, bookings and results are kept for the club, but without your name (pseudonymised)." },
       ],
     },
   },
@@ -737,6 +949,14 @@ export const MEMBER_FAQ: FaqSource[] = [
         { p: "Così il capo stand sa chi è presente. Le registrazioni finiscono nel registro dello stand della società." },
       ],
     },
+    en: {
+      q: "How do I check in at the range?",
+      keywords: "range operations check-in check in check out QR code range rules range log range open",
+      a: [
+        { p: "Scan the QR code at the range or open [Range operations](/range) → “Check in”. The first time, you confirm the current range rules. When you leave, tap “Check out”." },
+        { p: "That way the range chief knows who is at the range. The entries go into the club’s range log." },
+      ],
+    },
   },
   {
     id: "helfer",
@@ -763,6 +983,14 @@ export const MEMBER_FAQ: FaqSource[] = [
       a: [
         { p: "In [Turni di volontariato](/shifts) vedi i turni aperti. Con «Partecipo» prendi un posto; fino all’inizio puoi disiscriverti. In «I miei» aggiungi un turno al tuo calendario." },
         { p: "Se la tua società prevede ore di lavoro obbligatorie, in «Ore» vedi quante te ne mancano. Il lavoro svolto fuori dai turni lo registri lì tu stesso, il comitato lo conferma." },
+      ],
+    },
+    en: {
+      q: "How do I sign up for a volunteer shift?",
+      keywords: "volunteer shifts shift sign up withdraw working hours compensation fee record hours calendar",
+      a: [
+        { p: "Under [Volunteer shifts](/shifts) you can see open shifts. With “I’ll help” you take a place; you can withdraw again until it starts. Under “Mine” you can add a shift to your calendar." },
+        { p: "If your club has compulsory working hours, you can see under “Hours” how many you are still missing. You record work outside of shifts there yourself, and the committee confirms it." },
       ],
     },
   },
@@ -793,6 +1021,14 @@ export const MEMBER_FAQ: FaqSource[] = [
         { p: "In «Attestato di tiro» trovi i tuoi giorni di tiro degli ultimi anni e una conferma da stampare. Quali attestati richieda un’autorità lo decide l’ufficio competente." },
       ],
     },
+    en: {
+      q: "Where can I see whether I have passed my obligatory programme?",
+      keywords: "federal exercises obligatory programme field shooting passed remaining official shooting record confirmation weapon purchase",
+      a: [
+        { p: "Under [Federal exercises](/federal) you can see your status in the current year. It appears as soon as the range officer has officially confirmed your result. You can no longer change confirmed results yourself." },
+        { p: "Under “Shooting record” you will find your shooting days of the last few years and a confirmation to print. Which proof an authority requires is decided by the competent office." },
+      ],
+    },
   },
   {
     id: "meisterschaft",
@@ -818,6 +1054,13 @@ export const MEMBER_FAQ: FaqSource[] = [
         { p: "Per ogni programma del campionato contano i tuoi migliori risultati (p. es. i 3 migliori), gli altri vengono stralciati. Se manca un programma obbligatorio sei «non classificato». Le regole esatte sono sulla pagina del [campionato](/championship); fa stato il regolamento della tua società." },
       ],
     },
+    en: {
+      q: "How is the annual championship calculated?",
+      keywords: "annual championship ranking rank discarded results best results category bonus required programme not ranked",
+      a: [
+        { p: "For each programme of the championship, your best results count (e.g. the best 3), the others are discarded. If a required programme is missing, you are “not ranked”. The exact rules are on the [championship](/championship) page; your club’s regulations are authoritative." },
+      ],
+    },
   },
   {
     id: "kurse",
@@ -841,6 +1084,13 @@ export const MEMBER_FAQ: FaqSource[] = [
       keywords: "corsi corso giovani tiratori G+S formazione presenze programmi obbligatori attestato del corso",
       a: [
         { p: "In [Corsi](/courses) vedi i tuoi corsi con le presenze e i programmi obbligatori che hai già superato. L’attestato del corso viene emesso dalla direzione del corso alla fine." },
+      ],
+    },
+    en: {
+      q: "Where can I see my progress in the course?",
+      keywords: "courses junior shooters course J+S training attendance required programmes course certificate",
+      a: [
+        { p: "Under [Courses](/courses) you can see your courses with attendance and the required programmes you have already passed. The course leaders issue the course certificate after completion." },
       ],
     },
   },
@@ -871,6 +1121,14 @@ export const MEMBER_FAQ: FaqSource[] = [
         { p: "Appena c’è una decisione ricevi un messaggio per e-mail. Nella pagina di attesa puoi anche ritirare la richiesta. Con un invito per e-mail hai subito accesso." },
       ],
     },
+    en: {
+      q: "I joined with the code but can’t see anything. Why?",
+      keywords: "membership join code approval waiting request waiting page access onboarding withdraw",
+      a: [
+        { p: "Some clubs check new people first (“membership with approval”). Until the club management approves your request, you see a waiting page under [Choose club](/onboarding) and do not yet have access to the club’s data." },
+        { p: "As soon as a decision has been made, you will be notified by email. You can also withdraw the request on the waiting page. With an invitation by email you have access immediately." },
+      ],
+    },
   },
   {
     id: "reservation-erinnerung",
@@ -897,6 +1155,14 @@ export const MEMBER_FAQ: FaqSource[] = [
       a: [
         { p: "Sì. Dopo una prenotazione confermata e dopo un annullamento ricevi un’e-mail. Circa 24 ore prima dell’inizio segue un promemoria (tra le 7 e le 21). Le prenotazioni di una serie di allenamento sono contrassegnate con «Serie» in [Prenotare](/bookings)." },
         { p: "In [Notifiche](/me/notifications) scegli se le notifiche sulle prenotazioni arrivano per e-mail." },
+      ],
+    },
+    en: {
+      q: "Will I receive a confirmation and a reminder for my booking?",
+      keywords: "booking reservation confirmation reminder email 24 hours series training notifications",
+      a: [
+        { p: "Yes. After a confirmed booking and after a cancellation you receive an email. About 24 hours before the start, a reminder follows (between 7:00 and 21:00). Bookings from a training series are marked “Series” under [Book](/bookings)." },
+        { p: "Under [Notifications](/me/notifications) you decide whether booking notifications come by email." },
       ],
     },
   },

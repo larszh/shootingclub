@@ -155,5 +155,51 @@ const it: Record<string, string> = {
   "role.MEMBER": "Membro",
 };
 
-const dict: { de: Record<string, string>; fr: Record<string, string>; it: Record<string, string> } = { de, fr, it };
+/** English (Switzerland): neutral, British-leaning; “…” where German uses «…». */
+const en: Record<string, string> = {
+  "mail.footer": "This message was sent automatically by Standchef. Please do not reply directly to this address unless the club has provided a reply-to address.",
+  "mail.greeting": "Hello {name}",
+  "mail.greetingAnon": "Hello",
+  "mail.reset.subject": "Reset your password",
+  "mail.reset.title": "Set a new password",
+  "mail.reset.p1": "A new password has been requested for your Standchef account.",
+  "mail.reset.p2": "The link is valid for {minutes} minutes and can only be used once.",
+  "mail.reset.p3": "Didn’t request this? Then you can ignore this email – your password stays the same.",
+  "mail.reset.button": "Set password",
+  "mail.invite.subject": "Invitation: {tenant} on Standchef",
+  "mail.invite.title": "You’re invited",
+  "mail.invite.p1": "{inviter} invites you to join “{tenant}” on Standchef.",
+  "mail.invite.p1anon": "You have been invited to join “{tenant}” on Standchef.",
+  "mail.invite.p2": "Your role: {role}. With Standchef you see your club’s events, results, bookings and invoices in one place.",
+  "mail.invite.p3": "The invitation is valid for {days} days.",
+  "mail.invite.button": "Accept invitation",
+  "mail.setPassword.subject": "Your access to {tenant}",
+  "mail.setPassword.subjectNoTenant": "Your access to Standchef",
+  "mail.setPassword.title": "Set your password",
+  "mail.setPassword.p1": "An account has been created for you on Standchef{tenantPart}.",
+  "mail.setPassword.tenantPart": " – club “{tenant}”",
+  "mail.setPassword.p2": "Set your password now. You will then sign in with your email address {email}.",
+  "mail.setPassword.p3": "The link is valid for {days} days.",
+  "mail.setPassword.button": "Set password",
+  "mail.passwordChanged.subject": "Your password has been changed",
+  "mail.passwordChanged.title": "Password changed",
+  "mail.passwordChanged.p1": "The password of your Standchef account has just been changed. Other devices have been signed out.",
+  "mail.passwordChanged.p2": "Wasn’t you? Then reset your password immediately via “Forgot password” and inform your club admin.",
+  "mail.twofaOn.subject": "Two-factor sign-in enabled",
+  "mail.twofaOn.title": "Two-factor sign-in is active",
+  "mail.twofaOn.p1": "Signing in with a code from the authenticator app is now active for your account. Keep your recovery codes in a safe place.",
+  "mail.twofaOff.subject": "Two-factor sign-in disabled",
+  "mail.twofaOff.title": "Two-factor sign-in is off",
+  "mail.twofaOff.p1": "Two-factor sign-in has been switched off for your account. If this wasn’t you, change your password immediately.",
+  "mail.security.button": "Open security",
+  "mail.test.subject": "Test email from Standchef",
+  "mail.test.title": "Email sending works",
+  "mail.test.p1": "This test email was triggered from the system overview. If you can read it, SMTP sending is set up correctly.",
+  "role.OWNER": "Owner",
+  "role.ADMIN": "Admin",
+  "role.TRAINER": "Trainer",
+  "role.MEMBER": "Member",
+};
+
+const dict: { de: Record<string, string>; fr: Record<string, string>; it: Record<string, string>; en: Record<string, string> } = { de, fr, it, en };
 export default dict;
