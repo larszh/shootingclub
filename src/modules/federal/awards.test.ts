@@ -10,6 +10,10 @@ import {
   formatAwardCategory,
   parseAwardCategory,
   parseAwardLines,
+  awardCategoryLabel,
+  normalizeWeaponCategory,
+  sameWeaponCategory,
+  weaponCategoriesOf,
   type AwardLimitLite,
 } from "./awards";
 
@@ -37,9 +41,9 @@ describe("parseAwardLines", () => {
     const r = parseAwardLines("# Beispiel\nElite;21;59;57;Kranz\n\nElite;21;59;54,5;Anerkennungskarte\nAlle;;;50;Karte", 90);
     expect(r.errors).toEqual([]);
     expect(r.lines).toEqual([
-      { name: "Elite", minAge: 21, maxAge: 59, minScore: 57, award: "Kranz" },
-      { name: "Elite", minAge: 21, maxAge: 59, minScore: 54.5, award: "Anerkennungskarte" },
-      { name: "Alle", minAge: null, maxAge: null, minScore: 50, award: "Karte" },
+      { name: "Elite", minAge: 21, maxAge: 59, minScore: 57, award: "Kranz", weaponCategory: null },
+      { name: "Elite", minAge: 21, maxAge: 59, minScore: 54.5, award: "Anerkennungskarte", weaponCategory: null },
+      { name: "Alle", minAge: null, maxAge: null, minScore: 50, award: "Karte", weaponCategory: null },
     ]);
   });
 
@@ -50,7 +54,7 @@ describe("parseAwardLines", () => {
     );
     expect(r.lines).toHaveLength(1);
     expect(r.errors).toEqual([
-      expect.stringContaining("Zeile 1: genau fünf Felder"),
+      expect.stringContaining("Zeile 1: fünf oder sechs Felder"),
       "Zeile 2: Limite als Zahl angeben.",
       "Zeile 3: «Alter von» ist grösser als «Alter bis».",
       expect.stringContaining("Zeile 4: Limite 95 ist höher"),
@@ -137,7 +141,7 @@ describe("buildAwardsCsv", () => {
     ]);
     expect(csv.startsWith("﻿")).toBe(true);
     const line = csv.split("\r\n")[1]!;
-    expect(line).toBe("'=Test;1990;FS 300;Alle;58;1;Kranz;ja;nein;01.06.2026");
+    expect(line).toBe("'=Test;1990;FS 300;Alle;;58;1;Kranz;ja;nein;01.06.2026");
   });
 });
 
@@ -150,5 +154,72 @@ describe("Beispiel-Limiten", () => {
     expect(isExampleLimits([{ category: "Beispiel", award: "Kranz" }])).toBe(true);
     expect(isExampleLimits([{ category: "Elite (21–59)", award: "Kranz" }])).toBe(false);
     expect(isExampleLimits([])).toBe(false);
+  });
+});
+
+describe("Waffenkategorie", () => {
+  const text = [
+    "Elite;21;59;57;Kranz;D",
+    "Elite;21;59;54;Anerkennungskarte;D",
+    "Elite;21;59;55;Kranz;E",
+    "Elite;21;59;60;Kranz",
+    "Jugend;;20;52;Kranz;e",
+  ].join("\n");
+  const limits: AwardLimitLite[] = awardLinesToRows(parseAwardLines(text, 90).lines);
+
+  it("liest das optionale sechste Feld und schreibt es zurück", () => {
+    const r = parseAwardLines(text, 90);
+    expect(r.errors).toEqual([]);
+    expect(r.lines.map((l) => l.weaponCategory)).toEqual(["D", "D", "E", null, "e"]);
+    expect(awardLinesToRows(r.lines).map((x) => x.weaponCategory)).toEqual(["D", "D", "E", null, "e"]);
+    expect(awardLimitsToText(limits)).toBe(text);
+  });
+
+  it("erlaubt gleiche Auszeichnung pro Waffenkategorie, meldet Doppel in derselben", () => {
+    expect(parseAwardLines("Elite;21;59;57;Kranz;D\nElite;21;59;55;Kranz;E").errors).toEqual([]);
+    expect(parseAwardLines("Elite;21;59;57;Kranz;D\nElite;21;59;55;Kranz;d").errors).toEqual(["Zeile 2: «Kranz» in der Kategorie «Elite» (Waffenkategorie d) doppelt."]);
+    expect(parseAwardLines("Elite;21;59;57;Kranz\nElite;21;59;55;Kranz;").errors).toEqual(["Zeile 2: «Kranz» in der Kategorie «Elite» doppelt."]);
+    expect(parseAwardLines(`Elite;21;59;57;Kranz;${"x".repeat(21)}`).errors[0]).toContain("Waffenkategorie höchstens 20 Zeichen");
+  });
+
+  it("rechnet mit Alters- und Waffenkategorie", () => {
+    // Waffe D: eigene Limiten vor «für alle»
+    expect(awardFor(limits, 57, 1990, 2026, "D")).toMatchObject({ status: "award", award: "Kranz", category: "Elite (21–59)", weaponCategory: "D" });
+    expect(awardFor(limits, 55, 1990, 2026, "d")).toMatchObject({ status: "award", award: "Anerkennungskarte", weaponCategory: "D" });
+    // Waffe E: tiefere Kranzlimite
+    expect(awardFor(limits, 55, 1990, 2026, "E")).toMatchObject({ status: "award", award: "Kranz", weaponCategory: "E" });
+    // ohne Angabe: nur Limiten ohne Waffenkategorie
+    expect(awardFor(limits, 59, 1990, 2026, null)).toMatchObject({ status: "none", weaponCategory: null });
+    expect(awardFor(limits, 60, 1990, 2026)).toMatchObject({ status: "award", award: "Kranz", weaponCategory: null });
+    // unbekannte Waffe: Limiten für alle
+    expect(awardFor(limits, 60, 1990, 2026, "A")).toMatchObject({ status: "award", weaponCategory: null });
+    // Jugend nur für Waffe E: Jugendlicher mit D fällt auf keine Kategorie, mit E auf Jugend
+    expect(awardFor(limits, 53, 2008, 2026, "D").status).toBe("no-category");
+    expect(awardFor(limits, 53, 2008, 2026, "E")).toMatchObject({ status: "award", category: "Jugend (bis 20)", weaponCategory: "e" });
+  });
+
+  it("nur Limiten mit Waffenkategorie: ohne Angabe keine Kategorie", () => {
+    const only = awardLinesToRows(parseAwardLines("Alle;;;55;Kranz;D").lines);
+    expect(awardFor(only, 60, 1990, 2026).status).toBe("no-category");
+    expect(awardFor(only, 60, 1990, 2026, "D").status).toBe("award");
+  });
+
+  it("Hilfsfunktionen", () => {
+    expect(normalizeWeaponCategory("  Stgw   90 ")).toBe("Stgw 90");
+    expect(normalizeWeaponCategory(" ")).toBeNull();
+    expect(sameWeaponCategory("d", "D")).toBe(true);
+    expect(sameWeaponCategory(null, null)).toBe(false);
+    expect(weaponCategoriesOf([{ weaponCategory: "E" }, { weaponCategory: "D" }, { weaponCategory: "d" }, { weaponCategory: null }])).toEqual(["D", "E"]);
+    expect(awardCategoryLabel(awardFor(limits, 57, 1990, 2026, "D"))).toBe("Elite (21–59) · D");
+    expect(awardCategoryLabel(awardFor(limits, 60, 1990, 2026))).toBe("Elite (21–59)");
+    expect(awardCategoryLabel(awardFor([], 60, 1990, 2026))).toBe("");
+  });
+
+  it("CSV mit Waffenkategorie des Schützen", () => {
+    const csv = buildAwardsCsv([
+      { name: "Muster", birthYear: 1990, weaponCategory: "D", program: "FS 300", total: 57, zeros: 0, isOfficial: true, isGuest: false, date: "01.06.2026", result: awardFor(limits, 57, 1990, 2026, "D") },
+    ]);
+    expect(csv.split("\r\n")[0]).toContain("Kategorie;Waffenkategorie;Resultat");
+    expect(csv.split("\r\n")[1]).toBe("Muster;1990;FS 300;Elite (21–59);D;57;0;Kranz;ja;nein;01.06.2026");
   });
 });

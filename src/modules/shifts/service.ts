@@ -2,11 +2,13 @@ import "server-only";
 import { db } from "@/lib/db";
 import { audit } from "@/lib/audit";
 import { notify, tenantUserIdsWithRole } from "@/lib/notify";
-import { addDays, formatDateZurich, formatTimeRange, zurichParts } from "@/lib/time";
+import { addDays, formatTimeRange, zurichParts } from "@/lib/time";
 import { buildIcs } from "@/modules/events/ics";
 import { dayToDbDate, EXPIRY_WARN_DAYS, qualificationLabel } from "@/modules/qualifications/types";
 import { formatHours, staffing } from "./logic";
 import { accessStatusWhere, hasTenantAccess } from "@/lib/membership-access";
+import { formatDate, getT, type Locale } from "@/lib/i18n/core";
+import { getTenantLocale, getUserLocale } from "@/lib/i18n";
 
 // ---------------------------------------------------------------------------
 // iCal für einen einzelnen Einsatz
@@ -33,19 +35,20 @@ export async function buildShiftIcs(userId: string, isSuperAdmin: boolean, shift
   }
   const mod = await db.tenantModule.findUnique({ where: { tenantId_moduleKey: { tenantId: s.tenantId, moduleKey: "shifts" } }, select: { enabled: true } });
   if (!mod?.enabled) return null;
-  const summary = `Helfereinsatz: ${s.title}${s.event ? ` (${s.event.title})` : ""}`;
+  const t = getT(await getUserLocale(userId));
+  const summary = s.event ? t("adm2.shifts.ics.summaryEvent", { title: s.title, event: s.event.title }) : t("adm2.shifts.ics.summary", { title: s.title });
   const ics = buildIcs({
-    name: `${s.tenant.name} – Helfereinsatz`,
+    name: t("adm2.shifts.ics.name", { club: s.tenant.name }),
     events: [{
       uid: shiftUid(s.id),
       summary,
-      description: [s.note, s.hoursCredit != null ? `Angerechnete Stunden: ${formatHours(s.hoursCredit)}` : null].filter(Boolean).join("\n"),
+      description: [s.note, s.hoursCredit != null ? t("adm2.shifts.ics.credit", { h: formatHours(s.hoursCredit) }) : null].filter(Boolean).join("\n"),
       location: s.event?.location ?? null,
       url: `${baseUrl}/shifts`,
       startsAt: s.startsAt,
       endsAt: s.endsAt,
       status: s.event?.isCancelled ? "CANCELLED" : "CONFIRMED",
-      categories: ["Helfereinsatz"],
+      categories: [t("adm2.shifts.ics.category")],
       stamp: s.event?.updatedAt && s.event.updatedAt > s.createdAt ? s.event.updatedAt : s.createdAt,
       created: s.createdAt,
     }],
@@ -79,7 +82,7 @@ async function shiftTenantIds(): Promise<string[]> {
   return rows.map((r) => r.tenantId);
 }
 
-const when = (d: Date) => formatDateZurich(d, { year: undefined });
+const when = (d: Date, locale: Locale) => formatDate(d, locale, { weekday: "short", year: undefined });
 
 /**
  * Stündlicher Erinnerungs-Hook:
@@ -110,11 +113,14 @@ export async function runShiftReminders(now: Date = new Date()): Promise<{ assig
           const key = `shift-24h:${a.id}`;
           if (done.has(key)) continue;
           const place = s.event?.location ? `, ${s.event.location}` : "";
+          const locale = await getUserLocale(a.userId);
+          const t = getT(locale);
+          const vars = { title: s.title, when: when(s.startsAt, locale), time: formatTimeRange(s.startsAt, s.endsAt), place };
           await notify({
             tenantId, userIds: [a.userId], topic: "reminders",
-            title: `Helfereinsatz morgen: ${s.title}`,
-            body: `${when(s.startsAt)}, ${formatTimeRange(s.startsAt, s.endsAt)} Uhr${place}${s.event ? ` · ${s.event.title}` : ""}. Danke für deinen Einsatz!`,
-            emailBody: `Du bist für «${s.title}»${s.event ? ` (${s.event.title})` : ""} eingeteilt: ${when(s.startsAt)}, ${formatTimeRange(s.startsAt, s.endsAt)} Uhr${place}.\n\nFalls du verhindert bist, melde dich bitte rechtzeitig bei den Verantwortlichen.`,
+            title: t("adm2.shifts.rem.title", { title: s.title }),
+            body: t("adm2.shifts.rem.body", { ...vars, event: s.event ? ` · ${s.event.title}` : "" }),
+            emailBody: t("adm2.shifts.rem.email", { ...vars, event: s.event ? ` (${s.event.title})` : "" }),
             url: "/shifts?tab=mine", tag: `shift:${s.id}`, dedupeKey: key,
           });
           await markSent(tenantId, key, "ShiftAssignment", `${s.title} · ${zurichParts(s.startsAt).dateStr}`);
@@ -134,13 +140,15 @@ export async function runShiftReminders(now: Date = new Date()): Promise<{ assig
         const fresh = under.filter((x) => !sent.has(`shift-under:${x.s.id}`));
         if (fresh.length) {
           const managers = await tenantUserIdsWithRole(tenantId, ["OWNER", "ADMIN"]);
-          const lines = fresh.map((x) => `${x.s.title} (${formatDateZurich(x.s.startsAt, { year: undefined })}): ${x.st.filled}/${x.st.capacity}`);
+          const locale = await getTenantLocale(tenantId);
+          const t = getT(locale);
+          const lines = fresh.map((x) => `${x.s.title} (${when(x.s.startsAt, locale)}): ${x.st.filled}/${x.st.capacity}`);
           if (managers.length) {
             await notify({
               tenantId, userIds: managers, topic: "reminders",
-              title: fresh.length === 1 ? "Helfereinsatz unterbesetzt" : `${fresh.length} Helfereinsätze unterbesetzt`,
-              body: lines.slice(0, 5).join(" · ") + (lines.length > 5 ? ` und ${lines.length - 5} weitere` : ""),
-              emailBody: `In den nächsten drei Tagen fehlen noch Helferinnen und Helfer:\n\n${lines.join("\n")}\n\nBitte Mitglieder anfragen oder einteilen.`,
+              title: fresh.length === 1 ? t("adm2.shifts.rem.underOne") : t("adm2.shifts.rem.underMany", { n: fresh.length }),
+              body: lines.slice(0, 5).join(" · ") + (lines.length > 5 ? t("adm2.shifts.rem.more", { n: lines.length - 5 }) : ""),
+              emailBody: t("adm2.shifts.rem.underEmail", { lines: lines.join("\n") }),
               url: "/admin/shifts?scope=open", tag: `shift-under:${tenantId}`,
               dedupeKey: `shift-under:${fresh.map((x) => x.s.id).join(",")}`.slice(0, 150),
             });
@@ -198,12 +206,14 @@ async function qualificationExpiryReminders(now: Date) {
     for (const q of list) {
       const key = keyOf(q);
       if (sent.has(key)) continue;
-      const name = q.label ? `${qualificationLabel(q.kind)} (${q.label})` : qualificationLabel(q.kind);
-      const until = new Intl.DateTimeFormat("de-CH", { timeZone: "UTC", day: "2-digit", month: "2-digit", year: "numeric" }).format(q.validUntil!);
+      const locale = await getUserLocale(q.userId);
+      const t = getT(locale);
+      const name = q.label ? `${qualificationLabel(q.kind, t)} (${q.label})` : qualificationLabel(q.kind, t);
+      const until = formatDate(q.validUntil!, locale, { timeZone: "UTC" });
       await notify({
         tenantId, userIds: [q.userId], topic: "reminders",
-        title: "Qualifikation läuft ab",
-        body: `${name} ist gültig bis ${until}. Bitte rechtzeitig erneuern (Kurs, Wiederholung) und den Nachweis beim Verein abgeben.`,
+        title: t("adm2.shifts.rem.qualTitle"),
+        body: t("adm2.shifts.rem.qualBody", { name, until }),
         url: "/shifts?tab=mine", tag: `qual:${q.id}`, dedupeKey: key,
       });
       await markSent(tenantId, key, "Qualification", `${name} bis ${until}`);

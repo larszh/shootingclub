@@ -1,19 +1,25 @@
 import { notFound } from "next/navigation";
 import { PrintShell } from "@/components/invoice-document";
 import { PrintButton } from "@/components/print-button";
-import { formatDateZurich } from "@/lib/time";
+import { getRequestLocale, getT } from "@/lib/i18n";
+import { formatDate, type TFunction } from "@/lib/i18n/core";
+import { dayKeyLabel } from "@/lib/i18n/extra/admin2/msg";
 import { canViewChampionship, requireChampionship } from "@/modules/championship/guard";
-import { chDay, getChampionship, loadRanking, nowDate } from "@/modules/championship/queries";
+import { getChampionship, loadRanking, nowDate } from "@/modules/championship/queries";
 import { podium, type RankingEntry } from "@/modules/championship/ranking";
 import { NO_CATEGORY, formatPoints } from "@/modules/championship/types";
 
-export const metadata = { title: "Rangliste drucken" };
+export async function generateMetadata() {
+  return { title: getT(await getRequestLocale())("adm2.champ.print.meta") };
+}
 
 const PODIUM_COLORS: Record<number, string> = { 1: "#d4a72c", 2: "#b8bcc2", 3: "#b07a4a" };
 
 /** Rangliste für die GV: Podest, Gesamtrangliste, Kategorien und nicht Klassierte. A4 hoch. */
 export default async function ChampionshipPrintPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ cats?: string }> }) {
   const ctx = await requireChampionship();
+  const locale = await getRequestLocale();
+  const t = getT(locale);
   const { id } = await params;
   const sp = await searchParams;
   const c = await getChampionship(ctx.tenant.id, id);
@@ -24,7 +30,7 @@ export default async function ChampionshipPrintPage({ params, searchParams }: { 
   const now = nowDate();
 
   return (
-    <PrintShell title={`Rangliste ${c.name}`} subtitle={`${ranking.ranked.length} Rangierte · A4`} action={<PrintButton />}>
+    <PrintShell title={t("adm2.champ.print.title", { name: c.name })} subtitle={t("adm2.champ.print.subtitle", { n: ranking.ranked.length })} action={<PrintButton />}>
       <style>{`@media print { thead { display: table-header-group; } tr { break-inside: avoid; } }`}</style>
       <div className="bg-white text-neutral-900 shadow-lg print:shadow-none" style={{ width: "210mm", minHeight: "297mm", padding: "14mm 14mm 12mm" }}>
         <header className="mb-6 flex items-start justify-between gap-6 border-b border-neutral-300 pb-3">
@@ -36,10 +42,10 @@ export default async function ChampionshipPrintPage({ params, searchParams }: { 
             <div>
               <div className="text-sm text-neutral-600">{ctx.tenant.name}</div>
               <h1 className="text-2xl font-bold leading-tight">{c.name}</h1>
-              <div className="text-xs text-neutral-600">{chDay(c.startsOn)} – {chDay(c.endsOn)}</div>
+              <div className="text-xs text-neutral-600">{dayKeyLabel(c.startsOn, locale)} – {dayKeyLabel(c.endsOn, locale)}</div>
             </div>
           </div>
-          <div className="text-right text-xs text-neutral-600">Stand {formatDateZurich(now, { weekday: undefined })}</div>
+          <div className="text-right text-xs text-neutral-600">{t("adm2.champ.print.asOf", { date: formatDate(now, locale) })}</div>
         </header>
 
         {top.length ? (
@@ -50,7 +56,7 @@ export default async function ChampionshipPrintPage({ params, searchParams }: { 
                 return (
                   <div key={place} className="text-center">
                     <div className="mb-1 text-[11pt] font-semibold leading-tight">{people.length ? people.map((p) => <div key={p.userId}>{p.name}</div>) : "–"}</div>
-                    <div className="mb-1 text-[9pt] text-neutral-600">{people[0] ? `${formatPoints(people[0].total)} Punkte` : ""}</div>
+                    <div className="mb-1 text-[9pt] text-neutral-600">{people[0] ? t("adm2.champ.print.points", { n: formatPoints(people[0].total) }) : ""}</div>
                     <div className="flex items-start justify-center pt-2 text-[22pt] font-bold" style={{ background: PODIUM_COLORS[place], height: place === 1 ? "32mm" : place === 2 ? "24mm" : "17mm", color: place === 3 ? "#fff" : "#000" }}>
                       {place}
                     </div>
@@ -61,49 +67,49 @@ export default async function ChampionshipPrintPage({ params, searchParams }: { 
           </section>
         ) : null}
 
-        <h2 className="mb-2 text-base font-semibold">Gesamtrangliste</h2>
-        <RankTable rows={ranking.ranked.map((e) => ({ e, rank: e.rank }))} programs={c.programs} />
+        <h2 className="mb-2 text-base font-semibold">{t("adm2.champ.print.overall")}</h2>
+        <RankTable rows={ranking.ranked.map((e) => ({ e, rank: e.rank }))} programs={c.programs} t={t} />
 
         {showCats
           ? ranking.categories.map((k) => (
               <section key={k.name} className="mt-6" style={{ breakInside: "avoid" }}>
-                <h2 className="mb-2 text-base font-semibold">Kategorie {k.name}</h2>
-                <RankTable rows={k.entries.map((e) => ({ e, rank: e.categoryRank }))} programs={c.programs} />
+                <h2 className="mb-2 text-base font-semibold">{t("adm2.champ.print.category", { name: k.name === NO_CATEGORY ? t("shooting.champ.noCategory") : k.name })}</h2>
+                <RankTable rows={k.entries.map((e) => ({ e, rank: e.categoryRank }))} programs={c.programs} t={t} />
               </section>
             ))
           : null}
 
         {ranking.unclassified.length ? (
           <section className="mt-6">
-            <h2 className="mb-1 text-base font-semibold">Nicht klassiert</h2>
-            <p className="mb-2 text-[9pt] text-neutral-600">Pflichtprogramm(e) nicht geschossen.</p>
-            <RankTable rows={ranking.unclassified.map((e) => ({ e, rank: null }))} programs={c.programs} showMissing />
+            <h2 className="mb-1 text-base font-semibold">{t("adm2.champ.print.unranked")}</h2>
+            <p className="mb-2 text-[9pt] text-neutral-600">{t("adm2.champ.print.unrankedText")}</p>
+            <RankTable rows={ranking.unclassified.map((e) => ({ e, rank: null }))} programs={c.programs} showMissing t={t} />
           </section>
         ) : null}
 
         <footer className="mt-8 text-[8pt] text-neutral-500">
-          {c.bestOf ? `Pro Programm zählen die besten ${c.bestOf} Resultate (abweichende Anzahl siehe Programm). ` : "Alle Resultate zählen. "}
-          {c.officialOnly ? "Nur bestätigte Resultate. " : ""}
-          Gleichstand: bestes Einzelresultat, dann Anzahl Resultate. Kategorie nach Jahrgang. Erstellt mit Standchef.
+          {c.bestOf ? t("adm2.champ.print.bestOf", { n: c.bestOf }) : t("adm2.champ.print.allCount")}
+          {c.officialOnly ? t("adm2.champ.print.officialOnly") : ""}
+          {t("adm2.champ.print.footer")}
         </footer>
       </div>
     </PrintShell>
   );
 }
 
-function RankTable({ rows, programs, showMissing }: { rows: Array<{ e: RankingEntry; rank: number | null }>; programs: Array<{ programId: string; name: string }>; showMissing?: boolean }) {
-  if (rows.length === 0) return <p className="text-[9pt] text-neutral-500">Keine Einträge.</p>;
+function RankTable({ rows, programs, showMissing, t }: { rows: Array<{ e: RankingEntry; rank: number | null }>; programs: Array<{ programId: string; name: string }>; showMissing?: boolean; t: TFunction }) {
+  if (rows.length === 0) return <p className="text-[9pt] text-neutral-500">{t("adm2.champ.print.none")}</p>;
   const cell = "border border-neutral-300 px-1.5 py-1";
   return (
     <table className="w-full border-collapse text-[9pt] leading-tight">
       <thead>
         <tr className="bg-neutral-100 text-left">
-          <th className={`${cell} w-[10mm]`}>Rang</th>
-          <th className={cell}>Name</th>
-          <th className={cell}>Kategorie</th>
+          <th className={`${cell} w-[10mm]`}>{t("adm2.champ.csv.rank")}</th>
+          <th className={cell}>{t("adm2.champ.csv.name")}</th>
+          <th className={cell}>{t("adm2.champ.csv.category")}</th>
           {programs.map((p) => <th key={p.programId} className={`${cell} text-right`}>{p.name}</th>)}
-          <th className={`${cell} text-right`}>Bonus</th>
-          <th className={`${cell} text-right`}>Total</th>
+          <th className={`${cell} text-right`}>{t("adm2.champ.csv.bonus")}</th>
+          <th className={`${cell} text-right`}>{t("adm2.champ.csv.total")}</th>
         </tr>
       </thead>
       <tbody>
@@ -112,7 +118,7 @@ function RankTable({ rows, programs, showMissing }: { rows: Array<{ e: RankingEn
             <td className={`${cell} tabular-nums`}>{rank ?? "–"}</td>
             <td className={cell}>
               {e.name}
-              {showMissing && e.missingRequired.length ? <span className="block text-[8pt] text-neutral-500">fehlt: {e.missingRequired.join(", ")}</span> : null}
+              {showMissing && e.missingRequired.length ? <span className="block text-[8pt] text-neutral-500">{t("adm2.champ.print.missing", { list: e.missingRequired.join(", ") })}</span> : null}
             </td>
             <td className={cell}>{e.category === NO_CATEGORY ? "" : e.category}</td>
             {programs.map((p) => {

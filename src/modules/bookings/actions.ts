@@ -187,7 +187,7 @@ export async function payBookingAction(bookingId: string): Promise<ActionResult>
   if (b.status !== "CONFIRMED") return fail(t("bookings.err.notConfirmed"));
   if (b.paymentStatus === "PAID") return fail(t("bookings.err.alreadyPaid"));
   if (b.paymentMethod !== "ONLINE") return fail(t("bookings.err.invoiceOnly"));
-  const result = await startOnlinePayment(b, ctx.user.email);
+  const result = await startOnlinePayment(b, ctx.user.email, await getRequestLocale());
   if (!result.ok) return fail(result.error);
   redirect(result.redirectUrl);
 }

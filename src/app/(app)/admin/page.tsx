@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { getRequestLocale, getT } from "@/lib/i18n";
 import Link from "next/link";
-import { Award, BookOpenCheck, Boxes, CalendarDays, ClipboardList, Clock, Code2, Coffee, CreditCard, FileInput, FileUp, FolderOpen, Handshake, HandHelping, History, Home, Landmark, Mail, Megaphone, Package, Server, Settings2, Shield, Trophy, Tv, UserPlus, Users, Wallet } from "lucide-react";
+import { Award, BookOpenCheck, Bot, FileText, Boxes, CalendarDays, ClipboardList, Clock, Code2, Coffee, CreditCard, FileInput, FileUp, FolderOpen, Handshake, HandHelping, History, Home, Landmark, Mail, Megaphone, Package, Server, Settings2, Shield, Trophy, Tv, UserPlus, Users, Wallet } from "lucide-react";
 import { requirePermission } from "@/lib/tenant";
 import { MODULES } from "@/lib/modules";
 import { db } from "@/lib/db";
@@ -90,6 +90,10 @@ export default async function AdminPage() {
       {ctx.can("accounting.export") ? (
         <AdminRow href="/admin/accounting" icon={<BookOpenCheck className="h-5 w-5 text-ink-2" aria-hidden />} label={t("adm1.home.accounting")} hint={t("adm1.home.accountingHint")} />
       ) : null}
+      {ctx.can("ai.manage") ? (
+        <AdminRow href="/admin/ai" icon={<Bot className="h-5 w-5 text-ink-2" aria-hidden />} label={t("misc.nav.adminAi")} hint={t("misc.nav.adminAiHint")} />
+      ) : null}
+      <AdminRow href="/admin/reports" icon={<FileText className="h-5 w-5 text-ink-2" aria-hidden />} label={t("misc.nav.adminReports")} hint={t("misc.nav.adminReportsHint")} />
       <AdminRow href="/admin/embed" icon={<Code2 className="h-5 w-5 text-ink-2" aria-hidden />} label={t("adm1.home.embed")} hint={t("adm1.home.embedHint")} />
       <AdminRow href="/admin/association" icon={<Landmark className="h-5 w-5 text-ink-2" aria-hidden />} label={t("adm1.home.association")} hint={t("adm1.home.associationHint")} />
       {ctx.hasModule("weapons") && ctx.can("weapons.manage") ? (

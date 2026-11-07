@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useState, startTransition } from "react";
+import { useActionState, useRef, useState, startTransition } from "react";
 import { Alert, Button, Card, Field, Input, Textarea } from "@/components/ui";
 import { Spinner } from "@/components/ui/form";
 import { cn } from "@/lib/utils";
@@ -8,6 +8,7 @@ import { addDays } from "@/lib/time";
 import { saveEventAction } from "../actions";
 import { EVENT_KINDS, EVENT_KIND_META, MAX_RECURRENCE, recurrenceDates, type EventKind } from "../types";
 import { KindIcon } from "./bits";
+import { WritingAssistant, type WritingAvailability } from "@/modules/ai/content/ui/writing-assistant";
 
 export type EventFormDefaults = {
   id?: string;
@@ -52,8 +53,11 @@ function Segmented<T extends string>({ name, value, onChange, options }: { name:
   );
 }
 
-export function EventForm({ initial, mode }: { initial: EventFormDefaults; mode: "create" | "edit" | "copy" }) {
+export function EventForm({ initial, mode, writing }: { initial: EventFormDefaults; mode: "create" | "edit" | "copy"; /** Schreibhilfe mit Claude (null = ausgeblendet) */ writing?: WritingAvailability | null }) {
   const [state, formAction, isPending] = useActionState(saveEventAction, null);
+  const formRef = useRef<HTMLFormElement>(null);
+  const [title, setTitle] = useState(initial.title);
+  const [description, setDescription] = useState(initial.description);
   const [kind, setKind] = useState<EventKind>(initial.kind);
   const [date, setDate] = useState(initial.date);
   const [allDay, setAllDay] = useState(initial.allDay);
@@ -76,13 +80,32 @@ export function EventForm({ initial, mode }: { initial: EventFormDefaults; mode:
   }
 
   return (
-    <form onSubmit={onSubmit} className="space-y-4" noValidate>
+    <form ref={formRef} onSubmit={onSubmit} className="space-y-4" noValidate>
       {initial.id ? <input type="hidden" name="id" value={initial.id} /> : null}
       <input type="hidden" name="kind" value={kind} />
 
+      {writing ? (
+        <WritingAssistant
+          kind="event"
+          availability={writing}
+          getCurrent={() => ({ title, text: description })}
+          getFacts={() => {
+            const fd = formRef.current ? new FormData(formRef.current) : null;
+            const get = (k: string) => { const v = fd?.get(k); return typeof v === "string" ? v : ""; };
+            return {
+              kind: EVENT_KIND_META[kind].label,
+              date: date ? fmtDay(date) : "",
+              time: allDay ? "" : [get("timeFrom"), get("timeTo")].filter(Boolean).join("–"),
+              location: get("location"),
+            };
+          }}
+          onApply={(v) => { if (v.title) setTitle(v.title.slice(0, 120)); setDescription(v.text.slice(0, 5000)); }}
+        />
+      ) : null}
+
       <Card className="animate-rise p-4 space-y-4">
         <Field label="Titel" error={fe.title}>
-          <Input name="title" defaultValue={initial.title} required maxLength={120} placeholder="z.B. Training 300 m, Obligatorisch, GV" autoFocus={mode === "create"} />
+          <Input name="title" value={title} onChange={(e) => setTitle(e.target.value)} required maxLength={120} placeholder="z.B. Training 300 m, Obligatorisch, GV" autoFocus={mode === "create"} />
         </Field>
         <div>
           <p className="mb-1.5 text-sm font-medium text-ink-2">Art</p>
@@ -118,7 +141,7 @@ export function EventForm({ initial, mode }: { initial: EventFormDefaults; mode:
           <Input name="location" defaultValue={initial.location} maxLength={160} placeholder="z.B. Schiessanlage Allmend, 300 m Stand" />
         </Field>
         <Field label="Beschreibung (optional)" hint="Links werden automatisch klickbar." error={fe.description}>
-          <Textarea name="description" defaultValue={initial.description} maxLength={5000} className="min-h-28" placeholder="Was erwartet die Teilnehmenden? Was mitnehmen? Wer ist verantwortlich?" />
+          <Textarea name="description" value={description} onChange={(e) => setDescription(e.target.value)} maxLength={5000} className="min-h-28" placeholder="Was erwartet die Teilnehmenden? Was mitnehmen? Wer ist verantwortlich?" />
         </Field>
       </Card>
 

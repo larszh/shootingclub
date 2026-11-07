@@ -8,6 +8,8 @@ import { requireModule, requirePermission, requireSuperAdmin } from "@/lib/tenan
 import { deleteStoredFile, saveFile } from "@/lib/storage";
 import { fail, ok, type ActionResult } from "@/lib/action-result";
 import { getTarget } from "./queries";
+import { getRequestLocale, getT } from "@/lib/i18n";
+import { translateTargetText } from "./target-i18n";
 import { ALLOWED_UPLOAD_TYPES, MAX_UPLOAD_BYTES, PAPER_SIZES, PARAM_INFO, subjectVariants, targetInputSchema, targetParamsIssue, type ParamKey, type TargetInput } from "./types";
 
 function parseTargetForm(formData: FormData) {
@@ -35,6 +37,10 @@ function parseTargetForm(formData: FormData) {
   });
 }
 
+async function tr() {
+  return getT(await getRequestLocale());
+}
+
 function targetData(input: TargetInput) {
   return {
     name: input.name,
@@ -46,12 +52,12 @@ function targetData(input: TargetInput) {
   };
 }
 
-async function handleUpload(formData: FormData): Promise<{ filePath: string; mimeType: string } | { error: string } | null> {
+async function handleUpload(formData: FormData, t: Awaited<ReturnType<typeof tr>>): Promise<{ filePath: string; mimeType: string } | { error: string } | null> {
   const file = formData.get("file");
   if (!(file instanceof File) || file.size === 0) return null;
   const ext = ALLOWED_UPLOAD_TYPES[file.type];
-  if (!ext) return { error: "Nur PNG, JPG, SVG oder PDF." };
-  if (file.size > MAX_UPLOAD_BYTES) return { error: "Datei zu gross (max. 8 MB)." };
+  if (!ext) return { error: t("adm2.targets.err.fileType") };
+  if (file.size > MAX_UPLOAD_BYTES) return { error: t("adm2.targets.err.fileSize") };
   const rel = `targets/${randomBytes(12).toString("hex")}.${ext}`;
   await saveFile(rel, Buffer.from(await file.arrayBuffer()));
   return { filePath: rel, mimeType: file.type };
@@ -61,18 +67,22 @@ async function handleUpload(formData: FormData): Promise<{ filePath: string; mim
  * scope = "global" (Super-Admin), "tenant" (Tenant-Admin) oder "mine" (eigener Upload).
  */
 export async function saveTargetAction(_prev: ActionResult | null, formData: FormData): Promise<ActionResult> {
+  const t = await tr();
+  const locale = await getRequestLocale();
   const scope = String(formData.get("scope") ?? "mine");
   const id = formData.get("id") ? String(formData.get("id")) : null;
   const parsed = parseTargetForm(formData);
   if (!parsed.success) {
     const first = parsed.error.issues[0];
-    if (!first) return fail("Ungültige Eingabe");
+    if (!first) return fail(t("adm2.targets.err.invalid"));
     const key = first.path[first.path.length - 1];
-    const label = first.path[0] === "params" && typeof key === "string" && key in PARAM_INFO ? PARAM_INFO[key as ParamKey].label : first.path[0] === "name" ? "Name" : first.path[0] === "paperSizes" ? "Formate" : String(first.path.join("."));
-    return fail(`${label}: ${first.message}`);
+    const label = first.path[0] === "params" && typeof key === "string" && key in PARAM_INFO ? translateTargetText(PARAM_INFO[key as ParamKey].label, locale) : first.path[0] === "name" ? t("adm2.targets.f.name") : first.path[0] === "paperSizes" ? t("adm2.targets.f.sizes") : String(first.path.join("."));
+    // Eigene Meldungen sind Schlüssel; Standardmeldungen von zod (Englisch) durch eigene ersetzen.
+    const message = first.message.startsWith("adm2.") ? t(first.message) : first.code === "too_big" ? t("adm2.targets.err.tooLong") : t("adm2.targets.err.invalidValue");
+    return fail(t("adm2.targets.err.field", { label, message }));
   }
   const input = parsed.data;
-  const paramsIssue = targetParamsIssue(input.subject, input.params);
+  const paramsIssue = targetParamsIssue(input.subject, input.params, t, (s) => translateTargetText(s, locale));
   if (paramsIssue) return fail(paramsIssue);
 
   // Zuerst Berechtigung und Besitz prüfen, erst danach Dateien speichern (keine verwaisten Uploads).
@@ -85,7 +95,7 @@ export async function saveTargetAction(_prev: ActionResult | null, formData: For
     redirectTo = "/super/targets";
     if (id) {
       const ex = await db.targetTemplate.findUnique({ where: { id } });
-      if (!ex || ex.tenantId !== null || ex.ownerUserId !== null) return fail("Nicht gefunden");
+      if (!ex || ex.tenantId !== null || ex.ownerUserId !== null) return fail(t("adm2.targets.err.notFound"));
       existing = ex;
     }
   } else if (scope === "tenant") {
@@ -93,7 +103,7 @@ export async function saveTargetAction(_prev: ActionResult | null, formData: For
     target = { tenantId: ctx.tenant.id, ownerUserId: null, sharedWithTenant: false };
     if (id) {
       const ex = await db.targetTemplate.findUnique({ where: { id } });
-      if (!ex || ex.tenantId !== ctx.tenant.id || ex.ownerUserId !== null) return fail("Nicht gefunden");
+      if (!ex || ex.tenantId !== ctx.tenant.id || ex.ownerUserId !== null) return fail(t("adm2.targets.err.notFound"));
       existing = ex;
     }
   } else {
@@ -101,7 +111,7 @@ export async function saveTargetAction(_prev: ActionResult | null, formData: For
     target = { tenantId: ctx.tenant.id, ownerUserId: ctx.user.id };
     if (id) {
       const ex = await db.targetTemplate.findUnique({ where: { id } });
-      if (!ex || ex.ownerUserId !== ctx.user.id) return fail("Nicht gefunden");
+      if (!ex || ex.ownerUserId !== ctx.user.id) return fail(t("adm2.targets.err.notFound"));
       existing = ex;
       // Beim Bearbeiten im Verein bleiben: sonst verschwindet eine geteilte Scheibe aus dem ursprünglichen Verein.
       target.tenantId = ex.tenantId;
@@ -109,9 +119,9 @@ export async function saveTargetAction(_prev: ActionResult | null, formData: For
   }
 
   const isUpload = input.subject === "UPLOAD";
-  const upload = isUpload ? await handleUpload(formData) : null;
+  const upload = isUpload ? await handleUpload(formData, t) : null;
   if (upload && "error" in upload) return fail(upload.error);
-  if (isUpload && !upload && !existing?.filePath) return fail("Bitte eine Datei hochladen.");
+  if (isUpload && !upload && !existing?.filePath) return fail(t("adm2.targets.err.fileRequired"));
 
   // Generierte Sujets haben keine Datei: alte Datei samt Typ entfernen (sonst gilt die Scheibe z.B. weiter als PDF).
   const fileFields = !isUpload
@@ -134,7 +144,8 @@ export async function saveTargetAction(_prev: ActionResult | null, formData: For
 
 export async function setTargetHiddenAction(targetId: string, hidden: boolean): Promise<ActionResult> {
   const ctx = await requirePermission("tenant.targets.manage");
-  if (!(await getTarget(ctx, String(targetId)))) return fail("Nicht gefunden");
+  const t = await tr();
+  if (!(await getTarget(ctx, String(targetId)))) return fail(t("adm2.targets.err.notFound"));
   await db.targetTenantSetting.upsert({
     where: { targetId_tenantId: { targetId, tenantId: ctx.tenant.id } },
     create: { targetId, tenantId: ctx.tenant.id, hidden },
@@ -146,7 +157,8 @@ export async function setTargetHiddenAction(targetId: string, hidden: boolean): 
 
 export async function toggleTargetFavoriteAction(targetId: string): Promise<ActionResult<{ favorite: boolean }>> {
   const ctx = await requireModule("targets");
-  if (!(await getTarget(ctx, String(targetId)))) return fail("Nicht gefunden");
+  const t = await tr();
+  if (!(await getTarget(ctx, String(targetId)))) return fail(t("adm2.targets.err.notFound"));
   const ex = await db.targetFavorite.findUnique({ where: { userId_targetId: { userId: ctx.user.id, targetId } } });
   if (ex) await db.targetFavorite.delete({ where: { id: ex.id } });
   else await db.targetFavorite.create({ data: { userId: ctx.user.id, targetId } });
@@ -156,14 +168,15 @@ export async function toggleTargetFavoriteAction(targetId: string): Promise<Acti
 
 export async function deleteTargetAction(targetId: string): Promise<ActionResult> {
   const ctx = await requireModule("targets");
-  const t = await db.targetTemplate.findUnique({ where: { id: targetId } });
-  if (!t) return fail("Nicht gefunden");
+  const t = await tr();
+  const row = await db.targetTemplate.findUnique({ where: { id: targetId } });
+  if (!row) return fail(t("adm2.targets.err.notFound"));
   const allowed =
-    (t.ownerUserId && t.ownerUserId === ctx.user.id) ||
-    (t.tenantId === ctx.tenant.id && t.ownerUserId === null && ctx.can("tenant.targets.manage")) ||
-    (t.tenantId === null && ctx.user.isSuperAdmin);
-  if (!allowed) return fail("Keine Berechtigung");
-  if (t.filePath) await deleteStoredFile(t.filePath);
+    (row.ownerUserId && row.ownerUserId === ctx.user.id) ||
+    (row.tenantId === ctx.tenant.id && row.ownerUserId === null && ctx.can("tenant.targets.manage")) ||
+    (row.tenantId === null && ctx.user.isSuperAdmin);
+  if (!allowed) return fail(t("adm2.targets.err.noPermission"));
+  if (row.filePath) await deleteStoredFile(row.filePath);
   await db.targetTemplate.delete({ where: { id: targetId } });
   revalidatePath("/targets");
   revalidatePath("/super/targets");

@@ -5,6 +5,8 @@ import { loadStorageSettings } from "@/lib/file-storage";
 import { canSeeFolder, loadFolderTree } from "@/modules/files/queries";
 import { FileServiceError, fileErrorMessage, readUploadForm, saveTenantFile } from "@/modules/files/service";
 import { MB } from "@/modules/files/types";
+import { getT, normalizeLocale } from "@/lib/i18n/core";
+import { getRequestLocale } from "@/lib/i18n";
 
 export const dynamic = "force-dynamic";
 // Uploads in grossen Vereinsspeicher (S3/WebDAV) können dauern.
@@ -32,13 +34,15 @@ function sameOrigin(req: Request) {
  * Eine Datei pro Anfrage, damit der Browser den Fortschritt pro Datei zeigen kann.
  */
 export async function POST(req: Request) {
-  if (!sameOrigin(req)) return json(403, { error: "Ungültige Herkunft der Anfrage." });
   const user = await getCurrentUser();
-  if (!user) return json(401, { error: "Bitte zuerst anmelden." });
+  const locale = user?.locale ? normalizeLocale(user.locale) : await getRequestLocale();
+  const t = getT(locale);
+  if (!sameOrigin(req)) return json(403, { error: t("misc.file.badOrigin") });
+  if (!user) return json(401, { error: t("misc.file.notSignedIn") });
   const ctx = await getAppContext();
-  if (!ctx.tenant) return json(400, { error: "Kein Verein ausgewählt." });
-  if (!ctx.hasModule("files")) return json(403, { error: "Die Dateiablage ist für diesen Verein nicht aktiv." });
-  if (!ctx.can("files.upload")) return json(403, { error: "Du darfst keine Dateien hochladen." });
+  if (!ctx.tenant) return json(400, { error: t("misc.file.noClub") });
+  if (!ctx.hasModule("files")) return json(403, { error: t("misc.file.moduleOff") });
+  if (!ctx.can("files.upload")) return json(403, { error: t("misc.file.noRight") });
   const tenantId = ctx.tenant.id;
 
   // Einlesen mit fester Obergrenze (auch ohne Content-Length), danach Dateigrösse genau prüfen.
@@ -48,23 +52,23 @@ export async function POST(req: Request) {
   try {
     form = await readUploadForm(req, settings.maxFileMb);
   } catch (e) {
-    return json(e instanceof FileServiceError ? e.status : 400, { error: fileErrorMessage(e) });
+    return json(e instanceof FileServiceError ? e.status : 400, { error: fileErrorMessage(e, locale) });
   }
 
   const expectedTenant = form.get("tenantId");
   if (typeof expectedTenant === "string" && expectedTenant && expectedTenant !== tenantId) {
-    return json(409, { error: "Du hast inzwischen den Verein gewechselt. Bitte Seite neu laden." });
+    return json(409, { error: t("misc.file.clubChanged") });
   }
   const file = form.get("file");
-  if (!file || typeof file === "string") return json(400, { error: "Keine Datei erhalten." });
-  if (file.size > limit) return json(413, { error: `Die Datei ist zu gross. Erlaubt sind höchstens ${settings.maxFileMb} MB pro Datei.` });
+  if (!file || typeof file === "string") return json(400, { error: t("misc.file.noFile") });
+  if (file.size > limit) return json(413, { error: t("misc.file.tooBigMax", { max: settings.maxFileMb }) });
 
   const folderRaw = form.get("folderId");
   let folderId: string | null = null;
   if (typeof folderRaw === "string" && folderRaw) {
     const tree = await loadFolderTree(tenantId);
     const node = tree.get(folderRaw);
-    if (!node || !canSeeFolder(node, ctx.tenant.role, user.isSuperAdmin)) return json(404, { error: "Der Ordner existiert nicht mehr." });
+    if (!node || !canSeeFolder(node, ctx.tenant.role, user.isSuperAdmin)) return json(404, { error: t("misc.file.folderGone") });
     folderId = node.id;
   }
 
@@ -75,6 +79,6 @@ export async function POST(req: Request) {
   } catch (e) {
     const status = e instanceof FileServiceError ? e.status : 502;
     if (!(e instanceof FileServiceError)) console.error("[files] Upload fehlgeschlagen:", e);
-    return json(status, { error: fileErrorMessage(e) });
+    return json(status, { error: fileErrorMessage(e, locale) });
   }
 }

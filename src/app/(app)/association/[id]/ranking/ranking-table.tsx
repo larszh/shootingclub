@@ -1,7 +1,8 @@
 import { formatTotal, type AssociationRanking } from "@/modules/association/stats";
+import type { TFunction } from "@/lib/i18n/core";
 
 /** Rangliste als Tabelle (App und Druck). Vereine ohne Namensfreigabe nur mit Anzahl. */
-export function RankingTable({ ranking, decimal, print }: { ranking: AssociationRanking; decimal: boolean; print?: boolean }) {
+export function RankingTable({ ranking, decimal, print, t }: { ranking: AssociationRanking; decimal: boolean; print?: boolean; t: TFunction }) {
   const cell = print ? "py-1 pr-3 border-b border-neutral-300" : "py-2 pr-3 border-b border-line";
   const head = print ? "py-1 pr-3 text-left font-semibold border-b-2 border-neutral-500" : "py-2 pr-3 text-left text-xs font-medium text-ink-3 border-b border-line";
   return (
@@ -11,12 +12,12 @@ export function RankingTable({ ranking, decimal, print }: { ranking: Association
           <table className="w-full text-sm">
             <thead>
               <tr>
-                <th className={`${head} w-12`}>Rang</th>
-                <th className={head}>Name</th>
-                <th className={head}>Verein</th>
-                <th className={`${head} text-right`}>Total</th>
-                <th className={`${head} text-right`}>Nuller</th>
-                <th className={`${head} text-right`}>Res.</th>
+                <th className={`${head} w-12`}>{t("adm2.assoc.r.rank")}</th>
+                <th className={head}>{t("adm2.common.name")}</th>
+                <th className={head}>{t("adm2.assoc.r.club")}</th>
+                <th className={`${head} text-right`}>{t("adm2.common.total")}</th>
+                <th className={`${head} text-right`}>{t("adm2.assoc.r.zeros")}</th>
+                <th className={`${head} text-right`}>{t("adm2.assoc.r.res")}</th>
               </tr>
             </thead>
             <tbody>
@@ -34,17 +35,17 @@ export function RankingTable({ ranking, decimal, print }: { ranking: Association
           </table>
         </div>
       ) : (
-        <p className={print ? "text-sm" : "text-sm text-ink-3"}>Keine Resultate von Vereinen mit Namensfreigabe im gewählten Zeitraum.</p>
+        <p className={print ? "text-sm" : "text-sm text-ink-3"}>{t("adm2.assoc.r.none")}</p>
       )}
       {ranking.anonymous.length ? (
         <div>
-          <h3 className={print ? "mb-1 font-semibold" : "mb-1 text-sm font-medium"}>Vereine ohne Namensfreigabe</h3>
+          <h3 className={print ? "mb-1 font-semibold" : "mb-1 text-sm font-medium"}>{t("adm2.assoc.r.anon")}</h3>
           <table className="w-full text-sm">
             <thead>
               <tr>
-                <th className={head}>Verein</th>
-                <th className={`${head} text-right`}>Schützen</th>
-                <th className={`${head} text-right`}>Resultate</th>
+                <th className={head}>{t("adm2.assoc.r.club")}</th>
+                <th className={`${head} text-right`}>{t("adm2.assoc.r.shooters")}</th>
+                <th className={`${head} text-right`}>{t("adm2.assoc.r.results")}</th>
               </tr>
             </thead>
             <tbody>
@@ -57,7 +58,7 @@ export function RankingTable({ ranking, decimal, print }: { ranking: Association
               ))}
             </tbody>
           </table>
-          <p className={print ? "mt-1 text-xs" : "mt-1 text-xs text-ink-3"}>Diese Vereine teilen nur die Anzahl, nicht Namen oder Resultate einzelner Schützen.</p>
+          <p className={print ? "mt-1 text-xs" : "mt-1 text-xs text-ink-3"}>{t("adm2.assoc.r.anonText")}</p>
         </div>
       ) : null}
     </div>

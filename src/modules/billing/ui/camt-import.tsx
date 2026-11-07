@@ -32,6 +32,13 @@ function localizeReason(t: TFunction, reason: string): string {
   return reason;
 }
 
+/** Platzhalternamen aus dem Abgleich («Gast», «Ehemaliges Mitglied») übersetzen; echte Namen bleiben. */
+function localizeName(t: TFunction, name: string): string {
+  if (name === "Gast") return t("adm1.camt.name.guest");
+  if (name === "Ehemaliges Mitglied") return t("adm1.camt.name.formerMember");
+  return name;
+}
+
 /** Bezeichnung des Ziels («Beitrag 2026 · Aktiv», «Reservation …», «Munition · …») übersetzen. */
 function localizeTargetLabel(t: TFunction, kind: "FEE" | "BOOKING" | "AMMO", label: string): string {
   if (kind === "FEE") return label.replace(/^Beitrag /, `${t("adm1.camt.kind.FEE")} `);
@@ -161,11 +168,11 @@ function ItemRow({ item, checked, done, onToggle }: { item: ImportPreviewItem; c
         {item.target ? (
           <div className="mt-1.5 text-sm">
             <span className="text-ink-3">→ </span>
-            <span className="font-medium">{item.target.number}</span> · {item.target.name} <span className="text-ink-3">· {localizeTargetLabel(t, item.target.kind, item.target.label)} · {formatMoney(item.target.amountCents, item.target.currency)}</span>
+            <span className="font-medium">{item.target.number}</span> · {localizeName(t, item.target.name)} <span className="text-ink-3">· {localizeTargetLabel(t, item.target.kind, item.target.label)} · {formatMoney(item.target.amountCents, item.target.currency)}</span>
             {item.matchedBy ? <span className="ml-1 text-xs text-ink-3">({t(item.matchedBy === "reference" ? "adm1.camt.byReference" : "adm1.camt.byNumber")})</span> : null}
           </div>
         ) : item.candidates.length ? (
-          <div className="mt-1.5 text-xs text-ink-3">{t("adm1.camt.possible", { list: item.candidates.map((c) => `${c.number} (${c.name})`).join(", ") })}</div>
+          <div className="mt-1.5 text-xs text-ink-3">{t("adm1.camt.possible", { list: item.candidates.map((c) => `${c.number} (${localizeName(t, c.name)})`).join(", ") })}</div>
         ) : null}
         {item.reason ? <div className="mt-1 text-xs text-warn">{localizeReason(t, item.reason)}</div> : null}
         {item.status === "amount_mismatch" && item.target ? <div className="mt-1 text-xs text-warn">{t("adm1.camt.expected", { amount: formatMoney(item.target.amountCents, item.target.currency) })}</div> : null}

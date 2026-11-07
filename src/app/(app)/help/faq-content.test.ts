@@ -9,7 +9,7 @@ const ALL = [...MEMBER_FAQ, ...ADMIN_FAQ];
 describe("Hilfe-Inhalte", () => {
   it("eindeutige ids und passende Zielgruppe", () => {
     expect(new Set(ALL.map((e) => e.id)).size).toBe(ALL.length);
-    expect(ALL.length).toBe(53);
+    expect(ALL.length).toBe(56);
     expect(MEMBER_FAQ.every((e) => e.audience === "member")).toBe(true);
     expect(ADMIN_FAQ.every((e) => e.audience === "admin")).toBe(true);
   });

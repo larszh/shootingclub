@@ -1,6 +1,7 @@
 import "server-only";
+import { db } from "@/lib/db";
 import { listAwardLimits, listFsParticipants, listFsPrograms, previousAwardLimits, type FsParticipantRow } from "./queries";
-import { awardFor, awardLimitsToText, bestPerShooter, countAwards, type AwardExportRow, type AwardResult } from "./awards";
+import { awardFor, awardLimitsToText, bestPerShooter, countAwards, weaponCategoriesOf, type AwardExportRow, type AwardResult } from "./awards";
 import { formatSwissDate } from "./types";
 
 export type FsAwardRow = FsParticipantRow & { result: AwardResult };
@@ -13,7 +14,7 @@ export type FsAwardRow = FsParticipantRow & { result: AwardResult };
 export async function fsAwardsOverview(tenantId: string, year: number) {
   const [programs, limitsByProgram, participants] = await Promise.all([listFsPrograms(tenantId), listAwardLimits(tenantId, year), listFsParticipants(tenantId, year)]);
   const byParticipant = new Map<string, AwardResult>();
-  for (const p of participants) byParticipant.set(p.id, awardFor(limitsByProgram.get(p.programId) ?? [], p.total, p.birthYear, year));
+  for (const p of participants) byParticipant.set(p.id, awardFor(limitsByProgram.get(p.programId) ?? [], p.total, p.birthYear, year, p.weaponCategory));
 
   const best = bestPerShooter(participants.map((p) => ({ ...p, shooterKey: p.userId ?? `guest:${p.name.toLowerCase()}` })));
   const knownIds = new Set(programs.map((p) => p.id));
@@ -23,11 +24,12 @@ export async function fsAwardsOverview(tenantId: string, year: number) {
       .filter((r) => r.programId === program.id)
       .map((r) => ({ ...r, result: byParticipant.get(r.id)! }))
       .sort((a, b) => b.total - a.total || (a.zeros ?? 0) - (b.zeros ?? 0) || a.name.localeCompare(b.name, "de-CH"));
-    return { program, limits, rows, counts: countAwards(rows.map((r) => r.result)) };
+    return { program, limits, rows, counts: countAwards(rows.map((r) => r.result)), weaponCategories: weaponCategoriesOf(limits) };
   });
   // Resultate in Programmen, die (z.B. versteckt) nicht mehr in der Liste sind, gehen nicht verloren
   const orphans = best.filter((r) => !knownIds.has(r.programId));
-  return { sections, participants, byParticipant, orphanCount: orphans.length, hasLimits: limitsByProgram.size > 0 };
+  const weaponCategories = weaponCategoriesOf([...limitsByProgram.values()].flat());
+  return { sections, participants, byParticipant, orphanCount: orphans.length, hasLimits: limitsByProgram.size > 0, weaponCategories };
 }
 export type FsAwardsOverview = Awaited<ReturnType<typeof fsAwardsOverview>>;
 
@@ -43,6 +45,7 @@ export function awardExportRows(overview: FsAwardsOverview): AwardExportRow[] {
     s.rows.map((r) => ({
       name: r.name,
       birthYear: r.birthYear,
+      weaponCategory: r.weaponCategory,
       program: s.program.name,
       total: r.total,
       zeros: r.zeros,
@@ -52,4 +55,18 @@ export function awardExportRows(overview: FsAwardsOverview): AwardExportRow[] {
       result: r.result,
     })),
   );
+}
+
+/**
+ * Waffenkategorien, die der Verein in den Limiten eines Programms verwendet (Jahr und die fünf
+ * Vorjahre), für die Auswahl bei der Teilnahme. Leer = keine Waffenkategorien im Einsatz.
+ */
+export async function clubWeaponCategories(tenantId: string, programId: string, year: number): Promise<string[]> {
+  const rows = await db.awardLimit.findMany({
+    where: { tenantId, programId, year: { gte: year - 5, lte: year }, weaponCategory: { not: null } },
+    select: { weaponCategory: true },
+    distinct: ["weaponCategory"],
+    take: 100,
+  });
+  return weaponCategoriesOf(rows);
 }

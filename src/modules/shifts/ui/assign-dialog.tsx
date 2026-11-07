@@ -9,15 +9,17 @@ import { Spinner } from "@/components/ui/form";
 import { toast } from "@/lib/ui-feedback";
 import { cn } from "@/lib/utils";
 import { assignMembersAction } from "@/modules/shifts/actions";
+import { useT } from "@/components/locale";
 
 export type AssignMember = { userId: string; name: string; memberNumber: string | null; qualified: boolean };
 
 /** Mitglieder einteilen (Mehrfachauswahl mit Suche). Qualifizierte Personen sind markiert. */
 export function AssignButton({ shiftId, members, open: openSlots, qualificationLabel }: { shiftId: string; members: AssignMember[]; open: number; qualificationLabel: string | null }) {
   const [open, setOpen] = useState(false);
+  const t = useT();
   return (
     <>
-      <Button onClick={() => setOpen(true)} disabled={!members.length}><UserPlus className="h-4 w-4" /> Einteilen</Button>
+      <Button onClick={() => setOpen(true)} disabled={!members.length}><UserPlus className="h-4 w-4" /> {t("adm2.shifts.asg.button")}</Button>
       {open ? <AssignDialog shiftId={shiftId} members={members} openSlots={openSlots} qualificationLabel={qualificationLabel} onClose={() => setOpen(false)} /> : null}
     </>
   );
@@ -25,6 +27,7 @@ export function AssignButton({ shiftId, members, open: openSlots, qualificationL
 
 function AssignDialog({ shiftId, members, openSlots, qualificationLabel, onClose }: { shiftId: string; members: AssignMember[]; openSlots: number; qualificationLabel: string | null; onClose: () => void }) {
   const router = useRouter();
+  const t = useT();
   const [query, setQuery] = useState("");
   const [picked, setPicked] = useState<Set<string>>(new Set());
   const [error, setError] = useState<string | null>(null);
@@ -52,26 +55,26 @@ function AssignDialog({ shiftId, members, openSlots, qualificationLabel, onClose
       try {
         const r = await assignMembersAction(shiftId, [...picked]);
         if (!r.ok) return setError(r.error);
-        toast.success(r.message ?? "Eingeteilt.");
+        toast.success(r.message ?? t("adm2.shifts.asg.assigned"));
         onClose();
         router.refresh();
       } catch {
-        setError("Keine Verbindung. Bitte nochmals versuchen.");
+        setError(t("adm2.common.network"));
       }
     });
   }
 
   const over = picked.size > openSlots;
   return (
-    <Dialog open onClose={onClose} title="Mitglieder einteilen" description={openSlots > 0 ? `Noch ${openSlots} ${openSlots === 1 ? "Platz" : "Plätze"} frei.` : "Alle Plätze sind besetzt."} size="lg"
-      footer={<Button onClick={submit} disabled={pending || !picked.size}>{pending ? <Spinner /> : <Check className="h-4 w-4" />} {picked.size ? `${picked.size} einteilen` : "Einteilen"}</Button>}>
+    <Dialog open onClose={onClose} title={t("adm2.shifts.asg.title")} description={openSlots > 0 ? t(openSlots === 1 ? "adm2.shifts.asg.free.one" : "adm2.shifts.asg.free.other", { n: openSlots }) : t("adm2.shifts.asg.full")} size="lg"
+      footer={<Button onClick={submit} disabled={pending || !picked.size}>{pending ? <Spinner /> : <Check className="h-4 w-4" />} {picked.size ? t("adm2.shifts.asg.assignN", { n: picked.size }) : t("adm2.shifts.asg.button")}</Button>}>
       <div className="space-y-3 pb-2">
         <div className="relative">
           <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-ink-3" aria-hidden />
-          <Input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Name oder Nummer suchen" className="pl-9" aria-label="Mitglied suchen" data-autofocus />
+          <Input value={query} onChange={(e) => setQuery(e.target.value)} placeholder={t("adm2.shifts.asg.searchPh")} className="pl-9" aria-label={t("adm2.weapons.lend.search")} data-autofocus />
         </div>
         <ul className="max-h-[50vh] divide-y divide-line overflow-y-auto rounded-control border border-line">
-          {list.length === 0 ? <li className="p-4 text-sm text-ink-3">Niemand gefunden.</li> : null}
+          {list.length === 0 ? <li className="p-4 text-sm text-ink-3">{t("adm2.shifts.asg.nobody")}</li> : null}
           {list.map((m) => {
             const on = picked.has(m.userId);
             return (
@@ -81,7 +84,7 @@ function AssignDialog({ shiftId, members, openSlots, qualificationLabel, onClose
                   <span className={cn("flex h-6 w-6 shrink-0 items-center justify-center rounded-md border-2", on ? "border-accent bg-accent text-white" : "border-line")} aria-hidden>{on ? <Check className="h-4 w-4" /> : null}</span>
                   <span className="min-w-0 flex-1">
                     <span className="block truncate font-medium">{m.name}</span>
-                    {m.memberNumber ? <span className="block text-xs text-ink-3">Nr. {m.memberNumber}</span> : null}
+                    {m.memberNumber ? <span className="block text-xs text-ink-3">{t("adm2.shifts.asg.nr", { n: m.memberNumber })}</span> : null}
                   </span>
                   {qualificationLabel && m.qualified ? <span className="shrink-0 rounded-full bg-ok/10 px-2 py-0.5 text-xs font-medium text-ok">{qualificationLabel}</span> : null}
                 </button>
@@ -89,7 +92,7 @@ function AssignDialog({ shiftId, members, openSlots, qualificationLabel, onClose
             );
           })}
         </ul>
-        {over ? <Alert tone="warn">Mehr Personen als freie Plätze ausgewählt. Das ist möglich, der Einsatz ist dann überbesetzt.</Alert> : null}
+        {over ? <Alert tone="warn">{t("adm2.shifts.asg.over")}</Alert> : null}
         {error ? <Alert>{error}</Alert> : null}
       </div>
     </Dialog>

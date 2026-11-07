@@ -22,12 +22,13 @@ export default async function TargetDetailPage({ params }: { params: Promise<{ i
   const { id } = await params;
   const t = await getTarget(ctx, id);
   if (!t) notFound();
-  const tr = getT(await getRequestLocale());
+  const locale = await getRequestLocale();
+  const tr = getT(locale);
   const canManageTenant = ctx.can("tenant.targets.manage");
   const canEdit = t.scope === "mine" || (t.scope === "tenant" && !t.ownerUserId && canManageTenant) || (t.scope === "global" && ctx.user.isSuperAdmin);
   const editHref = t.scope === "global" ? `/super/targets/${t.id}/edit` : `/targets/${t.id}/edit`;
   const layouts = allowedLayouts(t.paperSizes, t.subject === "UPLOAD" && t.mimeType === "application/pdf");
-  const note = t.subject === "UPLOAD" ? null : renderTarget(t.subject as TargetSubject, t.paperSizes[0] ?? "A4", t.params).note;
+  const note = t.subject === "UPLOAD" ? null : renderTarget(t.subject as TargetSubject, t.paperSizes[0] ?? "A4", t.params, locale).note;
 
   return (
     <div>
@@ -43,7 +44,7 @@ export default async function TargetDetailPage({ params }: { params: Promise<{ i
       <div className="grid gap-4 md:grid-cols-[1fr_280px]">
         <Card className="animate-rise overflow-hidden bg-white">
           <div className="aspect-[210/297] max-h-[70vh] mx-auto">
-            <TargetPreview target={t} size={t.paperSizes[0]} className="h-full w-full" />
+            <TargetPreview target={t} size={t.paperSizes[0]} className="h-full w-full" locale={locale} />
           </div>
         </Card>
         <div className="space-y-4">

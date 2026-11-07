@@ -1,4 +1,5 @@
 import { z } from "zod";
+import type { TFunction } from "@/lib/i18n/core";
 
 export const PAPER_SIZES = ["A4", "A5", "A6"] as const;
 export type PaperSize = (typeof PAPER_SIZES)[number];
@@ -478,8 +479,12 @@ export const subjectKeys = TARGET_SUBJECTS.map((s) => s.key) as [TargetSubject, 
 export function subjectMeta(key: string): SubjectMeta | undefined {
   return (TARGET_SUBJECTS as readonly SubjectMeta[]).find((s) => s.key === key);
 }
-export function subjectLabel(key: string) {
-  return subjectMeta(key)?.label ?? key;
+export function subjectLabel(key: string, t?: TFunction) {
+  const de = subjectMeta(key)?.label ?? key;
+  if (!t) return de;
+  const k = `shooting.targets.subject.${key}`;
+  const v = t(k);
+  return v === k ? de : v;
 }
 export function subjectCategory(key: string): TargetCategory {
   return subjectMeta(key)?.category ?? "custom";
@@ -507,26 +512,29 @@ export function subjectVariants(key: string): string[] {
 
 /**
  * Abhängigkeiten zwischen Parametern, die das Schema allein nicht prüft
- * (z.B. Bedrohung bei Nr. 7, aber nur 5 Figuren). Gibt eine deutsche Meldung oder null zurück.
+ * (z.B. Bedrohung bei Nr. 7, aber nur 5 Figuren). Gibt eine Meldung (ohne t: deutsch) oder null zurück.
+ * label: übersetzt die Feldbezeichnung (z.B. translateTargetText), Standard deutsch.
  */
-export function targetParamsIssue(subject: string, params: TargetParams): string | null {
+export function targetParamsIssue(subject: string, params: TargetParams, t?: TFunction, label: (de: string) => string = (s) => s): string | null {
   const countField = subjectMeta(subject)?.fields.find((f) => f.key === "count");
   const count = params.count ?? (typeof countField?.default === "number" ? countField.default : undefined);
   if (count === undefined) return null;
   if (subject === "TAC_CROWD" && params.threatPos !== undefined && params.threatPos > count) {
-    return `${PARAM_INFO.threatPos.label}: höchstens ${count} (Anzahl Figuren), 0 = gemäss Anordnung`;
+    const vars = { label: label(PARAM_INFO.threatPos.label), count };
+    return t ? t("adm2.targets.err.threatPos", vars) : `${vars.label}: höchstens ${count} (Anzahl Figuren), 0 = gemäss Anordnung`;
   }
   if (subject === "TAC_SHOOT_NOSHOOT" && params.threats !== undefined && params.threats > count) {
-    return `${PARAM_INFO.threats.label}: höchstens ${count} (Anzahl Figuren)`;
+    const vars = { label: label(PARAM_INFO.threats.label), count };
+    return t ? t("adm2.targets.err.threats", vars) : `${vars.label}: höchstens ${count} (Anzahl Figuren)`;
   }
   return null;
 }
 
 export const targetInputSchema = z.object({
-  name: z.string().trim().min(2, "Mindestens 2 Zeichen").max(80),
+  name: z.string().trim().min(2, "adm2.targets.err.min2").max(80),
   description: z.string().trim().max(400).optional(),
   subject: z.enum(subjectKeys),
-  paperSizes: z.array(z.enum(PAPER_SIZES)).min(1, "Mindestens ein Format"),
+  paperSizes: z.array(z.enum(PAPER_SIZES)).min(1, "adm2.targets.err.minSize"),
   params: targetParamsSchema.default({}),
   sharedWithTenant: z.boolean().default(false),
 });

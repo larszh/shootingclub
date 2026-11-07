@@ -6,7 +6,8 @@ import { Alert, Badge, Card, Field, Input, Select, Textarea } from "@/components
 import { Switch } from "@/components/ui/controls";
 import { SubmitButton, submitKeepingValues } from "@/components/ui/form";
 import { saveChampionshipAction } from "@/modules/championship/actions";
-import { CATEGORY_EXAMPLE, CHAMPIONSHIP_RULES_HINT, maxCountInputError, parseCategories, parseDecimalInput, weightInputError } from "@/modules/championship/types";
+import { CATEGORY_EXAMPLE, maxCountInputError, parseCategories, parseDecimalInput, weightInputError } from "@/modules/championship/types";
+import { useT } from "@/components/locale";
 
 type ProgramOption = { id: string; name: string; discipline: string; officialKind: string | null };
 type Selected = { programId: string; required: boolean; weight: string; maxCount: string };
@@ -26,6 +27,7 @@ export type ChampionshipFormValues = {
 
 export function ChampionshipForm({ values, programs }: { values: ChampionshipFormValues; programs: ProgramOption[] }) {
   const router = useRouter();
+  const t = useT();
   const [state, action, pending] = useActionState(saveChampionshipAction, null);
   const err = state && !state.ok ? state.fieldErrors ?? {} : {};
   const [selected, setSelected] = useState<Selected[]>(
@@ -36,7 +38,7 @@ export function ChampionshipForm({ values, programs }: { values: ChampionshipFor
   const [startsOn, setStartsOn] = useState(values.startsOn);
   const [endsOn, setEndsOn] = useState(values.endsOn);
   const [categories, setCategories] = useState(values.categoriesText);
-  const catCheck = useMemo(() => parseCategories(categories), [categories]);
+  const catCheck = useMemo(() => parseCategories(categories, t), [categories, t]);
 
   useEffect(() => {
     if (state?.ok && state.data?.id && !values.id) router.push(`/championship/${state.data.id}`);
@@ -71,29 +73,29 @@ export function ChampionshipForm({ values, programs }: { values: ChampionshipFor
       <input type="hidden" name="programs" value={serialized} />
 
       <Card className="space-y-4 p-4">
-        <Field label="Name" error={err.name}>
+        <Field label={t("adm2.common.name")} error={err.name}>
           <Input name="name" defaultValue={values.name} maxLength={120} required />
         </Field>
         <div className="grid gap-3 sm:grid-cols-3">
-          <Field label="Jahr" error={err.year}>
+          <Field label={t("adm2.common.year")} error={err.year}>
             <Input name="year" type="number" inputMode="numeric" min={2000} max={2100} value={year} onChange={(e) => changeYear(e.target.value)} required />
           </Field>
-          <Field label="Beginn" error={err.startsOn}>
+          <Field label={t("adm2.common.start")} error={err.startsOn}>
             <Input name="startsOn" type="date" value={startsOn} onChange={(e) => setStartsOn(e.target.value)} required />
           </Field>
-          <Field label="Ende" error={err.endsOn}>
+          <Field label={t("adm2.common.end")} error={err.endsOn}>
             <Input name="endsOn" type="date" value={endsOn} onChange={(e) => setEndsOn(e.target.value)} required />
           </Field>
         </div>
-        <Field label="Beste Resultate pro Programm" hint="Pro Programm zählen die besten N Resultate, die übrigen werden gestrichen. Leer = alle zählen." error={err.bestOf}>
-          <Input name="bestOf" type="number" inputMode="numeric" min={1} max={100} defaultValue={values.bestOf ?? ""} placeholder="alle" />
+        <Field label={t("adm2.champ.form.bestOf")} hint={t("adm2.champ.form.bestOfHint")} error={err.bestOf}>
+          <Input name="bestOf" type="number" inputMode="numeric" min={1} max={100} defaultValue={values.bestOf ?? ""} placeholder={t("adm2.champ.form.all")} />
         </Field>
-        <Switch name="officialOnly" defaultChecked={values.officialOnly} label="Nur bestätigte Resultate" description="Es zählen nur Resultate, die der Schützenmeister als amtlich bestätigt hat." />
+        <Switch name="officialOnly" defaultChecked={values.officialOnly} label={t("adm2.champ.form.officialOnly")} description={t("adm2.champ.form.officialOnlyHint")} />
       </Card>
 
       <Card className="p-4">
-        <h2 className="font-semibold">Programme</h2>
-        <p className="mt-1 text-sm text-ink-3">Pflichtprogramme muss man mindestens einmal geschossen haben, sonst gilt man als «nicht klassiert». Das Gewicht multipliziert die Punkte des Programms.</p>
+        <h2 className="font-semibold">{t("adm2.champ.form.programs")}</h2>
+        <p className="mt-1 text-sm text-ink-3">{t("adm2.champ.form.programsHint")}</p>
         {err.programs ? <p className="mt-2 text-sm text-danger" role="alert">{err.programs}</p> : null}
         <ul className="mt-3 space-y-3">
           {selected.map((s) => {
@@ -102,30 +104,30 @@ export function ChampionshipForm({ values, programs }: { values: ChampionshipFor
               <li key={s.programId} className="rounded-control border border-line p-3">
                 <div className="flex items-start justify-between gap-2">
                   <div className="min-w-0">
-                    <div className="font-medium">{p?.name ?? "Unbekanntes Programm"}</div>
-                    {p?.officialKind ? <Badge tone="accent" className="mt-1">amtlich</Badge> : null}
+                    <div className="font-medium">{p?.name ?? t("adm2.champ.form.unknownProgram")}</div>
+                    {p?.officialKind ? <Badge tone="accent" className="mt-1">{t("adm2.champ.form.official")}</Badge> : null}
                   </div>
                   <button type="button" onClick={() => setSelected((l) => l.filter((x) => x.programId !== s.programId))} className="press -m-1 inline-flex h-11 items-center rounded-control px-3 text-sm text-danger hover:bg-danger/10">
-                    Entfernen
+                    {t("adm2.common.remove")}
                   </button>
                 </div>
                 <div className="mt-2 grid grid-cols-2 gap-3">
-                  <Field label="Gewicht" hint="1 = normal" error={weightInputError(s.weight) ?? undefined}>
-                    <Input inputMode="decimal" value={s.weight} onChange={(e) => update(s.programId, { weight: e.target.value })} aria-label={`Gewicht ${p?.name ?? ""}`} />
+                  <Field label={t("adm2.champ.form.weight")} hint={t("adm2.champ.form.weightHint")} error={weightInputError(s.weight, t) ?? undefined}>
+                    <Input inputMode="decimal" value={s.weight} onChange={(e) => update(s.programId, { weight: e.target.value })} aria-label={t("adm2.champ.form.weightAria", { name: p?.name ?? "" })} />
                   </Field>
-                  <Field label="Beste N" hint="leer = wie oben" error={maxCountInputError(s.maxCount) ?? undefined}>
-                    <Input type="number" inputMode="numeric" min={1} max={100} value={s.maxCount} onChange={(e) => update(s.programId, { maxCount: e.target.value })} aria-label={`Anzahl ${p?.name ?? ""}`} />
+                  <Field label={t("adm2.champ.form.bestN")} hint={t("adm2.champ.form.bestNHint")} error={maxCountInputError(s.maxCount, t) ?? undefined}>
+                    <Input type="number" inputMode="numeric" min={1} max={100} value={s.maxCount} onChange={(e) => update(s.programId, { maxCount: e.target.value })} aria-label={t("adm2.champ.form.countAria", { name: p?.name ?? "" })} />
                   </Field>
                 </div>
-                <Switch className="mt-3" checked={s.required} onChange={(v) => update(s.programId, { required: v })} label="Pflichtprogramm" />
+                <Switch className="mt-3" checked={s.required} onChange={(v) => update(s.programId, { required: v })} label={t("adm2.champ.form.required")} />
               </li>
             );
           })}
         </ul>
         {available.length ? (
           <div className="mt-3 flex gap-2">
-            <Select value={addId} onChange={(e) => setAddId(e.target.value)} aria-label="Programm hinzufügen" className="flex-1">
-              <option value="">Programm wählen…</option>
+            <Select value={addId} onChange={(e) => setAddId(e.target.value)} aria-label={t("adm2.champ.form.addProgram")} className="flex-1">
+              <option value="">{t("adm2.champ.form.chooseProgram")}</option>
               {available.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
             </Select>
             <button
@@ -138,14 +140,14 @@ export function ChampionshipForm({ values, programs }: { values: ChampionshipFor
               }}
               className="press inline-flex h-11 shrink-0 items-center rounded-control border border-line bg-surface px-4 text-sm font-medium hover:bg-surface-2 disabled:opacity-50"
             >
-              Hinzufügen
+              {t("adm2.common.add")}
             </button>
           </div>
         ) : null}
       </Card>
 
       <Card className="space-y-4 p-4">
-        <Field label="Kategorien (optional)" hint="Eine pro Zeile: Name;minAlter;maxAlter;Bonuspunkte. Alter = Jahrgang (Alter am 31.12. des Jahres). Ohne Geburtsdatum → «ohne Kategorie»." error={err.categoriesText}>
+        <Field label={t("adm2.champ.form.categories")} hint={t("adm2.champ.form.categoriesHint")} error={err.categoriesText}>
           <Textarea name="categoriesText" rows={5} value={categories} onChange={(e) => setCategories(e.target.value)} placeholder={CATEGORY_EXAMPLE} className="font-mono text-sm" maxLength={5000} />
         </Field>
         {categories.trim() ? (
@@ -155,21 +157,21 @@ export function ChampionshipForm({ values, programs }: { values: ChampionshipFor
             <div className="flex flex-wrap gap-1.5">
               {catCheck.categories.map((c) => (
                 <Badge key={c.name}>
-                  {c.name}: {c.minAge ?? "0"}–{c.maxAge ?? "∞"} J.{c.bonus ? ` · +${c.bonus}` : ""}
+                  {t("adm2.champ.form.catRange", { name: c.name, min: c.minAge ?? "0", max: c.maxAge ?? "∞" })}{c.bonus ? ` · +${c.bonus}` : ""}
                 </Badge>
               ))}
             </div>
           )
         ) : null}
-        <Field label="Reglement / Hinweise (optional)" hint="Wird bei der Rangliste angezeigt." error={err.rulesText}>
+        <Field label={t("adm2.champ.form.rules")} hint={t("adm2.champ.form.rulesHint")} error={err.rulesText}>
           <Textarea name="rulesText" rows={5} defaultValue={values.rulesText} maxLength={20000} />
         </Field>
-        <p className="text-xs text-ink-3">{CHAMPIONSHIP_RULES_HINT}</p>
+        <p className="text-xs text-ink-3">{t("adm2.champ.rulesHint")}</p>
       </Card>
 
-      {state && !state.ok ? <Alert>{state.error}</Alert> : state?.ok ? <Alert tone="ok">{state.message ?? "Gespeichert."}</Alert> : null}
-      <SubmitButton pending={pending} className="h-12 w-full sm:w-auto" pendingText="Speichern…">
-        {values.id ? "Speichern" : "Meisterschaft anlegen"}
+      {state && !state.ok ? <Alert>{state.error}</Alert> : state?.ok ? <Alert tone="ok">{state.message ?? t("adm2.common.saved")}</Alert> : null}
+      <SubmitButton pending={pending} className="h-12 w-full sm:w-auto" pendingText={t("adm2.champ.form.savingText")}>
+        {values.id ? t("adm2.common.save") : t("adm2.champ.form.create")}
       </SubmitButton>
     </form>
   );

@@ -1166,4 +1166,64 @@ export const MEMBER_FAQ: FaqSource[] = [
       ],
     },
   },
+  {
+    id: "claude-assistent",
+    audience: "member",
+    de: {
+      q: "Was macht der Hilfe-Assistent mit Claude?",
+      keywords: "Claude KI künstliche Intelligenz Assistent Fragen Chat Hilfe Anthropic Datenschutz Trainingstipps Auswertung Übersetzung",
+      a: [
+        { p: "Wenn dein Verein Claude eingerichtet hat, kannst du unter [Hilfe](/help) oder über den Knopf «Fragen?» Fragen zur App stellen. Der Assistent kennt diese Hilfe und die Bereiche, die du öffnen darfst, aber keine Vereinsinterna. Er führt nichts für dich aus und kann sich irren: wichtige Angaben bitte beim Vorstand prüfen." },
+        {
+          ul: [
+            "Unter [Statistik](/scores/stats) gibt es eine «Auswertung mit Claude» deiner eigenen Resultate mit Trainingstipps.",
+            "Anlässe, Mitteilungen und die Standordnung können automatisch übersetzt sein. Mit «Original anzeigen» siehst du den Text in der Vereinssprache; bei der Standordnung gilt immer das Original.",
+          ],
+        },
+        { p: "Datenschutz: Deine Frage und die nötigen Angaben gehen an Anthropic (USA), den Anbieter von Claude. Anthropic verwendet diese Daten nicht zum Training. Gib keine AHV-Nummern, Passwörter oder Bankdaten ein. Der Verlauf bleibt nur in deinem Browser und ist nach dem Schliessen des Fensters weg." },
+      ],
+    },
+    fr: {
+      q: "Que fait l’assistant d’aide avec Claude ?",
+      keywords: "Claude IA intelligence artificielle assistant questions chat aide Anthropic protection des données conseils d’entraînement analyse traduction",
+      a: [
+        { p: "Si ta société a configuré Claude, tu peux poser des questions sur l’app sous [Aide](/help) ou avec le bouton « Des questions ? ». L’assistant connaît cette aide et les sections que tu peux ouvrir, mais pas les affaires internes de la société. Il n’exécute rien à ta place et peut se tromper : merci de vérifier les informations importantes auprès du comité." },
+        {
+          ul: [
+            "Sous [Statistiques](/scores/stats), une « Analyse avec Claude » de tes propres résultats propose des conseils d’entraînement.",
+            "Les manifestations, les communications et le règlement du stand peuvent être traduits automatiquement. Avec « Afficher l’original », tu vois le texte dans la langue de la société ; pour le règlement du stand, c’est toujours l’original qui fait foi.",
+          ],
+        },
+        { p: "Protection des données : ta question et les indications nécessaires sont transmises à Anthropic (États-Unis), le fournisseur de Claude. Anthropic n’utilise pas ces données pour l’entraînement. N’indique ni numéro AVS, ni mot de passe, ni coordonnées bancaires. L’historique reste uniquement dans ton navigateur et disparaît à la fermeture de la fenêtre." },
+      ],
+    },
+    it: {
+      q: "Che cosa fa l’assistente di aiuto con Claude?",
+      keywords: "Claude IA intelligenza artificiale assistente domande chat aiuto Anthropic protezione dei dati consigli di allenamento analisi traduzione",
+      a: [
+        { p: "Se la tua società ha configurato Claude, puoi fare domande sull’app in [Aiuto](/help) o con il pulsante «Domande?». L’assistente conosce questo aiuto e le sezioni che puoi aprire, ma non le questioni interne della società. Non esegue nulla al posto tuo e può sbagliare: verifica le informazioni importanti con il comitato." },
+        {
+          ul: [
+            "In [Statistiche](/scores/stats) c’è un’«Analisi con Claude» dei tuoi risultati con consigli di allenamento.",
+            "Manifestazioni, comunicazioni e regolamento del poligono possono essere tradotti automaticamente. Con «Mostra l’originale» vedi il testo nella lingua della società; per il regolamento del poligono fa sempre fede l’originale.",
+          ],
+        },
+        { p: "Protezione dei dati: la tua domanda e le indicazioni necessarie vengono trasmesse ad Anthropic (USA), il fornitore di Claude. Anthropic non usa questi dati per l’addestramento. Non inserire numeri AVS, password o dati bancari. La cronologia resta solo nel tuo browser e sparisce quando chiudi la finestra." },
+      ],
+    },
+    en: {
+      q: "What does the help assistant with Claude do?",
+      keywords: "Claude AI artificial intelligence assistant questions chat help Anthropic data protection privacy training tips analysis translation",
+      a: [
+        { p: "If your club has set up Claude, you can ask questions about the app under [Help](/help) or with the “Questions?” button. The assistant knows this help and the areas you are allowed to open, but nothing internal to the club. It does not carry out any actions for you and can be wrong: please check important information with the committee." },
+        {
+          ul: [
+            "Under [Statistics](/scores/stats) there is an “Analysis with Claude” of your own results with training tips.",
+            "Events, announcements and the range rules may be translated automatically. With “Show original” you see the text in the club language; for the range rules the original always applies.",
+          ],
+        },
+        { p: "Data protection: your question and the information needed are sent to Anthropic (USA), the provider of Claude. Anthropic does not use this data for training. Do not enter AHV numbers, passwords or bank details. The conversation stays only in your browser and is gone once you close the window." },
+      ],
+    },
+  },
 ];

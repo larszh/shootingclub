@@ -1334,4 +1334,132 @@ export const ADMIN_FAQ: FaqSource[] = [
       ],
     },
   },
+  {
+    id: "claude-einrichten",
+    audience: "admin",
+    de: {
+      q: "Wie richte ich Claude für den Verein ein und was kostet das?",
+      keywords: "Claude KI künstliche Intelligenz Anthropic API-Schlüssel Key einrichten Kosten Tokens Limite Funktionen Hilfe Übersetzung Schreibhilfe Jahresbericht Trainingstipps Import",
+      a: [
+        {
+          ol: [
+            "Unter [Claude](/admin/ai) den Hinweis zum Datenschutz lesen und die Zustimmung geben.",
+            "Einen eigenen API-Schlüssel von Anthropic (console.anthropic.com) eintragen und «Verbindung testen». Der Schlüssel wird verschlüsselt gespeichert und nie mehr angezeigt, nur die letzten vier Zeichen.",
+            "Claude für den Verein einschalten, die Funktionen wählen (Hilfe-Assistent, Übersetzungen, Schreibhilfe, Trainingstipps, Jahresbericht, Import-Hilfe) und bei Bedarf eine Monatslimite in Tokens oder Franken setzen.",
+          ],
+        },
+        { p: "Die Kosten rechnet Anthropic direkt mit dem Konto des Vereins ab, Standchef verdient daran nichts. Unter [Claude](/admin/ai) siehst du den Verbrauch pro Monat und Funktion; die Frankenbeträge sind Schätzungen. Ist die Limite erreicht, pausieren die Funktionen bis zum nächsten Monat." },
+        { p: "Den [Jahresbericht](/admin/reports) erstellt Claude nur aus Zahlen, die Standchef berechnet; Entwürfe und Übersetzungen werden nie automatisch veröffentlicht." },
+      ],
+    },
+    fr: {
+      q: "Comment configurer Claude pour la société et combien cela coûte-t-il ?",
+      keywords: "Claude IA intelligence artificielle Anthropic clé API configurer coûts tokens limite fonctions aide traduction aide à la rédaction rapport annuel conseils d’entraînement import",
+      a: [
+        {
+          ol: [
+            "Sous [Claude](/admin/ai), lis la note sur la protection des données et donne ton accord.",
+            "Saisis une propre clé API d’Anthropic (console.anthropic.com) et clique sur « Tester la connexion ». La clé est enregistrée chiffrée et n’est plus jamais affichée, seulement ses quatre derniers caractères.",
+            "Active Claude pour la société, choisis les fonctions (assistant d’aide, traductions, aide à la rédaction, conseils d’entraînement, rapport annuel, aide à l’import) et fixe si besoin une limite mensuelle en tokens ou en francs.",
+          ],
+        },
+        { p: "Anthropic facture les coûts directement sur le compte de la société, Standchef ne gagne rien dessus. Sous [Claude](/admin/ai), tu vois la consommation par mois et par fonction ; les montants en francs sont des estimations. Une fois la limite atteinte, les fonctions sont suspendues jusqu’au mois suivant." },
+        { p: "Claude rédige le [rapport annuel](/admin/reports) uniquement à partir de chiffres calculés par Standchef ; les brouillons et les traductions ne sont jamais publiés automatiquement." },
+      ],
+    },
+    it: {
+      q: "Come configuro Claude per la società e quanto costa?",
+      keywords: "Claude IA intelligenza artificiale Anthropic chiave API configurare costi token limite funzioni aiuto traduzione aiuto alla redazione rapporto annuale consigli di allenamento importazione",
+      a: [
+        {
+          ol: [
+            "In [Claude](/admin/ai) leggi la nota sulla protezione dei dati e dai il consenso.",
+            "Inserisci una chiave API propria di Anthropic (console.anthropic.com) e tocca «Testa connessione». La chiave viene salvata cifrata e non viene più mostrata, solo gli ultimi quattro caratteri.",
+            "Attiva Claude per la società, scegli le funzioni (assistente di aiuto, traduzioni, aiuto alla redazione, consigli di allenamento, rapporto annuale, aiuto all’importazione) e se serve imposta un limite mensile in token o franchi.",
+          ],
+        },
+        { p: "Anthropic fattura i costi direttamente sul conto della società, Standchef non ci guadagna nulla. In [Claude](/admin/ai) vedi il consumo per mese e funzione; gli importi in franchi sono stime. Raggiunto il limite, le funzioni restano in pausa fino al mese successivo." },
+        { p: "Claude redige il [rapporto annuale](/admin/reports) solo dalle cifre calcolate da Standchef; bozze e traduzioni non vengono mai pubblicate automaticamente." },
+      ],
+    },
+    en: {
+      q: "How do I set up Claude for the club and what does it cost?",
+      keywords: "Claude AI artificial intelligence Anthropic API key set up costs tokens limit features help translation writing aid annual report training tips import",
+      a: [
+        {
+          ol: [
+            "Under [Claude](/admin/ai), read the data protection notice and give your consent.",
+            "Enter the club’s own API key from Anthropic (console.anthropic.com) and tap “Test connection”. The key is stored encrypted and never shown again, only its last four characters.",
+            "Switch Claude on for the club, choose the features (help assistant, translations, writing aid, training tips, annual report, import helper) and set a monthly limit in tokens or francs if needed.",
+          ],
+        },
+        { p: "Anthropic bills the costs directly to the club’s account; Standchef earns nothing from it. Under [Claude](/admin/ai) you see usage per month and feature; the franc amounts are estimates. Once the limit is reached, the features pause until the next month." },
+        { p: "Claude writes the [annual report](/admin/reports) only from figures calculated by Standchef; drafts and translations are never published automatically." },
+      ],
+    },
+  },
+  {
+    id: "claude-datenschutz",
+    audience: "admin",
+    de: {
+      q: "Welche Daten gehen an Claude und was muss der Verein beachten?",
+      keywords: "Claude KI Datenschutz revDSG Anthropic USA Datenübermittlung Einwilligung Zustimmung AHV Mitglieder informieren Auftragsbearbeitung",
+      a: [
+        { p: "Claude wird von Anthropic PBC in den USA betrieben. Übermittelt wird nur, was eine Funktion braucht: die Frage und die Hilfetexte, der zu übersetzende oder zu verbessernde Text, eigene Resultate als Zahlen, beim Jahresbericht zusammengefasste Zahlen ohne Namen, beim Import nur Spaltennamen und maskierte Beispielzeilen." },
+        {
+          ul: [
+            "Nie übermittelt werden AHV-Nummern, Passwörter, Bankdaten und API-Schlüssel.",
+            "Anthropic verwendet Daten aus der API standardmässig nicht zum Training.",
+            "Der Verein informiert die Mitglieder (z.B. in der Datenschutzerklärung) und kann Claude unter [Claude](/admin/ai) jederzeit ausschalten oder die Zustimmung zurückziehen.",
+          ],
+        },
+        { p: "Jede Anfrage wird mit Funktion, Datum und Tokens protokolliert, ohne Inhalt. Mitglieder sehen ihre eigenen Einträge in der Datenauskunft unter [Datenschutz](/me/privacy)." },
+      ],
+    },
+    fr: {
+      q: "Quelles données sont transmises à Claude et à quoi la société doit-elle veiller ?",
+      keywords: "Claude IA protection des données nLPD Anthropic États-Unis transfert de données consentement accord AVS informer les membres sous-traitance",
+      a: [
+        { p: "Claude est exploité par Anthropic PBC aux États-Unis. Seul ce dont une fonction a besoin est transmis : la question et les textes d’aide, le texte à traduire ou à améliorer, tes propres résultats sous forme de chiffres, pour le rapport annuel des chiffres agrégés sans noms, pour l’import seulement les noms de colonnes et des lignes d’exemple masquées." },
+        {
+          ul: [
+            "Ne sont jamais transmis : numéros AVS, mots de passe, coordonnées bancaires et clés API.",
+            "Par défaut, Anthropic n’utilise pas les données de l’API pour l’entraînement.",
+            "La société informe ses membres (p. ex. dans sa déclaration de protection des données) et peut désactiver Claude ou retirer son accord à tout moment sous [Claude](/admin/ai).",
+          ],
+        },
+        { p: "Chaque requête est journalisée avec la fonction, la date et les tokens, sans le contenu. Les membres voient leurs propres entrées dans l’extraction de données sous [Protection des données](/me/privacy)." },
+      ],
+    },
+    it: {
+      q: "Quali dati vengono trasmessi a Claude e a che cosa deve fare attenzione la società?",
+      keywords: "Claude IA protezione dei dati nLPD Anthropic USA trasmissione dei dati consenso AVS informare i soci trattamento su incarico",
+      a: [
+        { p: "Claude è gestito da Anthropic PBC negli USA. Viene trasmesso solo ciò che serve a una funzione: la domanda e i testi di aiuto, il testo da tradurre o migliorare, i propri risultati come cifre, per il rapporto annuale cifre aggregate senza nomi, per l’importazione solo i nomi delle colonne e righe di esempio mascherate." },
+        {
+          ul: [
+            "Non vengono mai trasmessi numeri AVS, password, dati bancari e chiavi API.",
+            "Per impostazione predefinita Anthropic non usa i dati dell’API per l’addestramento.",
+            "La società informa i soci (p. es. nella dichiarazione sulla protezione dei dati) e può disattivare Claude o revocare il consenso in qualsiasi momento in [Claude](/admin/ai).",
+          ],
+        },
+        { p: "Ogni richiesta viene registrata con funzione, data e token, senza il contenuto. I soci vedono le proprie voci nell’estratto dei dati in [Protezione dei dati](/me/privacy)." },
+      ],
+    },
+    en: {
+      q: "Which data is sent to Claude and what does the club need to consider?",
+      keywords: "Claude AI data protection FADP privacy Anthropic USA data transfer consent AHV inform members processor",
+      a: [
+        { p: "Claude is operated by Anthropic PBC in the USA. Only what a feature needs is sent: the question and the help texts, the text to translate or improve, your own results as numbers, aggregated figures without names for the annual report, and for imports only the column names and masked sample rows." },
+        {
+          ul: [
+            "AHV numbers, passwords, bank details and API keys are never sent.",
+            "By default, Anthropic does not use API data for training.",
+            "The club informs its members (e.g. in its privacy statement) and can switch Claude off or withdraw its consent at any time under [Claude](/admin/ai).",
+          ],
+        },
+        { p: "Every request is logged with feature, date and tokens, without the content. Members see their own entries in the data export under [Privacy](/me/privacy)." },
+      ],
+    },
+  },
 ];

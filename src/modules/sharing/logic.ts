@@ -1,7 +1,11 @@
 /**
  * Gemeinsame Anlagen (ResourceShare): reine Funktionen für Preis und Berechtigungen.
  * Bewusst ohne Datenbank und ohne "server-only", damit sie in Tests und im Client laufen.
+ * Texte kommen aus dem Wörterbuch «misc» (misc.share.*); ohne Übersetzer `t` gilt Deutsch.
  */
+import { getT, type TFunction } from "@/lib/i18n/core";
+
+const DE: TFunction = (key, vars) => getT("de")(key, vars);
 
 /** Erlaubter Bereich für den Preisfaktor der Partnervereine (in Prozent). */
 export const PRICE_FACTOR_MIN = 0;
@@ -26,16 +30,16 @@ type QuoteLike = { basePriceCents: number; discountCents: number; discountReason
  * umgerechnet (der Spontan-Rabatt bleibt prozentual gleich), das Total ergibt sich daraus.
  * Bei einem Faktor ungleich 100 % ersetzt `detail` den Rechenweg durch «Partnertarif 120 %».
  */
-export function applyPriceFactor<T extends QuoteLike>(quote: T, percent: number): T {
+export function applyPriceFactor<T extends QuoteLike>(quote: T, percent: number, t: TFunction = DE): T {
   const p = clampFactor(percent);
   if (p === 100) return quote;
   const base = applyPriceFactorCents(quote.basePriceCents, p);
   const discount = Math.min(base, applyPriceFactorCents(quote.discountCents, p));
-  return { ...quote, basePriceCents: base, discountCents: discount, totalCents: Math.max(0, base - discount), detail: partnerRateLabel(p) };
+  return { ...quote, basePriceCents: base, discountCents: discount, totalCents: Math.max(0, base - discount), detail: partnerRateLabel(p, t) };
 }
 
-export function partnerRateLabel(percent: number) {
-  return `Partnertarif ${clampFactor(percent)} %`;
+export function partnerRateLabel(percent: number, t: TFunction = DE) {
+  return t("misc.share.rateLabel", { percent: clampFactor(percent) });
 }
 
 // ---------------------------------------------------------------------------
@@ -65,22 +69,22 @@ export type ShareCheckInput = {
 
 export type ShareCheck = { ok: true } | { ok: false; error: string };
 
-const NOT_SHARED = "Diese Anlage ist für deinen Verein nicht freigegeben.";
 
 /**
  * Darf ein Mitglied des aktiven Vereins (Gast) diese Ressource eines anderen Vereins sehen und buchen?
  * Verlangt: Mitgliedschaft im Gastverein, Ressource gehört dem Eigentümer, aktive Freigabe für genau
  * diesen Gastverein mit «darf buchen», Eigentümer nicht gelöscht und Modul «Reservationen» aktiv.
  */
-export function checkGuestShare(i: ShareCheckInput): ShareCheck {
+export function checkGuestShare(i: ShareCheckInput, t: TFunction = DE): ShareCheck {
+  const NOT_SHARED = t("misc.share.err.notShared");
   if (!i.guestRole) return { ok: false, error: NOT_SHARED };
   if (!i.resource || !i.owner || !i.share) return { ok: false, error: NOT_SHARED };
   if (i.resource.tenantId !== i.owner.id) return { ok: false, error: NOT_SHARED };
   if (i.owner.id === i.guestTenantId) return { ok: false, error: NOT_SHARED };
   if (i.share.resourceId !== i.resourceId || i.share.guestTenantId !== i.guestTenantId) return { ok: false, error: NOT_SHARED };
-  if (!i.share.canBook) return { ok: false, error: "Der Eigentümer hat Buchungen für deinen Verein pausiert." };
-  if (i.owner.deletedAt || !i.owner.bookingsEnabled) return { ok: false, error: "Der Verein dieser Anlage nimmt zurzeit keine Reservationen an." };
-  if (!i.resource.isActive) return { ok: false, error: "Ressource nicht verfügbar." };
+  if (!i.share.canBook) return { ok: false, error: t("misc.share.err.paused") };
+  if (i.owner.deletedAt || !i.owner.bookingsEnabled) return { ok: false, error: t("misc.share.err.ownerClosed") };
+  if (!i.resource.isActive) return { ok: false, error: t("misc.share.err.resourceUnavailable") };
   return { ok: true };
 }
 
@@ -106,10 +110,10 @@ export function bookingAccess(
 }
 
 /** Stornierung durch Mitglied oder Gast nach den Regeln des Vereins, dem die Anlage gehört (Stunden vor Beginn). */
-export function guestMayCancel(b: { status: string; startsAt: Date }, cancellationHours: number, now = new Date()) {
-  if (!["PENDING", "CONFIRMED"].includes(b.status)) return { ok: false as const, error: "Buchung ist bereits beendet." };
+export function guestMayCancel(b: { status: string; startsAt: Date }, cancellationHours: number, now = new Date(), t: TFunction = DE) {
+  if (!["PENDING", "CONFIRMED"].includes(b.status)) return { ok: false as const, error: t("misc.share.err.ended") };
   const hoursAhead = (b.startsAt.getTime() - now.getTime()) / 3_600_000;
-  if (hoursAhead < cancellationHours) return { ok: false as const, error: `Stornierung nur bis ${cancellationHours} Stunden vor Beginn möglich.` };
+  if (hoursAhead < cancellationHours) return { ok: false as const, error: t("misc.share.err.cancelDeadline", { hours: cancellationHours }) };
   return { ok: true as const };
 }
 
@@ -124,11 +128,11 @@ export type PartnerReportRow = { tenantId: string; name: string; bookings: numbe
  * Summen pro Partnerverein: nur bestätigte Buchungen zählen (keine Anfragen, Stornierungen, Ablehnungen).
  * Sortiert nach Betrag, dann Name.
  */
-export function partnerReport(list: PartnerReportBooking[], names: Record<string, string>): { rows: PartnerReportRow[]; total: Omit<PartnerReportRow, "tenantId" | "name"> } {
+export function partnerReport(list: PartnerReportBooking[], names: Record<string, string>, t: TFunction = DE): { rows: PartnerReportRow[]; total: Omit<PartnerReportRow, "tenantId" | "name"> } {
   const map = new Map<string, PartnerReportRow>();
   for (const b of list) {
     if (!b.viaTenantId || b.status !== "CONFIRMED") continue;
-    const row = map.get(b.viaTenantId) ?? { tenantId: b.viaTenantId, name: names[b.viaTenantId] ?? "Partnerverein (gelöscht)", bookings: 0, minutes: 0, hours: 0, persons: 0, amountCents: 0, paidCents: 0, openCents: 0 };
+    const row = map.get(b.viaTenantId) ?? { tenantId: b.viaTenantId, name: names[b.viaTenantId] ?? t("misc.share.partnerDeleted"), bookings: 0, minutes: 0, hours: 0, persons: 0, amountCents: 0, paidCents: 0, openCents: 0 };
     row.bookings++;
     row.minutes += b.durationMinutes;
     row.persons += b.persons;
@@ -150,12 +154,12 @@ export function formatHours(h: number) {
 }
 
 /** Abzeichen in «Meine Reservationen»: Buchungen auf Anlagen anderer Vereine kennzeichnen. */
-export function ownerBadge(b: { tenantId: string; tenant: { name: string } }, activeTenantId: string) {
-  return b.tenantId !== activeTenantId ? `Anlage von ${b.tenant.name}` : null;
+export function ownerBadge(b: { tenantId: string; tenant: { name: string } }, activeTenantId: string, t: TFunction = DE) {
+  return b.tenantId !== activeTenantId ? t("misc.share.ownerBadge", { club: b.tenant.name }) : null;
 }
 
 /** Abzeichen in der Verwaltung des Eigentümers für Buchungen eines Partnervereins. */
-export function partnerBadge(b: { viaTenantId: string | null }, names: Record<string, string>) {
+export function partnerBadge(b: { viaTenantId: string | null }, names: Record<string, string>, t: TFunction = DE) {
   if (!b.viaTenantId) return null;
-  return `Partner: ${names[b.viaTenantId] ?? "Partnerverein"}`;
+  return t("misc.share.partnerBadge", { name: names[b.viaTenantId] ?? t("misc.share.partnerClub") });
 }

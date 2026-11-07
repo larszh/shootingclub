@@ -20,8 +20,11 @@ export const ASSOCIATION_MEMBER_STATUS_LABELS: Record<AssociationMemberStatus, s
   REVOKED: "Beendet",
 };
 
-export function associationStatusLabel(status: string): string {
-  return (ASSOCIATION_MEMBER_STATUS_LABELS as Record<string, string>)[status] ?? status;
+/** Bezeichnung des Status; mit `t` in der Sprache der Seite (Schlüssel «adm2.assoc.status.<S>»). */
+export function associationStatusLabel(status: string, t?: (key: string) => string): string {
+  const de = (ASSOCIATION_MEMBER_STATUS_LABELS as Record<string, string>)[status];
+  if (!de) return status;
+  return t ? t(`adm2.assoc.status.${status}`) : de;
 }
 
 export function associationStatusTone(status: string): "ok" | "warn" | "neutral" {
@@ -121,25 +124,25 @@ export type AssociationAction = "approve" | "reject" | "remove";
  */
 export function clubTransition(current: string | null, action: ClubAction): { ok: true; status: AssociationMemberStatus } | { ok: false; error: string } {
   if (action === "request") {
-    if (current === "PENDING") return { ok: false, error: "Die Anfrage ist bereits hängig." };
-    if (current === "APPROVED") return { ok: false, error: "Der Verein ist bereits Mitglied dieses Verbands." };
+    if (current === "PENDING") return { ok: false, error: "adm2.assoc.msg.pending" };
+    if (current === "APPROVED") return { ok: false, error: "adm2.assoc.msg.alreadyMember" };
     return { ok: true, status: "PENDING" };
   }
   if (current === "PENDING" || current === "APPROVED") return { ok: true, status: "REVOKED" };
-  return { ok: false, error: "Der Verein ist nicht (mehr) mit diesem Verband verbunden." };
+  return { ok: false, error: "adm2.assoc.msg.notLinked" };
 }
 
 /** Verband: hängige Anfrage freigeben oder ablehnen, aktiven Verein entfernen. */
 export function associationTransition(current: string, action: AssociationAction): { ok: true; status: AssociationMemberStatus } | { ok: false; error: string } {
   if (action === "approve") {
-    if (current !== "PENDING") return { ok: false, error: "Nur hängige Anfragen können freigegeben werden." };
+    if (current !== "PENDING") return { ok: false, error: "adm2.assoc.msg.onlyPendingApprove" };
     return { ok: true, status: "APPROVED" };
   }
   if (action === "reject") {
-    if (current !== "PENDING") return { ok: false, error: "Nur hängige Anfragen können abgelehnt werden." };
+    if (current !== "PENDING") return { ok: false, error: "adm2.assoc.msg.onlyPendingReject" };
     return { ok: true, status: "REVOKED" };
   }
-  if (current !== "APPROVED") return { ok: false, error: "Nur aktive Vereine können entfernt werden." };
+  if (current !== "APPROVED") return { ok: false, error: "adm2.assoc.msg.onlyActiveRemove" };
   return { ok: true, status: "REVOKED" };
 }
 

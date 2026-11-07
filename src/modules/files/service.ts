@@ -4,6 +4,7 @@ import { db } from "@/lib/db";
 import { MODULES } from "@/lib/modules";
 import { roleAtLeast, isTenantRole } from "@/lib/permissions";
 import { buildStorageKey, getStorageForProvider, getTenantStorage, loadStorageSettings, StorageError, type GetResult } from "@/lib/file-storage";
+import { getT, type Locale } from "@/lib/i18n/core";
 import { cleanFileName, formatBytes, MB, stricterRole, type FileContext } from "./types";
 
 /**
@@ -11,21 +12,40 @@ import { cleanFileName, formatBytes, MB, stricterRole, type FileContext } from "
  * Namen und Signaturen bitte stabil halten.
  */
 
-/** Fehler mit Meldung für die Oberfläche (und passendem HTTP-Status für Route Handler). */
+/**
+ * Fehler mit Meldung für die Oberfläche (und passendem HTTP-Status für Route Handler).
+ * `key`/`vars`: Übersetzungsschlüssel (Wörterbuch «misc»), `message` bleibt der deutsche Text.
+ */
 export class FileServiceError extends Error {
   constructor(
     message: string,
     readonly status: number = 400,
+    readonly key?: string,
+    readonly vars?: Record<string, string | number>,
   ) {
     super(message);
     this.name = "FileServiceError";
   }
 }
 
-/** Fehlermeldung für die Oberfläche aus beliebigem Fehler. */
-export function fileErrorMessage(e: unknown) {
-  if (e instanceof FileServiceError || e instanceof StorageError) return e.message;
-  return "Die Datei konnte nicht verarbeitet werden. Bitte nochmals versuchen.";
+/** Fehler mit übersetzbarer Meldung (deutscher Text aus dem Wörterbuch). */
+function fileError(key: string, status = 400, vars?: Record<string, string | number>) {
+  return new FileServiceError(getT("de")(key, vars), status, key, vars);
+}
+
+/**
+ * Fehlermeldung für die Oberfläche aus beliebigem Fehler, in der Sprache `locale` (Standard Deutsch).
+ * Speicherfehler behalten auf Deutsch ihren ausführlichen Text (Hinweise für die Verwaltung), in den
+ * anderen Sprachen gilt eine allgemeine Meldung je Fehlerart.
+ */
+export function fileErrorMessage(e: unknown, locale: Locale = "de") {
+  const t = getT(locale);
+  if (e instanceof FileServiceError) return e.key ? t(e.key, e.vars) : e.message;
+  if (e instanceof StorageError) {
+    if (locale === "de") return e.message;
+    return ["NOT_CONFIGURED", "NOT_FOUND", "AUTH", "NETWORK"].includes(e.code) ? t(`misc.file.storage.${e.code}`) : t("misc.file.generic");
+  }
+  return t("misc.file.generic");
 }
 
 /** Platz für die Multipart-Hülle und weitere Formularfelder zusätzlich zur Datei. */
@@ -39,16 +59,16 @@ const MULTIPART_OVERHEAD_BYTES = 64 * 1024;
  */
 export async function readUploadForm(req: Request, maxFileMb: number): Promise<FormData> {
   const contentType = req.headers.get("content-type") ?? "";
-  if (!contentType.toLowerCase().startsWith("multipart/form-data")) throw new FileServiceError("Ungültige Anfrage.", 400);
+  if (!contentType.toLowerCase().startsWith("multipart/form-data")) throw fileError("misc.file.invalidRequest", 400);
   const maxBytes = maxFileMb * MB + MULTIPART_OVERHEAD_BYTES;
-  const tooBig = () => new FileServiceError(`Die Datei ist zu gross. Erlaubt sind höchstens ${maxFileMb} MB pro Datei.`, 413);
+  const tooBig = () => fileError("misc.file.tooBigMax", 413, { max: maxFileMb });
   const declaredRaw = req.headers.get("content-length");
   if (declaredRaw !== null) {
     const declared = Number(declaredRaw);
-    if (!Number.isFinite(declared) || declared < 0) throw new FileServiceError("Ungültige Anfrage.", 400);
+    if (!Number.isFinite(declared) || declared < 0) throw fileError("misc.file.invalidRequest", 400);
     if (declared > maxBytes) throw tooBig();
   }
-  if (!req.body) throw new FileServiceError("Keine Datei erhalten.", 400);
+  if (!req.body) throw fileError("misc.file.noFile", 400);
 
   const reader = req.body.getReader();
   let received = 0;
@@ -73,7 +93,7 @@ export async function readUploadForm(req: Request, maxFileMb: number): Promise<F
     return await new Response(limited, { headers: { "content-type": contentType } }).formData();
   } catch {
     if (exceeded) throw tooBig();
-    throw new FileServiceError("Die Datei konnte nicht gelesen werden. Bitte nochmals versuchen.", 400);
+    throw fileError("misc.file.unreadable", 400);
   }
 }
 
@@ -106,26 +126,23 @@ export async function saveTenantFile(input: {
   const { tenantId, userId, data, context } = input;
   const settings = await loadStorageSettings(tenantId);
   const size = data.length;
-  if (size === 0) throw new FileServiceError("Die Datei ist leer.");
-  if (size > settings.maxFileMb * MB) throw new FileServiceError(`Die Datei ist zu gross (${formatBytes(size)}). Erlaubt sind höchstens ${settings.maxFileMb} MB pro Datei.`, 413);
+  if (size === 0) throw fileError("misc.file.empty");
+  if (size > settings.maxFileMb * MB) throw fileError("misc.file.tooBig", 413, { size: formatBytes(size), max: settings.maxFileMb });
   if (settings.quotaMb != null) {
     const usage = await tenantStorageUsage(tenantId);
     const quotaBytes = settings.quotaMb * MB;
     if (usage.bytes + size > quotaBytes) {
       const free = Math.max(quotaBytes - usage.bytes, 0);
-      throw new FileServiceError(
-        free === 0
-          ? `Der Speicherplatz des Vereins ist voll (${formatBytes(usage.bytes)} von ${settings.quotaMb} MB belegt). Bitte alte Dateien löschen oder das Kontingent erhöhen.`
-          : `Nicht genug Speicherplatz frei: Die Datei braucht ${formatBytes(size)}, frei sind noch ${formatBytes(free)} (von ${settings.quotaMb} MB). Bitte alte Dateien löschen oder das Kontingent erhöhen.`,
-        413,
-      );
+      throw free === 0
+        ? fileError("misc.file.quotaFull", 413, { used: formatBytes(usage.bytes), quota: settings.quotaMb })
+        : fileError("misc.file.quotaLow", 413, { size: formatBytes(size), free: formatBytes(free), quota: settings.quotaMb });
     }
   }
 
   let folderId: string | null = null;
   if (input.folderId) {
     const folder = await db.fileFolder.findFirst({ where: { id: input.folderId, tenantId }, select: { id: true } });
-    if (!folder) throw new FileServiceError("Der Ordner existiert nicht mehr.", 404);
+    if (!folder) throw fileError("misc.file.folderGone", 404);
     folderId = folder.id;
   }
 

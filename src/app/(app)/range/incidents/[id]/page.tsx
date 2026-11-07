@@ -17,11 +17,11 @@ export async function generateMetadata(): Promise<Metadata> {
 export default async function IncidentPage({ params }: { params: Promise<{ id: string }> }) {
   const ctx = await requireRange();
   const { id } = await params;
-  const inc = await getIncident(ctx.tenant.id, id);
-  const isManager = ctx.can("range.manage");
-  if (!inc || (!isManager && inc.reportedById !== ctx.user.id)) notFound();
   const locale = await getRequestLocale();
   const t = getT(locale);
+  const inc = await getIncident(ctx.tenant.id, id, t("adm2.common.deletedAccount"));
+  const isManager = ctx.can("range.manage");
+  if (!inc || (!isManager && inc.reportedById !== ctx.user.id)) notFound();
   const sev = severityInfo(inc.severity, t);
   const st = incidentStatusInfo(inc.status, t);
 

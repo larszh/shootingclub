@@ -1,0 +1,52 @@
+/** «adm1.bill.msg.», «adm1.camt.msg.»: Meldungen der Server-Aktionen der Mitgliederbeiträge und des Bankimports. */
+import type { Rows } from "./row";
+
+const rows: Rows = {
+  "adm1.bill.msg.invalidInput": ["Ungültige Eingabe", "Saisie non valable", "Inserimento non valido", "Invalid input"],
+  "adm1.bill.msg.invalidIban": ["Die IBAN ist ungültig (Prüfziffer stimmt nicht).", "L’IBAN n’est pas valable (le chiffre de contrôle ne correspond pas).", "L’IBAN non è valido (la cifra di controllo non corrisponde).", "The IBAN is invalid (check digit does not match)."],
+  "adm1.bill.msg.savedQr": ["Gespeichert. QR-IBAN erkannt: Rechnungen erhalten ab jetzt eine QR-Referenz.", "Enregistré. QR-IBAN détecté : les factures reçoivent désormais une référence QR.", "Salvato. QR-IBAN riconosciuto: d’ora in poi le fatture ricevono un riferimento QR.", "Saved. QR-IBAN detected: invoices will now get a QR reference."],
+  "adm1.bill.msg.profileSaved": ["Rechnungsprofil gespeichert.", "Profil de facturation enregistré.", "Profilo di fatturazione salvato.", "Billing profile saved."],
+  "adm1.bill.msg.notFound": ["Nicht gefunden", "Introuvable", "Non trovato", "Not found"],
+  "adm1.bill.msg.categorySaved": ["Kategorie gespeichert.", "Catégorie enregistrée.", "Categoria salvata.", "Category saved."],
+  "adm1.bill.msg.categoryInUse": ["Kategorie ist Mitgliedern zugeordnet. Zuerst umhängen oder deaktivieren.", "La catégorie est attribuée à des membres. Réattribuez-les ou désactivez-la d’abord.", "La categoria è assegnata a dei soci. Riassegnarli o disattivarla prima.", "The category is assigned to members. Reassign them or deactivate it first."],
+  "adm1.bill.msg.categoryNotFound": ["Kategorie nicht gefunden", "Catégorie introuvable", "Categoria non trovata", "Category not found"],
+  "adm1.bill.msg.invalidAmount": ["Ungültiger Betrag", "Montant non valable", "Importo non valido", "Invalid amount"],
+  "adm1.bill.msg.memberNumberTooLong": ["Mitgliedernummer ist zu lang (max. 40 Zeichen).", "Le numéro de membre est trop long (max. 40 caractères).", "Il numero di socio è troppo lungo (max. 40 caratteri).", "Member number is too long (max. 40 characters)."],
+  "adm1.bill.msg.profileFirstFull": ["Bitte zuerst das Rechnungsprofil (Zahlungsempfänger und IBAN) ausfüllen.", "Merci de compléter d’abord le profil de facturation (bénéficiaire et IBAN).", "Compilare prima il profilo di fatturazione (beneficiario e IBAN).", "Please complete the billing profile (payee and IBAN) first."],
+  "adm1.bill.msg.profileFirst": ["Bitte zuerst das Rechnungsprofil ausfüllen.", "Merci de compléter d’abord le profil de facturation.", "Compilare prima il profilo di fatturazione.", "Please complete the billing profile first."],
+  "adm1.bill.msg.pendingJoin": ["Der Beitritt wartet noch auf Freigabe.", "L’adhésion attend encore d’être validée.", "L’adesione è ancora in attesa di approvazione.", "The membership is still awaiting approval."],
+  "adm1.bill.msg.alreadyInvoiced": ["Für dieses Jahr existiert bereits eine Rechnung.", "Une facture existe déjà pour cette année.", "Per quest’anno esiste già una fattura.", "An invoice already exists for this year."],
+  "adm1.bill.msg.inHouseholdNumber": ["Bereits in der Haushaltsrechnung {number} enthalten.", "Déjà comprise dans la facture du ménage {number}.", "Già inclusa nella fattura dell’economia domestica {number}.", "Already included in household invoice {number}."],
+  "adm1.bill.msg.inHousehold": ["Bereits in einer Haushaltsrechnung enthalten.", "Déjà comprise dans une facture de ménage.", "Già inclusa in una fattura dell’economia domestica.", "Already included in a household invoice."],
+  "adm1.bill.msg.noFee": ["Kein Beitrag definiert (Kategorie oder individueller Betrag).", "Aucune cotisation définie (catégorie ou montant individuel).", "Nessuna quota definita (categoria o importo individuale).", "No fee defined (category or individual amount)."],
+  "adm1.bill.msg.invoiceCreated": ["Rechnung erstellt.", "Facture établie.", "Fattura creata.", "Invoice created."],
+  "adm1.bill.msg.invalidStatus": ["Ungültiger Status", "Statut non valable", "Stato non valido", "Invalid status"],
+  "adm1.bill.msg.noteInvalid": ["Notiz ist ungültig oder zu lang.", "La note n’est pas valable ou est trop longue.", "La nota non è valida o è troppo lunga.", "The note is invalid or too long."],
+  "adm1.bill.msg.invalidSelection": ["Ungültige Auswahl", "Sélection non valable", "Selezione non valida", "Invalid selection"],
+  "adm1.bill.msg.chooseInvoice": ["Bitte mindestens eine Rechnung wählen.", "Merci de choisir au moins une facture.", "Scegliere almeno una fattura.", "Please choose at least one invoice."],
+  "adm1.bill.msg.reminded.one": ["{n} Rechnung als gemahnt markiert.", "{n} facture marquée comme rappelée.", "{n} fattura segnata come sollecitata.", "{n} invoice marked as reminded."],
+  "adm1.bill.msg.reminded.other": ["{n} Rechnungen als gemahnt markiert.", "{n} factures marquées comme rappelées.", "{n} fatture segnate come sollecitate.", "{n} invoices marked as reminded."],
+  "adm1.bill.msg.remindedToday": ["Heute bereits gemahnt.", "Déjà rappelé aujourd’hui.", "Già sollecitato oggi.", "Already reminded today."],
+  "adm1.bill.msg.markedPaid.one": ["{n} Rechnung als bezahlt markiert.", "{n} facture marquée comme payée.", "{n} fattura segnata come pagata.", "{n} invoice marked as paid."],
+  "adm1.bill.msg.markedPaid.other": ["{n} Rechnungen als bezahlt markiert.", "{n} factures marquées comme payées.", "{n} fatture segnate come pagate.", "{n} invoices marked as paid."],
+  "adm1.bill.msg.kioskReopenBlocked": ["Die Einträge dieser Schützenstube-Rechnung wurden freigegeben (wieder offen bzw. neu verrechnet). Die stornierte Rechnung kann nicht mehr reaktiviert werden.", "Les écritures de cette facture de buvette ont été libérées (à nouveau ouvertes ou refacturées). La facture annulée ne peut plus être réactivée.", "Le voci di questa fattura della buvette sono state liberate (di nuovo aperte o rifatturate). La fattura annullata non può più essere riattivata.", "The entries of this clubhouse bar invoice were released (open again or billed anew). The cancelled invoice can no longer be reactivated."],
+  "adm1.bill.msg.nameTooShort": ["Name zu kurz", "Nom trop court", "Nome troppo corto", "Name too short"],
+
+  // Bankimport
+  "adm1.camt.msg.chooseFile": ["Bitte eine camt-Datei (XML) wählen.", "Merci de choisir un fichier camt (XML).", "Scegliere un file camt (XML).", "Please choose a camt file (XML)."],
+  "adm1.camt.msg.tooLarge": ["Die Datei ist grösser als 5 MB.", "Le fichier dépasse 5 Mo.", "Il file supera 5 MB.", "The file is larger than 5 MB."],
+  "adm1.camt.msg.xmlOnly": ["Bitte eine XML-Datei hochladen (camt.053 oder camt.054). ZIP-Archive zuerst entpacken.", "Merci de téléverser un fichier XML (camt.053 ou camt.054). Décompressez d’abord les archives ZIP.", "Caricare un file XML (camt.053 o camt.054). Estrarre prima gli archivi ZIP.", "Please upload an XML file (camt.053 or camt.054). Unzip ZIP archives first."],
+  "adm1.camt.msg.unreadable": ["Die Datei konnte nicht gelesen werden.", "Le fichier n’a pas pu être lu.", "Il file non ha potuto essere letto.", "The file could not be read."],
+  "adm1.camt.msg.notEvaluated": ["Die Datei konnte nicht ausgewertet werden.", "Le fichier n’a pas pu être analysé.", "Il file non ha potuto essere analizzato.", "The file could not be processed."],
+  "adm1.camt.msg.invalidXml": ["Ungültiges XML", "XML non valable", "XML non valido", "Invalid XML"],
+  "adm1.camt.msg.tooManyNodes": ["XML enthält zu viele Elemente", "Le XML contient trop d’éléments", "L’XML contiene troppi elementi", "The XML contains too many elements"],
+  "adm1.camt.msg.tooDeep": ["XML ist zu tief verschachtelt", "Le XML est imbriqué trop profondément", "L’XML è annidato troppo in profondità", "The XML is nested too deeply"],
+  "adm1.camt.msg.notXml": ["Die Datei ist kein lesbares XML.", "Le fichier n’est pas un XML lisible.", "Il file non è un XML leggibile.", "The file is not readable XML."],
+  "adm1.camt.msg.notCamt": ["Keine camt-Datei erkannt (erwartet camt.053 oder camt.054).", "Aucun fichier camt reconnu (attendu camt.053 ou camt.054).", "Nessun file camt riconosciuto (atteso camt.053 o camt.054).", "No camt file detected (expected camt.053 or camt.054)."],
+  "adm1.camt.msg.invalidSelection": ["Ungültige Auswahl.", "Sélection non valable.", "Selezione non valida.", "Invalid selection."],
+  "adm1.camt.msg.booked.one": ["{n} Zahlung verbucht", "{n} paiement comptabilisé", "{n} pagamento registrato", "{n} payment booked"],
+  "adm1.camt.msg.booked.other": ["{n} Zahlungen verbucht", "{n} paiements comptabilisés", "{n} pagamenti registrati", "{n} payments booked"],
+  "adm1.camt.msg.skipped": [", {n} übersprungen", ", {n} ignoré(s)", ", {n} saltati", ", {n} skipped"],
+};
+
+export default rows;

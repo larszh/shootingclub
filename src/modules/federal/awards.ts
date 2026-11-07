@@ -7,8 +7,12 @@
  * Kategorien: Der Name einer Kategorie ist frei (z.B. «U21», «Elite», «Veteranen»). Optional gilt sie
  * nur für ein Alter (Jahrgang: Alter = Jahr − Geburtsjahr, wie bei der Jahresmeisterschaft).
  * Gespeichert wird die Kategorie lesbar in AwardLimit.category, z.B. «U21 (bis 20)», «Elite (21–59)»,
- * «Veteranen (ab 60)» oder nur «Alle». Weitere Unterscheidungen (z.B. Waffenkategorie) lassen sich
- * über eigene Programme oder eigene Kategorienamen ohne Alter abbilden.
+ * «Veteranen (ab 60)» oder nur «Alle».
+ *
+ * Waffenkategorie: Eine Limite kann zusätzlich nur für eine Waffenkategorie gelten (AwardLimit.weaponCategory,
+ * frei, z.B. «A», «D», «E»; leer = alle). Der Schütze trägt seine Kategorie pro Teilnahme ein
+ * (MatchParticipant.weaponCategory). Passend sind dann Limiten seiner Waffenkategorie und solche ohne;
+ * ohne Angabe beim Schützen nur Limiten ohne Waffenkategorie.
  */
 import { toCsv } from "@/modules/scores/analytics";
 
@@ -17,7 +21,33 @@ export const AWARD_EXAMPLE_HINT = "Beispiel, bitte prüfen";
 /** Zusatz in der Auszeichnung von Beispiel-Limiten (z.B. Demo-Daten), damit die Markierung beim Speichern erhalten bleibt. */
 export const AWARD_EXAMPLE_MARK = "(Beispiel)";
 export const AWARD_EXAMPLE_NOTICE = `${AWARD_EXAMPLE_HINT}: Diese Limiten sind Beispielwerte, keine offiziellen Werte. Limiten gemäss Ausschreibung eintragen und speichern.`;
-export const AWARD_FORMAT_HINT = "Eine Zeile pro Limite: Kategorie;Alter von;Alter bis;Limite;Auszeichnung. Alter leer = ohne Grenze. Zeilen mit # werden ignoriert.";
+export const AWARD_FORMAT_HINT = "Eine Zeile pro Limite: Kategorie;Alter von;Alter bis;Limite;Auszeichnung, optional ;Waffenkategorie (z.B. D). Alter leer = ohne Grenze, ohne Waffenkategorie = für alle. Zeilen mit # werden ignoriert.";
+
+/** Höchstlänge einer Waffenkategorie (z.B. «A», «D», «Stgw 90»). */
+export const MAX_WEAPON_CATEGORY = 20;
+
+/** Waffenkategorie bereinigen: getrimmt, Leerzeichen zusammengefasst, leer = null. */
+export function normalizeWeaponCategory(raw: string | null | undefined): string | null {
+  const v = (raw ?? "").replace(/\s+/g, " ").trim();
+  return v ? v.slice(0, MAX_WEAPON_CATEGORY) : null;
+}
+
+/** Gleiche Waffenkategorie (ohne Gross-/Kleinschreibung)? */
+export function sameWeaponCategory(a: string | null | undefined, b: string | null | undefined): boolean {
+  const x = normalizeWeaponCategory(a);
+  const y = normalizeWeaponCategory(b);
+  return x !== null && y !== null && x.toLowerCase() === y.toLowerCase();
+}
+
+/** Waffenkategorien aus Limiten (eindeutig, Schreibweise der ersten Nennung, sortiert). */
+export function weaponCategoriesOf(limits: readonly { weaponCategory?: string | null }[]): string[] {
+  const map = new Map<string, string>();
+  for (const l of limits) {
+    const w = normalizeWeaponCategory(l.weaponCategory);
+    if (w && !map.has(w.toLowerCase())) map.set(w.toLowerCase(), w);
+  }
+  return [...map.values()].sort((a, b) => a.localeCompare(b, "de-CH", { numeric: true }));
+}
 
 /** true, wenn Limiten als Beispiel markiert sind (Kategorie oder Auszeichnung enthält «Beispiel»). */
 export function isExampleLimits(limits: readonly Pick<AwardLimitLite, "category" | "award">[]): boolean {
@@ -51,13 +81,14 @@ export function parseAwardCategory(raw: string): AwardCategory {
   return { name, minAge: n(m[6]), maxAge: n(m[6]) };
 }
 
-export type AwardLine = AwardCategory & { minScore: number; award: string };
-export type AwardLimitLite = { category: string; minScore: number; award: string; sort?: number };
+export type AwardLine = AwardCategory & { minScore: number; award: string; weaponCategory: string | null };
+export type AwardLimitLite = { category: string; minScore: number; award: string; sort?: number; weaponCategory?: string | null };
 
 /**
- * Liest die Limiten aus dem Freitext (eine pro Zeile «Kategorie;Alter von;Alter bis;Limite;Auszeichnung»).
- * Fehlerhafte Zeilen werden mit Zeilennummer gemeldet. Gleiche Kategorie mit anderem Alter ist ein Fehler,
- * ebenso die gleiche Auszeichnung zweimal in derselben Kategorie.
+ * Liest die Limiten aus dem Freitext (eine pro Zeile «Kategorie;Alter von;Alter bis;Limite;Auszeichnung»,
+ * optional mit «;Waffenkategorie»). Fehlerhafte Zeilen werden mit Zeilennummer gemeldet. Gleiche Kategorie
+ * mit anderem Alter ist ein Fehler, ebenso die gleiche Auszeichnung zweimal in derselben Kategorie und
+ * Waffenkategorie.
  */
 export function parseAwardLines(text: string | null | undefined, maxScore?: number | null): { lines: AwardLine[]; errors: string[] } {
   const lines: AwardLine[] = [];
@@ -74,11 +105,11 @@ export function parseAwardLines(text: string | null | undefined, maxScore?: numb
     const nr = i + 1;
     if (!line || line.startsWith("#")) return;
     const parts = line.split(";").map((p) => p.trim());
-    if (parts.length !== 5) {
-      errors.push(`Zeile ${nr}: genau fünf Felder angeben (Kategorie;Alter von;Alter bis;Limite;Auszeichnung).`);
+    if (parts.length !== 5 && parts.length !== 6) {
+      errors.push(`Zeile ${nr}: fünf oder sechs Felder angeben (Kategorie;Alter von;Alter bis;Limite;Auszeichnung;Waffenkategorie).`);
       return;
     }
-    const [name, fromRaw, toRaw, scoreRaw, award] = parts as [string, string, string, string, string];
+    const [name, fromRaw, toRaw, scoreRaw, award, weaponRaw] = parts as [string, string, string, string, string, string | undefined];
     if (!name) return void errors.push(`Zeile ${nr}: Kategorie fehlt.`);
     if (name.length > 60) return void errors.push(`Zeile ${nr}: Kategorie höchstens 60 Zeichen.`);
     if (/[()]/.test(name)) return void errors.push(`Zeile ${nr}: Kategorie ohne Klammern angeben (das Alter gehört in die eigenen Felder).`);
@@ -93,11 +124,16 @@ export function parseAwardLines(text: string | null | undefined, maxScore?: numb
     if (maxScore && minScore > maxScore) return void errors.push(`Zeile ${nr}: Limite ${minScore} ist höher als das Maximum des Programms (${maxScore}).`);
     if (!award) return void errors.push(`Zeile ${nr}: Auszeichnung fehlt (z.B. Kranz).`);
     if (award.length > 60) return void errors.push(`Zeile ${nr}: Auszeichnung höchstens 60 Zeichen.`);
+    if ((weaponRaw ?? "").trim().length > MAX_WEAPON_CATEGORY) return void errors.push(`Zeile ${nr}: Waffenkategorie höchstens ${MAX_WEAPON_CATEGORY} Zeichen.`);
+    const weaponCategory = normalizeWeaponCategory(weaponRaw);
     const same = lines.find((l) => l.name.toLowerCase() === name.toLowerCase());
     if (same && (same.minAge !== minAge || same.maxAge !== maxAge)) return void errors.push(`Zeile ${nr}: Kategorie «${name}» ist schon mit einem anderen Alter erfasst.`);
-    if (lines.some((l) => l.name.toLowerCase() === name.toLowerCase() && l.award.toLowerCase() === award.toLowerCase())) return void errors.push(`Zeile ${nr}: «${award}» in der Kategorie «${name}» doppelt.`);
+    const sameWeapon = (w: string | null) => (w === null ? weaponCategory === null : sameWeaponCategory(w, weaponCategory));
+    if (lines.some((l) => l.name.toLowerCase() === name.toLowerCase() && sameWeapon(l.weaponCategory) && l.award.toLowerCase() === award.toLowerCase())) {
+      return void errors.push(weaponCategory ? `Zeile ${nr}: «${award}» in der Kategorie «${name}» (Waffenkategorie ${weaponCategory}) doppelt.` : `Zeile ${nr}: «${award}» in der Kategorie «${name}» doppelt.`);
+    }
     if (lines.length >= MAX_AWARD_LINES) return void errors.push(`Zeile ${nr}: höchstens ${MAX_AWARD_LINES} Limiten.`);
-    lines.push({ name, minAge, maxAge, minScore, award });
+    lines.push({ name, minAge, maxAge, minScore, award, weaponCategory });
   });
   return { lines, errors };
 }
@@ -108,7 +144,8 @@ export function awardLimitsToText(limits: readonly AwardLimitLite[]): string {
     .sort((a, b) => (a.sort ?? 0) - (b.sort ?? 0))
     .map((l) => {
       const c = parseAwardCategory(l.category);
-      return [c.name, c.minAge ?? "", c.maxAge ?? "", fmtScore(l.minScore), l.award].join(";");
+      const weapon = normalizeWeaponCategory(l.weaponCategory);
+      return [c.name, c.minAge ?? "", c.maxAge ?? "", fmtScore(l.minScore), l.award, ...(weapon ? [weapon] : [])].join(";");
     })
     .join("\n");
 }
@@ -118,8 +155,8 @@ function fmtScore(n: number) {
 }
 
 /** Zeilen → Datensätze für AwardLimit (category lesbar, sort = Reihenfolge). */
-export function awardLinesToRows(lines: readonly AwardLine[]): Array<{ category: string; minScore: number; award: string; sort: number }> {
-  return lines.map((l, i) => ({ category: formatAwardCategory(l).slice(0, 191), minScore: l.minScore, award: l.award.slice(0, 191), sort: i }));
+export function awardLinesToRows(lines: readonly AwardLine[]): Array<{ category: string; minScore: number; award: string; sort: number; weaponCategory: string | null }> {
+  return lines.map((l, i) => ({ category: formatAwardCategory(l).slice(0, 191), minScore: l.minScore, award: l.award.slice(0, 191), sort: i, weaponCategory: normalizeWeaponCategory(l.weaponCategory) }));
 }
 
 // ---------------------------------------------------------------------------
@@ -127,10 +164,10 @@ export function awardLinesToRows(lines: readonly AwardLine[]): Array<{ category:
 // ---------------------------------------------------------------------------
 
 export type AwardResult =
-  /** Auszeichnung erreicht */
-  | { status: "award"; award: string; category: string; minScore: number }
+  /** Auszeichnung erreicht (weaponCategory: Waffenkategorie der Limite, null = für alle) */
+  | { status: "award"; award: string; category: string; minScore: number; weaponCategory?: string | null }
   /** Kategorie gefunden, Limite nicht erreicht */
-  | { status: "none"; award: null; category: string; minScore: null }
+  | { status: "none"; award: null; category: string; minScore: null; weaponCategory?: string | null }
   /** Limiten vorhanden, aber keine passende Kategorie (z.B. Geburtsdatum fehlt) */
   | { status: "no-category"; award: null; category: null; minScore: null }
   /** Keine Limiten für Programm/Jahr erfasst */
@@ -143,15 +180,19 @@ export function ageInYear(birthYear: number, year: number): number {
 
 /**
  * Kategorie und Auszeichnung eines Resultats. Passend sind Kategorien, deren Alter den Schützen umfasst
- * (Kategorien ohne Alter passen immer). Gibt es mehrere, gilt die engste Altersspanne (z.B. «U21 (bis 20)»
- * vor «Alle»). In der Kategorie zählt die höchste erreichte Limite.
+ * (Kategorien ohne Alter passen immer) und deren Waffenkategorie zu der des Schützen passt (Limiten ohne
+ * Waffenkategorie passen immer; ohne Angabe beim Schützen passen nur diese). Gibt es mehrere, gilt zuerst
+ * die eigene Waffenkategorie vor «für alle», dann die engste Altersspanne (z.B. «U21 (bis 20)» vor «Alle»).
+ * In der Kategorie zählt die höchste erreichte Limite.
  */
-export function awardFor(limits: readonly AwardLimitLite[], total: number | null, birthYear: number | null, year: number): AwardResult {
+export function awardFor(limits: readonly AwardLimitLite[], total: number | null, birthYear: number | null, year: number, weaponCategory?: string | null): AwardResult {
   if (!limits.length) return { status: "no-limits", award: null, category: null, minScore: null };
   const age = birthYear === null ? null : ageInYear(birthYear, year);
-  const cats = new Map<string, { cat: AwardCategory; width: number; order: number; limits: AwardLimitLite[] }>();
+  const shooterWeapon = normalizeWeaponCategory(weaponCategory);
+  const cats = new Map<string, { category: string; weapon: string | null; cat: AwardCategory; width: number; order: number; limits: AwardLimitLite[] }>();
   limits.forEach((l, i) => {
-    const key = l.category;
+    const weapon = normalizeWeaponCategory(l.weaponCategory);
+    const key = `${l.category}\u0000${weapon?.toLowerCase() ?? ""}`;
     const existing = cats.get(key);
     if (existing) {
       existing.limits.push(l);
@@ -159,21 +200,29 @@ export function awardFor(limits: readonly AwardLimitLite[], total: number | null
     }
     const cat = parseAwardCategory(l.category);
     const width = (cat.maxAge ?? 200) - (cat.minAge ?? 0);
-    cats.set(key, { cat, width, order: l.sort ?? i, limits: [l] });
+    cats.set(key, { category: l.category, weapon, cat, width, order: l.sort ?? i, limits: [l] });
   });
-  const candidates = [...cats.entries()].filter(([, c]) => {
+  const candidates = [...cats.values()].filter((c) => {
+    if (c.weapon !== null && !sameWeaponCategory(c.weapon, shooterWeapon)) return false;
     if (c.cat.minAge === null && c.cat.maxAge === null) return true;
     if (age === null) return false;
     return (c.cat.minAge === null || age >= c.cat.minAge) && (c.cat.maxAge === null || age <= c.cat.maxAge);
   });
   if (!candidates.length) return { status: "no-category", award: null, category: null, minScore: null };
-  candidates.sort(([, a], [, b]) => a.width - b.width || a.order - b.order);
-  const [category, chosen] = candidates[0]!;
-  if (total === null) return { status: "none", award: null, category, minScore: null };
+  candidates.sort((a, b) => Number(b.weapon !== null) - Number(a.weapon !== null) || a.width - b.width || a.order - b.order);
+  const chosen = candidates[0]!;
+  const { category, weapon } = chosen;
+  if (total === null) return { status: "none", award: null, category, minScore: null, weaponCategory: weapon };
   const reached = chosen.limits.filter((l) => total >= l.minScore - 1e-9).sort((a, b) => b.minScore - a.minScore || (a.sort ?? 0) - (b.sort ?? 0));
   const best = reached[0];
-  if (!best) return { status: "none", award: null, category, minScore: null };
-  return { status: "award", award: best.award, category, minScore: best.minScore };
+  if (!best) return { status: "none", award: null, category, minScore: null, weaponCategory: weapon };
+  return { status: "award", award: best.award, category, minScore: best.minScore, weaponCategory: weapon };
+}
+
+/** Kategorie für Anzeige und Export, z.B. «Elite (21–59) · D» bei einer Limite für Waffenkategorie D. */
+export function awardCategoryLabel(r: AwardResult): string {
+  if (!r.category) return "";
+  return r.weaponCategory ? `${r.category} · ${r.weaponCategory}` : r.category;
 }
 
 export type FsResultLite = {
@@ -222,6 +271,8 @@ export function awardStatusText(r: AwardResult): string {
 export type AwardExportRow = {
   name: string;
   birthYear: number | null;
+  /** Waffenkategorie des Schützen (Teilnahme), null = keine Angabe */
+  weaponCategory?: string | null;
   program: string;
   total: number;
   zeros: number | null;
@@ -231,7 +282,7 @@ export type AwardExportRow = {
   result: AwardResult;
 };
 
-export const AWARD_CSV_HEADER = ["Name", "Jahrgang", "Programm", "Kategorie", "Resultat", "Nuller", "Auszeichnung", "Amtlich", "Gast", "Datum"];
+export const AWARD_CSV_HEADER = ["Name", "Jahrgang", "Programm", "Kategorie", "Waffenkategorie", "Resultat", "Nuller", "Auszeichnung", "Amtlich", "Gast", "Datum"];
 
 export function awardRowCells(r: AwardExportRow): string[] {
   return [
@@ -239,6 +290,7 @@ export function awardRowCells(r: AwardExportRow): string[] {
     r.birthYear === null ? "" : String(r.birthYear),
     r.program,
     r.result.category ?? "",
+    r.weaponCategory ?? "",
     fmtScore(r.total),
     r.zeros === null ? "" : String(r.zeros),
     awardStatusText(r.result),

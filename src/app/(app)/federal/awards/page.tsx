@@ -10,6 +10,8 @@ import { AWARD_EXAMPLE_HINT, AWARD_EXAMPLE_NOTICE, AWARD_LIMITS_HINT, awardLimit
 import { formatSwissDate, parseYear, yearOptions } from "@/modules/federal/types";
 import { fsAwardExample } from "@/modules/scores/presets";
 import { AwardLimitsForm } from "@/modules/federal/ui/award-limits-form";
+import { WeaponCategoryPanel } from "@/modules/federal/ui/award-weapon";
+import { awardCategoryLabel } from "@/modules/federal/awards";
 
 export const metadata: Metadata = { title: "Feldschiessen: Auszeichnungen" };
 
@@ -57,7 +59,7 @@ export default async function FederalAwardsPage({ searchParams }: { searchParams
         <EmptyState icon={<Trophy className="h-5 w-5" />} title="Kein Feldschiessen-Programm" text="Programme der Art «Feldschiessen» erscheinen hier, sobald sie im Verein sichtbar sind (Punkteerfassung → Programme)." />
       ) : null}
 
-      {overview.sections.map(({ program, limits, rows, counts }) => {
+      {overview.sections.map(({ program, limits, rows, counts, weaponCategories }) => {
         const text = awardLimitsToText(limits);
         const prev = suggestions.get(program.id);
         const suggestion = prev
@@ -72,7 +74,7 @@ export default async function FederalAwardsPage({ searchParams }: { searchParams
                 <ul className="divide-y divide-line text-sm">
                   {limits.map((l) => (
                     <li key={l.id} className="flex min-h-11 items-center justify-between gap-3 py-1.5">
-                      <span className="min-w-0 truncate text-ink-2">{l.category}</span>
+                      <span className="min-w-0 truncate text-ink-2">{l.category}{l.weaponCategory ? ` · ${l.weaponCategory}` : ""}</span>
                       <span className="flex shrink-0 items-center gap-2">
                         <span className="tabular-nums font-medium">ab {formatScore(l.minScore, !Number.isInteger(l.minScore))}</span>
                         <Badge tone="outline">{l.award}</Badge>
@@ -106,7 +108,7 @@ export default async function FederalAwardsPage({ searchParams }: { searchParams
                       <span className="min-w-0 flex-1">
                         <span className="block font-medium truncate">{r.name}{r.isGuest ? <span className="ml-1 text-xs text-ink-3">(Gast)</span> : null}</span>
                         <span className="block text-xs text-ink-3 truncate">
-                          {formatSwissDate(r.date)}{r.birthYear ? ` · Jg. ${r.birthYear}` : " · ohne Jahrgang"}{r.result.category ? ` · ${r.result.category}` : ""}
+                          {formatSwissDate(r.date)}{r.birthYear ? ` · Jg. ${r.birthYear}` : " · ohne Jahrgang"}{r.result.category ? ` · ${awardCategoryLabel(r.result)}` : ""}
                         </span>
                       </span>
                       <span className="shrink-0 text-right">
@@ -118,6 +120,12 @@ export default async function FederalAwardsPage({ searchParams }: { searchParams
                     </Link>
                   ))}
                 </Card>
+                {canEdit ? (
+                  <WeaponCategoryPanel
+                    options={weaponCategories}
+                    rows={overview.participants.filter((x) => x.programId === program.id).map((x) => ({ id: x.id, name: x.name, detail: formatSwissDate(x.date), weaponCategory: x.weaponCategory }))}
+                  />
+                ) : null}
                 {rows.some((r) => r.result.status === "no-category") ? (
                   <p className="mt-2 text-xs text-ink-3">«keine Kategorie»: Geburtsdatum fehlt (z.B. Gäste) oder kein Alter passt. Eine Kategorie ohne Alter (z.B. «Alle») gilt für alle.</p>
                 ) : null}

@@ -8,6 +8,7 @@ import { runShiftReminders } from "@/modules/shifts/service";
 import { runWeaponReminders } from "@/modules/weapons/service";
 import { runFederalReminders } from "@/modules/federal/service";
 import { bookingReminders } from "@/modules/bookings/reminders";
+import { purgeExpiredAiCache } from "@/lib/ai/cache";
 
 const MIN = 60_000;
 const HOUR = 60 * MIN;
@@ -45,6 +46,11 @@ export function registerDefaultJobs() {
     for (let i = 0; i < 10; i++) {
       if ((await backfillMatchTotals()) === 0) break;
     }
+  });
+
+  // Abgelaufene KI-Zwischenspeicher (Coach-Auswertungen, Berichtsentwürfe) entfernen.
+  registerJob("ai.cache.purge", DAY, async () => {
+    await purgeExpiredAiCache();
   });
 
   registerJob("reminders", HOUR, async () => {

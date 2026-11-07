@@ -10,7 +10,7 @@ import { setActiveTenantCookie } from "@/lib/tenant";
 import { audit } from "@/lib/audit";
 import { notify, tenantUserIdsWithRole } from "@/lib/notify";
 import { fail, ok, type ActionResult } from "@/lib/action-result";
-import { getRequestLocale, getT, type TFunction } from "@/lib/i18n";
+import { getRequestLocale, getT, getTenantLocale, type TFunction } from "@/lib/i18n";
 
 const tr = async () => getT(await getRequestLocale());
 import { todayZurich, zurichToUtc } from "@/lib/time";
@@ -291,7 +291,7 @@ export async function issueWeaponAction(visitId: string, weaponId: string): Prom
     tenantId, weaponId, userId: v.userId, borrowerName: v.userId ? null : v.guestName, isMinor, onSiteOnly: true, issuedById: ctx.user.id,
     note: t("adm2.range.msg.loanNote", { date: dbDateKey(v.rangeDay?.date ?? new Date()) }),
   });
-  if (!res.ok) return fail(res.error);
+  if (!res.ok) return fail(t(res.error));
   await db.rangeVisit.updateMany({ where: { id: v.id, tenantId }, data: { clubWeaponId: weaponId } });
   revalidate();
   return ok(undefined, isMinor ? t("adm2.range.msg.issuedMinor") : t("adm2.range.msg.issued"));
@@ -301,7 +301,7 @@ async function returnWeaponOfVisit(tenantId: string, visit: { clubWeaponId: stri
   const loan = await findOpenLoanForVisit(tenantId, visit);
   if (!loan) return { ok: true as const };
   const r = await returnWeaponLoan(tenantId, loan.id, shots);
-  return r.ok ? { ok: true as const } : { ok: false as const, error: r.error ?? t("adm2.range.msg.returnFailed") };
+  return r.ok ? { ok: true as const } : { ok: false as const, error: r.error ? t(r.error) : t("adm2.range.msg.returnFailed") };
 }
 
 const shotsSchema = z.number().int().min(0).max(100000).nullable();
@@ -694,10 +694,11 @@ export async function reportIncidentAction(_prev: ActionResult<{ id: string }> |
   await audit({ tenantId, actorId: ctx.user.id, actorName: ctx.user.name, action: "range.incident.report", entity: "Incident", entityId: incident.id, detail: `${kindLabel(i.kind)}, ${severityInfo(i.severity).label}` });
   if (i.severity === "HIGH") {
     const admins = (await tenantUserIdsWithRole(tenantId, ["OWNER", "ADMIN"])).filter((id) => id !== ctx.user.id);
+    const tn = getT(await getTenantLocale(tenantId));
     void notify({
       tenantId, userIds: admins, topic: "system", urgency: "high",
-      title: `Vorfall gemeldet: ${kindLabel(i.kind)} (hoch)`,
-      body: `${ctx.user.name} hat einen Vorfall mit hoher Schwere gemeldet${i.location ? ` (${i.location})` : ""}. Bitte prüfen.`,
+      title: tn("adm2.range.msg.notifyTitle", { kind: kindLabel(i.kind, tn) }),
+      body: tn(i.location ? "adm2.range.msg.notifyBodyAt" : "adm2.range.msg.notifyBody", { name: ctx.user.name, location: i.location ?? "" }),
       url: `/range/incidents/${incident.id}`, tag: `incident:${incident.id}`, dedupeKey: `incident-high:${incident.id}`,
     });
   }

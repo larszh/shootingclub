@@ -6,7 +6,13 @@ import type { PaperSize, TargetParams } from "./types";
  */
 
 export type Box = { x: number; y: number; w: number; h: number };
-export type Ctx = { box: Box; p: TargetParams; size: PaperSize };
+export type Ctx = {
+  box: Box;
+  p: TargetParams;
+  size: PaperSize;
+  /** Übersetzt deutsche Beschriftungen und Legenden (Deutsch: unverändert), siehe target-i18n.ts. */
+  tr: (de: string) => string;
+};
 export type Body = { body: string; note: string | null };
 
 export function plain(body: string): Body {

@@ -10,7 +10,7 @@ import { Spinner } from "@/components/ui/form";
 import { todayZurich } from "@/lib/time";
 import { toast } from "@/lib/ui-feedback";
 import { lendWeaponAction } from "@/modules/weapons/actions";
-import { MINOR_HINT, RESPONSIBILITY_HINT } from "@/modules/weapons/types";
+import { useT } from "@/components/locale";
 
 export type LendMember = { userId: string; name: string; memberNumber: string | null; minor: boolean | null };
 
@@ -19,7 +19,7 @@ export type LendMember = { userId: string; name: string; memberNumber: string | 
  * `hideTrigger`: Knopf ausblenden (z.B. Waffe nicht mehr verfügbar), ein offener Dialog bleibt aber stehen. So überlebt
  * der Erfolgsschritt («Quittung drucken») das Neuladen der Seite, wenn die Seite danach die offene Ausleihe zeigt.
  */
-export function LendButton({ weapons, members, defaultReportDays, size = "md", className, label = "Ausleihen", hideTrigger = false }: {
+export function LendButton({ weapons, members, defaultReportDays, size = "md", className, label, hideTrigger = false }: {
   /** Eine Waffe (Detailseite) oder Auswahl verfügbarer Waffen (Übersicht) */
   weapons: { id: string; name: string }[];
   members: LendMember[];
@@ -30,10 +30,11 @@ export function LendButton({ weapons, members, defaultReportDays, size = "md", c
   hideTrigger?: boolean;
 }) {
   const [open, setOpen] = useState(false);
+  const t = useT();
   if (hideTrigger && !open) return null;
   return (
     <>
-      {hideTrigger ? null : <Button size={size} className={className} onClick={() => setOpen(true)}><HandHelping className="h-4 w-4" /> {label}</Button>}
+      {hideTrigger ? null : <Button size={size} className={className} onClick={() => setOpen(true)}><HandHelping className="h-4 w-4" /> {label ?? t("adm2.weapons.lend.lend")}</Button>}
       {open ? <LendDialog weapons={weapons} members={members} defaultReportDays={defaultReportDays} onClose={() => setOpen(false)} /> : null}
     </>
   );
@@ -41,6 +42,7 @@ export function LendButton({ weapons, members, defaultReportDays, size = "md", c
 
 function LendDialog({ weapons, members, defaultReportDays, onClose }: { weapons: { id: string; name: string }[]; members: LendMember[]; defaultReportDays: number; onClose: () => void }) {
   const router = useRouter();
+  const t = useT();
   const [pending, start] = useTransition();
   const [mode, setMode] = useState<"member" | "name">(members.length ? "member" : "name");
   const [query, setQuery] = useState("");
@@ -69,10 +71,10 @@ function LendDialog({ weapons, members, defaultReportDays, onClose }: { weapons:
 
   function submit() {
     setError(null);
-    if (!weapon) return setError("Bitte eine Waffe wählen.");
-    if (mode === "member" && !picked) return setError("Bitte ein Mitglied wählen.");
-    if (mode === "name" && !name.trim()) return setError("Bitte einen Namen eingeben.");
-    if (dueDate && dueDate < today) return setError("«Rückgabe bis» darf nicht in der Vergangenheit liegen.");
+    if (!weapon) return setError(t("adm2.weapons.lend.chooseWeapon"));
+    if (mode === "member" && !picked) return setError(t("adm2.weapons.lend.chooseMember"));
+    if (mode === "name" && !name.trim()) return setError(t("adm2.weapons.lend.enterName"));
+    if (dueDate && dueDate < today) return setError(t("adm2.weapons.msg.duePast"));
     start(async () => {
       try {
         const r = await lendWeaponAction({
@@ -80,36 +82,36 @@ function LendDialog({ weapons, members, defaultReportDays, onClose }: { weapons:
           isMinor, onSiteOnly, dueDate, reportDays: isMinor ? reportDays : "", note,
         });
         if (!r.ok) return setError(r.error);
-        toast.success(r.message ?? "Ausgeliehen.");
+        toast.success(r.message ?? t("adm2.weapons.msg.lent"));
         if (r.data?.id) setDone({ id: r.data.id, name: weapon.name });
         else onClose();
         router.refresh();
       } catch {
-        setError("Keine Verbindung. Bitte nochmals versuchen.");
+        setError(t("adm2.common.network"));
       }
     });
   }
 
   if (done) {
     return (
-      <Dialog open onClose={onClose} title="Ausgeliehen" description={done.name} icon={<Check className="h-5 w-5" />}
+      <Dialog open onClose={onClose} title={t("adm2.weapons.lend.doneTitle")} description={done.name} icon={<Check className="h-5 w-5" />}
         footer={<>
-          <LinkButton variant="secondary" href={`/weapons/loans/${done.id}/receipt`} target="_blank"><Printer className="h-4 w-4" /> Quittung drucken</LinkButton>
-          <Button onClick={onClose}>Fertig</Button>
+          <LinkButton variant="secondary" href={`/weapons/loans/${done.id}/receipt`} target="_blank"><Printer className="h-4 w-4" /> {t("adm2.weapons.lend.printReceipt")}</LinkButton>
+          <Button onClick={onClose}>{t("adm2.weapons.lend.finish")}</Button>
         </>}>
-        <p className="pb-2 text-sm text-ink-2">Die Ausleihe ist erfasst. Die Quittung kann vor Ort unterschrieben werden.</p>
-        {isMinor ? <Alert tone="warn" className="mb-2">{MINOR_HINT}</Alert> : null}
+        <p className="pb-2 text-sm text-ink-2">{t("adm2.weapons.lend.doneText")}</p>
+        {isMinor ? <Alert tone="warn" className="mb-2">{t("adm2.weapons.minorHint")}</Alert> : null}
       </Dialog>
     );
   }
 
   return (
-    <Dialog open onClose={onClose} title="Vereinswaffe ausleihen" description={weapons.length === 1 ? weapon?.name : undefined} size="lg"
-      footer={<Button onClick={submit} disabled={pending || !weapon}>{pending ? <Spinner /> : <HandHelping className="h-4 w-4" />} Ausleihen</Button>}>
+    <Dialog open onClose={onClose} title={t("adm2.weapons.lend.title")} description={weapons.length === 1 ? weapon?.name : undefined} size="lg"
+      footer={<Button onClick={submit} disabled={pending || !weapon}>{pending ? <Spinner /> : <HandHelping className="h-4 w-4" />} {t("adm2.weapons.lend.lend")}</Button>}>
       <div className="space-y-4 pb-2">
-        {weapons.length === 0 ? <Alert tone="info">Zurzeit ist keine Vereinswaffe verfügbar.</Alert> : null}
+        {weapons.length === 0 ? <Alert tone="info">{t("adm2.weapons.lend.noneAvailable")}</Alert> : null}
         {weapons.length > 1 ? (
-          <Field label="Waffe">
+          <Field label={t("adm2.common.weapon")}>
             <Select value={weaponId} onChange={(e) => setWeaponId(e.target.value)}>
               {weapons.map((w) => <option key={w.id} value={w.id}>{w.name}</option>)}
             </Select>
@@ -118,8 +120,8 @@ function LendDialog({ weapons, members, defaultReportDays, onClose }: { weapons:
         <Segmented<"member" | "name">
           value={mode}
           onChange={(v) => { setMode(v); setError(null); }}
-          label="Ausleihe an"
-          options={[{ value: "member", label: "Mitglied" }, { value: "name", label: "Andere Person" }]}
+          label={t("adm2.weapons.lend.to")}
+          options={[{ value: "member", label: t("adm2.weapons.lend.member") }, { value: "name", label: t("adm2.weapons.lend.other") }]}
         />
         {mode === "member" ? (
           picked ? (
@@ -127,23 +129,23 @@ function LendDialog({ weapons, members, defaultReportDays, onClose }: { weapons:
               <UserRound className="h-5 w-5 text-ink-3" />
               <div className="min-w-0 flex-1">
                 <div className="truncate font-medium">{picked.name}</div>
-                <div className="text-xs text-ink-3">{picked.memberNumber ? `Nr. ${picked.memberNumber} · ` : ""}{picked.minor === true ? "minderjährig" : picked.minor === false ? "volljährig" : "Geburtsdatum unbekannt"}</div>
+                <div className="text-xs text-ink-3">{picked.memberNumber ? t("adm2.weapons.lend.nr", { n: picked.memberNumber }) : ""}{picked.minor === true ? t("adm2.weapons.lend.minor") : picked.minor === false ? t("adm2.weapons.lend.adult") : t("adm2.weapons.lend.birthUnknown")}</div>
               </div>
-              <Button variant="ghost" size="sm" className="h-11" onClick={() => setPicked(null)}>Ändern</Button>
+              <Button variant="ghost" size="sm" className="h-11" onClick={() => setPicked(null)}>{t("adm2.weapons.lend.change")}</Button>
             </div>
           ) : (
             <div className="space-y-2">
               <div className="relative">
                 <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-ink-3" />
-                <Input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Name oder Mitgliedernummer" aria-label="Mitglied suchen" className="pl-9" data-autofocus />
+                <Input value={query} onChange={(e) => setQuery(e.target.value)} placeholder={t("adm2.weapons.lend.searchPh")} aria-label={t("adm2.weapons.lend.search")} className="pl-9" data-autofocus />
               </div>
               <ul className="max-h-64 divide-y divide-line overflow-y-auto rounded-control border border-line">
-                {matches.length === 0 ? <li className="px-3 py-3 text-sm text-ink-3">Kein Mitglied gefunden.</li> : null}
+                {matches.length === 0 ? <li className="px-3 py-3 text-sm text-ink-3">{t("adm2.weapons.lend.noMember")}</li> : null}
                 {matches.map((m) => (
                   <li key={m.userId}>
                     <button type="button" onClick={() => setPicked(m)} className="flex min-h-12 w-full items-center justify-between gap-2 px-3 text-left hover:bg-surface-2">
                       <span className="truncate">{m.name}</span>
-                      <span className="shrink-0 text-xs text-ink-3">{m.minor ? "minderjährig" : m.memberNumber ?? ""}</span>
+                      <span className="shrink-0 text-xs text-ink-3">{m.minor ? t("adm2.weapons.lend.minor") : m.memberNumber ?? ""}</span>
                     </button>
                   </li>
                 ))}
@@ -151,31 +153,31 @@ function LendDialog({ weapons, members, defaultReportDays, onClose }: { weapons:
             </div>
           )
         ) : (
-          <Field label="Name"><Input value={name} onChange={(e) => setName(e.target.value)} maxLength={191} autoComplete="off" placeholder="Vorname Nachname" /></Field>
+          <Field label={t("adm2.common.name")}><Input value={name} onChange={(e) => setName(e.target.value)} maxLength={191} autoComplete="off" placeholder={t("adm2.weapons.lend.namePh")} /></Field>
         )}
 
         <Switch
-          label="Minderjährig"
-          description={autoMinor !== null ? "Aus dem Geburtsdatum des Mitglieds." : "Unter 18 Jahre alt?"}
+          label={t("adm2.weapons.lend.minorLabel")}
+          description={autoMinor !== null ? t("adm2.weapons.lend.minorAuto") : t("adm2.weapons.lend.minorManual")}
           checked={isMinor}
           disabled={autoMinor !== null}
           onChange={setMinorManual}
         />
         {isMinor ? (
           <div className="space-y-2">
-            <Alert tone="warn">{MINOR_HINT}</Alert>
-            <Field label="Meldefrist in Tagen" hint="Vorschlag aus den Einstellungen des Vereins (Vereinswaffen → Einstellungen). Frist beim Kanton erfragen.">
+            <Alert tone="warn">{t("adm2.weapons.minorHint")}</Alert>
+            <Field label={t("adm2.weapons.lend.reportDays")} hint={t("adm2.weapons.lend.reportDaysHint")}>
               <Input value={reportDays} onChange={(e) => setReportDays(e.target.value.replace(/\D/g, "").slice(0, 3))} inputMode="numeric" className="w-28" />
             </Field>
           </div>
         ) : null}
-        <Switch label="Nur am Stand unter Aufsicht" description="Kein Mitnehmen nach Hause." checked={onSiteOnly} onChange={setOnSiteOnly} />
+        <Switch label={t("adm2.weapons.lend.onSite")} description={t("adm2.weapons.lend.onSiteHint")} checked={onSiteOnly} onChange={setOnSiteOnly} />
         <div className="grid gap-3 sm:grid-cols-2">
-          <Field label="Rückgabe bis (optional)"><Input type="date" min={today} value={dueDate} onChange={(e) => setDueDate(e.target.value)} /></Field>
-          <Field label="Bemerkung (optional)"><Input value={note} onChange={(e) => setNote(e.target.value)} maxLength={191} placeholder="z.B. Jungschützenkurs" /></Field>
+          <Field label={t("adm2.weapons.lend.due")}><Input type="date" min={today} value={dueDate} onChange={(e) => setDueDate(e.target.value)} /></Field>
+          <Field label={t("adm2.weapons.lend.note")}><Input value={note} onChange={(e) => setNote(e.target.value)} maxLength={191} placeholder={t("adm2.weapons.lend.notePh")} /></Field>
         </div>
         {error ? <Alert>{error}</Alert> : null}
-        <p className="text-xs text-ink-3">{RESPONSIBILITY_HINT}</p>
+        <p className="text-xs text-ink-3">{t("adm2.weapons.responsibility")}</p>
       </div>
     </Dialog>
   );

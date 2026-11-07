@@ -10,6 +10,7 @@ import { isNavigationError, toast } from "@/lib/ui-feedback";
 import { cn } from "@/lib/utils";
 import { getT, type Locale, type TFunction } from "@/lib/i18n/core";
 import { IMPORT_MAX_ROWS, suggestMapping, type DuplicateReason, type ImportDecision, type ImportField, type ImportPresetId } from "@/modules/members/import";
+import { MemberImportAssist } from "@/modules/members/import-assist";
 import { analyzeImportAction, commitImportAction, parseImportFileAction, type ImportSummary, type ParsedImport, type PreviewRow } from "@/modules/members/import-actions";
 
 type Step = "upload" | "map" | "preview" | "done";
@@ -237,6 +238,8 @@ function MapStep({ t, parsed, fields, presets, preset, mapping, categoryNames, o
           <p className="pb-3 text-xs text-ink-3">{parsed.fileName} · {t("adm1.import.rows", { n: parsed.rows.length })} · {encodingLabel}</p>
         </div>
       </Card>
+
+      <MemberImportAssist headers={parsed.headers} rows={parsed.rows} mapping={mapping} fields={fields} onApply={onMapping} />
 
       <Card className="animate-rise divide-y divide-line overflow-hidden">
         {parsed.headers.map((h, i) => (

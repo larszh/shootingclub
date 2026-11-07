@@ -260,3 +260,10 @@ export function tenantFeedPath(token: string) {
 export function userFeedPath(token: string) {
   return `/api/ical/me/${token}.ics`;
 }
+
+/** Beschreibungen zu Anlässen des Vereins (für die Übersetzungsanzeige in der Liste). */
+export async function eventDescriptions(tenantId: string, ids: readonly string[]): Promise<Map<string, string | null>> {
+  if (!ids.length) return new Map();
+  const rows = await db.event.findMany({ where: { tenantId, id: { in: [...ids] } }, select: { id: true, description: true } });
+  return new Map(rows.map((r) => [r.id, r.description]));
+}

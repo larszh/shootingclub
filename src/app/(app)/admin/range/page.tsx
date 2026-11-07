@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { getRequestLocale, getT } from "@/lib/i18n";
 import Link from "next/link";
 import { ChevronRight, Clock, QrCode, ScrollText, ShieldAlert } from "lucide-react";
 import { Card, PageHeader, StatCard } from "@/components/ui";
@@ -6,34 +7,37 @@ import { todayZurich } from "@/lib/time";
 import { requireRangeAdmin } from "@/modules/range/guard";
 import { getActiveRules, incidentCounts, listWindows, quotaOverview, rulesAcceptanceStats } from "@/modules/range/queries";
 import { ADMIN_RANGE_TABS } from "@/modules/range/nav";
-import { RESPONSIBILITY_HINT } from "@/modules/range/types";
 import { RangeTabs } from "@/modules/range/ui/range-tabs";
 
-export const metadata: Metadata = { title: "Standbetrieb einrichten" };
+export async function generateMetadata(): Promise<Metadata> {
+  const t = getT(await getRequestLocale());
+  return { title: t("adm2.range.setupTitle") };
+}
 
 export default async function AdminRangePage() {
   const ctx = await requireRangeAdmin();
+  const t = getT(await getRequestLocale());
   const tenantId = ctx.tenant.id;
   const year = Number(todayZurich().slice(0, 4));
-  const [rules, windows, quota, incidents] = await Promise.all([getActiveRules(tenantId), listWindows(tenantId), quotaOverview(tenantId, year), incidentCounts(tenantId)]);
+  const [rules, windows, quota, incidents] = await Promise.all([getActiveRules(tenantId), listWindows(tenantId), quotaOverview(tenantId, year, t("adm2.common.wholeFacility")), incidentCounts(tenantId)]);
   const stats = rules ? await rulesAcceptanceStats(tenantId, rules.id) : null;
   const main = quota.rows.find((r) => r.resourceId === null) ?? quota.rows[0];
 
   const links = [
-    { href: "/admin/range/rules", icon: ScrollText, title: "Standordnung", text: rules ? `Version ${rules.version} gültig` : "Noch keine Standordnung veröffentlicht" },
-    { href: "/admin/range/times", icon: Clock, title: "Schiesszeiten und Kontingent", text: `${windows.length} Zeitfenster` },
-    { href: "/range/incidents", icon: ShieldAlert, title: "Vorfälle", text: incidents.open ? `${incidents.open} offen` : "Keine offenen Meldungen" },
-    { href: "/range/qr", icon: QrCode, title: "QR-Code für den Check-in", text: "A4-Aushang drucken" },
+    { href: "/admin/range/rules", icon: ScrollText, title: t("adm2.range.tab.rules"), text: rules ? t("adm2.range.link.rules.active", { n: rules.version }) : t("adm2.range.link.rules.none") },
+    { href: "/admin/range/times", icon: Clock, title: t("adm2.range.link.times"), text: t("adm2.range.link.windows", { n: windows.length }) },
+    { href: "/range/incidents", icon: ShieldAlert, title: t("adm2.range.link.incidents"), text: incidents.open ? t("adm2.range.link.incidentsOpen", { n: incidents.open }) : t("adm2.range.link.incidentsNone") },
+    { href: "/range/qr", icon: QrCode, title: t("adm2.range.link.qr"), text: t("adm2.range.link.qrText") },
   ];
 
   return (
     <div className="space-y-4">
-      <PageHeader title="Standbetrieb" subtitle={ctx.tenant.name} back={{ href: "/admin", label: "Einstellungen" }} />
-      <RangeTabs tabs={ADMIN_RANGE_TABS} label="Standbetrieb einrichten" />
+      <PageHeader title={t("adm2.range.title")} subtitle={ctx.tenant.name} back={{ href: "/admin", label: t("adm2.common.settings") }} />
+      <RangeTabs tabs={ADMIN_RANGE_TABS} label={t("adm2.range.setupTitle")} />
       <div className="stagger grid grid-cols-2 gap-2.5 sm:grid-cols-3">
-        <StatCard label="Standordnung bestätigt" value={stats ? `${stats.done.length}/${stats.total}` : "–"} href="/admin/range/rules" />
-        <StatCard label={`Halbtage ${year}`} value={main ? (main.max !== null ? `${main.used}/${main.max}` : main.used) : 0} href="/range/quota" tone={main?.status?.tone === "danger" ? "warn" : "neutral"} />
-        <StatCard label="Offene Vorfälle" value={incidents.open} hint={incidents.high ? `${incidents.high} mit hoher Schwere` : undefined} href="/range/incidents" tone={incidents.high ? "warn" : "neutral"} />
+        <StatCard label={t("adm2.range.stat.rulesConfirmed")} value={stats ? `${stats.done.length}/${stats.total}` : "–"} href="/admin/range/rules" />
+        <StatCard label={t("adm2.range.stat.halfDays", { year })} value={main ? (main.max !== null ? `${main.used}/${main.max}` : main.used) : 0} href="/range/quota" tone={main?.status?.tone === "danger" ? "warn" : "neutral"} />
+        <StatCard label={t("adm2.range.stat.openIncidents")} value={incidents.open} hint={incidents.high ? t("adm2.range.stat.highSeverity", { n: incidents.high }) : undefined} href="/range/incidents" tone={incidents.high ? "warn" : "neutral"} />
       </div>
       <Card className="divide-y divide-line overflow-hidden">
         {links.map((l) => (
@@ -44,7 +48,7 @@ export default async function AdminRangePage() {
           </Link>
         ))}
       </Card>
-      <p className="text-xs text-ink-3">{RESPONSIBILITY_HINT}</p>
+      <p className="text-xs text-ink-3">{t("adm2.range.responsibility")}</p>
     </div>
   );
 }

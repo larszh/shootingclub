@@ -6,14 +6,13 @@ import { AlertTriangle, ArrowLeft, CheckCircle2, FileText, Upload, UserRound, XC
 import { Alert, Badge, Button, Card, Input, LinkButton, Select, StatCard } from "@/components/ui";
 import { Spinner } from "@/components/ui/form";
 import { isNavigationError, toast } from "@/lib/ui-feedback";
-import { cn, formatDate, formatScore } from "@/lib/utils";
+import { cn, formatScore } from "@/lib/utils";
+import { formatDate, type TFunction } from "@/lib/i18n/core";
+import { useLocale, useT } from "@/components/locale";
 import type { Stage } from "@/modules/scores/types";
 import {
-  PRESET_DISCLAIMER,
   SCORE_FIELDS,
-  SCORE_FIELD_LABELS,
   SCORE_IMPORT_MAX_BYTES,
-  SCORE_PRESETS,
   SCORE_PRESET_IDS,
   MULTI_FIELDS,
   detectScorePreset,
@@ -31,17 +30,27 @@ import { matchAllMembers, type MemberMatch } from "@/modules/scores/import/fuzzy
 import { planImport, type PlannedParticipant } from "@/modules/scores/import/plan";
 import { checkScoreImportAction, commitScoreImportAction, type CommitScoreImportResult } from "@/modules/scores/import/actions";
 import type { PreviousImport } from "@/modules/scores/import/queries";
+import { localizeImportMessage } from "@/modules/scores/import/messages";
+import { ColumnAssist } from "@/modules/ai/coach/ui/column-assist";
 
 export type ImportProgramOption = { id: string; name: string; scoringMode: string; stages: Stage[]; max: number; scope: "global" | "tenant" };
 export type ImportMemberOption = { id: string; name: string };
 
 type Step = "upload" | "map" | "assign" | "done";
 const STEPS: Array<{ id: Step; label: string }> = [
-  { id: "upload", label: "Datei" },
-  { id: "map", label: "Spalten" },
-  { id: "assign", label: "Zuordnen" },
-  { id: "done", label: "Fertig" },
+  { id: "upload", label: "aicoach.imp.step.upload" },
+  { id: "map", label: "aicoach.imp.step.map" },
+  { id: "assign", label: "aicoach.imp.step.assign" },
+  { id: "done", label: "aicoach.imp.step.done" },
 ];
+
+/** KI-Import-Helfer: null = nicht anzeigen */
+export type ImportAiState = { ok: true } | { ok: false; messageKey: string } | null;
+
+/** Anzeigename eines Schützen (Platzhalter ohne Namensspalte übersetzt). */
+function shooterName(name: string, t: TFunction) {
+  return name === SINGLE_SHOOTER_NAME ? t("aicoach.imp.singleShooter") : name;
+}
 const SHOW_STEP = 60;
 
 async function sha256Hex(bytes: Uint8Array): Promise<string | null> {
@@ -54,7 +63,8 @@ async function sha256Hex(bytes: Uint8Array): Promise<string | null> {
   }
 }
 
-export function ScoreImportWizard({ programs, members, today }: { programs: ImportProgramOption[]; members: ImportMemberOption[]; today: string }) {
+export function ScoreImportWizard({ programs, members, today, ai = null }: { programs: ImportProgramOption[]; members: ImportMemberOption[]; today: string; ai?: ImportAiState }) {
+  const t = useT();
   const [step, setStep] = useState<Step>("upload");
   const [pending, start] = useTransition();
   const [error, setError] = useState<string | null>(null);
@@ -79,34 +89,37 @@ export function ScoreImportWizard({ programs, members, today }: { programs: Impo
         await fn();
       } catch (e) {
         if (isNavigationError(e)) throw e;
-        setError("Das hat nicht geklappt. Bitte nochmals versuchen.");
+        setError(t("aicoach.imp.failed"));
       }
     });
 
-  const applyPreset = (p: ScorePresetId, t: ScoreTable) => {
-    const m = suggestScoreMapping(t.headers, p);
-    const l = suggestLayout(m, p);
-    setPreset(p);
+  /** Zuordnung und Aufbau setzen; bei mehreren Disziplinen die häufigste vorwählen (ein Import = ein Durchgang mit einem Programm) */
+  const applyMapping = (m: ScoreField[], l: ScoreLayout, tbl: ScoreTable) => {
     setMapping(m);
     setLayout(l);
-    // Mehrere Disziplinen in der Datei: häufigste vorwählen (ein Import = ein Durchgang mit einem Programm)
-    const disciplines = buildShooters(t, normalizeMapping(m, t.headers.length), l).disciplines;
+    const disciplines = buildShooters(tbl, normalizeMapping(m, tbl.headers.length), l).disciplines;
     setDiscipline(disciplines.length > 1 ? disciplines[0]! : null);
+  };
+
+  const applyPreset = (p: ScorePresetId, tbl: ScoreTable) => {
+    const m = suggestScoreMapping(tbl.headers, p);
+    setPreset(p);
+    applyMapping(m, suggestLayout(m, p), tbl);
   };
 
   const readFile = () => guard(async () => {
     if (!file) return;
     setPrevious(null);
     if (file.size > SCORE_IMPORT_MAX_BYTES) {
-      setError("Die Datei ist grösser als 5 MB. Bitte in mehrere Dateien aufteilen.");
+      setError(t("aicoach.imp.msg.tooLarge"));
       return;
     }
     const bytes = new Uint8Array(await file.arrayBuffer());
-    let t: ScoreTable;
+    let tbl: ScoreTable;
     try {
-      t = readScoreFile(bytes);
+      tbl = readScoreFile(bytes);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Die Datei konnte nicht gelesen werden.");
+      setError(localizeImportMessage(e instanceof Error ? e.message : "Die Datei konnte nicht gelesen werden.", t));
       return;
     }
     const hash = await sha256Hex(bytes);
@@ -121,12 +134,12 @@ export function ScoreImportWizard({ programs, members, today }: { programs: Impo
         return;
       }
     }
-    setTable(t);
+    setTable(tbl);
     // Vorlage «Allgemein» gewählt, Datei sieht aber nach einem bekannten Export aus → Vorschlag übernehmen
-    const detected = detectScorePreset(t.headers);
+    const detected = detectScorePreset(tbl.headers);
     const p = preset === "generic" && detected !== "generic" ? detected : preset;
-    if (p !== preset) toast(`Vorlage «${SCORE_PRESETS[p].label}» erkannt`);
-    applyPreset(p, t);
+    if (p !== preset) toast(t("aicoach.imp.presetDetected", { name: t(`aicoach.imp.preset.${p}.label`) }));
+    applyPreset(p, tbl);
     setAssignments({});
     setStep("map");
   });
@@ -159,7 +172,7 @@ export function ScoreImportWizard({ programs, members, today }: { programs: Impo
     }
     setResult(res.data!);
     setStep("done");
-    toast.success("Resultate importiert");
+    toast.success(t("aicoach.imp.imported"));
   });
 
   const restart = () => {
@@ -177,11 +190,11 @@ export function ScoreImportWizard({ programs, members, today }: { programs: Impo
   const idx = STEPS.findIndex((x) => x.id === step);
   return (
     <div>
-      <ol className="mb-4 grid grid-cols-4 gap-1" aria-label="Schritte">
+      <ol className="mb-4 grid grid-cols-4 gap-1" aria-label={t("aicoach.imp.steps")}>
         {STEPS.map((s, i) => (
           <li key={s.id} className="flex flex-col items-center gap-1 text-xs" aria-current={s.id === step ? "step" : undefined}>
             <span className={cn("h-1.5 w-full rounded-full", i <= idx ? "bg-accent" : "bg-line")} />
-            <span className={i === idx ? "font-semibold text-ink" : "text-ink-3"}>{i + 1}. {s.label}</span>
+            <span className={i === idx ? "font-semibold text-ink" : "text-ink-3"}>{i + 1}. {t(s.label)}</span>
           </li>
         ))}
       </ol>
@@ -201,6 +214,11 @@ export function ScoreImportWizard({ programs, members, today }: { programs: Impo
           onPreset={(p) => applyPreset(p, table)}
           mapping={mapping}
           onMapping={setMapping}
+          onAssist={(m, l) => {
+            applyMapping(m, l ?? layout, table);
+            toast(t("aicoach.map.applied"));
+          }}
+          ai={ai}
           layout={layout}
           onLayout={setLayout}
           discipline={discipline}
@@ -237,12 +255,14 @@ export function ScoreImportWizard({ programs, members, today }: { programs: Impo
 }
 
 function DuplicateNotice({ previous }: { previous: PreviousImport }) {
+  const t = useT();
+  const locale = useLocale();
   return (
-    <Alert tone="warn" title="Diese Datei wurde bereits importiert" className="mb-3">
-      «{previous.fileName}» am {formatDate(previous.createdAt)}. Ein zweiter Import würde die Resultate doppelt erfassen. Um neu zu importieren, zuerst den Durchgang löschen.
+    <Alert tone="warn" title={t("aicoach.imp.dupTitle")} className="mb-3">
+      {t("aicoach.imp.dupText", { file: previous.fileName, date: formatDate(new Date(previous.createdAt), locale) })}
       <span className="mt-1 block">
         {previous.matches.map((m) => (
-          <Link key={m.id} href={`/scores/matches/${m.id}`} className="mr-3 inline-flex min-h-11 items-center underline">{m.title ?? "Durchgang"} ({formatDate(m.date)})</Link>
+          <Link key={m.id} href={`/scores/matches/${m.id}`} className="mr-3 inline-flex min-h-11 items-center underline">{m.title ?? t("aicoach.imp.match")} ({formatDate(new Date(m.date), locale)})</Link>
         ))}
       </span>
     </Alert>
@@ -250,45 +270,48 @@ function DuplicateNotice({ previous }: { previous: PreviousImport }) {
 }
 
 function UploadStep({ file, onFile, preset, onPreset, onNext, pending }: { file: File | null; onFile: (f: File | null) => void; preset: ScorePresetId; onPreset: (p: ScorePresetId) => void; onNext: () => void; pending: boolean }) {
+  const t = useT();
   return (
     <div className="space-y-3">
       <Card className="animate-rise space-y-3 p-4">
         <label className={cn("flex min-h-36 cursor-pointer flex-col items-center justify-center gap-2 rounded-control border-2 border-dashed p-6 text-center transition-colors", file ? "border-accent bg-accent-soft/40" : "border-line hover:bg-surface-2")}>
           {file ? <FileText className="h-8 w-8 text-accent" /> : <Upload className="h-8 w-8 text-ink-3" />}
-          <span className="font-medium">{file ? file.name : "Exportdatei auswählen"}</span>
-          <span className="text-xs text-ink-3">{file ? `${Math.ceil(file.size / 1024)} KB` : "CSV oder TXT, höchstens 5 MB (Trennzeichen ; , oder Tab)"}</span>
+          <span className="font-medium">{file ? file.name : t("aicoach.imp.chooseFile")}</span>
+          <span className="text-xs text-ink-3">{file ? `${Math.ceil(file.size / 1024)} KB` : t("aicoach.imp.fileLimits")}</span>
           <input type="file" accept=".csv,.txt,.tsv,text/csv,text/plain" className="sr-only" onChange={(e) => onFile(e.target.files?.[0] ?? null)} />
         </label>
         <label className="block">
-          <span className="mb-1.5 block text-sm font-medium text-ink-2">Vorlage</span>
+          <span className="mb-1.5 block text-sm font-medium text-ink-2">{t("aicoach.imp.preset")}</span>
           <Select value={preset} onChange={(e) => onPreset(e.target.value as ScorePresetId)}>
-            {SCORE_PRESET_IDS.map((id) => <option key={id} value={id}>{SCORE_PRESETS[id].label}</option>)}
+            {SCORE_PRESET_IDS.map((id) => <option key={id} value={id}>{t(`aicoach.imp.preset.${id}.label`)}</option>)}
           </Select>
-          <span className="mt-1.5 block text-xs text-ink-3">{SCORE_PRESETS[preset].hint}</span>
+          <span className="mt-1.5 block text-xs text-ink-3">{t(`aicoach.imp.preset.${preset}.hint`)}</span>
         </label>
         <Button className="w-full" disabled={!file || pending} onClick={onNext}>
-          {pending ? <><Spinner /> Wird gelesen…</> : "Weiter"}
+          {pending ? <><Spinner /> {t("aicoach.imp.reading")}</> : t("aicoach.imp.next")}
         </Button>
       </Card>
       <Card className="p-4 text-sm text-ink-2">
-        <p className="font-medium text-ink">So geht&apos;s</p>
+        <p className="font-medium text-ink">{t("aicoach.imp.howTo")}</p>
         <ul className="mt-2 list-disc space-y-1 pl-5">
-          <li>Vorlagen ordnen typische Spaltennamen vor. <strong>{PRESET_DISCLAIMER}</strong> – die Formate unterscheiden sich je nach Version.</li>
-          <li>Zwei Aufbauten: eine Zeile pro Schuss (Schütze, Wert, optional Serie und X/Y) oder eine Zeile pro Schütze (Serientotale, Total).</li>
-          <li>Nichts wird gespeichert, bevor du im letzten Schritt bestätigst. Dieselbe Datei kann nur einmal importiert werden – ausser der damals erstellte Durchgang wurde gelöscht.</li>
+          <li>{t("aicoach.imp.howTo1a")} <strong>{t("aicoach.imp.disclaimer")}</strong> {t("aicoach.imp.howTo1b")}</li>
+          <li>{t("aicoach.imp.howTo2")}</li>
+          <li>{t("aicoach.imp.howTo3")}</li>
         </ul>
       </Card>
     </div>
   );
 }
 
-function MapStep({ table, fileName, preset, onPreset, mapping, onMapping, layout, onLayout, discipline, onDiscipline, onBack, onNext }: {
+function MapStep({ table, fileName, preset, onPreset, mapping, onMapping, onAssist, ai, layout, onLayout, discipline, onDiscipline, onBack, onNext }: {
   table: ScoreTable;
   fileName: string;
   preset: ScorePresetId;
   onPreset: (p: ScorePresetId) => void;
   mapping: ScoreField[];
   onMapping: (m: ScoreField[]) => void;
+  onAssist: (m: ScoreField[], layout: ScoreLayout | null) => void;
+  ai: ImportAiState;
   layout: ScoreLayout;
   onLayout: (l: ScoreLayout) => void;
   discipline: string | null;
@@ -296,7 +319,9 @@ function MapStep({ table, fileName, preset, onPreset, mapping, onMapping, layout
   onBack: () => void;
   onNext: (dates: string[]) => void;
 }) {
+  const t = useT();
   const samples = useMemo(() => table.headers.map((_, i) => table.rows.map((r) => r[i] ?? "").filter(Boolean).slice(0, 3)), [table]);
+  const fieldOptions = useMemo(() => SCORE_FIELDS.map((f) => ({ value: f, label: t(`aicoach.imp.field.${f}`) })), [t]);
   const normalized = useMemo(() => normalizeMapping(mapping, table.headers.length), [mapping, table]);
   const allDisciplines = useMemo(() => buildShooters(table, normalized, layout).disciplines, [table, normalized, layout]);
   const built = useMemo(() => buildShooters(table, normalized, layout, discipline), [table, normalized, layout, discipline]);
@@ -304,7 +329,7 @@ function MapStep({ table, fileName, preset, onPreset, mapping, onMapping, layout
     // Einzelfelder nur einmal: bisherige Spalte mit diesem Feld wird «nicht übernommen»
     onMapping(normalized.map((f, i) => (i === col ? field : field !== "ignore" && !MULTI_FIELDS.has(field) && f === field ? "ignore" : f)));
   };
-  const encodingLabel = `${table.encoding === "windows-1252" ? "Windows-1252" : table.encoding.toUpperCase()}, Trennzeichen «${table.delimiter === "\t" ? "Tab" : table.delimiter}»`;
+  const encodingLabel = `${table.encoding === "windows-1252" ? "Windows-1252" : table.encoding.toUpperCase()}, ${t("aicoach.imp.delimiter", { d: table.delimiter === "\t" ? t("aicoach.imp.tab") : table.delimiter })}`;
   const canNext = !built.errors.length && built.shooters.length > 0;
 
   return (
@@ -312,18 +337,18 @@ function MapStep({ table, fileName, preset, onPreset, mapping, onMapping, layout
       <Card className="animate-rise space-y-3 p-4">
         <div className="flex flex-wrap items-end gap-3">
           <label className="block min-w-48 flex-1">
-            <span className="mb-1.5 block text-sm font-medium text-ink-2">Vorlage</span>
+            <span className="mb-1.5 block text-sm font-medium text-ink-2">{t("aicoach.imp.preset")}</span>
             <Select value={preset} onChange={(e) => onPreset(e.target.value as ScorePresetId)}>
-              {SCORE_PRESET_IDS.map((id) => <option key={id} value={id}>{SCORE_PRESETS[id].label}</option>)}
+              {SCORE_PRESET_IDS.map((id) => <option key={id} value={id}>{t(`aicoach.imp.preset.${id}.label`)}</option>)}
             </Select>
           </label>
-          <p className="pb-3 text-xs text-ink-3">{fileName} · {table.rows.length} Zeilen · {encodingLabel}</p>
+          <p className="pb-3 text-xs text-ink-3">{fileName} · {t(table.rows.length === 1 ? "aicoach.imp.rows.one" : "aicoach.imp.rows.other", { n: table.rows.length })} · {encodingLabel}</p>
         </div>
-        {preset !== "generic" ? <Badge tone="warn">{PRESET_DISCLAIMER}</Badge> : null}
+        {preset !== "generic" ? <Badge tone="warn">{t("aicoach.imp.disclaimer")}</Badge> : null}
         <div>
-          <span className="mb-1.5 block text-sm font-medium text-ink-2">Aufbau der Datei</span>
-          <div className="grid grid-cols-2 gap-2" role="radiogroup" aria-label="Aufbau der Datei">
-            {([["shots", "Zeile pro Schuss"], ["totals", "Zeile pro Schütze"]] as Array<[ScoreLayout, string]>).map(([v, l]) => (
+          <span className="mb-1.5 block text-sm font-medium text-ink-2">{t("aicoach.imp.layout")}</span>
+          <div className="grid grid-cols-2 gap-2" role="radiogroup" aria-label={t("aicoach.imp.layout")}>
+            {([["shots", t("aicoach.imp.layout.shots")], ["totals", t("aicoach.imp.layout.totals")]] as Array<[ScoreLayout, string]>).map(([v, l]) => (
               <button key={v} type="button" role="radio" aria-checked={layout === v} onClick={() => onLayout(v)}
                 className={cn("press min-h-11 rounded-control px-3 text-sm font-medium", layout === v ? "bg-accent text-accent-ink" : "border border-line bg-surface text-ink-2 hover:bg-surface-2")}>
                 {l}
@@ -333,27 +358,41 @@ function MapStep({ table, fileName, preset, onPreset, mapping, onMapping, layout
         </div>
         {allDisciplines.length > 1 ? (
           <label className="block">
-            <span className="mb-1.5 block text-sm font-medium text-ink-2">Disziplin</span>
+            <span className="mb-1.5 block text-sm font-medium text-ink-2">{t("aicoach.imp.discipline")}</span>
             <Select value={discipline ?? ""} onChange={(e) => onDiscipline(e.target.value || null)}>
-              <option value="">Alle ({allDisciplines.length})</option>
+              <option value="">{t("aicoach.imp.allDisciplines", { n: allDisciplines.length })}</option>
               {allDisciplines.map((d) => <option key={d} value={d}>{d}</option>)}
             </Select>
             <span className={cn("mt-1.5 block text-xs", discipline === null ? "text-warn" : "text-ink-3")}>
-              {discipline === null ? "Achtung: Bei «Alle» werden die Schüsse aller Disziplinen pro Schütze zusammengezählt. " : ""}Pro Import entsteht ein Durchgang mit einem Programm. Weitere Disziplinen bitte einzeln importieren – dieselbe Datei geht nur einmal, deshalb pro Disziplin eine eigene Exportdatei verwenden.
+              {discipline === null ? `${t("aicoach.imp.allWarn")} ` : ""}{t("aicoach.imp.disciplineHint")}
             </span>
           </label>
         ) : null}
       </Card>
+
+      {ai ? (
+        <ColumnAssist
+          kind="scores"
+          headers={table.headers}
+          rows={table.rows}
+          mapping={normalized}
+          fields={fieldOptions}
+          state={ai}
+          layout={layout}
+          layoutLabels={{ shots: t("aicoach.imp.layout.shots"), totals: t("aicoach.imp.layout.totals") }}
+          onApply={onAssist}
+        />
+      ) : null}
 
       <Card className="animate-rise divide-y divide-line overflow-hidden">
         {table.headers.map((h, i) => (
           <div key={i} className="grid gap-2 px-4 py-3 sm:grid-cols-[1fr_220px] sm:items-center">
             <div className="min-w-0">
               <div className="truncate font-medium">{h}</div>
-              <div className="truncate text-xs text-ink-3">{samples[i]!.length ? samples[i]!.join(" · ") : "leer"}</div>
+              <div className="truncate text-xs text-ink-3">{samples[i]!.length ? samples[i]!.join(" · ") : t("aicoach.imp.emptyColumn")}</div>
             </div>
-            <Select value={normalized[i] ?? "ignore"} onChange={(e) => setField(i, e.target.value as ScoreField)} aria-label={`Spalte «${h}» übernehmen als`} className={normalized[i] === "ignore" ? "text-ink-3" : undefined}>
-              {SCORE_FIELDS.map((f) => <option key={f} value={f}>{SCORE_FIELD_LABELS[f]}</option>)}
+            <Select value={normalized[i] ?? "ignore"} onChange={(e) => setField(i, e.target.value as ScoreField)} aria-label={t("aicoach.imp.mapAs", { col: h })} className={normalized[i] === "ignore" ? "text-ink-3" : undefined}>
+              {fieldOptions.map((f) => <option key={f.value} value={f.value}>{f.label}</option>)}
             </Select>
           </div>
         ))}
@@ -362,19 +401,20 @@ function MapStep({ table, fileName, preset, onPreset, mapping, onMapping, layout
       <SectionPreview built={built} />
 
       <div className="flex gap-2">
-        <Button variant="secondary" onClick={onBack}><ArrowLeft className="h-4 w-4" /> Zurück</Button>
-        <Button className="flex-1" onClick={() => onNext(built.dates)} disabled={!canNext}>Weiter zur Zuordnung</Button>
+        <Button variant="secondary" onClick={onBack}><ArrowLeft className="h-4 w-4" /> {t("aicoach.imp.back.step")}</Button>
+        <Button className="flex-1" onClick={() => onNext(built.dates)} disabled={!canNext}>{t("aicoach.imp.toAssign")}</Button>
       </div>
     </div>
   );
 }
 
 function SectionPreview({ built }: { built: ReturnType<typeof buildShooters> }) {
+  const t = useT();
   const shown = built.shooters.slice(0, 8);
   return (
     <div className="space-y-2">
-      <h2 className="px-1 text-sm font-semibold">Vorschau · {built.shooters.length} {built.shooters.length === 1 ? "Schütze" : "Schützen"}{built.skippedRows ? ` · ${built.skippedRows} Zeilen übersprungen` : ""}</h2>
-      {built.errors.map((e) => <Alert key={e} tone="warn">{e}</Alert>)}
+      <h2 className="px-1 text-sm font-semibold">{t(built.shooters.length === 1 ? "aicoach.imp.preview.one" : "aicoach.imp.preview.other", { n: built.shooters.length })}{built.skippedRows ? ` · ${t("aicoach.imp.skippedRows", { n: built.skippedRows })}` : ""}</h2>
+      {built.errors.map((e) => <Alert key={e} tone="warn">{localizeImportMessage(e, t)}</Alert>)}
       {shown.length ? (
         <Card className="divide-y divide-line overflow-hidden">
           {shown.map((s) => {
@@ -383,17 +423,19 @@ function SectionPreview({ built }: { built: ReturnType<typeof buildShooters> }) 
             return (
               <div key={s.key} className="flex items-start gap-3 px-4 py-2.5 text-sm">
                 <div className="min-w-0 flex-1">
-                  <div className="truncate font-medium">{s.name}{s.startNo ? <span className="font-normal text-ink-3"> · Startnr. {s.startNo}</span> : null}</div>
+                  <div className="truncate font-medium">{shooterName(s.name, t)}{s.startNo ? <span className="font-normal text-ink-3"> · {t("aicoach.imp.startNo", { no: s.startNo })}</span> : null}</div>
                   <div className="truncate text-xs text-ink-3">
-                    {s.shots.length ? `${s.shots.length} Schüsse${s.sighters ? ` (+${s.sighters} Probe)` : ""}${s.hasXY ? " · mit Trefferlage" : ""}` : series ? `Serien: ${series}` : "nur Total"}
+                    {s.shots.length
+                      ? `${t("aicoach.imp.shots", { n: s.shots.length })}${s.sighters ? ` ${t("aicoach.imp.sighters", { n: s.sighters })}` : ""}${s.hasXY ? ` · ${t("aicoach.imp.withXY")}` : ""}`
+                      : series ? t("aicoach.imp.seriesList", { series }) : t("aicoach.imp.onlyTotal")}
                   </div>
-                  {s.errors.slice(0, 2).map((e) => <p key={e} className="text-xs text-danger">{e}</p>)}
+                  {s.errors.slice(0, 2).map((e) => <p key={e} className="text-xs text-danger">{localizeImportMessage(e, t)}</p>)}
                 </div>
                 <span className="shrink-0 font-semibold tabular-nums">{s.shots.length ? shotSum : (s.total ?? (s.seriesTotals.length ? Math.round(s.seriesTotals.reduce<number>((a, v) => a + (v ?? 0), 0) * 10) / 10 : "–"))}</span>
               </div>
             );
           })}
-          {built.shooters.length > shown.length ? <p className="px-4 py-2 text-xs text-ink-3">… und {built.shooters.length - shown.length} weitere</p> : null}
+          {built.shooters.length > shown.length ? <p className="px-4 py-2 text-xs text-ink-3">{t("aicoach.imp.more", { n: built.shooters.length - shown.length })}</p> : null}
         </Card>
       ) : null}
     </div>
@@ -415,6 +457,7 @@ function AssignStep({ table, config, programs, members, programId, onProgram, da
   onCommit: (plan: ReturnType<typeof planImport>) => void;
   pending: boolean;
 }) {
+  const t = useT();
   const [shown, setShown] = useState(SHOW_STEP);
   const program = programs.find((p) => p.id === programId) ?? null;
   const memberIds = useMemo(() => new Set(members.map((m) => m.id)), [members]);
@@ -459,32 +502,32 @@ function AssignStep({ table, config, programs, members, programId, onProgram, da
     <div className="space-y-3">
       <Card className="animate-rise grid gap-3 p-4 sm:grid-cols-[1fr_180px]">
         <label className="block">
-          <span className="mb-1.5 block text-sm font-medium text-ink-2">Programm</span>
+          <span className="mb-1.5 block text-sm font-medium text-ink-2">{t("aicoach.imp.program")}</span>
           <Select value={programId} onChange={(e) => onProgram(e.target.value)}>
-            <option value="">Programm wählen…</option>
-            {programs.map((p) => <option key={p.id} value={p.id}>{p.name}{p.scope === "global" ? "" : " (Verein)"} · {p.stages.reduce((a, s) => a + s.shots, 0)} Schuss</option>)}
+            <option value="">{t("aicoach.imp.chooseProgram")}</option>
+            {programs.map((p) => <option key={p.id} value={p.id}>{p.name}{p.scope === "global" ? "" : ` ${t("aicoach.imp.clubProgram")}`} · {t("aicoach.imp.programShots", { n: p.stages.reduce((a, s) => a + s.shots, 0) })}</option>)}
           </Select>
-          {program ? <span className="mt-1.5 block text-xs text-ink-3">{program.stages.map((s, i) => `${i + 1}. ${s.name}: ${s.shots} × max. ${s.maxPerShot}`).join(" · ")} · Maximum {program.max}</span> : null}
+          {program ? <span className="mt-1.5 block text-xs text-ink-3">{program.stages.map((s, i) => t("aicoach.imp.stageDesc", { i: i + 1, name: s.name, shots: s.shots, max: s.maxPerShot })).join(" · ")} · {t("aicoach.imp.maximum", { max: program.max })}</span> : null}
         </label>
         <label className="block">
-          <span className="mb-1.5 block text-sm font-medium text-ink-2">Datum</span>
+          <span className="mb-1.5 block text-sm font-medium text-ink-2">{t("aicoach.imp.date")}</span>
           <Input type="date" value={date} onChange={(e) => onDate(e.target.value)} required />
         </label>
       </Card>
 
       <div className="grid grid-cols-3 gap-2.5">
-        <StatCard label="Mitglieder" value={counts.members} tone="ok" />
-        <StatCard label="Gäste" value={counts.guests} tone="accent" />
-        <StatCard label="Mit Fehlern" value={counts.errors} tone={counts.errors ? "warn" : "neutral"} hint={counts.skip ? `${counts.skip} nicht übernommen` : undefined} />
+        <StatCard label={t("aicoach.imp.members")} value={counts.members} tone="ok" />
+        <StatCard label={t("aicoach.imp.guests")} value={counts.guests} tone="accent" />
+        <StatCard label={t("aicoach.imp.withErrors")} value={counts.errors} tone={counts.errors ? "warn" : "neutral"} hint={counts.skip ? t("aicoach.imp.notTaken", { n: counts.skip }) : undefined} />
       </div>
 
       {program && counts.errors ? (
         <Card className="flex flex-wrap items-center gap-2 p-3 text-sm">
-          <span className="flex-1 text-ink-2">{counts.errors} {counts.errors === 1 ? "Schütze passt" : "Schützen passen"} nicht zum Programm.</span>
-          <Button variant="secondary" size="sm" className="h-11" onClick={skipErrors}>Alle mit Fehlern nicht übernehmen</Button>
+          <span className="flex-1 text-ink-2">{t(counts.errors === 1 ? "aicoach.imp.mismatch.one" : "aicoach.imp.mismatch.other", { n: counts.errors })}</span>
+          <Button variant="secondary" size="sm" className="h-11" onClick={skipErrors}>{t("aicoach.imp.skipErrors")}</Button>
         </Card>
       ) : null}
-      {plan.globalErrors.map((e) => <Alert key={e} tone="warn">{e}</Alert>)}
+      {plan.globalErrors.map((e) => <Alert key={e} tone="warn">{localizeImportMessage(e, t)}</Alert>)}
 
       <Card className="divide-y divide-line overflow-hidden">
         {plan.participants.slice(0, shown).map((p) => (
@@ -492,13 +535,13 @@ function AssignStep({ table, config, programs, members, programId, onProgram, da
         ))}
       </Card>
       {plan.participants.length > shown ? (
-        <Button variant="secondary" className="w-full" onClick={() => setShown((s) => s + SHOW_STEP)}>Weitere {Math.min(SHOW_STEP, plan.participants.length - shown)} anzeigen</Button>
+        <Button variant="secondary" className="w-full" onClick={() => setShown((s) => s + SHOW_STEP)}>{t("aicoach.imp.showMore", { n: Math.min(SHOW_STEP, plan.participants.length - shown) })}</Button>
       ) : null}
 
       <div className="flex gap-2">
-        <Button variant="secondary" onClick={onBack} disabled={pending}><ArrowLeft className="h-4 w-4" /> Zurück</Button>
+        <Button variant="secondary" onClick={onBack} disabled={pending}><ArrowLeft className="h-4 w-4" /> {t("aicoach.imp.back.step")}</Button>
         <Button className="flex-1" onClick={() => onCommit(plan)} disabled={pending || !canCommit}>
-          {pending ? <><Spinner /> Wird übernommen…</> : !program ? "Programm wählen" : plan.blocking ? `${plan.blocking} mit Fehlern` : `${plan.included} ${plan.included === 1 ? "Resultat" : "Resultate"} übernehmen`}
+          {pending ? <><Spinner /> {t("aicoach.imp.committing")}</> : !program ? t("aicoach.imp.needProgram") : plan.blocking ? t("aicoach.imp.blocking", { n: plan.blocking }) : t(plan.included === 1 ? "aicoach.imp.commit.one" : "aicoach.imp.commit.other", { n: plan.included })}
         </Button>
       </div>
     </div>
@@ -514,6 +557,7 @@ function ShooterRow({ p, match, members, value, onChange, program, decimal }: {
   program: ImportProgramOption | null;
   decimal: boolean;
 }) {
+  const t = useT();
   const skip = p.assignment.kind === "skip";
   const errors = skip ? [] : p.errors;
   const suggestionIds = new Set(match?.suggestions.map((s) => s.id) ?? []);
@@ -522,51 +566,53 @@ function ShooterRow({ p, match, members, value, onChange, program, decimal }: {
     <div className={cn("flex flex-wrap items-start gap-3 px-4 py-3 sm:flex-nowrap", skip && "opacity-60")}>
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-1.5">
-          {errors.length ? <XCircle className="h-4 w-4 shrink-0 text-danger" aria-label="Fehler" /> : !skip && ev.warnings.length ? <AlertTriangle className="h-4 w-4 shrink-0 text-warn" aria-label="Hinweis" /> : <CheckCircle2 className={cn("h-4 w-4 shrink-0", skip ? "text-ink-3" : "text-ok")} aria-label="In Ordnung" />}
-          <span className="truncate font-medium">{p.shooter.name}</span>
+          {errors.length ? <XCircle className="h-4 w-4 shrink-0 text-danger" aria-label={t("aicoach.imp.error")} /> : !skip && ev.warnings.length ? <AlertTriangle className="h-4 w-4 shrink-0 text-warn" aria-label={t("aicoach.imp.warning")} /> : <CheckCircle2 className={cn("h-4 w-4 shrink-0", skip ? "text-ink-3" : "text-ok")} aria-label={t("aicoach.imp.ok")} />}
+          <span className="truncate font-medium">{shooterName(p.shooter.name, t)}</span>
         </div>
         <div className="truncate text-xs text-ink-3">
-          {[p.note, p.shooter.shots.length ? `${ev.shotCount} Schüsse` : "Totale", `Z. ${p.shooter.firstLine}`].filter(Boolean).join(" · ")}
+          {[p.note ? localizeImportMessage(p.note, t) : null, p.shooter.shots.length ? t("aicoach.imp.shots", { n: ev.shotCount }) : t("aicoach.imp.totals"), t("aicoach.imp.lineShort", { line: p.shooter.firstLine })].filter(Boolean).join(" · ")}
         </div>
         {program && !skip && ev.stages.length ? (
           <div className="mt-1 text-xs tabular-nums text-ink-2">
-            <strong className="text-sm text-ink">{formatScore(ev.total, decimal)}</strong> von {program.max}
+            <strong className="text-sm text-ink">{formatScore(ev.total, decimal)}</strong> {t("aicoach.imp.ofMax", { max: program.max })}
             {program.stages.length > 1 ? <span className="text-ink-3"> · {program.stages.map((_, i) => { const st = ev.stages.find((x) => x.stageIndex === i); return st ? formatScore(st.total, decimal) : "–"; }).join(" · ")}</span> : null}
           </div>
         ) : null}
-        {errors.map((e, k) => <p key={`e${k}`} className="mt-1 text-xs text-danger">{e}</p>)}
-        {!skip ? ev.warnings.map((w, k) => <p key={`w${k}`} className="mt-1 text-xs text-warn">{w}</p>) : null}
+        {errors.map((e, k) => <p key={`e${k}`} className="mt-1 text-xs text-danger">{localizeImportMessage(e, t)}</p>)}
+        {!skip ? ev.warnings.map((w, k) => <p key={`w${k}`} className="mt-1 text-xs text-warn">{localizeImportMessage(w, t)}</p>) : null}
       </div>
-      <Select value={value} onChange={(e) => onChange(e.target.value)} aria-label={`${p.shooter.name}: zuordnen`} className="w-full sm:w-56">
+      <Select value={value} onChange={(e) => onChange(e.target.value)} aria-label={t("aicoach.imp.assignAria", { name: shooterName(p.shooter.name, t) })} className="w-full sm:w-56">
         {match?.suggestions.length ? (
-          <optgroup label="Vorschläge">
+          <optgroup label={t("aicoach.imp.suggestions")}>
             {match.suggestions.map((s) => <option key={`s${s.id}`} value={`m:${s.id}`}>{s.name} ({Math.round(s.score * 100)} %)</option>)}
           </optgroup>
         ) : null}
-        <optgroup label="Mitglieder">
+        <optgroup label={t("aicoach.imp.members")}>
           {members.filter((m) => !suggestionIds.has(m.id)).map((m) => <option key={m.id} value={`m:${m.id}`}>{m.name}</option>)}
         </optgroup>
-        <option value="guest">Als Gast</option>
-        <option value="skip">Nicht übernehmen</option>
+        <option value="guest">{t("aicoach.imp.asGuest")}</option>
+        <option value="skip">{t("aicoach.imp.skip")}</option>
       </Select>
     </div>
   );
 }
 
 function DoneStep({ result, onRestart }: { result: Extract<CommitScoreImportResult, { status: "created" }>; onRestart: () => void }) {
+  const t = useT();
   return (
     <div className="space-y-3">
       <Card className="animate-rise p-5 text-center">
         <CheckCircle2 className="mx-auto h-10 w-10 text-ok" />
-        <h2 className="mt-2 text-lg font-semibold">Import abgeschlossen</h2>
+        <h2 className="mt-2 text-lg font-semibold">{t("aicoach.imp.doneTitle")}</h2>
         <p className="mt-1 text-sm text-ink-3">
           <UserRound className="mr-1 inline h-4 w-4 align-[-3px]" />
-          {result.participants} {result.participants === 1 ? "Resultat" : "Resultate"} übernommen{result.guests ? `, davon ${result.guests} ${result.guests === 1 ? "Gast" : "Gäste"}` : ""}
+          {t(result.participants === 1 ? "aicoach.imp.done.one" : "aicoach.imp.done.other", { n: result.participants })}
+          {result.guests ? t(result.guests === 1 ? "aicoach.imp.doneGuests.one" : "aicoach.imp.doneGuests.other", { n: result.guests }) : ""}
         </p>
       </Card>
       <div className="flex flex-wrap gap-2">
-        <LinkButton href={`/scores/matches/${result.matchId}`} className="flex-1">Zum Durchgang</LinkButton>
-        <Button variant="secondary" onClick={onRestart}>Weitere Datei</Button>
+        <LinkButton href={`/scores/matches/${result.matchId}`} className="flex-1">{t("aicoach.imp.toMatch")}</LinkButton>
+        <Button variant="secondary" onClick={onRestart}>{t("aicoach.imp.another")}</Button>
       </div>
     </div>
   );

@@ -7,12 +7,16 @@ import { buttonClasses } from "@/components/ui";
 import { AuditFilterForm, AuditList } from "./audit-view";
 import { auditActionPrefixes, listAudit } from "./queries";
 import { pageParam, textParam } from "./pager";
+import { getRequestLocale, getT } from "@/lib/i18n";
 
-export const metadata: Metadata = { title: "Protokoll" };
+export async function generateMetadata(): Promise<Metadata> {
+  return { title: getT(await getRequestLocale())("adm1.audit.title") };
+}
 
 export default async function AdminAuditPage({ searchParams }: { searchParams: Promise<{ action?: string; actor?: string; page?: string }> }) {
   const ctx = await requirePermission("audit.view");
   const sp = await searchParams;
+  const t = getT(await getRequestLocale());
   const action = textParam(sp.action, 60);
   const actor = textParam(sp.actor, 100);
   const page = pageParam(sp.page);
@@ -25,17 +29,17 @@ export default async function AdminAuditPage({ searchParams }: { searchParams: P
   return (
     <div>
       <PageHeader
-        title="Protokoll"
-        subtitle="Wer hat wann was im Verein geändert"
-        back={{ href: "/admin", label: "Verwaltung" }}
+        title={t("adm1.audit.title")}
+        subtitle={t("adm1.audit.subtitle")}
+        back={{ href: "/admin", label: t("adm1.audit.admin") }}
         action={canArchive ? (
-          <a href="/api/export/archive" download className={cn(buttonClasses("secondary", "sm"), "min-h-11")}><Archive className="h-4 w-4" /> <span className="hidden sm:inline">Vereinsarchiv herunterladen</span><span className="sm:hidden">Archiv</span></a>
+          <a href="/api/export/archive" download className={cn(buttonClasses("secondary", "sm"), "min-h-11")}><Archive className="h-4 w-4" /> <span className="hidden sm:inline">{t("adm1.audit.archiveDownload")}</span><span className="sm:hidden">{t("adm1.audit.archive")}</span></a>
         ) : undefined}
       />
       <AuditFilterForm base="/admin/audit" actions={actions} action={action} actor={actor} />
       <AuditList rows={rows} total={total} page={page} base="/admin/audit" params={params} exportHref={`/admin/audit/export${exportQs ? `?${exportQs}` : ""}`} />
       {canArchive ? (
-        <p className="mt-4 text-xs text-ink-3">Das Vereinsarchiv enthält Mitglieder, Resultate, Anlässe, Reservationen, Rechnungen und die Liste der Dateien als CSV in einer ZIP-Datei. Bitte sicher aufbewahren.</p>
+        <p className="mt-4 text-xs text-ink-3">{t("adm1.audit.archiveText")}</p>
       ) : null}
     </div>
   );

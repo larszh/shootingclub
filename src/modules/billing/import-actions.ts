@@ -5,7 +5,9 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { db } from "@/lib/db";
 import { requireBillingAdmin } from "./guard";
-import { fail, ok, type ActionResult } from "@/lib/action-result";
+import type { ActionResult } from "@/lib/action-result";
+import { lfail as fail, lok as ok } from "@/lib/i18n/extra/admin1/action-result";
+import { getRequestLocale, getT } from "@/lib/i18n";
 import { formatMoney } from "@/lib/money";
 import { zurichToUtc } from "@/lib/time";
 import { formatQrReference } from "@/lib/qr-reference";
@@ -145,5 +147,6 @@ export async function confirmCamtImportAction(input: ConfirmImportInput): Promis
   revalidatePath("/ammo");
   revalidatePath("/payments");
   revalidatePath("/admin/payments");
-  return ok({ paid, skipped }, `${paid} ${paid === 1 ? "Zahlung" : "Zahlungen"} verbucht${skipped ? `, ${skipped} übersprungen` : ""}.`);
+  const t = getT(await getRequestLocale());
+  return ok({ paid, skipped }, t(paid === 1 ? "adm1.camt.msg.booked.one" : "adm1.camt.msg.booked.other", { n: paid }) + (skipped ? t("adm1.camt.msg.skipped", { n: skipped }) : "") + ".");
 }

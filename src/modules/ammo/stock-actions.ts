@@ -4,8 +4,11 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { db } from "@/lib/db";
 import { audit } from "@/lib/audit";
-import { fail, ok, type ActionResult } from "@/lib/action-result";
+import type { ActionResult } from "@/lib/action-result";
+import { lfail as fail, lok as ok } from "@/lib/i18n/extra/admin1/action-result";
 import { todayZurich } from "@/lib/time";
+import { getRequestLocale, getT } from "@/lib/i18n";
+import { stockKindLabelT } from "./ui/labels";
 import { requireAmmoAdmin } from "./guard";
 import { AmmoError } from "./service";
 import { bookStock, movementDate } from "./stock-service";
@@ -32,7 +35,7 @@ const movementSchema = z.object({
   note: optText(191),
 });
 
-function handle(e: unknown): ActionResult<never> {
+async function handle(e: unknown): Promise<ActionResult<never>> {
   if (e instanceof AmmoError) return fail(e.message);
   console.error("Munitionskontrolle:", e);
   return fail("Das hat nicht geklappt. Bitte nochmals versuchen.");
@@ -64,7 +67,8 @@ export async function bookMovementAction(input: z.input<typeof movementSchema>):
     );
     await audit({ tenantId, actorId: ctx.user.id, action: "ammo.stock.movement", entity: "AmmoProduct", entityId: v.productId, detail: `${STOCK_KIND[v.kind].label} ${units > 0 ? "+" : ""}${units}${v.source ? ` (${v.source})` : ""}` });
     revalidate();
-    return ok({ stockUnits: res.stockUnits }, `${STOCK_KIND[v.kind].label} gebucht. Neuer Bestand: ${res.stockUnits}.`);
+    const t = getT(await getRequestLocale());
+    return ok({ stockUnits: res.stockUnits }, t("adm1.ammo.msg.movementBooked", { kind: stockKindLabelT(v.kind, t), n: res.stockUnits ?? "–" }));
   } catch (e) {
     return handle(e);
   }
@@ -115,5 +119,6 @@ export async function inventoryAction(input: z.input<typeof inventorySchema>): P
   const diffs = lines.filter((l) => inventoryDelta(l.loaded, l.counted) !== 0).length;
   await audit({ tenantId, actorId: ctx.user.id, action: "ammo.stock.inventory", entity: "AmmoStockMovement", detail: `${lines.length} Produkte gezählt, ${diffs} mit Differenz` });
   revalidate();
-  return ok({ at: at.getTime() }, diffs ? `Inventur gebucht: ${diffs} ${diffs === 1 ? "Differenz" : "Differenzen"}.` : "Inventur gebucht: keine Differenzen.");
+  const t = getT(await getRequestLocale());
+  return ok({ at: at.getTime() }, diffs ? t(diffs === 1 ? "adm1.ammo.msg.inventoryDiffs.one" : "adm1.ammo.msg.inventoryDiffs.other", { n: diffs }) : t("adm1.ammo.msg.inventoryNoDiffs"));
 }

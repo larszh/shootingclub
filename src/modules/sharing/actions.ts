@@ -9,11 +9,13 @@ import { fail, ok, type ActionResult } from "@/lib/action-result";
 import { audit } from "@/lib/audit";
 import { THROTTLE, clientIp, throttle } from "@/lib/auth";
 import { notify, tenantUserIdsWithRole } from "@/lib/notify";
-import { checkBookingWindow, windowRejectMessage } from "@/modules/range/booking-window";
+import { getRequestLocale, getT, type TFunction } from "@/lib/i18n";
+import { slotReasonLabel } from "@/modules/bookings/i18n";
+import { checkBookingWindow } from "@/modules/range/booking-window";
 import { expireUnpaidOnlineBookings, getSlotsForDay } from "@/modules/bookings/queries";
 import { maxPersonsFor, planRequest, quotePrice } from "@/modules/bookings/pricing";
 import { isCalendarDate, PERSONS_LIMIT } from "@/modules/bookings/types";
-import { createBookingIfFree, SLOT_TAKEN } from "@/modules/bookings/create";
+import { createBookingIfFree } from "@/modules/bookings/create";
 import { ensureInvoiceForBooking } from "@/modules/bookings/invoice";
 import { notifyBooking } from "@/modules/bookings/notify";
 import type { SlotsResult } from "@/modules/bookings/slot-actions";
@@ -28,6 +30,13 @@ async function requireBookingsAdmin() {
   return ctx;
 }
 
+const tr = async (): Promise<TFunction> => getT(await getRequestLocale());
+
+/** Zusatz «(Tarif 120 %)» in der Sprache des Empfängers (leer bei 100 %). */
+function rateSuffix(locale: string, percent: number) {
+  return percent !== 100 ? getT(locale)("misc.share.rateSuffix", { percent }) : "";
+}
+
 function revalidateShares(resourceId: string) {
   revalidatePath("/admin/bookings/resources");
   revalidatePath(`/admin/bookings/resources/${resourceId}`);
@@ -40,15 +49,16 @@ function revalidateShares(resourceId: string) {
 
 const shareSchema = z.object({
   resourceId: z.string().min(1).max(40),
-  partner: z.string().trim().min(2, "Bitte Kurzname oder Beitrittscode des Partnervereins angeben.").max(64),
+  partner: z.string().trim().min(2, "misc.share.v.partner").max(64, "misc.share.partnerFormat"),
   canBook: z.boolean(),
-  priceFactorPercent: z.coerce.number().int("Preisfaktor als ganze Zahl in Prozent").min(PRICE_FACTOR_MIN).max(PRICE_FACTOR_MAX, `Höchstens ${PRICE_FACTOR_MAX} %`),
+  priceFactorPercent: z.coerce.number({ message: "misc.share.v.factorInt" }).int("misc.share.v.factorInt").min(PRICE_FACTOR_MIN, "misc.share.v.factorMin").max(PRICE_FACTOR_MAX, "misc.share.v.factorMax"),
   note: z.string().trim().max(191).optional(),
 });
 
 /** Freigabe anlegen oder (gleicher Partnerverein) aktualisieren. */
 export async function saveResourceShareAction(_prev: ActionResult | null, formData: FormData): Promise<ActionResult> {
   const ctx = await requireBookingsAdmin();
+  const t = await tr();
   const parsed = shareSchema.safeParse({
     resourceId: formData.get("resourceId"),
     partner: formData.get("partner") ?? "",
@@ -56,13 +66,16 @@ export async function saveResourceShareAction(_prev: ActionResult | null, formDa
     priceFactorPercent: formData.get("priceFactorPercent") || 100,
     note: formData.get("note") || undefined,
   });
-  if (!parsed.success) return fail(parsed.error.issues[0]?.message ?? "Ungültige Eingabe");
+  if (!parsed.success) {
+    const msg = parsed.error.issues[0]?.message;
+    return fail(msg?.startsWith("misc.") ? t(msg, { min: PRICE_FACTOR_MIN, max: PRICE_FACTOR_MAX }) : t("misc.share.v.invalid"));
+  }
   const { resourceId, partner, canBook, priceFactorPercent, note } = parsed.data;
 
   const resource = await db.resource.findUnique({ where: { id: resourceId }, select: { id: true, tenantId: true, name: true } });
-  if (!resource || resource.tenantId !== ctx.tenant.id) return fail("Ressource nicht gefunden.");
+  if (!resource || resource.tenantId !== ctx.tenant.id) return fail(t("misc.share.resourceNotFound"));
   const keys = partnerLookupKeys(partner);
-  if (!keys) return fail("Bitte den Kurznamen (z.B. sg-musterhausen) oder den Beitrittscode des Partnervereins angeben.");
+  if (!keys) return fail(t("misc.share.partnerFormat"));
   // Die Suche akzeptiert Beitrittscodes: gleiches Budget wie beim Beitreten, damit sich Codes nicht durchprobieren lassen.
   const limited =
     throttle(`share-partner-user:${ctx.user.id}`, THROTTLE.joinCode.limit, THROTTLE.joinCode.windowMs) ??
@@ -73,8 +86,8 @@ export async function saveResourceShareAction(_prev: ActionResult | null, formDa
     where: { deletedAt: null, OR: [{ slug: keys.slug }, { joinCode: keys.joinCode }, { joinCode: keys.joinCodeRaw }] },
     select: { id: true, name: true },
   });
-  if (!guest) return fail("Kein Verein mit diesem Kurznamen oder Beitrittscode gefunden.");
-  if (guest.id === ctx.tenant.id) return fail("Die Anlage gehört bereits deinem Verein.");
+  if (!guest) return fail(t("misc.share.partnerNotFound"));
+  if (guest.id === ctx.tenant.id) return fail(t("misc.share.ownClub"));
   const guestHasBookings = await tenantModuleEnabled(guest.id, "bookings");
 
   const existing = await db.resourceShare.findUnique({ where: { resourceId_guestTenantId: { resourceId, guestTenantId: guest.id } } });
@@ -90,34 +103,37 @@ export async function saveResourceShareAction(_prev: ActionResult | null, formDa
   });
   if (!existing) {
     const admins = await tenantUserIdsWithRole(guest.id, ["OWNER", "ADMIN"]);
+    const bodyKey = canBook && !guestHasBookings ? "misc.share.notify.created.moduleOff" : canBook ? "misc.share.notify.created.bookable" : "misc.share.notify.created.paused";
+    const vars = { owner: ctx.tenant.name, resource: resource.name };
+    const de = getT("de");
     void notify({
       tenantId: guest.id,
       userIds: admins,
       topic: "bookings",
-      title: "Neue gemeinsame Anlage",
-      body: canBook && !guestHasBookings
-        ? `${ctx.tenant.name} teilt «${resource.name}» mit eurem Verein. Aktiviert zuerst unter «Verein» das Modul «Reservationen», dann können eure Mitglieder sie buchen${priceFactorPercent !== 100 ? ` (Tarif ${priceFactorPercent} %)` : ""}.`
-        : `${ctx.tenant.name} teilt «${resource.name}» mit eurem Verein${canBook ? ". Eure Mitglieder können sie unter «Reservationen» buchen" : ""}${priceFactorPercent !== 100 ? ` (Tarif ${priceFactorPercent} %)` : ""}.`,
+      title: de("misc.share.notify.created.title"),
+      body: de(bodyKey, { ...vars, rate: rateSuffix("de", priceFactorPercent) }),
+      i18n: { title: "misc.share.notify.created.title", body: bodyKey, vars, localeVars: (locale) => ({ rate: rateSuffix(locale, priceFactorPercent) }) },
       url: canBook && !guestHasBookings ? "/admin" : "/bookings",
       tag: `share:${share.id}`,
       dedupeKey: `share-create:${share.id}`,
     }).catch(() => undefined);
   }
   revalidateShares(resourceId);
-  const moduleHint = canBook && !guestHasBookings ? ` Hinweis: Bei ${guest.name} ist das Modul «Reservationen» noch aus; die Mitglieder können erst buchen, wenn der Verein es einschaltet.` : "";
-  return ok(undefined, `${existing ? `Freigabe für ${guest.name} aktualisiert.` : `Mit ${guest.name} geteilt.`}${moduleHint}`);
+  const moduleHint = canBook && !guestHasBookings ? t("misc.share.moduleHint", { partner: guest.name }) : "";
+  return ok(undefined, `${t(existing ? "misc.share.updated" : "misc.share.shared", { partner: guest.name })}${moduleHint}`);
 }
 
 /** Buchungen für einen Partnerverein pausieren oder wieder erlauben. */
 export async function setShareCanBookAction(shareId: string, canBook: boolean): Promise<ActionResult> {
   const ctx = await requireBookingsAdmin();
-  if (typeof shareId !== "string" || shareId.length > 40) return fail("Nicht gefunden");
+  const t = await tr();
+  if (typeof shareId !== "string" || shareId.length > 40) return fail(t("misc.share.notFound"));
   const share = await db.resourceShare.findUnique({ where: { id: shareId }, include: { resource: { select: { tenantId: true, name: true } }, guestTenant: { select: { name: true } } } });
-  if (!share || share.resource.tenantId !== ctx.tenant.id) return fail("Nicht gefunden");
+  if (!share || share.resource.tenantId !== ctx.tenant.id) return fail(t("misc.share.notFound"));
   await db.resourceShare.update({ where: { id: shareId }, data: { canBook: !!canBook } });
   void audit({ tenantId: ctx.tenant.id, actorId: ctx.user.id, actorName: ctx.user.name, action: canBook ? "booking.share.resume" : "booking.share.pause", entity: "ResourceShare", entityId: shareId, detail: `«${share.resource.name}» · ${share.guestTenant.name}` });
   revalidateShares(share.resourceId);
-  return ok(undefined, canBook ? "Buchungen wieder erlaubt." : "Buchungen pausiert.");
+  return ok(undefined, t(canBook ? "misc.share.resumed" : "misc.share.paused"));
 }
 
 /**
@@ -126,9 +142,10 @@ export async function setShareCanBookAction(shareId: string, canBook: boolean): 
  */
 export async function revokeResourceShareAction(shareId: string): Promise<ActionResult> {
   const ctx = await requireBookingsAdmin();
-  if (typeof shareId !== "string" || shareId.length > 40) return fail("Nicht gefunden");
+  const t = await tr();
+  if (typeof shareId !== "string" || shareId.length > 40) return fail(t("misc.share.notFound"));
   const share = await db.resourceShare.findUnique({ where: { id: shareId }, include: { resource: { select: { tenantId: true, name: true } }, guestTenant: { select: { id: true, name: true, deletedAt: true } } } });
-  if (!share || share.resource.tenantId !== ctx.tenant.id) return fail("Nicht gefunden");
+  if (!share || share.resource.tenantId !== ctx.tenant.id) return fail(t("misc.share.notFound"));
   await db.resourceShare.delete({ where: { id: shareId } });
   void audit({ tenantId: ctx.tenant.id, actorId: ctx.user.id, actorName: ctx.user.name, action: "booking.share.revoke", entity: "ResourceShare", entityId: shareId, detail: `«${share.resource.name}» · ${share.guestTenant.name}` });
   if (!share.guestTenant.deletedAt) {
@@ -137,15 +154,16 @@ export async function revokeResourceShareAction(shareId: string): Promise<Action
       tenantId: share.guestTenant.id,
       userIds: admins,
       topic: "bookings",
-      title: "Gemeinsame Anlage beendet",
-      body: `${ctx.tenant.name} teilt «${share.resource.name}» nicht mehr mit eurem Verein. Bestehende Reservationen bleiben gültig.`,
+      title: getT("de")("misc.share.notify.revoked.title"),
+      body: getT("de")("misc.share.notify.revoked.body", { owner: ctx.tenant.name, resource: share.resource.name }),
+      i18n: { title: "misc.share.notify.revoked.title", body: "misc.share.notify.revoked.body", vars: { owner: ctx.tenant.name, resource: share.resource.name } },
       url: "/bookings",
       tag: `share:${shareId}`,
       dedupeKey: `share-revoke:${shareId}`,
     }).catch(() => undefined);
   }
   revalidateShares(share.resourceId);
-  return ok(undefined, "Freigabe entfernt.");
+  return ok(undefined, t("misc.share.removed"));
 }
 
 // ---------------------------------------------------------------------------
@@ -155,9 +173,10 @@ export async function revokeResourceShareAction(shareId: string): Promise<Action
 /** Freie Zeiten einer geteilten Ressource (nur mit gültiger Freigabe für den aktiven Verein). */
 export async function fetchGuestSlotsAction(resourceId: string, dateStr: string, durationMinutes: number, persons = 1): Promise<SlotsResult> {
   const ctx = await requireModule("bookings");
-  const g = await resolveGuestShare(ctx, resourceId);
+  const t = await tr();
+  const g = await resolveGuestShare(ctx, resourceId, t);
   if (!g.ok) return { slots: [], error: g.error };
-  return guestSlots(g, dateStr, durationMinutes, persons);
+  return guestSlots(g, dateStr, durationMinutes, persons, t);
 }
 
 const guestBookingSchema = z.object({
@@ -173,9 +192,12 @@ const guestBookingSchema = z.object({
  * Buchung durch ein Mitglied eines Partnervereins. Die Buchung gehört dem Eigentümer (tenantId),
  * userId = Gast, viaTenantId = aktiver Verein des Gastes. Es gelten die Regeln des Eigentümers;
  * bezahlt wird per Rechnung des Eigentümers (keine Online-Zahlung für Partnerbuchungen).
+ * Bestätigte Buchungen erhalten sofort eine Bestätigung per E-Mail (wie eigene Buchungen),
+ * Anfragen erst mit dem Entscheid der Verwaltung des Eigentümers.
  */
 export async function createGuestBookingAction(_prev: ActionResult | null, formData: FormData): Promise<ActionResult> {
   const ctx = await requireModule("bookings");
+  const t = await tr();
   const parsed = guestBookingSchema.safeParse({
     resourceId: formData.get("resourceId"),
     date: formData.get("date"),
@@ -184,32 +206,32 @@ export async function createGuestBookingAction(_prev: ActionResult | null, formD
     persons: formData.get("persons") || undefined,
     note: formData.get("note") || undefined,
   });
-  if (!parsed.success) return fail("Bitte Ressource, Datum, Zeit, Dauer und Anzahl Personen wählen.");
+  if (!parsed.success) return fail(t("misc.share.err.incomplete"));
   const { resourceId, date, time, durationMinutes, persons, note } = parsed.data;
 
-  const g = await resolveGuestShare(ctx, resourceId);
+  const g = await resolveGuestShare(ctx, resourceId, t);
   if (!g.ok) return fail(g.error);
   const { resource, settings, owner } = g;
   const option = (resource.durationOptions ?? settings.durationOptions).find((o) => o.minutes === durationMinutes);
-  if (!option) return fail("Diese Dauer ist nicht buchbar.");
+  if (!option) return fail(t("bookings.err.durationUnavailable"));
   const maxPersons = maxPersonsFor(resource, settings);
-  if (persons > maxPersons) return fail(`Höchstens ${maxPersons} ${maxPersons === 1 ? "Person" : "Personen"} pro Buchung.`);
+  if (persons > maxPersons) return fail(t(maxPersons === 1 ? "bookings.err.maxPersonsOne" : "bookings.err.maxPersonsMany", { max: maxPersons }));
   const plan = planRequest(option, resource, settings, persons);
 
   await expireUnpaidOnlineBookings(owner.id);
   const slots = await getSlotsForDay(owner.id, resource, settings, date, durationMinutes, { requestedUnits: plan.units });
   const slot = slots.find((s) => s.time === time);
-  if (!slot) return fail("Diese Zeit liegt ausserhalb der Öffnungszeiten.");
-  if (!slot.available) return fail(`Dieser Termin ist nicht verfügbar (${slot.reason}).`);
+  if (!slot) return fail(t("bookings.err.outsideOpening"));
+  if (!slot.available) return fail(t("bookings.err.slotUnavailable", { reason: slotReasonLabel(slot.reason, t) }));
   if (g.ownerHasRange) {
     const check = await checkBookingWindow(owner.id, resourceId, slot.startsAt, slot.endsAt);
-    if (!check.ok) return fail(windowRejectMessage(check));
+    if (!check.ok) return fail(t("bookings.err.outsideWindow", { allowed: check.allowed }));
   }
 
   const quote = applyPriceFactor(quotePrice(option, slot.startsAt, settings, plan.persons), g.priceFactorPercent);
   let paymentMethod: "NONE" | "INVOICE" = "NONE";
   if (quote.totalCents > 0) {
-    if (!settings.allowInvoice) return fail(`${owner.name} bietet für Partnervereine keine Bezahlung auf Rechnung an. Bitte direkt beim Verein reservieren.`);
+    if (!settings.allowInvoice) return fail(t("misc.share.err.noInvoice", { owner: owner.name }));
     paymentMethod = "INVOICE";
   }
 
@@ -239,10 +261,12 @@ export async function createGuestBookingAction(_prev: ActionResult | null, formD
     adminNote: null,
     confirmedAt: status === "CONFIRMED" ? new Date() : null,
   });
-  if (!booking) return fail(SLOT_TAKEN);
+  if (!booking) return fail(t("bookings.err.slotTaken"));
 
   if (status === "CONFIRMED" && paymentMethod === "INVOICE") await ensureInvoiceForBooking(booking.id);
   if (status === "PENDING") void notifyBooking(booking.id, "pending", ctx.user).catch(() => undefined);
+  // Bestätigung per E-Mail an das Mitglied (läuft über den Partnerverein, siehe notifyBooking).
+  if (status === "CONFIRMED") void notifyBooking(booking.id, "confirmed", ctx.user).catch(() => undefined);
   void audit({ tenantId: owner.id, actorId: ctx.user.id, actorName: ctx.user.name, action: "booking.partner.create", entity: "Booking", entityId: booking.id, detail: `«${resource.name}» über Partnerverein ${ctx.tenant.name}${g.priceFactorPercent !== 100 ? ` · ${partnerRateLabel(g.priceFactorPercent)}` : ""}` });
 
   revalidatePath("/bookings");

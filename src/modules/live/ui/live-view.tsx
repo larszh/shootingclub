@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { diffLive, formatLiveScore, type LiveRow, type LiveSnapshot } from "@/modules/live/logic";
+import { useT } from "@/components/locale";
 
 type Status = "live" | "reconnecting" | "polling" | "expired" | "gone";
 type Mark = "up" | "upd" | "new";
@@ -30,6 +31,7 @@ export function LiveView({ token, initial, brandColor, logoUrl, showTicker }: { 
   const [pageTick, setPageTick] = useState(0);
   const prevRows = useRef<LiveRow[]>(initial.rows);
   const clock = useSyncExternalStore(subscribeClock, getClock, getServerClock);
+  const t = useT();
 
   useEffect(() => {
     let es: EventSource | null = null;
@@ -138,9 +140,9 @@ export function LiveView({ token, initial, brandColor, logoUrl, showTicker }: { 
             <img src={logoUrl} alt="" className="mb-[4cqh] h-[14cqh] w-auto object-contain" />
           ) : null}
           <div className="text-[3cqh] uppercase tracking-[0.2em] text-white/50">{snap.clubName}</div>
-          <h1 className="mt-[2cqh] text-[7cqh] font-bold leading-tight">{status === "expired" ? "Die Live-Rangliste ist beendet" : "Dieser Link ist nicht mehr gültig"}</h1>
+          <h1 className="mt-[2cqh] text-[7cqh] font-bold leading-tight">{status === "expired" ? t("adm2.live.view.ended") : t("adm2.live.view.gone")}</h1>
           <p className="mt-[2cqh] max-w-[60cqw] text-[3.2cqh] text-white/60">
-            {status === "expired" ? "Vielen Dank fürs Mitmachen! Die definitive Rangliste gibt es beim Verein." : "Bitte beim Verein den aktuellen Link für die Live-Rangliste verlangen."}
+            {status === "expired" ? t("adm2.live.view.thanks") : t("adm2.live.view.askLink")}
           </p>
         </div>
       </Screen>
@@ -172,7 +174,7 @@ export function LiveView({ token, initial, brandColor, logoUrl, showTicker }: { 
             <div className="text-[6cqh] font-semibold tabular-nums leading-none" suppressHydrationWarning>{clock}</div>
             <div className="mt-[1cqh] flex items-center justify-end gap-[0.6cqw] text-[2.4cqh] text-white/70" aria-live="polite">
               <span className={`inline-block h-[1.6cqh] w-[1.6cqh] rounded-full ${status === "live" ? "animate-pulse bg-[#3ccf6e]" : status === "polling" ? "bg-[#e0b341]" : "bg-[#e0b341] animate-pulse"}`} aria-hidden />
-              {status === "live" ? "LIVE" : status === "polling" ? "Aktualisierung alle 10 s" : "Verbinde…"}
+              {status === "live" ? t("adm2.live.view.live") : status === "polling" ? t("adm2.live.view.polling") : t("adm2.live.view.connecting")}
             </div>
           </div>
         </header>
@@ -181,8 +183,8 @@ export function LiveView({ token, initial, brandColor, logoUrl, showTicker }: { 
         <main className="mt-[1.6cqh] min-h-0 flex-1">
           {rows.length === 0 ? (
             <div className="flex h-full flex-col items-center justify-center text-center">
-              <div className="text-[5cqh] font-semibold">Noch keine Resultate</div>
-              <div className="mt-[1cqh] text-[3cqh] text-white/60">Sobald geschossen wird, erscheint hier die Rangliste.</div>
+              <div className="text-[5cqh] font-semibold">{t("adm2.live.view.noResults")}</div>
+              <div className="mt-[1cqh] text-[3cqh] text-white/60">{t("adm2.live.view.noResultsText")}</div>
             </div>
           ) : (
             <div className={`grid h-full grid-rows-[minmax(0,1fr)] gap-x-[2cqw] ${twoCols ? "grid-cols-2" : "grid-cols-1"}`}>
@@ -200,7 +202,7 @@ export function LiveView({ token, initial, brandColor, logoUrl, showTicker }: { 
         <footer className="mt-[1.4cqh] flex h-[5.5cqh] items-center gap-[1.5cqw] text-[2.6cqh] text-white/70">
           {showTicker && snap.ticker.length ? (
             <>
-              <span className="shrink-0 rounded-[0.6cqh] px-[0.8cqw] py-[0.3cqh] text-[2.2cqh] font-semibold uppercase tracking-wider text-white" style={{ background: brandColor }}>Letzte Schüsse</span>
+              <span className="shrink-0 rounded-[0.6cqh] px-[0.8cqw] py-[0.3cqh] text-[2.2cqh] font-semibold uppercase tracking-wider text-white" style={{ background: brandColor }}>{t("adm2.live.view.latest")}</span>
               <div className="flex min-w-0 flex-1 gap-[2.2cqw] overflow-hidden whitespace-nowrap">
                 {snap.ticker.map((t) => (
                   <span key={t.id} className="shrink-0">
@@ -212,7 +214,7 @@ export function LiveView({ token, initial, brandColor, logoUrl, showTicker }: { 
           ) : (
             <span className="flex-1" />
           )}
-          {pages > 1 ? <span className="shrink-0 tabular-nums">Seite {page + 1}/{pages}</span> : null}
+          {pages > 1 ? <span className="shrink-0 tabular-nums">{t("adm2.live.view.page", { n: page + 1, total: pages })}</span> : null}
           <span className="shrink-0 text-white/40">standchef.ch</span>
         </footer>
       </div>
@@ -232,6 +234,7 @@ function Screen({ children }: { children: React.ReactNode }) {
 }
 
 function LiveRowView({ r, decimals, mark, brandColor, compact }: { r: LiveRow; decimals: boolean; mark?: Mark; brandColor: string; compact: boolean }) {
+  const t = useT();
   const medal = r.rank === 1 ? "#d4a72c" : r.rank === 2 ? "#b8bcc2" : r.rank === 3 ? "#b07a4a" : null;
   const pct = r.maxShots > 0 ? Math.min(100, (r.shots / r.maxShots) * 100) : 0;
   const markBg = mark === "up" ? "bg-[#1f3a28]" : mark === "new" ? "bg-[#1d2a3d]" : mark === "upd" ? "bg-[#2a2a1c]" : "bg-white/[0.04]";
@@ -247,17 +250,17 @@ function LiveRowView({ r, decimals, mark, brandColor, compact }: { r: LiveRow; d
       <div className="flex min-w-0 flex-1 items-center gap-[1cqw]">
         <div className={`min-w-0 truncate font-semibold leading-tight ${compact ? "text-[3cqh]" : "text-[3.6cqh]"}`}>
           {r.name}
-          {r.isGuest ? <span className="ml-[0.6cqw] text-[2cqh] font-normal text-white/50">Gast</span> : null}
-          {mark === "up" ? <span className="ml-[0.6cqw] text-[2.4cqh] text-[#3ccf6e]" aria-label="aufgestiegen">▲</span> : null}
+          {r.isGuest ? <span className="ml-[0.6cqw] text-[2cqh] font-normal text-white/50">{t("adm2.live.view.guest")}</span> : null}
+          {mark === "up" ? <span className="ml-[0.6cqw] text-[2.4cqh] text-[#3ccf6e]" aria-label={t("adm2.live.view.up")}>▲</span> : null}
         </div>
         {!r.finished || r.program ? (
           <div className="ml-auto flex min-w-0 shrink-0 items-center gap-[0.8cqw] text-[2cqh] leading-none text-white/55">
             {r.program ? <span className={`truncate ${compact ? "max-w-[8cqw]" : "max-w-[16cqw]"}`}>{r.program}</span> : null}
             {!r.finished ? (
               <>
-                <span className="shrink-0" style={{ color: brandColor }}>● läuft</span>
+                <span className="shrink-0" style={{ color: brandColor }}>{t("adm2.live.view.running")}</span>
                 {r.maxShots > 0 ? (
-                  <span className={`relative h-[0.8cqh] shrink-0 overflow-hidden rounded-full bg-white/10 ${compact ? "w-[5cqw]" : "w-[8cqw]"}`} aria-label={`${r.shots} von ${r.maxShots} Schüssen`}>
+                  <span className={`relative h-[0.8cqh] shrink-0 overflow-hidden rounded-full bg-white/10 ${compact ? "w-[5cqw]" : "w-[8cqw]"}`} aria-label={t("adm2.live.view.shots", { n: r.shots, max: r.maxShots })}>
                     <span className="absolute inset-y-0 left-0 rounded-full" style={{ width: `${pct}%`, background: brandColor }} />
                   </span>
                 ) : null}

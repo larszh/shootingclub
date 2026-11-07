@@ -229,7 +229,7 @@ export type QuotaOverview = {
  * Kontingente eines Jahres mit Verbrauch. Ohne erfasstes Kontingent gibt es eine Zeile
  * «Ganze Anlage» ohne Höchstwert, damit der Verbrauch trotzdem sichtbar ist.
  */
-export async function quotaOverview(tenantId: string, year: number) {
+export async function quotaOverview(tenantId: string, year: number, wholeFacility = "Ganze Anlage") {
   const [quotas, days] = await Promise.all([listQuotas(tenantId, year), closedQuotaDays(tenantId, year)]);
   const quotaDays: Array<QuotaDay & { id: string }> = days.map((d) => ({ id: d.id, date: d.date, resourceId: d.resourceId, usedAm: d.usedAm, usedPm: d.usedPm, usedEvening: d.usedEvening }));
   const build = (quotaId: string | null, resourceId: string | null, resourceName: string, max: number | null, note: string | null): QuotaOverview => {
@@ -237,33 +237,33 @@ export async function quotaOverview(tenantId: string, year: number) {
     const used = merged.reduce((a, d) => a + d.count, 0);
     return { key: quotaId ?? `none-${resourceId ?? "all"}`, quotaId, resourceId, resourceName, max, note, used, status: max === null ? null : quotaStatus(max, used), months: halfDaysByMonth(merged), merged };
   };
-  const rows = quotas.map((q) => build(q.id, q.resourceId, q.resource?.name ?? "Ganze Anlage", q.maxHalfDays, q.note));
-  if (!rows.some((r) => r.resourceId === null)) rows.unshift(build(null, null, "Ganze Anlage", null, null));
+  const rows = quotas.map((q) => build(q.id, q.resourceId, q.resource?.name ?? wholeFacility, q.maxHalfDays, q.note));
+  if (!rows.some((r) => r.resourceId === null)) rows.unshift(build(null, null, wholeFacility, null, null));
   return { rows, days };
 }
 
 // --- Vorfälle -----------------------------------------------------------------------------
 
-export async function listIncidents(tenantId: string, opts: { reportedById?: string; status?: "OPEN" | "CLOSED" }) {
+export async function listIncidents(tenantId: string, opts: { reportedById?: string; status?: "OPEN" | "CLOSED"; deletedLabel?: string }) {
   const rows = await db.incident.findMany({
     where: { tenantId, ...(opts.reportedById ? { reportedById: opts.reportedById } : {}), ...(opts.status ? { status: opts.status } : {}) },
     orderBy: { occurredAt: "desc" },
     take: 300,
   });
-  return withReporterNames(rows);
+  return withReporterNames(rows, opts.deletedLabel);
 }
 
-export async function getIncident(tenantId: string, id: string) {
+export async function getIncident(tenantId: string, id: string, deletedLabel?: string) {
   const row = await db.incident.findFirst({ where: { id, tenantId } });
   if (!row) return null;
-  return (await withReporterNames([row]))[0]!;
+  return (await withReporterNames([row], deletedLabel))[0]!;
 }
 
-async function withReporterNames<T extends { reportedById: string | null }>(rows: T[]) {
+async function withReporterNames<T extends { reportedById: string | null }>(rows: T[], deletedLabel = "Gelöschtes Konto") {
   const ids = [...new Set(rows.map((r) => r.reportedById).filter((x): x is string => !!x))];
   const users = ids.length ? await db.user.findMany({ where: { id: { in: ids } }, select: { id: true, name: true } }) : [];
   const names = new Map(users.map((u) => [u.id, u.name]));
-  return rows.map((r) => ({ ...r, reporterName: r.reportedById ? (names.get(r.reportedById) ?? "Gelöschtes Konto") : null }));
+  return rows.map((r) => ({ ...r, reporterName: r.reportedById ? (names.get(r.reportedById) ?? deletedLabel) : null }));
 }
 
 export async function incidentCounts(tenantId: string) {

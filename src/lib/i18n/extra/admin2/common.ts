@@ -76,6 +76,11 @@ const rows: Rows = {
   "adm2.common.noPermission": ["Keine Berechtigung.", "Pas d’autorisation.", "Nessuna autorizzazione.", "No permission."],
   "adm2.common.invalidInput": ["Ungültige Eingabe.", "Saisie non valable.", "Inserimento non valido.", "Invalid input."],
   "adm2.common.invalidRequest": ["Ungültige Anfrage.", "Requête non valable.", "Richiesta non valida.", "Invalid request."],
+  "adm2.common.http.unauthenticated": ["Nicht angemeldet", "Non connecté", "Non connesso", "Not signed in"],
+  "adm2.common.http.noClub": ["Kein Verein ausgewählt", "Aucune société sélectionnée", "Nessuna società selezionata", "No club selected"],
+  "adm2.common.http.moduleOff": ["Modul nicht aktiv", "Module non activé", "Modulo non attivo", "Module not enabled"],
+  "adm2.common.http.forbidden": ["Keine Berechtigung", "Pas d’autorisation", "Nessuna autorizzazione", "No permission"],
+  "adm2.common.http.notFound": ["Nicht gefunden", "Introuvable", "Non trovato", "Not found"],
   "adm2.common.notFound": ["Nicht gefunden.", "Introuvable.", "Non trovato.", "Not found."],
   "adm2.common.failed": ["Das hat nicht geklappt. Bitte nochmals versuchen.", "Cela n’a pas fonctionné. Merci de réessayer.", "Non ha funzionato. Riprova.", "That didn’t work. Please try again."],
   "adm2.common.tryAgain": ["Bitte nochmals versuchen.", "Merci de réessayer.", "Riprova.", "Please try again."],
@@ -136,6 +141,8 @@ const rows: Rows = {
   "adm2.common.pages.one": ["{n} Seite", "{n} page", "{n} pagina", "{n} page"],
   "adm2.common.pages.other": ["{n} Seiten", "{n} pages", "{n} pagine", "{n} pages"],
   "adm2.common.maxCharsShort": ["Text zu lang.", "Texte trop long.", "Testo troppo lungo.", "Text too long."],
+  "adm2.common.deletedAccount": ["Gelöschtes Konto", "Compte supprimé", "Account eliminato", "Deleted account"],
+  "adm2.common.network": ["Keine Verbindung. Bitte nochmals versuchen.", "Pas de connexion. Merci de réessayer.", "Nessuna connessione. Riprova.", "No connection. Please try again."],
 };
 
 export default rows;

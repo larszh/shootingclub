@@ -293,6 +293,9 @@ const rows: Rows = {
   "adm2.range.msg.textMissing": ["Text fehlt.", "Le texte manque.", "Manca il testo.", "Text missing."],
   "adm2.range.msg.textTooLong": ["Text zu lang.", "Texte trop long.", "Testo troppo lungo.", "Text too long."],
   "adm2.range.msg.network": ["Keine Verbindung. Bitte nochmals tippen, sobald du wieder Empfang hast – es entsteht kein doppelter Eintrag.", "Pas de connexion. Touche à nouveau dès que tu as du réseau – aucune entrée ne sera faite à double.", "Nessuna connessione. Tocca di nuovo appena hai campo – non si crea una registrazione doppia.", "No connection. Please tap again once you have signal – no duplicate entry will be created."],
+  "adm2.range.msg.notifyTitle": ["Vorfall gemeldet: {kind} (hoch)", "Incident signalé : {kind} (élevé)", "Incidente segnalato: {kind} (alto)", "Incident reported: {kind} (high)"],
+  "adm2.range.msg.notifyBody": ["{name} hat einen Vorfall mit hoher Schwere gemeldet. Bitte prüfen.", "{name} a signalé un incident de gravité élevée. Merci de vérifier.", "{name} ha segnalato un incidente di gravità elevata. Verifica per favore.", "{name} reported a high-severity incident. Please check."],
+  "adm2.range.msg.notifyBodyAt": ["{name} hat einen Vorfall mit hoher Schwere gemeldet ({location}). Bitte prüfen.", "{name} a signalé un incident de gravité élevée ({location}). Merci de vérifier.", "{name} ha segnalato un incidente di gravità elevata ({location}). Verifica per favore.", "{name} reported a high-severity incident ({location}). Please check."],
 };
 
 export default rows;

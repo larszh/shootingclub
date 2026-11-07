@@ -5,7 +5,7 @@ import { formatDateZurich } from "@/lib/time";
 import { formatScore } from "@/lib/utils";
 import { canSeeAll, currentSwissYear, getClubInfo, nowDate, requireFederal } from "@/modules/federal/queries";
 import { fsAwardsOverview } from "@/modules/federal/awards-queries";
-import { AWARD_EXAMPLE_NOTICE, awardStatusText, isExampleLimits } from "@/modules/federal/awards";
+import { AWARD_EXAMPLE_NOTICE, awardCategoryLabel, awardStatusText, isExampleLimits } from "@/modules/federal/awards";
 import { parseYear } from "@/modules/federal/types";
 
 export const metadata = { title: "Auszeichnungen Feldschiessen" };
@@ -50,7 +50,7 @@ export default async function FederalAwardsPrintPage({ searchParams }: { searchP
             <h2 className="mb-1 text-sm font-semibold">{s.program.name}</h2>
             <p className="mb-2 text-[10px] text-neutral-600">
               {s.counts.length ? s.counts.map((c) => `${c.count} × ${c.award}`).join(" · ") : "Keine Auszeichnungen"}
-              {s.limits.length ? ` · Limiten: ${s.limits.map((l) => `${l.category} ${l.award} ab ${formatScore(l.minScore, !Number.isInteger(l.minScore))}`).join("; ")}` : " · keine Limiten erfasst"}
+              {s.limits.length ? ` · Limiten: ${s.limits.map((l) => `${l.category}${l.weaponCategory ? ` · ${l.weaponCategory}` : ""} ${l.award} ab ${formatScore(l.minScore, !Number.isInteger(l.minScore))}`).join("; ")}` : " · keine Limiten erfasst"}
             </p>
             {isExampleLimits(s.limits) ? <p className="mb-2 border border-amber-400 bg-amber-50 px-2 py-1 text-[10px] font-semibold text-amber-900">{AWARD_EXAMPLE_NOTICE}</p> : null}
             <table className="w-full border-collapse text-[10.5px] leading-tight">
@@ -71,7 +71,7 @@ export default async function FederalAwardsPrintPage({ searchParams }: { searchP
                     <td className="border border-neutral-300 px-1.5 py-1 tabular-nums">{i + 1}</td>
                     <td className="border border-neutral-300 px-1.5 py-1">{r.name}{r.isGuest ? " (Gast)" : ""}{r.isOfficial ? "" : " *"}</td>
                     <td className="border border-neutral-300 px-1.5 py-1 tabular-nums">{r.birthYear ?? ""}</td>
-                    <td className="border border-neutral-300 px-1.5 py-1">{r.result.category ?? ""}</td>
+                    <td className="border border-neutral-300 px-1.5 py-1">{awardCategoryLabel(r.result)}</td>
                     <td className="border border-neutral-300 px-1.5 py-1 text-right tabular-nums">{formatScore(r.total, r.decimal)}</td>
                     <td className="border border-neutral-300 px-1.5 py-1 font-medium">{awardStatusText(r.result)}</td>
                     <td className="border border-neutral-300 px-1.5 py-1" />

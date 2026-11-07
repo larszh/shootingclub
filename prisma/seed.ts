@@ -19,6 +19,7 @@ import { seedDemoAccounting } from "../src/modules/accounting/seed";
 import { seedDemoEmbed } from "../src/modules/embed/seed";
 import { seedDemoSharing } from "../src/modules/sharing/seed";
 import { seedDemoKiosk } from "../src/modules/kiosk/seed";
+import { serializeFeatures } from "../src/lib/ai/types";
 import { seedDemoScoreImport } from "../src/modules/scores/import/seed";
 import { seedDemoBookingSeries } from "../src/modules/bookings/seed";
 import { seedDemoAssociation } from "../src/modules/association/seed";
@@ -181,6 +182,15 @@ async function main() {
     // FS-Auszeichnungslimiten (Beispiel) legt seedDemoFederal oben schon an (seedDemoFederalAwards).
     await seedDemoBookingSeries(db, demo.id, [anna.id]); // Anna (Admin) legt die Serie an
     await seedDemoAssociation(db, demo.id, [anna.id]); // Anna ist Verbandsadmin; nach seedDemoSharing (Partnerverein als Anfrage)
+    // Welle E: Modul «KI-Assistent» eingeschaltet, aber ohne Schlüssel und ohne Zustimmung, damit
+    // /admin/ai den Einrichtungszustand zeigt. Nie Schlüssel im Seed; vorhandene Einstellungen bleiben.
+    await db.tenantModule.upsert({ where: { tenantId_moduleKey: { tenantId: demo.id, moduleKey: "ai" } }, update: { enabled: true }, create: { tenantId: demo.id, moduleKey: "ai", enabled: true } });
+    await db.tenantAiSettings.upsert({
+      where: { tenantId: demo.id },
+      update: {},
+      create: { tenantId: demo.id, enabled: false, features: serializeFeatures("tenant", ["help", "contentTranslation", "writing", "coach", "reports"]), memberAccess: "ALL" },
+    });
+    await db.platformAiSettings.upsert({ where: { id: "global" }, update: {}, create: { id: "global", enabled: false, allowClubs: true } });
     console.log("Demo-Verein: Beitrittscode DEMO42 · anna@example.ch / beat@example.ch (Passwort demo1234)");
     console.log("Demo-Verband: «Demo Kantonalverband», Code KSVDEMO1 (Anna ist Verbandsadmin)");
   }

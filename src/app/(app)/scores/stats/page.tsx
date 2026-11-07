@@ -10,6 +10,8 @@ import { QuerySelect } from "@/modules/scores/ui/query-select";
 import { ExportLink } from "@/modules/scores/ui/export-link";
 import { formatDate, getRequestLocale, getT } from "@/lib/i18n";
 import { tCount } from "@/modules/scores/ui/labels";
+import { getCoachCard } from "@/modules/ai/coach/service";
+import { CoachCard } from "@/modules/ai/coach/ui/coach-card";
 
 export async function generateMetadata(): Promise<Metadata> {
   return { title: getT(await getRequestLocale())("shooting.common.stats") };
@@ -24,7 +26,7 @@ export default async function StatsPage({ searchParams }: { searchParams: Promis
   const locale = await getRequestLocale();
   const t = getT(locale);
   const sp = await searchParams;
-  const stats = await getUserScoreStats(ctx, locale);
+  const [stats, coach] = await Promise.all([getUserScoreStats(ctx, locale), getCoachCard(ctx, locale)]);
   const selectedId = one(sp.programId) && stats.programs.some((p) => p.programId === one(sp.programId)) ? one(sp.programId)! : stats.programs[0]?.programId;
   const progress = selectedId ? await getProgramProgress(ctx, selectedId, undefined, locale) : null;
   const maxDistShots = Math.max(1, ...stats.distances.map((d) => d.shots));
@@ -57,6 +59,12 @@ export default async function StatsPage({ searchParams }: { searchParams: Promis
         </div>
       ) : (
         <>
+          {coach ? (
+            <div className="mt-4">
+              <CoachCard state={coach.state} cached={coach.cached} stale={coach.stale} matchCount={coach.matchCount} />
+            </div>
+          ) : null}
+
           <SectionTitle>{t("shooting.stats.history")}</SectionTitle>
           <Card className="animate-rise p-4">
             <div className="mb-3">

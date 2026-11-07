@@ -1,21 +1,25 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { PageHeader } from "@/components/ui";
+import { getRequestLocale, getT } from "@/lib/i18n";
 import { requireWeaponsAdmin } from "@/modules/weapons/guard";
 import { stripBlockReason } from "@/modules/weapons/logic";
 import { getWeapon, listDisciplines } from "@/modules/weapons/queries";
 import { WeaponForm } from "@/modules/weapons/ui/weapon-form";
 
-export const metadata: Metadata = { title: "Waffe bearbeiten" };
+export async function generateMetadata(): Promise<Metadata> {
+  return { title: getT(await getRequestLocale())("adm2.weapons.edit.title") };
+}
 
 export default async function EditWeaponPage({ params }: { params: Promise<{ id: string }> }) {
   const ctx = await requireWeaponsAdmin();
+  const t = getT(await getRequestLocale());
   const { id } = await params;
   const [w, disciplines] = await Promise.all([getWeapon(ctx.tenant.id, id.slice(0, 40), true), listDisciplines(ctx.tenant.id)]);
   if (!w) notFound();
   return (
     <div>
-      <PageHeader title="Waffe bearbeiten" subtitle={w.name} back={{ href: `/weapons/${w.id}`, label: w.name }} />
+      <PageHeader title={t("adm2.weapons.edit.title")} subtitle={w.name} back={{ href: `/weapons/${w.id}`, label: w.name }} />
       <WeaponForm
         disciplines={disciplines}
         initial={{

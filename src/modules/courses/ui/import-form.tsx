@@ -8,10 +8,12 @@ import { SubmitButton } from "@/components/ui/form";
 import { importParticipantsAction } from "@/modules/courses/actions";
 import { chDate } from "@/modules/courses/logic";
 import { IMPORT_COLUMNS } from "@/modules/courses/types";
+import { useT } from "@/components/locale";
 
 /** CSV-Import von Teilnehmenden: Datei wählen → Vorschau → übernehmen. */
 export function ImportForm({ courseId }: { courseId: string }) {
   const [state, action, pending] = useActionState(importParticipantsAction, null);
+  const t = useT();
   const formRef = useRef<HTMLFormElement>(null);
   const [mode, setMode] = useState<"preview" | "import">("preview");
   const rows = state?.ok ? state.data?.rows ?? [] : [];
@@ -24,9 +26,9 @@ export function ImportForm({ courseId }: { courseId: string }) {
     <div className="space-y-4">
       <Card className="animate-rise space-y-3 p-4">
         <p className="text-sm text-ink-2">
-          CSV-Datei mit Semikolon, erste Zeile mit den Spaltennamen: <span className="font-medium">{IMPORT_COLUMNS.join("; ")}</span>. Datum als TT.MM.JJJJ.
+          {t("adm2.courses.imp.intro")} <span className="font-medium">{IMPORT_COLUMNS.join("; ")}</span>. {t("adm2.courses.imp.dateFormat")}
         </p>
-        <a href={templateHref} download="kurs-teilnehmende-vorlage.csv" className="inline-flex min-h-11 items-center text-sm font-medium text-accent underline-offset-2 hover:underline">Vorlage herunterladen</a>
+        <a href={templateHref} download="kurs-teilnehmende-vorlage.csv" className="inline-flex min-h-11 items-center text-sm font-medium text-accent underline-offset-2 hover:underline">{t("adm2.courses.imp.template")}</a>
         <form
           ref={formRef}
           onSubmit={(e) => {
@@ -39,17 +41,17 @@ export function ImportForm({ courseId }: { courseId: string }) {
           className="space-y-3"
         >
           <input type="hidden" name="courseId" value={courseId} />
-          <Field label="Datei" hint="CSV, höchstens 2 MB">
+          <Field label={t("adm2.courses.imp.file")} hint={t("adm2.courses.imp.fileHint")}>
             <Input type="file" name="file" accept=".csv,text/csv" required className="h-auto py-2.5" />
           </Field>
-          <SubmitButton pending={pending && mode === "preview"} variant="secondary"><FileUp className="h-4 w-4" /> Vorschau</SubmitButton>
+          <SubmitButton pending={pending && mode === "preview"} variant="secondary"><FileUp className="h-4 w-4" /> {t("adm2.courses.imp.preview")}</SubmitButton>
         </form>
       </Card>
 
       {state && !state.ok ? <Alert>{state.error}</Alert> : null}
       {imported ? (
-        <Alert tone="ok" title={`${imported} Teilnehmende übernommen`}>
-          <Link href={`/courses/${courseId}`} className="font-medium underline">Zurück zum Kurs</Link>
+        <Alert tone="ok" title={t("adm2.courses.imp.done", { n: imported })}>
+          <Link href={`/courses/${courseId}`} className="font-medium underline">{t("adm2.courses.imp.back")}</Link>
         </Alert>
       ) : null}
 
@@ -57,7 +59,7 @@ export function ImportForm({ courseId }: { courseId: string }) {
         <Card className="animate-rise overflow-hidden">
           <div className="flex flex-wrap items-center justify-between gap-2 border-b border-line p-4">
             <div className="text-sm">
-              <span className="font-medium">{rows.length} Zeilen</span> · {good} können übernommen werden
+              <span className="font-medium">{t("adm2.courses.imp.rows", { n: rows.length })}</span>{t("adm2.courses.imp.good", { n: good })}
             </div>
             <Button
               type="button"
@@ -69,7 +71,7 @@ export function ImportForm({ courseId }: { courseId: string }) {
                 startTransition(() => action(fd));
               }}
             >
-              <Upload className="h-4 w-4" /> {good} übernehmen
+              <Upload className="h-4 w-4" /> {t("adm2.courses.imp.importN", { n: good })}
             </Button>
           </div>
           <ul className="divide-y divide-line">
@@ -80,9 +82,9 @@ export function ImportForm({ courseId }: { courseId: string }) {
                   <div className="flex flex-wrap items-center gap-2">
                     <span className="font-medium">{[r.firstName, r.lastName].filter(Boolean).join(" ") || "–"}</span>
                     {r.birthDate ? <span className="text-ink-3">{chDate(r.birthDate)}</span> : null}
-                    {r.errors.length ? <Badge tone="danger">Fehler</Badge> : r.duplicate ? <Badge tone="outline">bereits im Kurs</Badge> : <Badge tone="ok"><Check className="mr-1 h-3 w-3" /> ok</Badge>}
+                    {r.errors.length ? <Badge tone="danger">{t("adm2.courses.imp.error")}</Badge> : r.duplicate ? <Badge tone="outline">{t("adm2.courses.imp.dup")}</Badge> : <Badge tone="ok"><Check className="mr-1 h-3 w-3" /> ok</Badge>}
                   </div>
-                  {r.guardianName ? <div className="text-xs text-ink-3">Erziehungsberechtigte: {r.guardianName}</div> : null}
+                  {r.guardianName ? <div className="text-xs text-ink-3">{t("adm2.courses.imp.guardian", { name: r.guardianName })}</div> : null}
                   {r.errors.map((e) => <div key={e} className="text-xs text-danger">{e}</div>)}
                   {r.warnings.map((w) => <div key={w} className="text-xs text-warn">{w}</div>)}
                 </div>

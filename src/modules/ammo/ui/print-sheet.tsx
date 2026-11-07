@@ -1,3 +1,5 @@
+import { INTL_LOCALE, normalizeLocale } from "@/lib/i18n/core";
+
 /** A4-Blatt für Druckansichten (Munitionskontrolle, Vereinswaffen); immer hell, unabhängig vom Farbschema. */
 export function PrintSheet({ tenantName, title, subtitle, children, footer }: { tenantName: string; title: string; subtitle?: string; children: React.ReactNode; footer?: React.ReactNode }) {
   return (
@@ -52,6 +54,7 @@ export function SignatureLines({ labels }: { labels: string[] }) {
   );
 }
 
-export function printedAt() {
-  return new Intl.DateTimeFormat("de-CH", { timeZone: "Europe/Zurich", day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" }).format(new Date());
+/** Zeitpunkt des Drucks (Zürcher Zeit); optional in der Sprache der Person. */
+export function printedAt(locale?: string | null) {
+  return new Intl.DateTimeFormat(INTL_LOCALE[normalizeLocale(locale)], { timeZone: "Europe/Zurich", day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" }).format(new Date());
 }

@@ -23,6 +23,7 @@ export default async function IncidentsPage({ searchParams }: { searchParams: Pr
   const rows = await listIncidents(ctx.tenant.id, {
     reportedById: isManager ? undefined : ctx.user.id,
     status: filter === "open" ? "OPEN" : filter === "closed" ? "CLOSED" : undefined,
+    deletedLabel: t("adm2.common.deletedAccount"),
   });
 
   return (

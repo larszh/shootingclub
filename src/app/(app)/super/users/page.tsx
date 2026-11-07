@@ -4,16 +4,20 @@ import type { Prisma } from "@/generated/prisma/client";
 import { requireSuperAdmin } from "@/lib/tenant";
 import { db } from "@/lib/db";
 import { Card, LinkButton, PageHeader } from "@/components/ui";
+import { getRequestLocale, getT } from "@/lib/i18n";
 import { userAvatarUrl } from "@/components/avatar";
 import { Pager, SearchForm, pageParam, textParam } from "../../admin/audit/pager";
 import { UserRow } from "./forms";
 
-export const metadata: Metadata = { title: "Benutzer" };
+export async function generateMetadata(): Promise<Metadata> {
+  return { title: getT(await getRequestLocale())("adm2.super.users") };
+}
 
 const PAGE_SIZE = 40;
 
 export default async function SuperUsersPage({ searchParams }: { searchParams: Promise<{ q?: string; page?: string }> }) {
   const me = await requireSuperAdmin();
+  const t = getT(await getRequestLocale());
   const sp = await searchParams;
   const q = textParam(sp.q);
   const page = pageParam(sp.page);
@@ -33,12 +37,12 @@ export default async function SuperUsersPage({ searchParams }: { searchParams: P
   return (
     <div>
       <PageHeader
-        title="Benutzer"
-        subtitle={q ? `${total} Treffer` : `${total} Konten`}
-        back={{ href: "/super", label: "Verwaltung" }}
-        action={<LinkButton href="/super/audit" variant="secondary" size="sm"><ScrollText className="h-4 w-4" /> Protokoll</LinkButton>}
+        title={t("adm2.super.users")}
+        subtitle={q ? t("adm2.super.u.hits", { n: total }) : t("adm2.super.u.accounts", { n: total })}
+        back={{ href: "/super", label: t("adm2.super.back") }}
+        action={<LinkButton href="/super/audit" variant="secondary" size="sm"><ScrollText className="h-4 w-4" /> {t("adm2.super.u.audit")}</LinkButton>}
       />
-      <SearchForm action="/super/users" value={q} placeholder="Name, E-Mail oder Verein suchen" />
+      <SearchForm action="/super/users" value={q} placeholder={t("adm2.super.u.search")} />
       <Card className="animate-rise divide-y divide-line overflow-hidden">
         {users.map((u) => (
           <UserRow
@@ -54,7 +58,7 @@ export default async function SuperUsersPage({ searchParams }: { searchParams: P
             avatarUrl={userAvatarUrl(u)}
           />
         ))}
-        {users.length === 0 ? <p className="p-4 text-sm text-ink-3">{q ? "Keine Treffer." : "Noch keine Konten."}</p> : null}
+        {users.length === 0 ? <p className="p-4 text-sm text-ink-3">{q ? t("adm2.super.u.noHits") : t("adm2.super.u.none")}</p> : null}
       </Card>
       <Pager base="/super/users" page={page} pageSize={PAGE_SIZE} total={total} params={{ q: q || undefined }} />
     </div>

@@ -4,6 +4,7 @@ import { requireModule } from "@/lib/tenant";
 import { getTarget } from "@/modules/targets/queries";
 import { normalizePrintOptions } from "@/modules/targets/print";
 import { printFooterText } from "@/modules/targets/print-footer";
+import { getRequestLocale } from "@/lib/i18n";
 import { PrintSheet } from "./print-sheet";
 
 export const metadata: Metadata = { title: "Drucken" };
@@ -26,6 +27,7 @@ export default async function PrintTargetPage({ params, searchParams }: { params
       footer={footer}
       initial={initial}
       auto={sp.auto === "1"}
+      locale={await getRequestLocale()}
     />
   );
 }

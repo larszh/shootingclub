@@ -10,6 +10,7 @@ import type { ActionResult } from "@/lib/action-result";
 import { cn } from "@/lib/utils";
 import { createEmbedTokenAction, regenerateEmbedTokenAction, revokeEmbedTokenAction, signWidgetAction, type EmbedTokenResult } from "../actions";
 import { iframeSnippet, RESIZE_MESSAGE, resizeScriptSnippet, widgetPath, WIDGETS, type EmbedTheme, type WidgetKey } from "../logic";
+import { useT } from "@/components/locale";
 
 type Option = { id: string; label: string };
 
@@ -24,17 +25,12 @@ export type EmbedAdminProps = {
   championships: Option[];
 };
 
-const PERIOD_OPTIONS = [
-  { value: "month", label: "Monat" },
-  { value: "year", label: "Jahr" },
-  { value: "all", label: "Alle" },
-] as const;
-
-const MODULE_NAMES = { events: "Anlässe", scores: "Punkteerfassung", championship: "Jahresmeisterschaft", range: "Standbetrieb" } as const;
+const PERIOD_OPTIONS = ["month", "year", "all"] as const;
 
 export function EmbedAdmin(p: EmbedAdminProps) {
   const [token, setToken] = useState(p.initialToken);
   const [pending, start] = useTransition();
+  const t = useT();
 
   function run(fn: () => Promise<ActionResult<EmbedTokenResult>>) {
     start(async () => {
@@ -44,7 +40,7 @@ export function EmbedAdmin(p: EmbedAdminProps) {
         setToken(r.data?.token ?? null);
         if (r.message) toast.success(r.message);
       } catch (err) {
-        toast.error(isNetworkError(err) ? "Keine Verbindung. Bitte nochmals versuchen." : "Das hat nicht geklappt.");
+        toast.error(isNetworkError(err) ? t("adm2.common.network") : t("adm2.embed.failed"));
       }
     });
   }
@@ -52,13 +48,10 @@ export function EmbedAdmin(p: EmbedAdminProps) {
   if (!token) {
     return (
       <Card className="p-4">
-        <h2 className="mb-1 font-semibold">Widgets einschalten</h2>
-        <p className="mb-4 text-sm text-ink-3">
-          Du erhältst einen geheimen Code für eure Website. Damit lassen sich Kalender, Schiesszeiten und – wenn du sie freigibst – Ranglisten einbetten.
-          Ohne Anmeldung, ohne Cookies.
-        </p>
+        <h2 className="mb-1 font-semibold">{t("adm2.embed.on.title")}</h2>
+        <p className="mb-4 text-sm text-ink-3">{t("adm2.embed.on.text")}</p>
         <Button type="button" className="w-full sm:w-auto" disabled={pending} onClick={() => run(createEmbedTokenAction)}>
-          {pending ? <Spinner /> : <Power className="h-4 w-4" aria-hidden />} Widgets einschalten
+          {pending ? <Spinner /> : <Power className="h-4 w-4" aria-hidden />} {t("adm2.embed.on.title")}
         </Button>
       </Card>
     );
@@ -68,16 +61,16 @@ export function EmbedAdmin(p: EmbedAdminProps) {
     <div className="space-y-6">
       <Builder {...p} token={token} />
       <Card className="p-4">
-        <h2 className="mb-1 font-semibold">Code verwalten</h2>
-        <p className="mb-3 text-sm text-ink-3">Ein neuer Code macht alle bisher eingebetteten Widgets ungültig. Ausschalten blendet sie sofort aus.</p>
+        <h2 className="mb-1 font-semibold">{t("adm2.embed.manage")}</h2>
+        <p className="mb-3 text-sm text-ink-3">{t("adm2.embed.manageText")}</p>
         <div className="flex flex-wrap gap-2">
           <Button type="button" variant="secondary" disabled={pending}
-            onClick={async () => { if (await confirmDialog({ title: "Neuen Code erzeugen?", message: "Die Widgets auf der Website funktionieren erst wieder, wenn du den neuen Code einfügst.", tone: "danger", confirmLabel: "Neu erzeugen" })) run(regenerateEmbedTokenAction); }}>
-            {pending ? <Spinner /> : <RefreshCw className="h-4 w-4" aria-hidden />} Neuen Code erzeugen
+            onClick={async () => { if (await confirmDialog({ title: t("adm2.embed.newQ"), message: t("adm2.embed.newText"), tone: "danger", confirmLabel: t("adm2.embed.newConfirm") })) run(regenerateEmbedTokenAction); }}>
+            {pending ? <Spinner /> : <RefreshCw className="h-4 w-4" aria-hidden />} {t("adm2.embed.new")}
           </Button>
           <Button type="button" variant="ghost" disabled={pending}
-            onClick={async () => { if (await confirmDialog({ title: "Widgets ausschalten?", message: "Alle eingebetteten Widgets zeigen danach nur noch einen Hinweis.", tone: "danger", confirmLabel: "Ausschalten" })) run(revokeEmbedTokenAction); }}>
-            <Power className="h-4 w-4" aria-hidden /> Ausschalten
+            onClick={async () => { if (await confirmDialog({ title: t("adm2.embed.offQ"), message: t("adm2.embed.offText"), tone: "danger", confirmLabel: t("adm2.embed.off") })) run(revokeEmbedTokenAction); }}>
+            <Power className="h-4 w-4" aria-hidden /> {t("adm2.embed.off")}
           </Button>
         </div>
       </Card>
@@ -86,6 +79,7 @@ export function EmbedAdmin(p: EmbedAdminProps) {
 }
 
 function Builder(p: EmbedAdminProps & { token: string }) {
+  const t = useT();
   const [widget, setWidget] = useState<WidgetKey>("calendar");
   const [theme, setTheme] = useState<EmbedTheme>("auto");
   const [kinds, setKinds] = useState<string[]>([]);
@@ -113,7 +107,7 @@ function Builder(p: EmbedAdminProps & { token: string }) {
   }, [widget, p.token, kinds, limit, themeParam, sig, program, period, championship]);
 
   const h = Math.min(Math.max(Number(height) || meta.height, 120), 3000);
-  const iframe = path ? iframeSnippet({ src: p.appUrl + path, title: `${meta.label} – Standchef`, height: h }) : "";
+  const iframe = path ? iframeSnippet({ src: p.appUrl + path, title: `${t(`adm2.embed.w.${widget}`)} – Standchef`, height: h }) : "";
   const script = resizeScriptSnippet(p.appOrigin);
 
   function pickWidget(w: WidgetKey) {
@@ -127,9 +121,9 @@ function Builder(p: EmbedAdminProps & { token: string }) {
         const r = await signWidgetAction(widget === "ranking" ? { widget, program, period } : { widget, id: championship });
         if (!r.ok) return void toast.error(r.error);
         if (r.data) setSigs((s) => ({ ...s, [sigKey]: r.data!.sig }));
-        toast.success("Code erzeugt");
+        toast.success(t("adm2.embed.codeCreated"));
       } catch (err) {
-        toast.error(isNetworkError(err) ? "Keine Verbindung. Bitte nochmals versuchen." : "Das hat nicht geklappt.");
+        toast.error(isNetworkError(err) ? t("adm2.common.network") : t("adm2.embed.failed"));
       }
     });
   }
@@ -140,26 +134,26 @@ function Builder(p: EmbedAdminProps & { token: string }) {
     <>
       <Card className="space-y-4 p-4">
         <div>
-          <h2 className="mb-1 font-semibold">Widget wählen</h2>
-          <p className="text-sm text-ink-3">{meta.description}</p>
+          <h2 className="mb-1 font-semibold">{t("adm2.embed.choose")}</h2>
+          <p className="text-sm text-ink-3">{t(`adm2.embed.w.${widget}.d`)}</p>
         </div>
         <Segmented<WidgetKey>
-          label="Widget"
+          label={t("adm2.embed.widget")}
           value={widget}
           onChange={pickWidget}
           options={[
-            { value: "calendar", label: "Kalender" },
-            { value: "times", label: "Zeiten" },
-            { value: "ranking", label: "Rangliste" },
-            { value: "championship", label: "Meisterschaft" },
+            { value: "calendar", label: t("adm2.embed.w.calendar") },
+            { value: "times", label: t("adm2.embed.seg.times") },
+            { value: "ranking", label: t("adm2.embed.w.ranking") },
+            { value: "championship", label: t("adm2.embed.seg.championship") },
           ]}
         />
-        {!moduleOn ? <Alert tone="warn">Das Modul «{MODULE_NAMES[meta.module]}» ist ausgeschaltet. Das Widget zeigt dann nur einen Hinweis.</Alert> : null}
+        {!moduleOn ? <Alert tone="warn">{t("adm2.embed.moduleOff", { name: t(`adm2.embed.mod.${meta.module}`) })}</Alert> : null}
 
         {widget === "calendar" ? (
           <>
             <fieldset>
-              <legend className="mb-1.5 text-sm font-medium">Arten (leer = alle)</legend>
+              <legend className="mb-1.5 text-sm font-medium">{t("adm2.embed.kinds")}</legend>
               <div className="flex flex-wrap gap-2">
                 {p.kinds.map((k) => {
                   const on = kinds.includes(k.key);
@@ -173,52 +167,52 @@ function Builder(p: EmbedAdminProps & { token: string }) {
                 })}
               </div>
             </fieldset>
-            <Field label="Anzahl Anlässe" hint="1 bis 30">
+            <Field label={t("adm2.embed.count")} hint={t("adm2.embed.countHint")}>
               <Input type="number" inputMode="numeric" min={1} max={30} value={limit} onChange={(e) => setLimit(e.target.value)} />
             </Field>
-            {!p.hasCalendarFeed ? <Alert tone="info">Tipp: Erstelle unter Anlässe den Vereinskalender-Link, dann zeigt das Widget «In Kalender übernehmen».</Alert> : null}
+            {!p.hasCalendarFeed ? <Alert tone="info">{t("adm2.embed.feedTip")}</Alert> : null}
           </>
         ) : null}
 
         {widget === "ranking" ? (
           p.programs.length ? (
             <>
-              <Field label="Programm">
+              <Field label={t("adm2.embed.program")}>
                 <Select value={program} onChange={(e) => setProgram(e.target.value)}>
                   {p.programs.map((o) => <option key={o.id} value={o.id}>{o.label}</option>)}
                 </Select>
               </Field>
               <div>
-                <p className="mb-1.5 text-sm font-medium">Zeitraum</p>
-                <Segmented label="Zeitraum" value={period} onChange={setPeriod} options={PERIOD_OPTIONS.map((o) => ({ value: o.value, label: o.label }))} />
+                <p className="mb-1.5 text-sm font-medium">{t("adm2.embed.period")}</p>
+                <Segmented label={t("adm2.embed.period")} value={period} onChange={setPeriod} options={PERIOD_OPTIONS.map((o) => ({ value: o, label: t(`adm2.embed.period.${o}`) }))} />
               </div>
             </>
-          ) : <Alert tone="info">Es gibt noch keine Programme.</Alert>
+          ) : <Alert tone="info">{t("adm2.embed.noPrograms")}</Alert>
         ) : null}
 
         {widget === "championship" ? (
           p.championships.length ? (
-            <Field label="Meisterschaft" hint="Nur veröffentlichte Meisterschaften">
+            <Field label={t("adm2.embed.championship")} hint={t("adm2.embed.championshipHint")}>
               <Select value={championship} onChange={(e) => setChampionship(e.target.value)}>
                 {p.championships.map((o) => <option key={o.id} value={o.id}>{o.label}</option>)}
               </Select>
             </Field>
-          ) : <Alert tone="info">Es gibt keine veröffentlichte Meisterschaft.</Alert>
+          ) : <Alert tone="info">{t("adm2.embed.noChampionship")}</Alert>
         ) : null}
 
         <div>
-          <p className="mb-1.5 text-sm font-medium">Darstellung</p>
-          <Segmented<EmbedTheme> label="Darstellung" value={theme} onChange={setTheme} options={[{ value: "auto", label: "Automatisch" }, { value: "light", label: "Hell" }, { value: "dark", label: "Dunkel" }]} />
+          <p className="mb-1.5 text-sm font-medium">{t("adm2.embed.theme")}</p>
+          <Segmented<EmbedTheme> label={t("adm2.embed.theme")} value={theme} onChange={setTheme} options={[{ value: "auto", label: t("adm2.embed.theme.auto") }, { value: "light", label: t("adm2.embed.theme.light") }, { value: "dark", label: t("adm2.embed.theme.dark") }]} />
         </div>
-        <Field label="Höhe in Pixel" hint={`Empfohlen ${meta.height}. Mit dem Skript passt sich die Höhe automatisch an.`}>
+        <Field label={t("adm2.embed.height")} hint={t("adm2.embed.heightHint", { n: meta.height })}>
           <Input type="number" inputMode="numeric" min={120} max={3000} value={height} onChange={(e) => setHeight(e.target.value)} />
         </Field>
 
         {meta.signed && !sig ? (
           <div className="space-y-2">
-            <Alert tone="info" icon={<ShieldCheck className="h-4 w-4" />}>Ranglisten zeigen Namen («Vorname N.»). Sie erscheinen nur mit einem Code, den du hier erzeugst – damit gibst du sie für die Website frei.</Alert>
+            <Alert tone="info" icon={<ShieldCheck className="h-4 w-4" />}>{t("adm2.embed.namesHint")}</Alert>
             <Button type="button" disabled={!canSign || signing} onClick={sign} className="w-full sm:w-auto">
-              {signing ? <Spinner /> : <Code2 className="h-4 w-4" aria-hidden />} Code erzeugen und freigeben
+              {signing ? <Spinner /> : <Code2 className="h-4 w-4" aria-hidden />} {t("adm2.embed.sign")}
             </Button>
           </div>
         ) : null}
@@ -228,15 +222,15 @@ function Builder(p: EmbedAdminProps & { token: string }) {
         <>
           <Card className="space-y-4 p-4">
             <div>
-              <h2 className="mb-1 font-semibold">Code für die Website</h2>
-              <p className="text-sm text-ink-3">Füge den Code dort ein, wo das Widget erscheinen soll (z.B. als HTML-Block in WordPress, Wix oder Jimdo).</p>
+              <h2 className="mb-1 font-semibold">{t("adm2.embed.codeTitle")}</h2>
+              <p className="text-sm text-ink-3">{t("adm2.embed.codeText")}</p>
             </div>
-            <SnippetBlock label="1. Widget (iframe)" code={iframe} />
-            <SnippetBlock label="2. Automatische Höhe (einmal pro Seite, optional)" code={script} />
+            <SnippetBlock label={t("adm2.embed.snippet1")} code={iframe} />
+            <SnippetBlock label={t("adm2.embed.snippet2")} code={script} />
           </Card>
-          <section aria-label="Vorschau">
-            <h2 className="mb-2 flex items-center gap-2 font-semibold"><Eye className="h-4 w-4" aria-hidden /> Vorschau</h2>
-            <Preview key={path} path={path} height={h} title={`Vorschau ${meta.label}`} />
+          <section aria-label={t("adm2.embed.preview")}>
+            <h2 className="mb-2 flex items-center gap-2 font-semibold"><Eye className="h-4 w-4" aria-hidden /> {t("adm2.embed.preview")}</h2>
+            <Preview key={path} path={path} height={h} title={t("adm2.embed.previewOf", { name: t(`adm2.embed.w.${widget}`) })} />
           </section>
         </>
       ) : null}
@@ -245,11 +239,12 @@ function Builder(p: EmbedAdminProps & { token: string }) {
 }
 
 function SnippetBlock({ label, code }: { label: string; code: string }) {
+  const t = useT();
   return (
     <div>
       <div className="mb-1.5 flex items-center justify-between gap-2">
         <span className="text-sm font-medium">{label}</span>
-        <CopyButton text={code} label="Kopieren" copiedMessage="Code kopiert" />
+        <CopyButton text={code} label={t("adm2.embed.copy")} copiedMessage={t("adm2.embed.copied")} />
       </div>
       <pre className="max-h-40 overflow-auto whitespace-pre-wrap break-all rounded-control border border-line bg-surface-2 p-3 font-mono text-xs text-ink-2">{code}</pre>
     </div>

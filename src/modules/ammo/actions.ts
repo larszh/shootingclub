@@ -4,7 +4,8 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { db } from "@/lib/db";
 import { accessStatusWhere } from "@/lib/membership-access";
-import { fail, ok, type ActionResult } from "@/lib/action-result";
+import type { ActionResult } from "@/lib/action-result";
+import { lfail as fail, lok as ok } from "@/lib/i18n/extra/admin1/action-result";
 import { parseMoneyToCents } from "@/lib/money";
 import { requireAmmo, requireAmmoAdmin } from "./guard";
 import { AmmoError, createOrder, issueOrder } from "./service";
@@ -20,7 +21,7 @@ const revalidate = () => {
 
 const idSchema = z.string().min(1).max(40);
 
-function handle(e: unknown): ActionResult<never> {
+async function handle(e: unknown): Promise<ActionResult<never>> {
   if (e instanceof AmmoError) return fail(e.message);
   console.error("Munition:", e);
   return fail("Das hat nicht geklappt. Bitte nochmals versuchen.");

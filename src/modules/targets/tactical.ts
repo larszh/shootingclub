@@ -80,7 +80,7 @@ export function renderTactical(subject: string, c: Ctx): Body {
 // Grundlagen: IDs, Muster, Legende, Raster, Massstab
 // ---------------------------------------------------------------------------
 
-type G = { uid: string };
+type G = { uid: string; tr: (de: string) => string };
 
 /** Stabile, kurze ID je Sujet/Format/Parameter (für Muster und Clip-Pfade im selben Dokument). */
 function makeUid(subject: string, c: Ctx) {
@@ -116,11 +116,11 @@ function sheet(c: Ctx, subject: string, legendLines: string[], dark = false): Sh
   if (dark) parts.push(rect(c.box.x, c.box.y, c.box.w, c.box.h, 'fill="#000"'));
   let area = c.box;
   if ((c.p.legend ?? true) && legendLines.length) {
-    const lg = legend(c.box, legendLines, dark);
+    const lg = legend(c.box, legendLines.map(c.tr), dark);
     parts.push(lg.svg);
     area = { ...c.box, h: c.box.h - lg.h };
   }
-  return { g: { uid }, area, parts };
+  return { g: { uid, tr: c.tr }, area, parts };
 }
 
 /** Kleine Legende am unteren Rand der Zielfläche (zusammengedrückt statt abgeschnitten). */
@@ -432,7 +432,7 @@ function coverShape(g: G, d: string, k: number, labelAt?: { x: number; y: number
   if (labelAt && labelAt.w > 14) {
     const fs = clamp(labelAt.w * 0.09, 2.2, 5);
     parts.push(rect(labelAt.x - fs * 2.6, labelAt.y - fs * 0.75, fs * 5.2, fs * 1.5, `fill="#fff" stroke="#000" stroke-width="0.25" rx="${n(fs * 0.3)}"`));
-    parts.push(text(labelAt.x, labelAt.y, fs, "DECKUNG", bold("#555")));
+    parts.push(text(labelAt.x, labelAt.y, fs, g.tr("DECKUNG"), bold("#555")));
   }
   return parts.join("\n");
 }
@@ -841,7 +841,7 @@ function mover(c: Ctx, subject: string): Body {
       const slot = dir > 0 ? i : count - 1 - i;
       const x = ox + slot * k;
       parts.push(figure(g, x, oy, k, { style: i === 0 ? "target" : "ghost", zones: true, bottom: B }));
-      const lab = i === 0 ? "Ist" : `+${i}`;
+      const lab = i === 0 ? c.tr("Ist") : `+${i}`;
       const ly = oy + B * k + (labU * k) / 2 + 0.3;
       parts.push(text(x + 0.5 * k, ly, clamp(k * 0.11, 2.4, 6), lab, bold(i === 0 ? "#000" : "#555")));
     }

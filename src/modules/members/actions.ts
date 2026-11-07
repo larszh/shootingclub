@@ -6,7 +6,9 @@ import { db } from "@/lib/db";
 import { THROTTLE, clientIp, throttle } from "@/lib/auth";
 import { requirePermission } from "@/lib/tenant";
 import { ROLE_LABELS, isTenantRole, type TenantRole } from "@/lib/permissions";
-import { fail, ok, type ActionResult } from "@/lib/action-result";
+import type { ActionResult } from "@/lib/action-result";
+import { lfail as fail, lok as ok } from "@/lib/i18n/extra/admin1/action-result";
+import { getRequestLocale, getT } from "@/lib/i18n";
 import { audit } from "@/lib/audit";
 import { parseMoneyToCents } from "@/lib/money";
 import { todayZurich } from "@/lib/time";
@@ -18,7 +20,6 @@ import { listMemberIds } from "./queries";
 import { sortByMemberNumber } from "./number-sort";
 import {
   MEMBER_STATUSES,
-  STATUS_LABELS,
   dateOnly,
   isMemberStatus,
   isPlaceholderEmail,
@@ -27,7 +28,6 @@ import {
   placeholderEmail,
   statusLabel,
   toDbDate,
-  type MemberStatus,
 } from "./types";
 
 const revalidateMembers = () => {
@@ -301,7 +301,8 @@ export async function bulkSetStatusAction(ids: string[], status: string): Promis
   }
   await auditEach(ctx, "member.status", targets.map((m) => ({ id: m.id, detail: `${m.user.name}: Status ${statusLabel(m.status)} → ${statusLabel(status)}` })));
   revalidateMembers();
-  return ok({ count: targets.length }, `${targets.length} ${targets.length === 1 ? "Mitglied" : "Mitglieder"} auf «${STATUS_LABELS[status as MemberStatus]}» gesetzt${skipped ? `, ${skipped} übersprungen` : ""}.`);
+  const t = getT(await getRequestLocale());
+  return ok({ count: targets.length }, t(targets.length === 1 ? "adm1.mem.msg.statusSet.one" : "adm1.mem.msg.statusSet.other", { n: targets.length, status: t(`members.status.${status}`) }) + (skipped ? t("adm1.camt.msg.skipped", { n: skipped }) : "") + ".");
 }
 
 export async function bulkSetCategoryAction(ids: string[], categoryId: string | null): Promise<ActionResult<{ count: number }>> {
@@ -323,7 +324,8 @@ export async function bulkSetCategoryAction(ids: string[], categoryId: string | 
     .filter((m) => m.feeCategoryId !== categoryId)
     .map((m) => ({ id: m.id, detail: `${m.user.name}: Beitragskategorie «${m.feeCategory?.name ?? "keine"}» → «${name}»` })));
   revalidateMembers();
-  return ok({ count: res.count }, `Kategorie für ${res.count} ${res.count === 1 ? "Mitglied" : "Mitglieder"} gesetzt.`);
+  const t = getT(await getRequestLocale());
+  return ok({ count: res.count }, t(res.count === 1 ? "adm1.mem.msg.categorySet.one" : "adm1.mem.msg.categorySet.other", { n: res.count }));
 }
 
 /**
@@ -358,9 +360,10 @@ export async function bulkSendAccessMailAction(ids: string[]): Promise<ActionRes
   const skipped = parsed.data.length - sent - failed;
   await audit({ ...actor(ctx), action: "member.access.mail", entity: "Membership", detail: `${sent} Zugangsmails, ${skipped} übersprungen${failed ? `, ${failed} fehlgeschlagen` : ""}` });
   revalidateMembers();
+  const t = getT(await getRequestLocale());
   const msg = sent
-    ? `${sent} ${sent === 1 ? "Mail" : "Mails"} mit Link zum Passwort-Setzen verschickt.${skipped ? ` ${skipped} übersprungen (hat schon Zugang, keine E-Mail, ausgetreten oder Konto auch in einem anderen Verein).` : ""}`
-    : "Keine Mail verschickt: Alle Ausgewählten haben bereits Zugang, keine E-Mail, sind ausgetreten oder haben ein Konto, das auch zu einem anderen Verein gehört.";
+    ? t(sent === 1 ? "adm1.mem.msg.mailsSent.one" : "adm1.mem.msg.mailsSent.other", { n: sent }) + (skipped ? ` ${t("adm1.mem.msg.mailsSkipped", { n: skipped })}` : "")
+    : t("adm1.mem.msg.noMailsSent");
   return ok({ sent, skipped }, msg);
 }
 
@@ -398,12 +401,13 @@ export async function exportMembersCsvAction(ids: string[], query?: string): Pro
     },
   });
   const rows = sort === "number" ? sortByMemberNumber(fetched.map((m) => ({ ...m, name: m.user.name }))) : fetched;
+  const t = getT(await getRequestLocale());
   const fmt = (d: Date | null) => {
     const s = dateOnly(d);
     return s ? `${s.slice(8, 10)}.${s.slice(5, 7)}.${s.slice(0, 4)}` : "";
   };
   const csv = toCsv([
-    ["Name", "E-Mail", "Telefon", "Strasse", "PLZ", "Ort", "Geburtsdatum", "Mitgliedernummer", "Lizenznummer", "Status", "Rolle", "Eintritt", "Austritt", "Beitragskategorie", "Individueller Beitrag", "Haushalt", "Gesetzliche Vertretung", "E-Mail Vertretung", "Telefon Vertretung", "Zugang"],
+    ["name", "email", "phone", "street", "zip", "city", "birthDate", "memberNumber", "licenseNumber", "status", "role", "joined", "left", "category", "feeOverride", "household", "guardian", "guardianEmail", "guardianPhone", "access"].map((k) => t(`adm1.mem.csv.${k}`)),
     ...rows.map((m) => [
       m.user.name,
       isPlaceholderEmail(m.user.email) ? "" : m.user.email,
@@ -414,8 +418,8 @@ export async function exportMembersCsvAction(ids: string[], query?: string): Pro
       fmt(m.user.birthDate),
       m.memberNumber,
       m.licenseNumber,
-      statusLabel(m.status),
-      ROLE_LABELS[m.role as TenantRole] ?? m.role,
+      isMemberStatus(m.status) ? t(`members.status.${m.status}`) : statusLabel(m.status),
+      isTenantRole(m.role) ? t(`role.${m.role}`) : m.role,
       fmt(m.joinedAt),
       fmt(m.leftAt),
       m.feeCategory?.name,
@@ -424,11 +428,11 @@ export async function exportMembersCsvAction(ids: string[], query?: string): Pro
       m.guardianName,
       m.guardianEmail,
       m.guardianPhone,
-      m.user.passwordSetAt ? "ja" : "nein",
+      m.user.passwordSetAt ? t("adm1.common.yes") : t("adm1.common.no"),
     ]),
   ]);
   await audit({ ...actor(ctx), action: "member.export", entity: "Membership", detail: `${rows.length} Mitglieder als CSV exportiert` });
-  return ok({ filename: `mitglieder-${todayZurich()}.csv`, csv });
+  return ok({ filename: `${t("adm1.mem.csv.file")}-${todayZurich()}.csv`, csv });
 }
 
 // --- Einladungen ------------------------------------------------------------------

@@ -5,7 +5,8 @@ import { revalidatePath } from "next/cache";
 import { db } from "@/lib/db";
 import type { Prisma } from "@/generated/prisma/client";
 import { requireBillingAdmin } from "./guard";
-import { fail, ok, type ActionResult } from "@/lib/action-result";
+import type { ActionResult } from "@/lib/action-result";
+import { lfail as fail, lok as ok } from "@/lib/i18n/extra/admin1/action-result";
 import { parseMoneyToCents } from "@/lib/money";
 import { z } from "zod";
 import { categorySchema, isValidIban, joinNoteLines, profileSchema, reminderCount, runSchema, withReminderCount } from "./types";
@@ -17,7 +18,7 @@ import { backfillHouseholdInvoiceMembers, feeInvoicesToCreate, householdInvoiceC
 import { audit } from "@/lib/audit";
 import { notify } from "@/lib/notify";
 import { formatDate, formatMoneyLocale, getT } from "@/lib/i18n/core";
-import { getTenantLocale } from "@/lib/i18n";
+import { getRequestLocale, getTenantLocale } from "@/lib/i18n";
 import { recordAccountingEvent } from "@/modules/accounting/events";
 import { kioskReopenBlocked } from "@/modules/kiosk/invoice-guard";
 
@@ -364,7 +365,8 @@ export async function markRemindedAction(ids: string[]): Promise<ActionResult> {
   // Mitglied erhält die Erinnerung per Push/E-Mail (Thema «reminders»)
   notifyFeeInvoicesInBackground(reminded, "reminder");
   revalidate();
-  return ok(undefined, changed ? `${changed} ${changed === 1 ? "Rechnung" : "Rechnungen"} als gemahnt markiert.` : "Heute bereits gemahnt.");
+  const t = getT(await getRequestLocale());
+  return ok(undefined, changed ? t(changed === 1 ? "adm1.bill.msg.reminded.one" : "adm1.bill.msg.reminded.other", { n: changed }) : t("adm1.bill.msg.remindedToday"));
 }
 
 /** Mehrere offene Rechnungen auf einmal als bezahlt markieren (z.B. Barzahlung an der GV). */
@@ -377,5 +379,6 @@ export async function bulkMarkFeeInvoicesPaidAction(ids: string[]): Promise<Acti
     data: { status: "PAID", paidAt: new Date() },
   });
   revalidate();
-  return ok({ count: res.count }, `${res.count} ${res.count === 1 ? "Rechnung" : "Rechnungen"} als bezahlt markiert.`);
+  const t = getT(await getRequestLocale());
+  return ok({ count: res.count }, t(res.count === 1 ? "adm1.bill.msg.markedPaid.one" : "adm1.bill.msg.markedPaid.other", { n: res.count }));
 }

@@ -6,7 +6,17 @@
  * identisch. Im Französischen setzt frenchSpacing() die geschützten Leerzeichen (« », :, ?, !, ;).
  * Mehrzahl über die Schlüssel `<basis>.one` und `<basis>.other` (Platzhalter {n}).
  */
-type Row = readonly [de: string, fr: string, it: string, en: string];
+import type { Row } from "./admin1/row";
+import ammo from "./admin1/ammo";
+import common from "./admin1/common";
+import kiosk from "./admin1/kiosk";
+import bookings from "./admin1/bookings";
+import files from "./admin1/files";
+import billing from "./admin1/billing";
+import members from "./admin1/members";
+
+/** Weitere Teil-Wörterbücher unter ./admin1/ (gleicher Aufbau). */
+export const PARTS: Record<string, Record<string, Row>> = { ammo, common, kiosk, bookings, files, billing, members };
 
 /** Französische Typografie: schmale geschützte Leerzeichen bei Guillemets und vor ? ! ;, geschützt vor «:». */
 export function frenchSpacing(s: string): string {
@@ -608,6 +618,8 @@ const ROWS: Record<string, Row> = {
   "adm1.camt.reason.cancelled": ["Rechnung {number} ist storniert", "La facture {number} est annulée", "La fattura {number} è annullata", "Invoice {number} is cancelled"],
   "adm1.camt.reason.duplicate": ["{number} kommt mehrfach vor", "{number} apparaît plusieurs fois", "{number} compare più volte", "{number} appears more than once"],
   "adm1.camt.reason.currency": ["Währung {got} statt {expected}", "Monnaie {got} au lieu de {expected}", "Valuta {got} invece di {expected}", "Currency {got} instead of {expected}"],
+  "adm1.camt.name.guest": ["Gast", "Invité", "Ospite", "Guest"],
+  "adm1.camt.name.formerMember": ["Ehemaliges Mitglied", "Ancien membre", "Ex socio", "Former member"],
   "adm1.camt.kind.FEE": ["Beitrag", "Cotisation", "Quota", "Fee"],
   "adm1.camt.kind.BOOKING": ["Reservation", "Réservation", "Prenotazione", "Booking"],
   "adm1.camt.kind.AMMO": ["Munition", "Munitions", "Munizioni", "Ammunition"],
@@ -891,7 +903,7 @@ const de: Record<string, string> = {};
 const fr: Record<string, string> = {};
 const it: Record<string, string> = {};
 const en: Record<string, string> = {};
-for (const [key, [d, f, i, e]] of Object.entries(ROWS)) {
+for (const [key, [d, f, i, e]] of Object.entries(Object.assign({}, ROWS, ...Object.values(PARTS)) as Record<string, Row>)) {
   de[key] = d;
   fr[key] = frenchSpacing(f);
   it[key] = i;
