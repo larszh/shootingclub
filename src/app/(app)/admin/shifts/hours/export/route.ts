@@ -23,9 +23,9 @@ export async function GET(req: NextRequest) {
   const { rows } = await hoursOverview(ctx.tenant.id, year);
   const num = (n: number) => n.toFixed(2);
   const csv = toCsv([
-    ["Name", "Mitgliedernummer", "Status", "Befreit", "Pflichtig", "Einsätze (h)", "Rapporte bewilligt (h)", "Rapporte offen (h)", "Total (h)", "Soll (h)", "Fehlend (h)", "Ersatzabgabe (CHF)", "Rechnung", "Rechnungsstatus"],
+    ["Name", "Mitgliedernummer", "Status", "Eintritt", "Monate (Soll)", "Befreit", "Pflichtig", "Einsätze (h)", "Rapporte bewilligt (h)", "Rapporte offen (h)", "Total (h)", "Soll (h)", "Fehlend (h)", "Ersatzabgabe (CHF)", "Rechnung", "Rechnungsstatus"],
     ...rows.map((r) => [
-      r.name, r.memberNumber, statusLabel(r.status), r.exempt ? "ja" : "nein", r.subject ? "ja" : "nein",
+      r.name, r.memberNumber, statusLabel(r.status), r.joinedAt ? r.joinedAt.toISOString().slice(0, 10).split("-").reverse().join(".") : "", r.subject ? r.months : "", r.exempt ? "ja" : "nein", r.subject ? "ja" : "nein",
       num(r.shiftHours), num(r.logHours), num(r.pendingLogHours), num(r.total), num(r.required), num(r.missing), csvAmount(r.amountCents),
       r.invoice?.number ?? "", r.invoice ? (r.invoice.status === "PAID" ? "bezahlt" : r.invoice.status === "OPEN" ? "offen" : r.invoice.status) : "",
     ]),

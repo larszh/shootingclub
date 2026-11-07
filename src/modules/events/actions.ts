@@ -4,6 +4,7 @@ import { randomBytes } from "node:crypto";
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { db } from "@/lib/db";
+import { accessStatusWhere } from "@/lib/membership-access";
 import { requireModule } from "@/lib/tenant";
 import { fail, ok, type ActionResult } from "@/lib/action-result";
 import { addDays, todayZurich, zurichToUtc } from "@/lib/time";
@@ -258,7 +259,7 @@ export async function saveAnnouncementAction(_prev: ActionResult | null, formDat
 }
 
 async function notifyAnnouncement(tenantId: string, authorId: string, announcementId: string, title: string, body: string) {
-  const members = await db.membership.findMany({ where: { tenantId, status: { not: "LEFT" }, NOT: { userId: authorId } }, select: { userId: true } });
+  const members = await db.membership.findMany({ where: { tenantId, status: accessStatusWhere(), NOT: { userId: authorId } }, select: { userId: true } });
   if (!members.length) return;
   await notify({
     tenantId,

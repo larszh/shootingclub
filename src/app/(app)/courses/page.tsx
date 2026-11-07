@@ -8,8 +8,11 @@ import { chDate } from "@/modules/courses/logic";
 import { courseYears, listCourses, myCourseParticipations, type CourseListItem } from "@/modules/courses/queries";
 import { COURSE_KIND, COURSE_KINDS, courseStatusInfo, isCourseKind } from "@/modules/courses/types";
 import { MyCourseCard } from "@/modules/courses/ui/my-course";
+import { getRequestLocale, getT } from "@/lib/i18n";
 
-export const metadata: Metadata = { title: "Kurse" };
+export async function generateMetadata(): Promise<Metadata> {
+  return { title: getT(await getRequestLocale())("shooting.courses.title") };
+}
 
 export default async function CoursesPage({ searchParams }: { searchParams: Promise<{ year?: string; kind?: string; denied?: string }> }) {
   const ctx = await requireCourses();
@@ -20,15 +23,18 @@ export default async function CoursesPage({ searchParams }: { searchParams: Prom
   const thisYear = Number(todayZurich().slice(0, 4));
   const mine = await myCourseParticipations(tenantId, ctx.user.id);
 
+  const locale = await getRequestLocale();
+  const t = getT(locale);
+
   if (!canManage) {
     return (
       <div>
-        <PageHeader title="Kurse" subtitle="Deine Kurse und dein Stand" action={canQual ? <LinkButton href="/courses/qualifications" variant="secondary"><BadgeCheck className="h-4 w-4" /> Qualifikationen</LinkButton> : undefined} />
-        {sp.denied ? <Alert className="mb-4">Dafür fehlt dir die Berechtigung (Kursleitung).</Alert> : null}
+        <PageHeader title={t("shooting.courses.title")} subtitle={t("shooting.courses.subtitleMine")} action={canQual ? <LinkButton href="/courses/qualifications" variant="secondary"><BadgeCheck className="h-4 w-4" /> {t("shooting.courses.qualifications")}</LinkButton> : undefined} />
+        {sp.denied ? <Alert className="mb-4">{t("shooting.courses.deniedLeader")}</Alert> : null}
         {mine.length ? (
-          <div className="space-y-3">{mine.map((m) => <MyCourseCard key={m.me.id} course={m.course} me={m.me} />)}</div>
+          <div className="space-y-3">{mine.map((m) => <MyCourseCard key={m.me.id} course={m.course} me={m.me} locale={locale} />)}</div>
         ) : (
-          <EmptyState icon={<GraduationCap className="h-5 w-5" />} title="Du bist in keinem Kurs eingetragen" text="Die Kursleitung trägt dich ein. Danach siehst du hier Präsenz und Pflichtprogramme." />
+          <EmptyState icon={<GraduationCap className="h-5 w-5" />} title={t("shooting.courses.none")} text={t("shooting.courses.noneText")} />
         )}
       </div>
     );
@@ -81,8 +87,8 @@ export default async function CoursesPage({ searchParams }: { searchParams: Prom
 
       {mine.length ? (
         <div className="mt-6">
-          <SectionTitle>Meine Teilnahmen</SectionTitle>
-          <div className="space-y-3">{mine.map((m) => <MyCourseCard key={m.me.id} course={m.course} me={m.me} />)}</div>
+          <SectionTitle>{t("shooting.courses.myParticipations")}</SectionTitle>
+          <div className="space-y-3">{mine.map((m) => <MyCourseCard key={m.me.id} course={m.course} me={m.me} locale={locale} />)}</div>
         </div>
       ) : null}
     </div>

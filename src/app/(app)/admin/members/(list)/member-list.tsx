@@ -70,7 +70,7 @@ export function MemberList({ rows, total, query, canManage, categories }: {
   const clearSelection = () => setSelected(new Set());
   const selectAll = () => run(() => selectAllMatchingAction(query), (d) => d && setSelected(new Set(d.ids)));
 
-  const exportCsv = () => run(() => exportMembersCsvAction(ids), (d) => {
+  const exportCsv = () => run(() => exportMembersCsvAction(ids, query), (d) => {
     if (!d) return;
     const url = URL.createObjectURL(new Blob([d.csv], { type: "text/csv;charset=utf-8" }));
     const a = document.createElement("a");

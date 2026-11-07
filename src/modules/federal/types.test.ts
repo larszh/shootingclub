@@ -12,6 +12,7 @@ import {
   opStatusByUser,
   parseYear,
   rankFs,
+  SAT_HEADER,
   satRowCells,
   splitName,
   summarizeOp,
@@ -124,6 +125,20 @@ describe("SAT-Export", () => {
   it("teilt Namen", () => {
     expect(splitName("Anna Maria Muster")).toEqual({ firstName: "Anna Maria", lastName: "Muster" });
     expect(splitName("Muster")).toEqual({ firstName: "", lastName: "Muster" });
+  });
+
+  it("erkennt Namenszusätze und «Nachname, Vorname»", () => {
+    expect(splitName("Hans von Allmen")).toEqual({ firstName: "Hans", lastName: "von Allmen" });
+    expect(splitName("Maria De Luca")).toEqual({ firstName: "Maria", lastName: "De Luca" });
+    expect(splitName("Jan van der Berg")).toEqual({ firstName: "Jan", lastName: "van der Berg" });
+    expect(splitName("Muster, Anna Maria")).toEqual({ firstName: "Anna Maria", lastName: "Muster" });
+    expect(splitName("  Peter   Meier-Huber ")).toEqual({ firstName: "Peter", lastName: "Meier-Huber" });
+    // Zusatz am Anfang bleibt Vorname (kein leerer Vorname)
+    expect(splitName("De Luca")).toEqual({ firstName: "De", lastName: "Luca" });
+  });
+
+  it("Kopfzeile mit getrennten Spalten Nachname und Vorname", () => {
+    expect(SAT_HEADER.slice(0, 2)).toEqual(["Nachname", "Vorname"]);
   });
 
   it("baut Zeilen ohne AHV-Nummer", () => {

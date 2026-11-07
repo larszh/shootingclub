@@ -108,6 +108,8 @@ export async function acceptInvitationForUser(invitationId: string, userId: stri
         data: {
           role: (rank[inv.role] ?? 0) > (rank[existing.role] ?? 0) ? inv.role : existing.role,
           ...(existing.status === "LEFT" ? { status: "ACTIVE", leftAt: null, joinedAt: today } : {}),
+          // Offene Beitrittsanfrage: die Einladung gilt als Freigabe
+          ...(existing.status === "PENDING" ? { status: "ACTIVE", joinedAt: existing.joinedAt ?? today } : {}),
           ...(existing.joinedAt ? {} : { joinedAt: today }),
         },
       });

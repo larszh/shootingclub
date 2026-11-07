@@ -4,7 +4,7 @@ import { db } from "@/lib/db";
 import { getTenantLocale } from "@/lib/i18n";
 import { isPlaceholderEmail } from "@/modules/members/types";
 import { HOUSEHOLD_INVOICE_RE } from "@/modules/members/types";
-import { householdCoverage, planFeeInvoices, type FeeCandidate, type FeeCandidateInvoice, type FeeHousehold, type FeeSnapshot } from "./fee-run-plan";
+import { deriveHouseholdMembers, householdCoverage, planFeeInvoices, type FeeCandidate, type FeeCandidateInvoice, type FeeHousehold, type FeeSnapshot } from "./fee-run-plan";
 
 export type { FeeSnapshot } from "./fee-run-plan";
 
@@ -13,10 +13,10 @@ type Client = typeof db | Prisma.TransactionClient;
 const invoiceSelect = { id: true, categoryName: true, number: true, issuedAt: true } as const;
 
 /**
- * Audit-Einträge, die festhalten, welche Mitgliedschaften eine Haushaltsrechnung enthält
- * (ein Eintrag pro Mitgliedschaft; entityId = Rechnung, Mitgliedschaft am Ende von `detail`).
- * Sie werden in derselben Transaktion wie die Rechnung geschrieben und bestimmen später,
- * wer durch die Rechnung abgedeckt ist (siehe householdCoverage).
+ * Welche Mitgliedschaften eine Haushaltsrechnung enthält, steht in der Tabelle FeeInvoiceMember
+ * (geschrieben in derselben Transaktion wie die Rechnung, siehe createInvoicesLocked). Zusätzlich
+ * bleibt ein lesbarer Protokolleintrag pro Mitgliedschaft (entityId = Rechnung, Mitgliedschaft am
+ * Ende von `detail`): Rechnungen aus der Zeit vor der Tabelle werden darüber erkannt.
  */
 export const HOUSEHOLD_MEMBER_ACTION = "billing.invoice.household-member";
 const SEP = " · ";
@@ -28,26 +28,78 @@ export function householdMemberAuditRows(tenantId: string, invoice: { id: string
   }));
 }
 
+/** Zeilen für FeeInvoiceMember (eine pro enthaltener Mitgliedschaft). */
+export function householdMemberRows(tenantId: string, invoiceId: string, membershipIds: string[]) {
+  return [...new Set(membershipIds)].map((membershipId) => ({ tenantId, invoiceId, membershipId }));
+}
+
+/** Festgehaltene Mitglieder je Haushaltsrechnung: Tabelle, für ältere Rechnungen das Protokoll. */
+async function recordedHouseholdMembers(client: Client, tenantId: string, invoices: Array<{ id: string; issuedAt?: Date }>) {
+  const byInvoice = new Map<string, string[]>();
+  if (!invoices.length) return byInvoice;
+  const rows = await client.feeInvoiceMember.findMany({ where: { tenantId, invoiceId: { in: invoices.map((i) => i.id) } }, select: { invoiceId: true, membershipId: true } });
+  for (const r of rows) byInvoice.set(r.invoiceId, [...(byInvoice.get(r.invoiceId) ?? []), r.membershipId]);
+  const missing = invoices.filter((i) => !byInvoice.has(i.id));
+  if (missing.length) {
+    // Protokolleinträge entstehen zusammen mit der Rechnung; ab dem frühesten Rechnungsdatum suchen (Index tenantId+createdAt).
+    const from = missing.reduce<Date | null>((min, i) => (i.issuedAt && (!min || i.issuedAt < min) ? i.issuedAt : min), null);
+    const logs = await client.auditLog.findMany({
+      where: { tenantId, action: HOUSEHOLD_MEMBER_ACTION, entity: "FeeInvoice", entityId: { in: missing.map((i) => i.id) }, ...(from ? { createdAt: { gte: new Date(from.getTime() - 60_000) } } : {}) },
+      select: { entityId: true, detail: true },
+    });
+    for (const r of logs) {
+      const membershipId = r.detail?.split(SEP).pop();
+      if (!r.entityId || !membershipId) continue;
+      byInvoice.set(r.entityId, [...(byInvoice.get(r.entityId) ?? []), membershipId]);
+    }
+  }
+  return byInvoice;
+}
+
 /** Ergänzt Haushaltsrechnungen um die festgehaltenen Mitgliedschaften (`members`). */
 async function withHouseholdMembers<T extends FeeCandidateInvoice & { id: string }>(client: Client, tenantId: string, lists: T[][]): Promise<Array<Array<T & { members: string[] | null }>>> {
   const hh = lists.flat().filter((i) => HOUSEHOLD_INVOICE_RE.test(i.categoryName));
-  const byInvoice = new Map<string, string[]>();
-  if (hh.length) {
-    // Einträge entstehen zusammen mit der Rechnung; ab dem frühesten Rechnungsdatum suchen (Index tenantId+createdAt).
-    const from = hh.reduce<Date | null>((min, i) => (i.issuedAt && (!min || i.issuedAt < min) ? i.issuedAt : min), null);
-    const rows = await client.auditLog.findMany({
-      where: { tenantId, action: HOUSEHOLD_MEMBER_ACTION, entity: "FeeInvoice", entityId: { in: hh.map((i) => i.id) }, ...(from ? { createdAt: { gte: new Date(from.getTime() - 60_000) } } : {}) },
-      select: { entityId: true, detail: true },
-    });
-    for (const r of rows) {
-      const membershipId = r.detail?.split(SEP).pop();
-      if (!r.entityId || !membershipId) continue;
-      const g = byInvoice.get(r.entityId) ?? [];
-      g.push(membershipId);
-      byInvoice.set(r.entityId, g);
-    }
-  }
+  const byInvoice = await recordedHouseholdMembers(client, tenantId, hh);
   return lists.map((l) => l.map((i) => ({ ...i, members: byInvoice.get(i.id) ?? null })));
+}
+
+/**
+ * Haushaltsrechnungen eines Jahres ohne Zeilen in FeeInvoiceMember einmalig nachtragen: aus dem
+ * Protokoll (genau) oder, für ganz alte Rechnungen, aus der Schätzung über Haushalt und Erfassungsdatum,
+ * sofern die Anzahl zur Bezeichnung «(n Mitglieder)» passt. Idempotent (skipDuplicates); läuft im
+ * Jahreslauf innerhalb der Sperre, damit die Abdeckung danach nicht mehr von der Schätzung abhängt.
+ */
+export async function backfillHouseholdInvoiceMembers(client: Client, tenantId: string, year: number) {
+  const invoices = await client.feeInvoice.findMany({
+    where: { tenantId, year, status: { not: "CANCELLED" }, members: { none: {} } },
+    select: { id: true, membershipId: true, categoryName: true, issuedAt: true },
+  });
+  const hh = invoices.filter((i) => HOUSEHOLD_INVOICE_RE.test(i.categoryName));
+  if (!hh.length) return 0;
+  const fromLog = await recordedHouseholdMembers(client, tenantId, hh);
+  const needsGuess = hh.filter((i) => !fromLog.has(i.id));
+  let list: Array<{ membershipId: string; householdId: string | null; createdAt: Date; invoices: Array<{ categoryName: string }> }> = [];
+  if (needsGuess.length) {
+    const ms = await client.membership.findMany({
+      where: { tenantId },
+      select: { id: true, householdId: true, createdAt: true, feeInvoices: { where: { year, status: { not: "CANCELLED" } }, select: { categoryName: true } } },
+    });
+    list = ms.map((m) => ({ membershipId: m.id, householdId: m.householdId, createdAt: m.createdAt, invoices: m.feeInvoices }));
+  }
+  const existing = new Set(list.map((m) => m.membershipId));
+  const data = hh.flatMap((i) => {
+    const ids = fromLog.get(i.id) ?? deriveHouseholdMembers(i, list) ?? [];
+    // Nur Mitgliedschaften, die es noch gibt (Fremdschlüssel); aus dem Protokoll ungeprüft → unten gefiltert.
+    return householdMemberRows(tenantId, i.id, ids);
+  });
+  if (!data.length) return 0;
+  const alive = needsGuess.length
+    ? existing
+    : new Set((await client.membership.findMany({ where: { tenantId, id: { in: [...new Set(data.map((d) => d.membershipId))] } }, select: { id: true } })).map((m) => m.id));
+  const rows = data.filter((d) => alive.has(d.membershipId));
+  if (!rows.length) return 0;
+  const res = await client.feeInvoiceMember.createMany({ data: rows, skipDuplicates: true });
+  return res.count;
 }
 
 /** Mitgliedschaften mit ihren Rechnungen (inkl. festgehaltener Haushaltsmitglieder) eines Jahres. */

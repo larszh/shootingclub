@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { householdCoverage, planFeeInvoices, type FeeCandidate } from "./fee-run-plan";
+import { deriveHouseholdMembers, feeCoverageStats, householdCountFromLabel, householdCoverage, planFeeInvoices, type FeeCandidate } from "./fee-run-plan";
 
 const c = (id: string, over: Partial<FeeCandidate> = {}): FeeCandidate => ({
   membershipId: `m-${id}`, userId: `u-${id}`, name: id, email: `${id}@example.ch`, address: null, status: "ACTIVE",
@@ -136,5 +136,66 @@ describe("planFeeInvoices", () => {
       const [zoe, anna, max] = family();
       expect(householdCoverage([zoe!, { ...anna!, householdId: "h2" }, max!]).get("m-Anna")).toEqual({ number: "MB-2027-0002" });
     });
+  });
+});
+
+describe("wartende Beitritte (PENDING)", () => {
+  it("erhalten keine Rechnung, auch nicht im Haushalt", () => {
+    expect(planFeeInvoices([c("A", { status: "PENDING" }), c("B")], [], true).map((p) => p.id)).toEqual(["m-B"]);
+    const plan = planFeeInvoices([c("Vater", { householdId: "h1" }), c("Kind", { householdId: "h1", status: "PENDING" })], households, true);
+    expect(plan).toHaveLength(1);
+    expect(plan[0]).toMatchObject({ id: "m-Vater", categoryName: "Aktiv" });
+  });
+});
+
+describe("FeeInvoiceMember: festgehaltene Mitglieder", () => {
+  it("Haushaltsrechnung mit festgehaltenen Mitgliedern deckt genau diese ab", () => {
+    const cov = householdCoverage([
+      c("Vater", { householdId: "h1", invoices: [{ categoryName: "Familie Muster (2 Mitglieder)", number: "MB-7", members: ["m-Vater", "m-Kind"] }] }),
+      c("Kind", { householdId: "h1" }),
+      c("Neu", { householdId: "h1", createdAt: new Date("2020-01-01") }),
+    ]);
+    expect(cov.get("m-Kind")).toEqual({ number: "MB-7" });
+    expect(cov.has("m-Neu")).toBe(false);
+  });
+
+  it("liest die Anzahl aus der Bezeichnung (de/fr/it)", () => {
+    expect(householdCountFromLabel("Familie Muster (3 Mitglieder)")).toBe(3);
+    expect(householdCountFromLabel("Famille Muster (2 membres)")).toBe(2);
+    expect(householdCountFromLabel("Famiglia Muster (4 membri)")).toBe(4);
+    expect(householdCountFromLabel("Aktiv")).toBeNull();
+  });
+
+  it("leitet ältere Haushaltsrechnungen einmalig ab, nur wenn die Anzahl passt", () => {
+    const issuedAt = new Date("2026-02-01T10:00:00Z");
+    const inv = { id: "i1", membershipId: "m-Vater", categoryName: "Familie Muster (2 Mitglieder)", issuedAt };
+    const list = [
+      c("Vater", { householdId: "h1", createdAt: new Date("2020-01-01"), invoices: [{ categoryName: inv.categoryName }] }),
+      c("Kind", { householdId: "h1", createdAt: new Date("2021-01-01") }),
+      c("Später", { householdId: "h1", createdAt: new Date("2026-03-01") }),
+      c("Fremd", { householdId: "h2", createdAt: new Date("2020-01-01") }),
+    ];
+    expect(deriveHouseholdMembers(inv, list)).toEqual(["m-Vater", "m-Kind"]);
+    // Zahler ohne eigenen Beitrag: nur die übrigen
+    expect(deriveHouseholdMembers({ ...inv, categoryName: "Familie Muster (1 Mitglieder)" }, list)).toEqual(["m-Kind"]);
+    // Anzahl passt nicht: keine Ableitung (Schätzung bleibt beim Lesen)
+    expect(deriveHouseholdMembers({ ...inv, categoryName: "Familie Muster (5 Mitglieder)" }, list)).toBeNull();
+    expect(deriveHouseholdMembers({ ...inv, membershipId: null }, list)).toBeNull();
+    expect(deriveHouseholdMembers({ ...inv, categoryName: "Aktiv" }, list)).toBeNull();
+  });
+});
+
+describe("feeCoverageStats", () => {
+  it("Haushaltsmitglieder in einer Haushaltsrechnung zählen nicht als «nicht verrechnet»", () => {
+    const stats = feeCoverageStats([
+      c("Vater", { householdId: "h1", invoices: [{ categoryName: "Familie Muster (2 Mitglieder)", members: ["m-Vater", "m-Kind"] }] }),
+      c("Kind", { householdId: "h1" }),
+      c("Solo"),
+      c("Bezahlt", { invoices: [{ categoryName: "Aktiv" }] }),
+      c("Ohne", { amountCents: null }),
+      c("Weg", { status: "LEFT" }),
+      c("Wartet", { status: "PENDING" }),
+    ]);
+    expect(stats).toEqual({ withFee: 4, ownInvoice: 2, household: 1, notInvoiced: 1 });
   });
 });

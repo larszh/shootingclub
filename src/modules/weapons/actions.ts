@@ -7,9 +7,9 @@ import { audit } from "@/lib/audit";
 import { fail, ok, type ActionResult } from "@/lib/action-result";
 import { requireModule } from "@/lib/tenant";
 import { todayZurich, zurichToUtc } from "@/lib/time";
-import { dayKeyToDbDate, parseCostToCents, stripBlockReason, withBlockReason } from "./logic";
+import { blockReasonOf, cleanBlockReason, dayKeyToDbDate, parseCostToCents, stripBlockReason } from "./logic";
 import { createWeaponLoan, returnWeaponLoan } from "./service";
-import { blockReasonSchema, isWeaponStatus, loanSchema, serviceSchema, shotsSchema, weaponSchema, WEAPON_STATUS } from "./types";
+import { blockReasonSchema, isWeaponStatus, loanSchema, serviceSchema, shotsSchema, weaponSchema, weaponSettingsSchema, WEAPON_STATUS } from "./types";
 
 const idSchema = z.string().min(1).max(40);
 
@@ -54,13 +54,21 @@ export async function saveWeaponAction(_prev: ActionResult<{ id: string }> | nul
     shotCount: v.shotCount, serviceEveryShots: v.serviceEveryShots, nextServiceAt: v.nextServiceAt ? dayKeyToDbDate(v.nextServiceAt) : null,
   };
   if (id) {
-    const current = await db.clubWeapon.findFirst({ where: { id, tenantId }, select: { notes: true, shotCount: true } });
+    const current = await db.clubWeapon.findFirst({ where: { id, tenantId }, select: { notes: true, shotCount: true, status: true, blockReason: true } });
     if (!current) return fail("Waffe nicht gefunden.");
-    // Sperrgrund (erste Notizzeile) bleibt erhalten, auch wenn das Formular nur die übrigen Notizen zeigt.
-    const reason = current.notes?.startsWith("Sperrgrund: ") ? current.notes.split("\n")[0] : null;
-    const notes = reason ? [reason, v.notes].filter(Boolean).join("\n") : v.notes;
-    await db.clubWeapon.updateMany({ where: { id, tenantId }, data: { ...data, notes } });
-    await audit({ tenantId, actorId: ctx.user.id, action: "weapons.update", entity: "ClubWeapon", entityId: id, detail: current.shotCount !== v.shotCount ? `${v.name}, Schusszähler ${current.shotCount} → ${v.shotCount}` : v.name });
+    // Sperrgrund: eigenes Feld, nur bei gesperrten Waffen bearbeitbar. Altdaten (erste Notizzeile «Sperrgrund: …»)
+    // werden dabei ins Feld übernommen und aus den Notizen entfernt.
+    let blockReason = current.blockReason;
+    if (current.status === "BLOCKED") {
+      const legacy = blockReasonOf(current.notes);
+      const sent = fd.has("blockReason") ? cleanBlockReason(str(fd, "blockReason")) : (current.blockReason ?? legacy);
+      if (!sent) return fail("Bitte einen Sperrgrund angeben.", { blockReason: "Bitte einen Grund angeben." });
+      blockReason = sent;
+    }
+    const notes = stripBlockReason(v.notes);
+    await db.clubWeapon.updateMany({ where: { id, tenantId }, data: { ...data, notes, blockReason } });
+    const changes = [current.shotCount !== v.shotCount ? `Schusszähler ${current.shotCount} → ${v.shotCount}` : null, blockReason !== current.blockReason ? `Sperrgrund: ${blockReason ?? "–"}` : null].filter(Boolean);
+    await audit({ tenantId, actorId: ctx.user.id, action: "weapons.update", entity: "ClubWeapon", entityId: id, detail: [v.name, ...changes].join(", ").slice(0, 1900) });
     revalidate();
     return ok({ id }, "Gespeichert.");
   }
@@ -80,20 +88,20 @@ export async function setWeaponStatusAction(id: string, status: string, reason?:
   if (!w) return fail("Waffe nicht gefunden.");
   const open = await db.weaponLoan.count({ where: { tenantId, weaponId: id, returnedAt: null } });
   if (open > 0 || w.status === "LOANED") return fail("Die Waffe ist ausgeliehen. Bitte zuerst zurücknehmen.");
-  let notes = w.notes;
+  let blockReason: string | null = null;
   if (status === "BLOCKED") {
     const r = blockReasonSchema.safeParse(reason ?? "");
     if (!r.success) return fail(r.error.issues[0]?.message ?? "Bitte einen Grund angeben.");
-    notes = withBlockReason(w.notes, r.data);
-  } else {
-    notes = stripBlockReason(w.notes);
+    blockReason = cleanBlockReason(r.data);
   }
+  // Altdaten: früher stand der Sperrgrund als erste Notizzeile, die wird dabei entfernt.
+  const notes = stripBlockReason(w.notes);
   // Bedingt: nur, wenn sich der Status seit dem Lesen nicht geändert hat (z.B. parallele Ausleihe).
-  const res = await db.clubWeapon.updateMany({ where: { id, tenantId, status: w.status }, data: { status, notes } });
+  const res = await db.clubWeapon.updateMany({ where: { id, tenantId, status: w.status }, data: { status, notes, blockReason } });
   if (res.count === 0) return fail("Der Status hat sich inzwischen geändert. Bitte Seite neu laden.");
-  await audit({ tenantId, actorId: ctx.user.id, action: "weapons.status", entity: "ClubWeapon", entityId: id, detail: `${w.name}: ${w.status} → ${status}${status === "BLOCKED" && reason ? ` (${reason.slice(0, 120)})` : ""}` });
+  await audit({ tenantId, actorId: ctx.user.id, action: "weapons.status", entity: "ClubWeapon", entityId: id, detail: `${w.name}: ${w.status} → ${status}${blockReason ? ` (${blockReason.slice(0, 120)})` : ""}` });
   revalidate();
-  return ok(undefined, `Status: ${WEAPON_STATUS[status].label}.`);
+  return ok(undefined, w.status === "BLOCKED" && status === "BLOCKED" ? "Sperrgrund geändert." : `Status: ${WEAPON_STATUS[status].label}.`);
 }
 
 export async function deleteWeaponAction(id: string): Promise<ActionResult> {
@@ -186,7 +194,7 @@ export async function addServiceAction(_prev: ActionResult | null, fd: FormData)
     if (v.nextServiceAt) await tx.clubWeapon.updateMany({ where: { id: w.id, tenantId }, data: { nextServiceAt: dayKeyToDbDate(v.nextServiceAt) } });
     if (release) {
       // Bedingt: nur freigeben, wenn sich der Status seit dem Lesen nicht geändert hat.
-      const r = await tx.clubWeapon.updateMany({ where: { id: w.id, tenantId, status: w.status }, data: { status: "AVAILABLE", notes: stripBlockReason(w.notes) } });
+      const r = await tx.clubWeapon.updateMany({ where: { id: w.id, tenantId, status: w.status }, data: { status: "AVAILABLE", notes: stripBlockReason(w.notes), blockReason: null } });
       released = r.count > 0;
     }
   });
@@ -204,4 +212,27 @@ export async function deleteServiceAction(serviceId: string): Promise<ActionResu
   await audit({ tenantId: ctx.tenant.id, actorId: ctx.user.id, action: "weapons.service.delete", entity: "WeaponService", entityId: serviceId });
   revalidate();
   return ok(undefined, "Eintrag gelöscht.");
+}
+
+// --- Einstellungen -------------------------------------------------------------------------------
+
+/** Meldefrist bei Minderjährigen und Standard-Wartungsintervall für neue Waffen (nur «weapons.manage»). */
+export async function saveWeaponSettingsAction(_prev: ActionResult | null, fd: FormData): Promise<ActionResult> {
+  const ctx = await manageCtx();
+  if (!ctx) return fail(NO_RIGHT);
+  const parsed = weaponSettingsSchema.safeParse({ minorReportDays: str(fd, "minorReportDays"), serviceEveryShotsDefault: str(fd, "serviceEveryShotsDefault") });
+  if (!parsed.success) {
+    const issue = parsed.error.issues[0];
+    return fail(issue?.message ?? "Ungültige Eingabe.", issue?.path[0] ? { [String(issue.path[0])]: issue.message } : undefined);
+  }
+  const v = parsed.data;
+  const tenantId = ctx.tenant.id;
+  await db.weaponSettings.upsert({ where: { tenantId }, create: { tenantId, ...v }, update: v });
+  await audit({
+    tenantId, actorId: ctx.user.id, action: "weapons.settings", entity: "WeaponSettings", entityId: tenantId,
+    detail: `Meldefrist ${v.minorReportDays} Tage, Wartungsintervall ${v.serviceEveryShotsDefault ? `${v.serviceEveryShotsDefault} Schuss` : "keins"}`,
+  });
+  revalidate();
+  revalidatePath("/admin/weapons", "layout");
+  return ok(undefined, "Einstellungen gespeichert.");
 }

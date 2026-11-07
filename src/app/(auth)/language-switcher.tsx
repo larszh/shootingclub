@@ -9,6 +9,12 @@ import { cn } from "@/lib/utils";
 /** Muss zu LOCALE_COOKIE in src/lib/i18n/index.ts passen (dort serverseitig gelesen). */
 const COOKIE = "standchef_locale";
 
+/** Cookie für ein Jahr setzen (ausserhalb der Komponente, damit React nichts «mutiert» sieht). */
+function storeLocaleCookie(next: Locale) {
+  const secure = window.location.protocol === "https:" ? "; Secure" : "";
+  document.cookie = `${COOKIE}=${next}; Path=/; Max-Age=31536000; SameSite=Lax${secure}`;
+}
+
 /**
  * Sprachwahl auf den Anmeldeseiten (ohne Konto): setzt das Cookie «standchef_locale» für ein Jahr
  * und lädt die Seite neu. Nach der Anmeldung gilt die Sprache im Profil.
@@ -19,8 +25,7 @@ export function LanguageSwitcher({ locale, label }: { locale: Locale; label: str
 
   function choose(next: Locale) {
     if (next === locale) return;
-    const secure = window.location.protocol === "https:" ? "; Secure" : "";
-    document.cookie = `${COOKIE}=${next}; Path=/; Max-Age=31536000; SameSite=Lax${secure}`;
+    storeLocaleCookie(next);
     start(() => router.refresh());
   }
 

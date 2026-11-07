@@ -1,5 +1,6 @@
 import "server-only";
 import { db } from "@/lib/db";
+import { accessStatusWhere } from "@/lib/membership-access";
 import { MODULES, type ModuleKey } from "@/lib/modules";
 import { normalizeHex } from "@/lib/brand";
 import { APP_TZ, formatTimeRange, zurichParts } from "@/lib/time";
@@ -101,7 +102,7 @@ export async function loadProgramRanking(t: EmbedTenant, programId: string, peri
     where: {
       userId: { not: null },
       total: { not: null },
-      user: { deletedAt: null, memberships: { some: { tenantId: t.id, status: { not: "LEFT" } } } },
+      user: { deletedAt: null, memberships: { some: { tenantId: t.id, status: accessStatusWhere() } } },
       match: { tenantId: t.id, programId: program.id, status: "FINISHED", ...(range.from ? { date: { gte: range.from } } : {}) },
     },
     select: { id: true, userId: true, total: true, user: { select: { name: true } }, match: { select: { date: true } } },

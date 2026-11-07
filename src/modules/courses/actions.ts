@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { db } from "@/lib/db";
+import { accessStatusWhere } from "@/lib/membership-access";
 import { audit } from "@/lib/audit";
 import { fail, ok, type ActionResult } from "@/lib/action-result";
 import { requireModule } from "@/lib/tenant";
@@ -64,7 +65,7 @@ function zodFail(error: z.ZodError): ActionResult<never> {
 }
 
 async function isTenantMember(tenantId: string, userId: string) {
-  const m = await db.membership.findFirst({ where: { tenantId, userId, status: { not: "LEFT" }, user: { deletedAt: null } }, select: { id: true } });
+  const m = await db.membership.findFirst({ where: { tenantId, userId, status: accessStatusWhere(), user: { deletedAt: null } }, select: { id: true } });
   return !!m;
 }
 

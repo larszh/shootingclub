@@ -1,8 +1,9 @@
 import type { Metadata } from "next";
 import { CalendarCheck2, Clock, HandHelping, Settings, ShieldCheck } from "lucide-react";
 import { Alert, Badge, Card, EmptyState, LinkButton, LinkTabs, PageHeader, ProgressBar, SectionTitle, StatCard } from "@/components/ui";
+import { todayZurich } from "@/lib/time";
 import { formatMoney } from "@/lib/money";
-import { formatDateZurich, todayZurich } from "@/lib/time";
+import { formatDate, formatMoneyLocale, getRequestLocale, getT, type Locale, type TFunction } from "@/lib/i18n";
 import { requireShifts } from "@/modules/shifts/guard";
 import { currentSwissYear, listMyShifts, listMyWorkLogs, listUpcomingShifts, myHoursSummary, nowInstant, type ShiftView } from "@/modules/shifts/queries";
 import { formatHours } from "@/modules/shifts/logic";
@@ -11,13 +12,19 @@ import { ShiftCard } from "@/modules/shifts/ui/shift-card";
 import { DeleteWorkLogButton } from "@/modules/shifts/ui/member-buttons";
 import { WorkLogForm } from "@/modules/shifts/ui/worklog-form";
 import { myQualifications } from "@/modules/qualifications/queries";
-import { qualificationLabel } from "@/modules/qualifications/types";
+import { qualificationText, tOr } from "@/modules/scores/ui/labels";
 
-export const metadata: Metadata = { title: "Helfereinsätze" };
+export async function generateMetadata(): Promise<Metadata> {
+  return { title: getT(await getRequestLocale())("shooting.shifts.title") };
+}
 
 type Tab = "open" | "mine" | "hours";
 
-const dayFmt = (d: Date) => new Intl.DateTimeFormat("de-CH", { timeZone: "UTC", day: "2-digit", month: "2-digit", year: "numeric" }).format(d);
+/** Betrag: Deutsch wie bisher, sonst im Format der Sprache. */
+const money = (cents: number, locale: Locale) => (locale === "de" ? formatMoney(cents) : formatMoneyLocale(cents, locale));
+
+/** @db.Date-Wert (UTC-Mitternacht des Kalendertags) im Format der Sprache. */
+const dayFmt = (d: Date, locale: Locale) => formatDate(d, locale, { timeZone: "UTC" });
 
 function groupByDay(list: ShiftView[]) {
   const groups: Array<{ day: string; date: Date; items: ShiftView[] }> = [];
@@ -38,6 +45,8 @@ export default async function ShiftsPage({ searchParams }: { searchParams: Promi
   const now = nowInstant();
   const year = currentSwissYear(now);
   const canManage = ctx.can("shifts.manage");
+  const locale = await getRequestLocale();
+  const t = getT(locale);
 
   const [upcoming, mine, summary] = await Promise.all([
     listUpcomingShifts(tenantId, now),
@@ -47,54 +56,54 @@ export default async function ShiftsPage({ searchParams }: { searchParams: Promi
   const openCount = upcoming.filter((s) => !s.staffing.full && !s.assignments.some((a) => a.userId === userId)).length;
 
   const tabs = [
-    { value: "open", href: "/shifts", label: "Offen", count: openCount },
-    { value: "mine", href: "/shifts?tab=mine", label: "Meine", count: mine.upcoming.length },
-    { value: "hours", href: "/shifts?tab=hours", label: "Stunden" },
+    { value: "open", href: "/shifts", label: t("shooting.shifts.tab.open"), count: openCount },
+    { value: "mine", href: "/shifts?tab=mine", label: t("shooting.shifts.tab.mine"), count: mine.upcoming.length },
+    { value: "hours", href: "/shifts?tab=hours", label: t("shooting.shifts.tab.hours") },
   ];
 
   return (
     <div>
       <PageHeader
-        title="Helfereinsätze"
-        subtitle="Mithelfen am Stand und an Anlässen"
-        action={canManage ? <LinkButton href="/admin/shifts" variant="secondary" size="md"><Settings className="h-4 w-4" /> Planen</LinkButton> : undefined}
+        title={t("shooting.shifts.title")}
+        subtitle={t("shooting.shifts.subtitle")}
+        action={canManage ? <LinkButton href="/admin/shifts" variant="secondary" size="md"><Settings className="h-4 w-4" /> {t("shooting.shifts.plan")}</LinkButton> : undefined}
       />
-      {sp.denied ? <Alert className="mb-4">Dafür fehlt dir die Berechtigung.</Alert> : null}
+      {sp.denied ? <Alert className="mb-4">{t("shooting.shifts.denied")}</Alert> : null}
 
       {summary.settings.enabled && summary.balance.subject ? (
         <Card className="animate-rise mb-4 p-4">
           <div className="flex items-baseline justify-between gap-2">
-            <span className="text-sm text-ink-3">Meine Stunden {year}</span>
+            <span className="text-sm text-ink-3">{t("shooting.shifts.myHours", { year })}</span>
             <span className="font-semibold tabular-nums">{formatHours(summary.hours.total)} / {formatHours(summary.balance.required)} h</span>
           </div>
-          <ProgressBar className="mt-2" value={summary.hours.total} max={Math.max(summary.balance.required, 0.01)} label={`Stunden ${year}`} tone={summary.balance.missing ? "accent" : "ok"} />
+          <ProgressBar className="mt-2" value={summary.hours.total} max={Math.max(summary.balance.required, 0.01)} label={t("shooting.shifts.hoursYear", { year })} tone={summary.balance.missing ? "accent" : "ok"} />
           <p className="mt-1.5 text-xs text-ink-3">
-            {summary.balance.missing ? `Es fehlen noch ${formatHours(summary.balance.missing)} h.` : "Soll erfüllt. Danke!"}
-            {summary.hours.pendingLogHours ? ` ${formatHours(summary.hours.pendingLogHours)} h warten auf Bewilligung.` : ""}
+            {summary.balance.missing ? t("shooting.shifts.missing", { h: formatHours(summary.balance.missing) }) : t("shooting.shifts.fulfilled")}
+            {summary.hours.pendingLogHours ? t("shooting.shifts.pendingApproval", { h: formatHours(summary.hours.pendingLogHours) }) : ""}
           </p>
         </Card>
       ) : null}
 
-      <LinkTabs items={tabs} active={tab} label="Ansicht wählen" className="mb-4" />
+      <LinkTabs items={tabs} active={tab} label={t("shooting.shifts.tabsAria")} className="mb-4" />
 
-      {tab === "open" ? <OpenTab list={upcoming} userId={userId} now={now} /> : null}
-      {tab === "mine" ? <MineTab tenantId={tenantId} userId={userId} mine={mine} now={now} /> : null}
-      {tab === "hours" ? <HoursTab tenantId={tenantId} userId={userId} year={year} summary={summary} /> : null}
+      {tab === "open" ? <OpenTab list={upcoming} userId={userId} now={now} locale={locale} t={t} /> : null}
+      {tab === "mine" ? <MineTab tenantId={tenantId} userId={userId} mine={mine} now={now} locale={locale} t={t} /> : null}
+      {tab === "hours" ? <HoursTab tenantId={tenantId} userId={userId} year={year} summary={summary} locale={locale} t={t} /> : null}
     </div>
   );
 }
 
-function OpenTab({ list, userId, now }: { list: ShiftView[]; userId: string; now: Date }) {
+function OpenTab({ list, userId, now, locale, t }: { list: ShiftView[]; userId: string; now: Date; locale: Locale; t: TFunction }) {
   if (!list.length) {
-    return <EmptyState icon={<HandHelping className="h-5 w-5" />} title="Keine Einsätze geplant" text="Sobald der Verein Helfer sucht, erscheinen die Einsätze hier." />;
+    return <EmptyState icon={<HandHelping className="h-5 w-5" />} title={t("shooting.shifts.noneTitle")} text={t("shooting.shifts.noneText")} />;
   }
   return (
     <div className="space-y-5">
       {groupByDay(list).map((g) => (
         <section key={g.day}>
-          <SectionTitle>{formatDateZurich(g.date, { weekday: "long", day: "numeric", month: "long", year: undefined })}</SectionTitle>
+          <SectionTitle>{formatDate(g.date, locale, { weekday: "long", day: "numeric", month: "long", year: undefined })}</SectionTitle>
           <div className="space-y-2.5">
-            {g.items.map((s) => <ShiftCard key={s.id} s={s} userId={userId} now={now} showDate={false} />)}
+            {g.items.map((s) => <ShiftCard key={s.id} s={s} userId={userId} now={now} showDate={false} locale={locale} />)}
           </div>
         </section>
       ))}
@@ -102,20 +111,20 @@ function OpenTab({ list, userId, now }: { list: ShiftView[]; userId: string; now
   );
 }
 
-async function MineTab({ tenantId, userId, mine, now }: { tenantId: string; userId: string; mine: { upcoming: ShiftView[]; past: ShiftView[] }; now: Date }) {
+async function MineTab({ tenantId, userId, mine, now, locale, t }: { tenantId: string; userId: string; mine: { upcoming: ShiftView[]; past: ShiftView[] }; now: Date; locale: Locale; t: TFunction }) {
   const quals = await myQualifications(tenantId, userId);
   return (
     <div>
-      <SectionTitle>Kommende Einsätze</SectionTitle>
+      <SectionTitle>{t("shooting.shifts.upcoming")}</SectionTitle>
       {mine.upcoming.length ? (
-        <div className="space-y-2.5">{mine.upcoming.map((s) => <ShiftCard key={s.id} s={s} userId={userId} now={now} />)}</div>
+        <div className="space-y-2.5">{mine.upcoming.map((s) => <ShiftCard key={s.id} s={s} userId={userId} now={now} locale={locale} />)}</div>
       ) : (
-        <EmptyState icon={<CalendarCheck2 className="h-5 w-5" />} title="Du bist nirgends eingeteilt" text="Unter «Offen» findest du Einsätze, bei denen noch Hilfe gebraucht wird." action={<LinkButton href="/shifts" variant="secondary">Offene Einsätze</LinkButton>} />
+        <EmptyState icon={<CalendarCheck2 className="h-5 w-5" />} title={t("shooting.shifts.notAssigned")} text={t("shooting.shifts.notAssignedText")} action={<LinkButton href="/shifts" variant="secondary">{t("shooting.shifts.openShifts")}</LinkButton>} />
       )}
 
       {mine.past.length ? (
         <>
-          <SectionTitle>Geleistet dieses Jahr</SectionTitle>
+          <SectionTitle>{t("shooting.shifts.doneThisYear")}</SectionTitle>
           <Card className="animate-rise divide-y divide-line overflow-hidden">
             {mine.past.map((s) => {
               const a = s.assignments.find((x) => x.userId === userId)!;
@@ -124,11 +133,11 @@ async function MineTab({ tenantId, userId, mine, now }: { tenantId: string; user
                 <div key={s.id} className="flex min-h-14 items-center gap-3 px-4 py-2.5">
                   <div className="min-w-0 flex-1">
                     <div className="truncate font-medium">{s.title}</div>
-                    <div className="text-xs text-ink-3">{formatDateZurich(s.startsAt)}{s.event ? ` · ${s.event.title}` : ""}</div>
+                    <div className="text-xs text-ink-3">{formatDate(s.startsAt, locale, { weekday: "short" })}{s.event ? ` · ${s.event.title}` : ""}</div>
                   </div>
                   <div className="shrink-0 text-right">
-                    <Badge tone={a.status === "ASSIGNED" ? "neutral" : st.tone}>{a.status === "ASSIGNED" ? "noch nicht bestätigt" : st.label}</Badge>
-                    {a.status === "DONE" ? <div className="mt-0.5 text-xs tabular-nums text-ink-3">{formatHours(a.hours ?? s.defaultHours)} h</div> : null}
+                    <Badge tone={a.status === "ASSIGNED" ? "neutral" : st.tone}>{a.status === "ASSIGNED" ? t("shooting.shifts.notConfirmed") : tOr(t, `shooting.shifts.status.${a.status}`, st.label)}</Badge>
+                    {a.status === "DONE" ? <div className="mt-0.5 text-xs tabular-nums text-ink-3">{t("shooting.shifts.hoursN", { h: formatHours(a.hours ?? s.defaultHours) })}</div> : null}
                   </div>
                 </div>
               );
@@ -137,64 +146,64 @@ async function MineTab({ tenantId, userId, mine, now }: { tenantId: string; user
         </>
       ) : null}
 
-      <SectionTitle>Meine Qualifikationen</SectionTitle>
+      <SectionTitle>{t("shooting.shifts.myQualifications")}</SectionTitle>
       {quals.length ? (
         <Card className="animate-rise divide-y divide-line overflow-hidden">
           {quals.map((q) => (
             <div key={q.id} className="flex min-h-14 items-center gap-3 px-4 py-2.5">
               <ShieldCheck className={q.state === "expired" ? "h-5 w-5 shrink-0 text-danger" : q.state === "expiring" ? "h-5 w-5 shrink-0 text-warn" : "h-5 w-5 shrink-0 text-ok"} aria-hidden />
               <div className="min-w-0 flex-1">
-                <div className="font-medium">{qualificationLabel(q.kind)}{q.label ? ` · ${q.label}` : ""}</div>
+                <div className="font-medium">{qualificationText(t, q.kind)}{q.label ? ` · ${q.label}` : ""}</div>
                 <div className="text-xs text-ink-3">
-                  {q.number ? `Nr. ${q.number} · ` : ""}
-                  {q.validUntil ? `gültig bis ${dayFmt(q.validUntil)}` : "ohne Ablaufdatum"}
+                  {q.number ? t("shooting.shifts.qualNumber", { n: q.number }) : ""}
+                  {q.validUntil ? t("shooting.shifts.validUntil", { date: dayFmt(q.validUntil, locale) }) : t("shooting.shifts.noExpiry")}
                 </div>
               </div>
-              {q.state === "expired" ? <Badge tone="danger">abgelaufen</Badge> : q.state === "expiring" ? <Badge tone="warn">läuft ab</Badge> : q.state === "future" ? <Badge tone="outline">ab {q.validFrom ? dayFmt(q.validFrom) : ""}</Badge> : null}
+              {q.state === "expired" ? <Badge tone="danger">{t("shooting.shifts.expired")}</Badge> : q.state === "expiring" ? <Badge tone="warn">{t("shooting.shifts.expiring")}</Badge> : q.state === "future" ? <Badge tone="outline">{t("shooting.shifts.validFrom", { date: q.validFrom ? dayFmt(q.validFrom, locale) : "" })}</Badge> : null}
             </div>
           ))}
         </Card>
       ) : (
-        <p className="text-sm text-ink-3">Keine Qualifikationen erfasst. Ausweise (z.B. Schützenmeister, Erste Hilfe) bitte beim Vorstand abgeben, damit sie hier erscheinen.</p>
+        <p className="text-sm text-ink-3">{t("shooting.shifts.noQualifications")}</p>
       )}
     </div>
   );
 }
 
-async function HoursTab({ tenantId, userId, year, summary }: { tenantId: string; userId: string; year: number; summary: Awaited<ReturnType<typeof myHoursSummary>> }) {
+async function HoursTab({ tenantId, userId, year, summary, locale, t }: { tenantId: string; userId: string; year: number; summary: Awaited<ReturnType<typeof myHoursSummary>>; locale: Locale; t: TFunction }) {
   const logs = await listMyWorkLogs(tenantId, userId, year);
   const { settings, hours, balance } = summary;
   return (
     <div>
       <div className="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
-        <StatCard label="Einsätze" value={`${formatHours(hours.shiftHours)} h`} icon={<HandHelping className="h-4 w-4" />} />
-        <StatCard label="Rapporte bewilligt" value={`${formatHours(hours.logHours)} h`} icon={<Clock className="h-4 w-4" />} hint={hours.pendingLogHours ? `${formatHours(hours.pendingLogHours)} h offen` : undefined} />
+        <StatCard label={t("shooting.shifts.stat.shifts")} value={t("shooting.shifts.hoursN", { h: formatHours(hours.shiftHours) })} icon={<HandHelping className="h-4 w-4" />} />
+        <StatCard label={t("shooting.shifts.stat.logs")} value={t("shooting.shifts.hoursN", { h: formatHours(hours.logHours) })} icon={<Clock className="h-4 w-4" />} hint={hours.pendingLogHours ? t("shooting.shifts.stat.logsOpen", { h: formatHours(hours.pendingLogHours) }) : undefined} />
         {settings.enabled && balance.subject ? (
           <>
-            <StatCard label={`Soll ${year}`} value={`${formatHours(balance.required)} h`} />
-            <StatCard label="Fehlen noch" value={`${formatHours(balance.missing)} h`} tone={balance.missing ? "warn" : "ok"} hint={balance.amountCents ? `Ersatzabgabe ${formatMoney(balance.amountCents)}` : undefined} />
+            <StatCard label={t("shooting.shifts.stat.required", { year })} value={t("shooting.shifts.hoursN", { h: formatHours(balance.required) })} />
+            <StatCard label={t("shooting.shifts.stat.missing")} value={t("shooting.shifts.hoursN", { h: formatHours(balance.missing) })} tone={balance.missing ? "warn" : "ok"} hint={balance.amountCents ? t("shooting.shifts.stat.compensation", { amount: money(balance.amountCents, locale) }) : undefined} />
           </>
         ) : null}
       </div>
-      {settings.enabled && summary.exempt ? <Alert tone="info" className="mb-4">Du bist von der Arbeitsstundenpflicht befreit. Erfasste Stunden werden trotzdem gezählt.</Alert> : null}
+      {settings.enabled && summary.exempt ? <Alert tone="info" className="mb-4">{t("shooting.shifts.exempt")}</Alert> : null}
       {settings.enabled && balance.missing > 0 && balance.amountCents > 0 ? (
-        <p className="mb-4 text-xs text-ink-3">Fehlende Stunden werden gemäss Beschluss des Vereins nach Jahresende als Ersatzabgabe verrechnet ({formatMoney(settings.ratePerMissingHourCents)} pro Stunde, Stand heute).</p>
+        <p className="mb-4 text-xs text-ink-3">{t("shooting.shifts.compensationNote", { rate: money(settings.ratePerMissingHourCents, locale) })}</p>
       ) : null}
 
       <WorkLogForm today={todayZurich()} />
 
-      <SectionTitle>Meine Arbeitsrapporte {year}</SectionTitle>
+      <SectionTitle>{t("shooting.shifts.myLogs", { year })}</SectionTitle>
       {logs.length ? (
         <Card className="animate-rise divide-y divide-line overflow-hidden">
           {logs.map((l) => (
             <div key={l.id} className="flex min-h-14 items-center gap-3 px-4 py-2">
               <div className="min-w-0 flex-1">
                 <div className="truncate font-medium">{l.description}</div>
-                <div className="text-xs text-ink-3">{dayFmt(l.date)} · {formatHours(l.hours)} h</div>
+                <div className="text-xs text-ink-3">{dayFmt(l.date, locale)} · {t("shooting.shifts.hoursN", { h: formatHours(l.hours) })}</div>
               </div>
-              {l.approvedAt ? <Badge tone="ok">bewilligt</Badge> : (
+              {l.approvedAt ? <Badge tone="ok">{t("shooting.shifts.approved")}</Badge> : (
                 <>
-                  <Badge tone="warn">offen</Badge>
+                  <Badge tone="warn">{t("shooting.shifts.pending")}</Badge>
                   <DeleteWorkLogButton id={l.id} />
                 </>
               )}
@@ -202,7 +211,7 @@ async function HoursTab({ tenantId, userId, year, summary }: { tenantId: string;
           ))}
         </Card>
       ) : (
-        <p className="text-sm text-ink-3">Noch keine Rapporte. Arbeit ausserhalb geplanter Einsätze (z.B. Unterhalt) kannst du oben erfassen.</p>
+        <p className="text-sm text-ink-3">{t("shooting.shifts.noLogs")}</p>
       )}
     </div>
   );

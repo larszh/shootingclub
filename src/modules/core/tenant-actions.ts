@@ -14,6 +14,8 @@ import { todayZurich } from "@/lib/time";
 import { removeUserFromTenantChats } from "@/modules/chat/service";
 import { audit } from "@/lib/audit";
 import { LOCALES, LOCALE_LABELS, type Locale } from "@/lib/i18n/locales";
+import { joinAttempt } from "./join-approval";
+import { announceJoinRequest } from "./join-notify";
 
 const TENANT_KINDS = ["CLUB", "RANGE", "PRIVATE"] as const;
 
@@ -65,14 +67,21 @@ export async function joinTenantAction(_prev: ActionResult | null, formData: For
   const tenant = await db.tenant.findUnique({ where: { joinCode: code } });
   if (!tenant || tenant.deletedAt) return fail("Beitrittscode nicht gefunden.");
   const existing = await db.membership.findUnique({ where: { userId_tenantId: { userId: user.id, tenantId: tenant.id } }, select: { status: true } });
-  if (existing?.status === "LEFT") return fail("Deine Mitgliedschaft in diesem Verein ist beendet. Bitte wende dich an den Vorstand.");
-  if (!existing) {
+  const attempt = joinAttempt(existing?.status, tenant);
+  if (attempt.kind === "left") return fail("Deine Mitgliedschaft in diesem Verein ist beendet. Bitte wende dich an den Vorstand.");
+  // Beitritt mit Freigabe: die Anfrage wartet (kein Zugang), die Warteseite zeigt den Stand.
+  if (attempt.kind === "alreadyPending") redirect("/onboarding?requested=1");
+  if (attempt.kind === "create") {
     try {
-      await db.membership.create({ data: { userId: user.id, tenantId: tenant.id, role: "MEMBER", status: "ACTIVE", joinedAt: new Date(`${todayZurich()}T00:00:00Z`) } });
+      const m = await db.membership.create({
+        data: { userId: user.id, tenantId: tenant.id, role: "MEMBER", status: attempt.status, joinedAt: attempt.status === "ACTIVE" ? new Date(`${todayZurich()}T00:00:00Z`) : null },
+      });
+      if (attempt.status === "PENDING") await announceJoinRequest(tenant.id, m.id, user);
     } catch (e) {
       // Doppelklick: Mitgliedschaft wurde inzwischen angelegt
       if ((e as { code?: string }).code !== "P2002") throw e;
     }
+    if (attempt.status === "PENDING") redirect("/onboarding?requested=1");
   }
   await setActiveTenantCookie(tenant.id);
   redirect("/");

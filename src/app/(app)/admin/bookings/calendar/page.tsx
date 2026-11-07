@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Ban, ChevronLeft, ChevronRight, Clock, Handshake, Plus } from "lucide-react";
+import { Ban, ChevronLeft, ChevronRight, Clock, Handshake, Plus, Repeat } from "lucide-react";
 import { requirePermission } from "@/lib/tenant";
 import { Badge, Card, EmptyState, LinkButton, PageHeader } from "@/components/ui";
 import { partnerNameMap } from "@/modules/sharing/queries";
@@ -47,6 +47,7 @@ export default async function BookingCalendarPage({ searchParams }: { searchPara
           <span className="inline-flex items-center gap-1"><Clock className="h-3 w-3 text-warn" aria-hidden /> Freigabe offen</span>
           <span className="hidden sm:inline-flex items-center gap-1"><span className="h-2.5 w-2.5 rounded-full bg-ink-3" /> gesperrt</span>
           {bookings.some((b) => b.partner) ? <span className="inline-flex items-center gap-1"><Handshake className="h-3 w-3" aria-hidden /> Partnerverein</span> : null}
+          {bookings.some((b) => b.seriesId) ? <span className="inline-flex items-center gap-1"><Repeat className="h-3 w-3" aria-hidden /> Serie</span> : null}
         </div>
       </div>
 
@@ -125,6 +126,7 @@ function Item({ it }: { it: CalendarCellItem }) {
       <div className="flex items-center gap-1 font-medium tabular-nums text-ink">
         {it.time}
         {it.status === "PENDING" ? <Clock className="h-3 w-3 shrink-0 text-warn" aria-hidden /> : null}
+        {it.series ? <Repeat className="h-3 w-3 shrink-0 text-ink-3" aria-label="Serie" /> : null}
         {personsShort(it) ? <span className="ml-auto font-normal text-ink-3">{personsShort(it)}</span> : null}
         <span className="sr-only">{it.status === "PENDING" ? "Freigabe offen" : "bestätigt"}</span>
       </div>
@@ -151,7 +153,7 @@ function AgendaRow({ it, resourceName }: { it: CalendarCellItem; resourceName: s
     <Link href={`/bookings/${it.id}`} className="flex items-center gap-3 px-4 py-3 hover:bg-surface-2 min-h-14">
       <Avatar name={it.name} src={it.user ? userAvatarUrl(it.user) : null} size={36} tone={it.user ? "soft" : "guest"} />
       <div className="min-w-0 flex-1">
-        <div className="font-medium truncate">{it.name}{it.partner ? <Badge tone="outline" className="ml-1.5 align-middle">{it.partner}</Badge> : null}</div>
+        <div className="font-medium truncate">{it.name}{it.partner ? <Badge tone="outline" className="ml-1.5 align-middle">{it.partner}</Badge> : null}{it.series ? <Badge tone="outline" className="ml-1.5 align-middle"><Repeat className="mr-0.5 inline h-3 w-3" aria-hidden />Serie</Badge> : null}</div>
         <div className="text-xs text-ink-3 truncate"><span className="tabular-nums">{it.time}</span> · {resourceName}{personsShort(it) ? ` · ${personsShort(it)}` : ""}{it.note ? ` · «${it.note}»` : ""}</div>
       </div>
       {it.status === "PENDING"

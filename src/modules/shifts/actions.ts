@@ -16,6 +16,7 @@ import {
   isAssignmentStatus, roundHours, staffing,
 } from "./logic";
 import { getWorkSettings, hoursOverview } from "./queries";
+import { accessStatusWhere } from "@/lib/membership-access";
 import { copySchema, firstIssue, settingsSchema, shiftSchema, workLogSchema } from "./types";
 
 const idSchema = z.string().min(1).max(40);
@@ -51,10 +52,10 @@ function toRange(date: string, startTime: string, endTime: string) {
   return { startsAt, endsAt };
 }
 
-/** Aktive Mitglieder (nicht ausgetreten, Konto nicht gelöscht) aus einer Liste von Benutzer-IDs. */
+/** Aktive Mitglieder (nicht ausgetreten, nicht wartend auf Freigabe, Konto nicht gelöscht) aus einer Liste von Benutzer-IDs. */
 async function activeMemberIds(tenantId: string, userIds: string[]) {
   const rows = await db.membership.findMany({
-    where: { tenantId, userId: { in: userIds }, status: { not: "LEFT" }, user: { deletedAt: null } },
+    where: { tenantId, userId: { in: userIds }, status: accessStatusWhere(), user: { deletedAt: null } },
     select: { userId: true, user: { select: { name: true } } },
   });
   return rows;
@@ -358,7 +359,7 @@ export async function approveWorkLogAction(id: string, approve: boolean): Promis
 export async function saveWorkSettingsAction(_prev: ActionResult | null, fd: FormData): Promise<ActionResult> {
   const ctx = await manageCtx();
   if (!ctx) return fail(NO_RIGHT);
-  const parsed = settingsSchema.safeParse({ enabled: fd.get("enabled") === "on", requiredHours: str(fd, "requiredHours"), rate: str(fd, "rate"), statuses: fd.getAll("statuses").map(String) });
+  const parsed = settingsSchema.safeParse({ enabled: fd.get("enabled") === "on", proRata: fd.get("proRata") === "on", requiredHours: str(fd, "requiredHours"), rate: str(fd, "rate"), statuses: fd.getAll("statuses").map(String) });
   if (!parsed.success) {
     const i = firstIssue(parsed.error);
     return fail(i.message, i.field ? { [i.field]: i.message } : undefined);
@@ -366,11 +367,11 @@ export async function saveWorkSettingsAction(_prev: ActionResult | null, fd: For
   const v = parsed.data;
   if (v.enabled && !v.statuses.length) return fail("Bitte mindestens einen Mitgliederstatus wählen.", { statuses: "Mindestens einen Status wählen." });
   const tenantId = ctx.tenant.id;
-  const data = { enabled: v.enabled, requiredHours: roundHours(v.requiredHours), ratePerMissingHourCents: Math.round(v.rate * 100), appliesToStatuses: v.statuses.join(",") || "ACTIVE" };
+  const data = { enabled: v.enabled, proRata: v.proRata, requiredHours: roundHours(v.requiredHours), ratePerMissingHourCents: Math.round(v.rate * 100), appliesToStatuses: v.statuses.join(",") || "ACTIVE" };
   await db.workHoursSettings.upsert({ where: { tenantId }, create: { tenantId, ...data }, update: data });
   await audit({
     tenantId, actorId: ctx.user.id, actorName: ctx.user.name, action: "shifts.settings", entity: "WorkHoursSettings", entityId: tenantId,
-    detail: `${v.enabled ? "aktiv" : "aus"}, Soll ${formatHours(data.requiredHours)} h, ${formatMoney(data.ratePerMissingHourCents)} pro fehlende Stunde, Status ${data.appliesToStatuses}`,
+    detail: `${v.enabled ? "aktiv" : "aus"}, Soll ${formatHours(data.requiredHours)} h, ${formatMoney(data.ratePerMissingHourCents)} pro fehlende Stunde, Status ${data.appliesToStatuses}${data.proRata ? ", pro rata bei Eintritt/Austritt" : ""}`,
   });
   revalidate();
   return ok(undefined, "Einstellungen gespeichert.");

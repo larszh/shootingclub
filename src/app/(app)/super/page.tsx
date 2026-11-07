@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { Building2, ChevronRight, History, ListChecks, Server, Target, Users } from "lucide-react";
+import { Building2, ChevronRight, History, Landmark, ListChecks, Server, Target, Users } from "lucide-react";
 import { requireSuperAdmin } from "@/lib/tenant";
 import { db } from "@/lib/db";
 import { Card, PageHeader } from "@/components/ui";
@@ -9,14 +9,16 @@ export const metadata: Metadata = { title: "Super-Admin" };
 
 export default async function SuperPage() {
   await requireSuperAdmin();
-  const [tenants, users, programs, targets] = await Promise.all([
+  const [tenants, users, programs, targets, associations] = await Promise.all([
     db.tenant.count(), db.user.count(), db.program.count({ where: { tenantId: null } }), db.targetTemplate.count({ where: { tenantId: null, ownerUserId: null } }),
+    db.association.count({ where: { deletedAt: null } }),
   ]);
   const rows = [
     { href: "/super/tenants", icon: Building2, label: "Tenants", count: tenants },
     { href: "/super/users", icon: Users, label: "Benutzer", count: users },
     { href: "/super/programs", icon: ListChecks, label: "Globale Programme", count: programs },
     { href: "/super/targets", icon: Target, label: "Globale Scheiben", count: targets },
+    { href: "/super/associations", icon: Landmark, label: "Verbände", count: associations },
   ];
   return (
     <div>

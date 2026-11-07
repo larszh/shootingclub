@@ -1,5 +1,6 @@
 import "server-only";
 import { db } from "@/lib/db";
+import { accessStatusWhere, hasTenantAccess } from "@/lib/membership-access";
 import { MODULES } from "@/lib/modules";
 import { userAvatarUrl } from "@/components/avatar";
 import { deleteTenantFile } from "@/modules/files/service";
@@ -35,7 +36,7 @@ export async function isChatEnabled(tenantId: string) {
 export async function isTenantMember(userId: string, tenantId: string) {
   // Ausgetretene (LEFT) und Vereine mit geplanter Löschung zählen nicht.
   const m = await db.membership.findUnique({ where: { userId_tenantId: { userId, tenantId } }, select: { status: true, tenant: { select: { deletedAt: true } } } });
-  return !!m && m.status !== "LEFT" && !m.tenant.deletedAt;
+  return !!m && hasTenantAccess(m.status) && !m.tenant.deletedAt;
 }
 
 export type ConversationAccess = {
@@ -366,7 +367,7 @@ export async function syncClubGroupForUser(userId: string, tenantId: string) {
 
 /** Vollständiger Abgleich: alle Vereinsmitglieder in die Gruppe aufnehmen. */
 export async function syncAllClubMembers(conversationId: string, tenantId: string) {
-  const memberships = await db.membership.findMany({ where: { tenantId, status: { not: "LEFT" } }, select: { userId: true } });
+  const memberships = await db.membership.findMany({ where: { tenantId, status: accessStatusWhere() }, select: { userId: true } });
   if (!memberships.length) return 0;
   const res = await db.chatMember.createMany({
     data: memberships.map((m) => ({ conversationId, userId: m.userId })),

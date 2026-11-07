@@ -72,6 +72,8 @@ export const workLogSchema = z.object({
 
 export const settingsSchema = z.object({
   enabled: z.boolean(),
+  /** Soll anteilig bei Eintritt/Austritt im Lauf des Jahres (Monate/12, auf 0.5 h gerundet) */
+  proRata: z.boolean(),
   requiredHours: decimal({ min: 0, max: 1000, empty: 0 }).transform((n) => n ?? 0),
   rate: decimal({ min: 0, max: 10_000, empty: 0 }).transform((n) => n ?? 0),
   statuses: z.array(z.enum(WORK_STATUS_OPTIONS)),

@@ -15,6 +15,7 @@ import { removeUserFromTenantChats } from "@/modules/chat/service";
 import { createInvitation, sendSetPasswordMail } from "@/modules/core/invitations";
 import { profileManagedByTenant, profilesManagedByTenant } from "./ownership";
 import { listMemberIds } from "./queries";
+import { sortByMemberNumber } from "./number-sort";
 import {
   MEMBER_STATUSES,
   STATUS_LABELS,
@@ -110,6 +111,7 @@ export async function updateMemberAction(membershipId: string, _prev: ActionResu
   const v = parsed.data;
   const m = await db.membership.findFirst({ where: { id: membershipId, tenantId: ctx.tenant.id }, include: { user: true } });
   if (!m) return fail("Mitglied nicht gefunden.");
+  if (m.status === "PENDING") return fail("Diese Person wartet auf Freigabe. Bitte unter Mitglieder → Anfragen freigeben oder ablehnen.");
 
   // Schutzregeln wie bei Rollen: Inhaber nur durch Inhaber, niemand sperrt sich selbst aus.
   if (v.status === "LEFT" && m.status !== "LEFT") {
@@ -276,7 +278,8 @@ export async function bulkSetStatusAction(ids: string[], status: string): Promis
   const rows = await membershipsIn(ctx.tenant.id, parsed.data);
   let skipped = 0;
   const targets = rows.filter((m) => {
-    if (m.status === status) return false;
+    if (m.status === status || m.status === "PENDING") return false; // Anfragen nur über die Freigabe
+
     const blocked = (status === "LEFT" && (m.role === "OWNER" || m.userId === ctx.user.id)) || (m.role === "OWNER" && !canTouchOwner(ctx));
     if (blocked) skipped++;
     return !blocked;
@@ -378,11 +381,13 @@ export async function selectAllMatchingAction(query: string): Promise<ActionResu
 }
 
 /** CSV (Semikolon, UTF-8 mit BOM) der Auswahl. Wird im Browser als Datei gespeichert. */
-export async function exportMembersCsvAction(ids: string[]): Promise<ActionResult<{ filename: string; csv: string }>> {
+export async function exportMembersCsvAction(ids: string[], query?: string): Promise<ActionResult<{ filename: string; csv: string }>> {
   const ctx = await requirePermission("members.view");
   const parsed = idList.safeParse(ids);
   if (!parsed.success) return fail(parsed.error.issues[0]?.message ?? "Ungültige Auswahl");
-  const rows = await db.membership.findMany({
+  // Sortierung der Liste übernehmen, wenn nach Mitgliedernummer sortiert (natürlich: «9» vor «10»); sonst nach Name.
+  const sort = typeof query === "string" && query.length <= 2000 ? parseMemberFilters(Object.fromEntries(new URLSearchParams(query.replace(/^\?/, "")))).sort : "name";
+  const fetched = await db.membership.findMany({
     where: { tenantId: ctx.tenant.id, id: { in: parsed.data } },
     orderBy: { user: { name: "asc" } },
     select: {
@@ -392,6 +397,7 @@ export async function exportMembersCsvAction(ids: string[]): Promise<ActionResul
       user: { select: { name: true, email: true, phone: true, street: true, zip: true, city: true, birthDate: true, passwordSetAt: true } },
     },
   });
+  const rows = sort === "number" ? sortByMemberNumber(fetched.map((m) => ({ ...m, name: m.user.name }))) : fetched;
   const fmt = (d: Date | null) => {
     const s = dateOnly(d);
     return s ? `${s.slice(8, 10)}.${s.slice(5, 7)}.${s.slice(0, 4)}` : "";

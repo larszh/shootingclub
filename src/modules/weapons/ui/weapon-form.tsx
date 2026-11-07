@@ -11,10 +11,12 @@ import { CHECK_HINT, DISCIPLINE_SUGGESTIONS } from "@/modules/weapons/types";
 export type WeaponFormValues = {
   id?: string; name: string; discipline: string | null; manufacturer: string | null; model: string | null; caliber: string | null;
   serialNumber: string | null; shotCount: number; serviceEveryShots: number | null; nextServiceAt: string | null; notes: string | null;
+  /** Status der Waffe (nur beim Bearbeiten); bei «Gesperrt» ist der Sperrgrund bearbeitbar */
+  status?: string; blockReason?: string | null;
 };
 
 /** Waffe erfassen bzw. bearbeiten (nur «weapons.manage»). */
-export function WeaponForm({ initial, disciplines }: { initial?: WeaponFormValues; disciplines: string[] }) {
+export function WeaponForm({ initial, disciplines, defaultServiceEveryShots }: { initial?: WeaponFormValues; disciplines: string[]; /** Standard aus den Einstellungen (nur für neue Waffen) */ defaultServiceEveryShots?: number | null }) {
   const router = useRouter();
   const [state, action, pending] = useActionState(saveWeaponAction, null);
   const listId = useId();
@@ -45,10 +47,15 @@ export function WeaponForm({ initial, disciplines }: { initial?: WeaponFormValue
         <h2 className="font-semibold">Schusszähler und Wartung</h2>
         <div className="grid gap-3 sm:grid-cols-3">
           <Field label="Schusszähler" hint="Wird bei jeder Rückgabe erhöht." error={err?.shotCount}><Input name="shotCount" inputMode="numeric" defaultValue={initial?.shotCount ?? 0} /></Field>
-          <Field label="Wartung alle … Schuss" hint="Leer = kein Intervall" error={err?.serviceEveryShots}><Input name="serviceEveryShots" inputMode="numeric" defaultValue={initial?.serviceEveryShots ?? ""} /></Field>
+          <Field label="Wartung alle … Schuss" hint="Leer = kein Intervall" error={err?.serviceEveryShots}><Input name="serviceEveryShots" inputMode="numeric" defaultValue={initial ? (initial.serviceEveryShots ?? "") : (defaultServiceEveryShots ?? "")} /></Field>
           <Field label="Nächste Wartung am" hint="optional" error={err?.nextServiceAt}><Input type="date" name="nextServiceAt" defaultValue={initial?.nextServiceAt ?? ""} /></Field>
         </div>
         <p className="text-xs text-ink-3">Intervalle gemäss Hersteller bzw. Waffenkontrolle festlegen. {CHECK_HINT}</p>
+        {initial?.status === "BLOCKED" ? (
+          <Field label="Sperrgrund" hint="Die Waffe ist gesperrt. Freigeben unter «Status»." error={err?.blockReason}>
+            <Input name="blockReason" defaultValue={initial.blockReason ?? ""} required maxLength={191} />
+          </Field>
+        ) : null}
         <Field label="Notizen" error={err?.notes}><Textarea name="notes" defaultValue={initial?.notes ?? ""} maxLength={5000} rows={3} /></Field>
       </Card>
       {state && !state.ok ? <Alert>{state.error}</Alert> : null}

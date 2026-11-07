@@ -2,6 +2,7 @@ import "server-only";
 import { z } from "zod";
 import { revalidatePath } from "next/cache";
 import { db } from "@/lib/db";
+import { accessStatusWhere } from "@/lib/membership-access";
 import { audit } from "@/lib/audit";
 import { MODULES } from "@/lib/modules";
 import { can, type Permission } from "@/lib/permissions";
@@ -129,7 +130,7 @@ export async function createMatchCore(
 
   // Nur aktuelle Mitglieder desselben Tenants (nicht ausgetreten, Konto nicht gelöscht) als Gegner;
   // Reihenfolge = Index aus dem Client.
-  const memberIds = new Set((await db.membership.findMany({ where: { tenantId: actor.tenantId, status: { not: "LEFT" }, user: { deletedAt: null } }, select: { userId: true } })).map((m) => m.userId));
+  const memberIds = new Set((await db.membership.findMany({ where: { tenantId: actor.tenantId, status: accessStatusWhere(), user: { deletedAt: null } }, select: { userId: true } })).map((m) => m.userId));
   const seen = new Set<string>();
   const rows: Array<{ userId: string | null; guestName: string | null; note: string | null; sortOrder: number }> = [];
   participants.forEach((p, index) => {

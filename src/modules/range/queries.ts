@@ -1,5 +1,6 @@
 import "server-only";
 import { db } from "@/lib/db";
+import { accessStatusWhere } from "@/lib/membership-access";
 import { todayZurich } from "@/lib/time";
 import { userAvatarUrl } from "@/components/avatar";
 import {
@@ -50,7 +51,7 @@ export type MemberOption = { userId: string; name: string; memberNumber: string 
 /** Aktive Mitglieder (ohne ausgetretene und gelöschte Konten) für Check-in und Gastgeber. */
 export async function listMemberOptions(tenantId: string): Promise<MemberOption[]> {
   const rows = await db.membership.findMany({
-    where: { tenantId, status: { not: "LEFT" }, user: { deletedAt: null } },
+    where: { tenantId, status: accessStatusWhere(), user: { deletedAt: null } },
     select: { memberNumber: true, user: { select: { id: true, name: true, avatarPath: true, updatedAt: true, birthDate: true } } },
     orderBy: { user: { name: "asc" } },
   });
@@ -171,7 +172,7 @@ export async function getRules(tenantId: string, id: string) {
 export async function rulesAcceptanceStats(tenantId: string, rulesId: string) {
   const [members, acceptances] = await Promise.all([
     db.membership.findMany({
-      where: { tenantId, status: { not: "LEFT" }, user: { deletedAt: null } },
+      where: { tenantId, status: accessStatusWhere(), user: { deletedAt: null } },
       select: { user: { select: { id: true, name: true } } },
       orderBy: { user: { name: "asc" } },
     }),

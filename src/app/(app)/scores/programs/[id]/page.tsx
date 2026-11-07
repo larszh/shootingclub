@@ -72,7 +72,7 @@ export default async function ProgramDetailPage({ params }: { params: Promise<{ 
         <Card className="animate-rise mt-4 p-4">
           <div className="text-sm font-semibold">{t("shooting.program.zones")}</div>
           <p className="mt-0.5 text-xs text-ink-3">{t("shooting.program.zonesText")}</p>
-          <ZoneLegend zones={programZones} className="mt-3" />
+          <ZoneLegend zones={programZones} className="mt-3" t={t} />
         </Card>
       ) : null}
 
@@ -117,7 +117,7 @@ export default async function ProgramDetailPage({ params }: { params: Promise<{ 
               </div>
               {s.note ? <div className="text-xs text-ink-3 italic mt-0.5">{s.note}</div> : null}
               {isZones && programZones && !sameZones(stageZones(s), programZones) ? (
-                <div className="mt-1.5"><div className="text-[11px] text-ink-3 mb-1">{t("shooting.program.ownZones")}</div><ZoneLegend zones={stageZones(s)} compact /></div>
+                <div className="mt-1.5"><div className="text-[11px] text-ink-3 mb-1">{t("shooting.program.ownZones")}</div><ZoneLegend zones={stageZones(s)} compact t={t} /></div>
               ) : null}
             </div>
           </div>

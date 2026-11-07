@@ -1,4 +1,7 @@
+"use client";
+
 import { Skeleton } from "@/components/ui";
+import { useT } from "@/components/locale";
 
 /**
  * Ladeansicht für die Listen im Bereich Schiessen (Übersicht, Programme, Durchgänge,
@@ -7,9 +10,10 @@ import { Skeleton } from "@/components/ui";
  * und ein echtes HTTP 404 liefert.
  */
 export function ScoresListSkeleton({ tiles = false, kpis = false }: { tiles?: boolean; kpis?: boolean }) {
+  const t = useT();
   return (
     <div className="animate-fade" role="status" aria-live="polite" aria-busy="true">
-      <span className="sr-only">Wird geladen…</span>
+      <span className="sr-only">{t("shooting.common.loading")}</span>
       <div className="mb-5 flex items-center gap-4">
         <div className="min-w-0 flex-1 space-y-2">
           <Skeleton className="h-8 w-44 max-w-full" />

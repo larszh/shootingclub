@@ -4,6 +4,7 @@ import { createHash } from "node:crypto";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { db } from "@/lib/db";
+import { accessStatusWhere } from "@/lib/membership-access";
 import { throttle } from "@/lib/auth";
 import { audit } from "@/lib/audit";
 import { requireModule } from "@/lib/tenant";
@@ -102,7 +103,7 @@ export async function commitScoreImportAction(formData: FormData): Promise<Actio
 
   // Nur aktuelle Mitglieder (nicht ausgetreten, Konto nicht gelöscht)
   const memberIds = new Set(
-    (await db.membership.findMany({ where: { tenantId: ctx.tenant.id, status: { not: "LEFT" }, user: { deletedAt: null } }, select: { userId: true } })).map((m) => m.userId),
+    (await db.membership.findMany({ where: { tenantId: ctx.tenant.id, status: accessStatusWhere(), user: { deletedAt: null } }, select: { userId: true } })).map((m) => m.userId),
   );
   const plan = planImport(
     table,

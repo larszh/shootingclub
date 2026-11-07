@@ -218,11 +218,32 @@ export function rankFs<T extends FsEntry>(entries: readonly T[]): Array<T & { ra
 // Export für SAT-Admin
 // ---------------------------------------------------------------------------
 
-/** Name in Vor- und Nachname aufteilen (letztes Wort = Nachname). */
+/** Namenszusätze, die zum Nachnamen gehören (z.B. «von Allmen», «De Luca», «van der Berg»). */
+const NAME_PARTICLES = new Set(["von", "vom", "van", "der", "den", "de", "di", "da", "del", "della", "dalla", "des", "du", "dos", "la", "le", "lo", "zu", "zum", "zur", "ten", "ter", "auf", "am", "im"]);
+
+/**
+ * Name in Vor- und Nachname aufteilen. Die App speichert nur einen Namen pro Konto (User.name), daher
+ * heuristisch:
+ * - «Nachname, Vorname» (mit Komma) wird am Komma getrennt;
+ * - sonst ist das letzte Wort der Nachname, zusammen mit vorangehenden Namenszusätzen wie «von», «de»,
+ *   «van der» («Hans von Allmen» → Vorname «Hans», Nachname «von Allmen»);
+ * - ein einzelnes Wort gilt als Nachname.
+ * Doppelnamen ohne Bindestrich («Anna Muster Beispiel») lassen sich so nicht erkennen: bitte im Export
+ * prüfen bzw. den Namen im Profil mit Bindestrich erfassen.
+ */
 export function splitName(name: string): { firstName: string; lastName: string } {
-  const parts = name.trim().split(/\s+/).filter(Boolean);
+  const clean = name.trim().replace(/\s+/g, " ");
+  const comma = clean.indexOf(",");
+  if (comma > 0) {
+    const last = clean.slice(0, comma).trim();
+    const first = clean.slice(comma + 1).trim();
+    if (last && first) return { firstName: first, lastName: last };
+  }
+  const parts = clean.replace(/,/g, " ").split(" ").filter(Boolean);
   if (parts.length <= 1) return { firstName: "", lastName: parts[0] ?? "" };
-  return { firstName: parts.slice(0, -1).join(" "), lastName: parts[parts.length - 1]! };
+  let start = parts.length - 1;
+  while (start > 1 && NAME_PARTICLES.has(parts[start - 1]!.toLowerCase())) start -= 1;
+  return { firstName: parts.slice(0, start).join(" "), lastName: parts.slice(start).join(" ") };
 }
 
 export type SatRow = {
@@ -240,7 +261,7 @@ export type SatRow = {
   decimal?: boolean;
 };
 
-export const SAT_HEADER = ["Name", "Vorname", "Geburtsdatum", "Strasse", "PLZ", "Ort", "Programm", "Resultat", "Nuller", "Versuch", "Bestanden", "Datum"];
+export const SAT_HEADER = ["Nachname", "Vorname", "Geburtsdatum", "Strasse", "PLZ", "Ort", "Programm", "Resultat", "Nuller", "Versuch", "Bestanden", "Datum"];
 
 function fmtTotal(n: number | null, decimal?: boolean) {
   if (n === null) return "";

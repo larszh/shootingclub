@@ -25,10 +25,10 @@ Nach dem Demo-Seed:
 | Konto | Passwort | Rolle |
 |---|---|---|
 | admin@example.ch | admin1234 | Super-Admin, Inhaber Demo-Verein |
-| anna@example.ch | demo1234 | Admin Demo-Verein |
+| anna@example.ch | demo1234 | Admin Demo-Verein, Verbandsadmin «Demo Kantonalverband» |
 | beat@example.ch | demo1234 | Mitglied Demo-Verein |
 
-Beitrittscode Demo-Verein: `DEMO42`. Im Demo-Verein sind alle Module aktiv, inklusive Dateiablage (Beispielordner), Chat (Gruppe «Vorstand» und eine Direktnachricht) und Munition (Beispielsortiment mit Bestandesjournal), dazu Beispieldaten für Bundesübungen, Standbetrieb (Standordnung, Schiesszeiten, Standbücher), Vereinswaffen, Helfereinsätze mit Qualifikationen, Kurse und Jahresmeisterschaft mit Live-Rangliste. Der Seed ist idempotent und kann mehrfach laufen. Ohne Seed wird das allererste registrierte Konto automatisch Super-Admin.
+Beitrittscode Demo-Verein: `DEMO42`. Im Demo-Verein sind alle Module aktiv, inklusive Dateiablage (Beispielordner), Chat (Gruppe «Vorstand» und eine Direktnachricht) und Munition (Beispielsortiment mit Bestandesjournal), dazu Beispieldaten für Bundesübungen, Standbetrieb (Standordnung, Schiesszeiten, Standbücher), Vereinswaffen, Helfereinsätze mit Qualifikationen, Kurse und Jahresmeisterschaft mit Live-Rangliste, Feldschiessen-Limiten (als Beispiel markiert), eine Trainingsserie (dienstags 18–20 Uhr), eine offene Beitrittsanfrage und der «Demo Kantonalverband» (Code `KSVDEMO1`) mit dem Demo-Verein als aktivem Mitglied. Der Seed ist idempotent und kann mehrfach laufen. Ohne Seed wird das allererste registrierte Konto automatisch Super-Admin.
 
 Weitere Befehle: `npm test` (Vitest, reine Funktionen), `npm run typecheck`, `npm run lint`, `npm run build`, `npm run db:deploy` (Migrationen in Produktion), `npm run db:studio`.
 
@@ -152,8 +152,8 @@ Ein Benutzer kann in beliebig vielen Tenants (Verein, Anlage, Gruppe) Mitglied s
 |---|---|
 | Super-Admin (global) | alles; globale Programme/Scheiben, Tenants und Benutzer verwalten |
 | OWNER | wie ADMIN, zusätzlich Inhaber ernennen |
-| ADMIN | Mitglieder, Rollen, Module, Tenant-Programme/-Scheiben, verstecken/anzeigen |
-| TRAINER | alle Durchgänge im Tenant sehen; amtliche Resultate bestätigen, Standdienst, Vereinswaffen ausleihen, Kurse führen |
+| ADMIN | Mitglieder, Rollen, Module, Tenant-Programme/-Scheiben, verstecken/anzeigen, Beitrittsanfragen freigeben |
+| TRAINER | alle Durchgänge im Tenant sehen; amtliche Resultate bestätigen, Standdienst, Vereinswaffen ausleihen, Kurse führen, Serien-Reservationen |
 | MEMBER | eigene Durchgänge, Favoriten, eigene Scheiben hochladen |
 
 Rechte sind in `src/lib/permissions.ts` zentral definiert (`can(actor, permission)`).
@@ -162,7 +162,7 @@ Rechte sind in `src/lib/permissions.ts` zentral definiert (`can(actor, permissio
 
 Registry in `src/lib/modules.ts`. Jedes Modul ist pro Tenant ein-/ausschaltbar (`TenantModule`). Neue Module: Eintrag in der Registry, Routen unter `src/app/(app)/<key>`, Logik unter `src/modules/<key>`.
 
-**Navigation** (`src/components/app-shell.tsx`): Reihenfolge Start, Schiessen, Chat, Anlässe, Buchen, Scheiben, Dateien, Munition, Zahlungen, danach die Module der Wellen B und C. Auf dem Desktop gruppiert die Seitenleiste in «Schiessen» (Resultate, Scheiben, Bundesübungen, Jahresmeisterschaft, Live-Rangliste, Resultat-Import) und «Verein» (Standbetrieb, Helfereinsätze, Kurse, Vereinswaffen, Schützenstube); Vereinswaffen, Live-Rangliste und Resultat-Import erscheinen nur mit dem nötigen Recht. Unter «Verwaltung» stehen zusätzlich Partner-Anlagen, Schützenstube, Buchhaltung und Website-Widgets (je nach Recht und Modul). Die Tab-Leiste auf dem Handy zeigt höchstens fünf Einträge: die ersten vier aktiven plus «Mehr». Vorne steht, was man am Stand und unterwegs am häufigsten braucht (Resultate erfassen, Nachrichten, Termine, Reservieren). Alles Weitere ist unter «Mehr» (`/me`) aufgelistet und auf dem Desktop immer in der Seitenleiste. Der Ungelesen-Zähler des Chats hängt am Chat-Tab oder, wenn der Chat unter «Mehr» liegt, an «Mehr».
+**Navigation** (`src/components/app-shell.tsx`): Reihenfolge Start, Schiessen, Chat, Anlässe, Buchen, Scheiben, Dateien, Munition, Zahlungen, danach die Module der Wellen B und C. Auf dem Desktop gruppiert die Seitenleiste in «Schiessen» (Resultate, Scheiben, Bundesübungen, Jahresmeisterschaft, Live-Rangliste, Resultat-Import) und «Verein» (Standbetrieb, Helfereinsätze, Kurse, Vereinswaffen, Schützenstube); Vereinswaffen, Live-Rangliste und Resultat-Import erscheinen nur mit dem nötigen Recht. Unter «Verwaltung» stehen zusätzlich Beitrittsanfragen (mit Zähler), Partner-Anlagen, Schützenstube, Buchhaltung, Website-Widgets, Verband sowie für Verbandsadmins der Verbandsbereich und für Super-Admins «Verbände» (je nach Recht und Modul). Die Tab-Leiste auf dem Handy zeigt höchstens fünf Einträge: die ersten vier aktiven plus «Mehr». Vorne steht, was man am Stand und unterwegs am häufigsten braucht (Resultate erfassen, Nachrichten, Termine, Reservieren). Alles Weitere ist unter «Mehr» (`/me`) aufgelistet und auf dem Desktop immer in der Seitenleiste. Der Ungelesen-Zähler des Chats hängt am Chat-Tab oder, wenn der Chat unter «Mehr» liegt, an «Mehr».
 
 **Punkteerfassung** (`scores`)
 - Programme mit Waffe, Wertungsmodus (Ringe ganz, Ringe Zehntel, Treffer/Fehler) und beliebig vielen Serien/Stationen (Distanz, Schusszahl, Max-Ring, Zeit, Anschlag, Scheibe, Hinweis). Passt vom 300-m-Stand bis zum Indoor-Parcours mit Hindernissen.
@@ -225,14 +225,17 @@ Registry in `src/lib/modules.ts`. Jedes Modul ist pro Tenant ein-/ausschaltbar (
 **Mitgliederverwaltung** (Berechtigungen `members.view` / `members.manage`)
 - `/admin/members`: Liste mit Suche, Filtern (Status, Rolle, Kategorie, Haushalt, Zugang, Minderjährige), Seiten à 50, Sammelaktionen (Status, Kategorie, Zugangsmail, CSV-Export). Detailseite mit allen Feldern (Lizenznummer, Eintritt/Austritt, Erziehungsberechtigte bei Minderjährigen, interne Notiz) und Protokoll.
 - **Status** Aktiv, Passiv, Ehrenmitglied, Jungschütze, Gönner, Ausgetreten. Ausgetretene behalten ihre Daten (Resultate, Rechnungen), haben aber keinen Zugang mehr zum Verein.
+- **Beitritt mit Freigabe** (`Tenant.joinApproval`, Recht `members.approve`): Wer mit dem Beitrittscode beitritt, erhält eine Mitgliedschaft mit Status `PENDING` («Wartet auf Freigabe») ohne Zugang und sieht unter `/onboarding` eine Warteseite (Anfrage zurückziehen möglich). Freigabe oder Ablehnung unter `/admin/members/requests` (Zähler in der Navigation und im Tab «Anfragen»), der Schalter steht auf derselben Seite. Wartende erscheinen in keiner Mitgliederliste, erhalten keine Rechnungen und keine Mitteilungen (Ausnahme: die Ablehnung, `notify({ includePending: true })`). Eine E-Mail-Einladung gibt eine wartende Anfrage sofort frei. Zentral: `NO_ACCESS_STATUSES`/`accessStatusWhere()` in `src/lib/membership-access.ts`.
 - **Haushalte**: Familien mit zahlender Person; der Jahreslauf erstellt pro Haushalt eine Sammelrechnung.
 - **Import** (`/admin/members/import`): CSV oder Excel (.xlsx), Vorlagen für ClubDesk, WebLing und Excel, Vorschau mit Fehlern und Dubletten, optional Einladungsmail zum Passwort-Setzen.
 - **Einladungen** per E-Mail mit Rolle (`/admin/members/invitations`), Annahme unter `/invite/<token>` mit Anmeldung oder Registrierung.
 
 **Konto & Sicherheit** (`/me`)
+- **Sprache**: Oberfläche für Mitglieder in Deutsch, Französisch und Italienisch (App-Hülle, Startseite, `/me`, Hilfe, Anmeldung, Onboarding, Zahlungen, Beiträge, Anlässe, Chat, Reservationen, Punkteerfassung, Schiessnachweis, Helfer, Kurse, Meisterschaft, Scheiben, «Meine Konsumationen»). Sprache aus dem Profil, für nicht Angemeldete aus dem Cookie `standchef_locale` (Sprachwahl auf den Anmeldeseiten), sonst Vereinssprache und Browser. Wörterbücher in `src/lib/i18n/{de,fr,it}.ts` und `src/lib/i18n/extra/*.ts`; Server-Seiten nutzen `getT(await getRequestLocale())`, Client-Komponenten `useT()` oder einen `locale`-Prop. Verwaltungs- und Verbandsseiten sind (noch) deutsch.
 - Profil mit Telefon und Geburtsdatum; **Sicherheit** (`/me/security`): Passwort ändern, Zwei-Faktor-Anmeldung (TOTP mit QR-Code, 8 Wiederherstellungscodes), aktive Sitzungen beenden. Passwort vergessen per E-Mail-Link.
 - **Benachrichtigungen & Sprache** (`/me/notifications`): Sprache DE/FR/IT, Push auf diesem Gerät, pro Thema (Chat, Mitteilungen, Reservationen, Rechnungen, Anlässe, Erinnerungen, System) Push und E-Mail ein/aus. Benachrichtigt wird bei neuen Chatnachrichten (nur wenn nicht online), Mitteilungen, Absagen von Anlässen, Reservationsstatus und Rechnungen.
 - **Datenschutz** (`/me/privacy`): alle eigenen Daten als ZIP, Konto löschen (pseudonymisiert; Rechnungen und Resultate bleiben dem Verein erhalten).
+  Seit Welle D enthält der Export zusätzlich Serien-Reservationen, Rollen in Verbänden, offene Beitrittsanfragen (`waitingForApproval`) sowie Storno- und Rückerstattungsdaten. Beim Löschen werden offene Beitrittsanfragen entfernt, aktive Serien beendet und Verbandsrollen gelöscht. Verbände speichern keine Personendaten; Namen erscheinen nur in Verbandsranglisten von Vereinen mit «Namen teilen».
   Der Export umfasst auch die Daten der Welle-B-Module (Standbesuche, bestätigte Standordnungen, Qualifikationen, Kursteilnahmen mit Präsenz und Resultaten, Waffenausleihen, Helfereinsätze, Arbeitsstunden, gemeldete Vorfälle, Standdienste) und die eigenen Konsumationen der Schützenstube (mit Status und Rechnungsnummer).
   Beim Löschen werden die Kopien von Personendaten anonymisiert: Name und Kontaktdaten in verknüpften Kursteilnahmen, der Name im Standdienst (`RangeDay.dutyName`), der Ausleihername bei Mitglieder-Ausleihen und Qualifikationsnummern.
   Konsumationen der Schützenstube: verrechnete und bar bezahlte Einträge bleiben als Buchhaltungsbeleg, offene, nie verrechnete werden gelöscht. Das Vereinsarchiv enthält `schuetzenstube.csv`.
@@ -260,11 +263,17 @@ Registry in `src/lib/modules.ts`. Jedes Modul ist pro Tenant ein-/ausschaltbar (
   ```
   Das optionale Skript aus `/admin/embed` passt die Höhe automatisch an (postMessage, nur vom App-Ursprung).
 
+**Sprachen, Verband und Reste (Welle D)**
+- **Kantonal-/Regionalverband** (kein Vereinsmodul): Super-Admins legen Verbände unter `/super/associations` an (Name, Region, 8-stelliger Code) und ernennen Verbandsadmins (`AssociationAdmin`, Rolle ADMIN oder VIEWER). Vereine verbinden sich unter `/admin/association` (`tenant.manage`) per Code mit ausdrücklicher Einwilligung; der Verband gibt unter `/association/[id]/clubs` frei. Daten teilt ein Verein nur mit Status `APPROVED` und `consentAt`; Namen nur mit «Namen teilen». Verbandsbereich `/association/[id]`: Kennzahlen pro Jahr und Verein, Rangliste über globale Programme (CSV, Druck). Kontaktdaten, Rechnungen, Chat und Dateien werden nie geteilt. Link «Verband» erscheint in der Navigation für Super-Admins und Verbandsadmins.
+- **Serien-Reservationen** (`/bookings/series`, Recht `bookings.series` ab TRAINER): Wochentage, Zeit (Europe/Zurich), Zeitraum, Vorschau mit Konflikten, kostenlose bestätigte Einzelbuchungen mit `Booking.seriesId`; Storno einzeln oder für alle künftigen Termine. **Bestätigungs-Mail** bei eigener Buchung und Storno, **Erinnerung** 24 h vorher (07–21 Uhr, Job-Hook `bookings`).
+- **Feldschiessen-Auszeichnungen** (`/federal/awards`): Limiten pro Programm und Jahr (`AwardLimit`, «Limiten gemäss Ausschreibung eintragen»), Zuordnung nach Jahrgang, Druckliste und CSV. **Vereinswaffen**: eigener Sperrgrund, Einstellungen unter `/admin/weapons/settings` (Meldefrist Minderjährige, Wartungsintervall). **Arbeitsstunden pro rata** nach Eintritt/Austritt (Schalter in den Einstellungen). SAT-Export mit getrennten Spalten Nachname/Vorname.
+- **Finanzen**: Storno- und Rückerstattungsdatum als Felder (`cancelledAt`, `refundedAt`) für die Buchhaltung, Barverkäufe der Schützenstube als Tagesbuchung (Konten `cashAccount` 1000 / `kioskAccount` 3600, abschaltbar mit `kioskCash=0`), Tab «Einzelrechnungen» (`/admin/billing/invoices`), Haushaltsrechnungen über `FeeInvoiceMember`, Partner-Rechnungen unter «Zahlungen» des Gastvereins, natürliche Sortierung der Mitgliedernummern.
+
 **Betrieb & Nachvollziehbarkeit**
 - **Protokoll** (Audit-Log) für Rollenwechsel, Löschungen, Importe, Exporte und Einstellungen: pro Verein unter `/admin/audit` (mit CSV und Vereinsarchiv als ZIP für Inhaber), für Super-Admins über alle Vereine unter `/super/audit`.
 - **Vereine löschen** mit 30 Tagen Frist und «Wiederherstellen»; danach entfernt ein täglicher Job Daten und Dateien endgültig.
 - **System** (`/super/system`): SMTP-Status, Mail-Warteschlange, fehlgeschlagene Mails erneut senden, Testmail, Job-Übersicht mit «Jetzt ausführen».
-- **Hintergrund-Jobs** (`src/lib/jobs`): Mailversand (30 s), Aufräumen (stündlich), Erinnerungen (stündlich: Schichten, Vereinswaffen, Bundesübungen), Vereinslöschung und Totale nachtragen (täglich). Jeder Job ist über eine DB-Sperre gegen Doppelausführung geschützt; ausgelegt auf eine PM2-Instanz.
+- **Hintergrund-Jobs** (`src/lib/jobs`): Mailversand (30 s), Aufräumen (stündlich), Erinnerungen (stündlich: Schichten, Vereinswaffen, Bundesübungen, Reservationen), Vereinslöschung und Totale nachtragen (täglich). Jeder Job ist über eine DB-Sperre gegen Doppelausführung geschützt; ausgelegt auf eine PM2-Instanz.
 - **Healthcheck** `GET /api/health` (`{"ok":true}` / HTTP 503) für Deploy und Monitoring; `scripts/deploy.sh` sichert die Datenbank vor jeder Migration.
 
 ### Offline-Betrieb & App-Installation (PWA)

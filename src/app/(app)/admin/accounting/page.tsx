@@ -7,7 +7,7 @@ import { plural } from "@/lib/utils";
 import { Alert, Button, buttonClasses, Card, EmptyState, Field, Input, LinkTabs, PageHeader, SectionTitle, Select, StatCard } from "@/components/ui";
 import { getAccountingJournal } from "@/modules/accounting/queries";
 import { ENTRY_TYPE_LABEL, KIND_LABEL, type AccountSummary } from "@/modules/accounting/journal";
-import { formatDateCh, MONTH_NAMES, resolvePeriod, type PeriodKind, type PeriodParams } from "@/modules/accounting/period";
+import { formatDateCh, includeKioskCashParam, MONTH_NAMES, resolvePeriod, type PeriodKind, type PeriodParams } from "@/modules/accounting/period";
 import { EXPORT_FORMATS } from "@/modules/accounting/types";
 import { AccountingSettingsForm } from "@/modules/accounting/ui/settings-form";
 
@@ -39,11 +39,12 @@ export default async function AccountingPage({ searchParams }: { searchParams: P
   const sp = await searchParams;
   const today = todayZurich();
   const period = resolvePeriod(sp, today);
-  const { accounts, entries, summary, totals } = await getAccountingJournal(ctx.tenant.id, period.from, period.to);
+  const includeKioskCash = includeKioskCashParam(sp.kioskCash);
+  const { accounts, entries, summary, totals } = await getAccountingJournal(ctx.tenant.id, period.from, period.to, { includeKioskCash });
 
   const currentYear = Number(today.slice(0, 4));
   const years = Array.from({ length: 7 }, (_, i) => currentYear + 1 - i);
-  const exportQuery = (format: string) => `/api/export/accounting?${new URLSearchParams({ format, from: period.from, to: period.to }).toString()}`;
+  const exportQuery = (format: string) => `/api/export/accounting?${new URLSearchParams({ format, from: period.from, to: period.to, ...(includeKioskCash ? {} : { kioskCash: "0" }) }).toString()}`;
   const preview = entries.slice(0, PREVIEW_LIMIT);
   const invalidCustom = period.kind === "custom" && (sp.from || sp.to) && (period.from !== sp.from || period.to !== sp.to);
   const periodEnded = period.to < today;
@@ -92,6 +93,12 @@ export default async function AccountingPage({ searchParams }: { searchParams: P
               <Field label="Bis" className="min-w-40 flex-1"><Input type="date" name="to" defaultValue={period.to} required /></Field>
             </>
           ) : null}
+          <Field label="Barverkäufe Schützenstube" className="min-w-48">
+            <Select name="kioskCash" defaultValue={includeKioskCash ? "1" : "0"}>
+              <option value="1">buchen (Kasse / Ertrag)</option>
+              <option value="0">weglassen</option>
+            </Select>
+          </Field>
           <Button type="submit" variant="secondary">Anzeigen</Button>
         </form>
         <p className="mt-3 text-sm text-ink-2">
@@ -201,8 +208,12 @@ export default async function AccountingPage({ searchParams }: { searchParams: P
           <li>Doppelt bezahlt (Bank und online): beide Zahlungen werden gebucht, das Guthaben steht auf Debitoren, bis ihr es zurückzahlt.</li>
           <li>Rückerstattung (Reservation als «Erstattet» markiert): Soll Ertrag / Haben Bank am Tag der Markierung; bei stornierter Rechnung Soll Debitoren / Haben Bank.</li>
           <li>Reservation direkt online bezahlt (ohne Rechnung): Soll Bank / Haben Reservationen.</li>
-          <li>Reservation bar vor Ort bezahlt (ohne Rechnung): Soll Bank ({accounts.bankAccount}) / Haben Reservationen ({accounts.bookingAccount}) am Zahlungsdatum; erstattet: Gegenbuchung.</li>
-          <li>Rechnungen der Schützenstube gehen auf das Beitragskonto ({accounts.feeAccount}). Munition ist nie online bezahlbar, nur per Rechnung.</li>
+          <li>Reservation bar vor Ort bezahlt (ohne Rechnung): Soll Kasse ({accounts.cashAccount}) / Haben Reservationen ({accounts.bookingAccount}) am Zahlungsdatum; erstattet: Gegenbuchung.</li>
+          <li>Rechnungen der Schützenstube: Soll Debitoren / Haben Ertrag Schützenstube ({accounts.kioskAccount}).</li>
+          <li>Barverkäufe der Schützenstube (optional): pro Tag eine Buchung Soll Kasse ({accounts.cashAccount}) / Haben Ertrag Schützenstube ({accounts.kioskAccount}), Beleg «KASSE-JJJJMMTT».</li>
+          <li>Storno- und Erstattungsdatum: der Tag des Statuswechsels, auch wenn der Beleg später bearbeitet wird.</li>
+          <li>Gebühren der Zahlungsanbieter melden die Anbieter nicht pro Zahlung: anhand ihrer Abrechnung von Hand buchen (Soll Zahlungsgebühren {accounts.feesExpenseAccount} / Haben Bank {accounts.bankAccount}).</li>
+          <li>Munition ist nie online bezahlbar, nur per Rechnung.</li>
         </ul>
       </Card>
     </div>

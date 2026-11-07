@@ -9,8 +9,11 @@ import { repeatTarget } from "@/modules/bookings/repeat";
 import { BookingWizard } from "@/modules/bookings/ui/booking-wizard";
 import { getGuestRepeatSource, listSharedResourcesForGuest } from "@/modules/sharing/queries";
 import { todayZurich } from "@/lib/time";
+import { getRequestLocale, getT } from "@/lib/i18n";
 
-export const metadata: Metadata = { title: "Gemeinsame Anlage reservieren" };
+export async function generateMetadata(): Promise<Metadata> {
+  return { title: getT(await getRequestLocale())("bookings.partner.metaTitle") };
+}
 
 /**
  * Reservation auf einer Anlage eines Partnervereins. Zeigt nur Ressourcen, die für den aktiven Verein
@@ -18,6 +21,8 @@ export const metadata: Metadata = { title: "Gemeinsame Anlage reservieren" };
  */
 export default async function PartnerBookingPage({ params, searchParams }: { params: Promise<{ slug: string }>; searchParams: Promise<{ resourceId?: string; repeat?: string }> }) {
   const ctx = await requireModule("bookings");
+  const locale = await getRequestLocale();
+  const t = getT(locale);
   const { slug } = await params;
   const sp = await searchParams;
   if (!/^[\w-]{1,64}$/.test(slug)) notFound();
@@ -29,9 +34,9 @@ export default async function PartnerBookingPage({ params, searchParams }: { par
     if (!sp.repeat) notFound();
     return (
       <div>
-        <PageHeader title="Reservation wiederholen" subtitle={`Gemeinsame Anlage für ${ctx.tenant.name}`} back={{ href: "/bookings", label: "Reservationen" }} />
-        <Alert tone="info">Diese Reservation kann nicht wiederholt werden: Die Anlage ist für deinen Verein nicht mehr freigegeben.</Alert>
-        <div className="mt-4"><LinkButton href="/bookings" variant="secondary">Zu den Reservationen</LinkButton></div>
+        <PageHeader title={t("bookings.partner.repeatTitle")} subtitle={t("bookings.partner.subtitle", { club: ctx.tenant.name })} back={{ href: "/bookings", label: t("bookings.title") }} />
+        <Alert tone="info">{t("bookings.partner.repeatGone")}</Alert>
+        <div className="mt-4"><LinkButton href="/bookings" variant="secondary">{t("bookings.partner.toBookings")}</LinkButton></div>
       </div>
     );
   }
@@ -45,13 +50,13 @@ export default async function PartnerBookingPage({ params, searchParams }: { par
 
   return (
     <div>
-      <PageHeader title={`Anlagen von ${group.owner.name}`} subtitle={`Gemeinsame Anlage für ${ctx.tenant.name}`} back={{ href: "/bookings", label: "Reservationen" }} />
+      <PageHeader title={t("bookings.list.sharedTitle", { club: group.owner.name })} subtitle={t("bookings.partner.subtitle", { club: ctx.tenant.name })} back={{ href: "/bookings", label: t("bookings.title") }} />
       {prefill && repeatResource ? (
-        <Card className="animate-rise mb-3 p-3 flex items-center gap-2 text-sm"><Repeat className="h-4 w-4 text-ink-2 shrink-0" /><span className="flex-1">Wie letztes Mal: <span className="font-medium">{repeatResource.name}</span>, eine Woche später. Prüfe Zeit und bestätige.</span><Link href={`/bookings/partner/${group.owner.slug}`} className="text-xs text-ink-3 hover:text-ink">Abbrechen</Link></Card>
+        <Card className="animate-rise mb-3 p-3 flex items-center gap-2 text-sm"><Repeat className="h-4 w-4 text-ink-2 shrink-0" /><span className="flex-1">{t("bookings.list.repeatLead")} <span className="font-medium">{repeatResource.name}</span>{t("bookings.list.repeatTail")}</span><Link href={`/bookings/partner/${group.owner.slug}`} className="text-xs text-ink-3 hover:text-ink">{t("bookings.common.cancel")}</Link></Card>
       ) : sp.repeat ? (
-        <p className="mb-3 text-xs text-ink-3">Diese Reservation kann nicht wiederholt werden (Anlage nicht mehr freigegeben).</p>
+        <p className="mb-3 text-xs text-ink-3">{t("bookings.partner.repeatUnavailable")}</p>
       ) : null}
-      <SectionTitle>{repeatResource ? "Nochmals reservieren" : "Neu reservieren"}</SectionTitle>
+      <SectionTitle>{repeatResource ? t("bookings.list.again") : t("bookings.list.new")}</SectionTitle>
       <BookingWizard
         shared={{ ownerName: group.owner.name }}
         resources={group.resources.map((r) => ({ id: r.id, name: r.name, kind: r.kind, capacity: r.capacity, maxPersons: r.maxPersons, description: r.description, durationOptions: r.durationOptions, priceFactorPercent: r.priceFactorPercent, shareNote: r.shareNote }))}
@@ -66,8 +71,9 @@ export default async function PartnerBookingPage({ params, searchParams }: { par
         today={todayZurich()}
         prefill={prefill}
         key={`${group.owner.id}-${sp.repeat ?? sp.resourceId ?? "new"}`}
+        locale={locale}
       />
-      {!settings.allowInvoice ? <p className="mt-3 text-xs text-ink-3">Hinweis: {group.owner.name} bietet keine Bezahlung auf Rechnung an. Kostenpflichtige Termine bitte direkt beim Verein reservieren.</p> : null}
+      {!settings.allowInvoice ? <p className="mt-3 text-xs text-ink-3">{t("bookings.partner.noInvoice", { club: group.owner.name })}</p> : null}
     </div>
   );
 }

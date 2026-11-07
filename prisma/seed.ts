@@ -20,6 +20,8 @@ import { seedDemoEmbed } from "../src/modules/embed/seed";
 import { seedDemoSharing } from "../src/modules/sharing/seed";
 import { seedDemoKiosk } from "../src/modules/kiosk/seed";
 import { seedDemoScoreImport } from "../src/modules/scores/import/seed";
+import { seedDemoBookingSeries } from "../src/modules/bookings/seed";
+import { seedDemoAssociation } from "../src/modules/association/seed";
 
 const u = new URL(process.env.DATABASE_URL ?? "mysql://standchef:standchef@127.0.0.1:3306/standchef");
 const db = new PrismaClient({
@@ -174,7 +176,13 @@ async function main() {
     await seedDemoEmbed(db, demo.id, demoUsers);
     await seedDemoAccounting(db, demo.id, demoUsers);
     await seedDemoScoreImport(db, demo.id, demoUsers); // nach seedPresets (braucht ein globales Programm)
+
+    // Welle D: Trainingsserie + eine Beitrittsanfrage, Kantonalverband mit dem Demo-Verein (aktiv, Namen geteilt).
+    // FS-Auszeichnungslimiten (Beispiel) legt seedDemoFederal oben schon an (seedDemoFederalAwards).
+    await seedDemoBookingSeries(db, demo.id, [anna.id]); // Anna (Admin) legt die Serie an
+    await seedDemoAssociation(db, demo.id, [anna.id]); // Anna ist Verbandsadmin; nach seedDemoSharing (Partnerverein als Anfrage)
     console.log("Demo-Verein: Beitrittscode DEMO42 · anna@example.ch / beat@example.ch (Passwort demo1234)");
+    console.log("Demo-Verband: «Demo Kantonalverband», Code KSVDEMO1 (Anna ist Verbandsadmin)");
   }
 
   console.log(`Super-Admin: ${email} (Passwort aus SEED_ADMIN_PASSWORD)`);

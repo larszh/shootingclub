@@ -1,9 +1,10 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { Award, BookOpenCheck, Boxes, CalendarDays, ClipboardList, Clock, Code2, Coffee, CreditCard, FileInput, FileUp, FolderOpen, Handshake, HandHelping, History, Home, Mail, Megaphone, Package, Server, Settings2, Trophy, Tv, Users, Wallet } from "lucide-react";
+import { Award, BookOpenCheck, Boxes, CalendarDays, ClipboardList, Clock, Code2, Coffee, CreditCard, FileInput, FileUp, FolderOpen, Handshake, HandHelping, History, Home, Landmark, Mail, Megaphone, Package, Server, Settings2, Shield, Trophy, Tv, UserPlus, Users, Wallet } from "lucide-react";
 import { requirePermission } from "@/lib/tenant";
 import { MODULES } from "@/lib/modules";
 import { db } from "@/lib/db";
+import { accessStatusWhere } from "@/lib/membership-access";
 import { Card, PageHeader, SectionTitle } from "@/components/ui";
 import { tenantLogoUrl } from "@/components/avatar";
 import { BrandingForm, JoinCodeCard, ModuleToggle, TenantSettingsForm } from "./forms";
@@ -13,8 +14,11 @@ export const metadata: Metadata = { title: "Einstellungen" };
 
 export default async function AdminPage() {
   const ctx = await requirePermission("tenant.manage");
-  const tenant = await db.tenant.findUniqueOrThrow({ where: { id: ctx.tenant.id }, include: { _count: { select: { memberships: { where: { status: { not: "LEFT" } } } } } } });
+  const tenant = await db.tenant.findUniqueOrThrow({ where: { id: ctx.tenant.id }, include: { _count: { select: { memberships: { where: { status: accessStatusWhere() } } } } } });
   const base = process.env.APP_URL ?? "";
+  const pendingRequests = ctx.can("members.approve")
+    ? await db.membership.count({ where: { tenantId: ctx.tenant.id, status: "PENDING", user: { deletedAt: null } } })
+    : null;
 
   return (
     <div>
@@ -23,6 +27,10 @@ export default async function AdminPage() {
 
       <SectionTitle>Mitglieder einladen</SectionTitle>
       <JoinCodeCard code={tenant.joinCode} link={`${base}/register?code=${tenant.joinCode}`} />
+      {pendingRequests !== null ? (
+        <AdminRow href="/admin/members/requests" icon={<UserPlus className="h-5 w-5 text-ink-2" aria-hidden />} label="Beitrittsanfragen"
+          hint={`Beitritt mit Freigabe: ${tenant.joinApproval ? "ein" : "aus"}${pendingRequests ? ` · ${pendingRequests} ${pendingRequests === 1 ? "Anfrage wartet" : "Anfragen warten"}` : ""}`} />
+      ) : null}
       <Link href="/admin/members" className="block press mt-2.5">
         <Card className="p-4 flex items-center gap-3 hover:border-ink/30"><Users className="h-5 w-5 text-ink-2" aria-hidden /><span className="flex-1 font-medium">Mitglieder & Rollen</span><span className="text-sm text-ink-3">{tenant._count.memberships}</span></Card>
       </Link>
@@ -78,6 +86,10 @@ export default async function AdminPage() {
         <AdminRow href="/admin/accounting" icon={<BookOpenCheck className="h-5 w-5 text-ink-2" aria-hidden />} label="Buchhaltung" hint="Export für Banana & bexio" />
       ) : null}
       <AdminRow href="/admin/embed" icon={<Code2 className="h-5 w-5 text-ink-2" aria-hidden />} label="Website-Widgets" hint="Kalender & Ranglisten" />
+      <AdminRow href="/admin/association" icon={<Landmark className="h-5 w-5 text-ink-2" aria-hidden />} label="Verband" hint="Kantonal-/Regionalverband" />
+      {ctx.hasModule("weapons") && ctx.can("weapons.manage") ? (
+        <AdminRow href="/admin/weapons/settings" icon={<Shield className="h-5 w-5 text-ink-2" aria-hidden />} label="Vereinswaffen" hint="Meldefrist Minderjährige, Wartung" />
+      ) : null}
 
       {ctx.hasModule("range") && ctx.can("range.manage") ? (
         <>

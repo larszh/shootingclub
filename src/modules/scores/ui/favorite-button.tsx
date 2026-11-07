@@ -6,6 +6,7 @@ import { toggleFavoriteAction } from "@/modules/scores/actions";
 import { isNavigationError, isNetworkError, toast } from "@/lib/ui-feedback";
 import { cn } from "@/lib/utils";
 import { getT, type Locale } from "@/lib/i18n/core";
+import { scoreErrorText } from "./labels";
 
 export function FavoriteButton({ programId, favorite, className, locale = "de" }: { programId: string; favorite: boolean; className?: string; locale?: Locale }) {
   const t = getT(locale);
@@ -21,7 +22,7 @@ export function FavoriteButton({ programId, favorite, className, locale = "de" }
           setOpt(!opt);
           try {
             const r = await toggleFavoriteAction(programId);
-            if (!r.ok) toast.error(r.error);
+            if (!r.ok) toast.error(scoreErrorText(t, r.error));
           } catch (err) {
             if (isNavigationError(err)) throw err;
             toast.error(isNetworkError(err) ? t("shooting.favorite.offline") : t("shooting.favorite.failed"));

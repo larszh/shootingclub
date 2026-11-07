@@ -4,6 +4,8 @@ import { db } from "@/lib/db";
 import { requireModule, type ActiveTenant, type AppContext } from "@/lib/tenant";
 import { zurichParts, zurichToUtc } from "@/lib/time";
 import type { Prisma } from "@/generated/prisma/client";
+import { accessStatusWhere } from "@/lib/membership-access";
+import { parseStages, programTotals } from "@/modules/scores/types";
 import { dbDateToDay } from "./types";
 
 export type FederalCtx = AppContext & { tenant: ActiveTenant };
@@ -168,10 +170,10 @@ export async function listOfficialResults(tenantId: string, year: number, f: Off
 }
 export type OfficialResultRow = Awaited<ReturnType<typeof listOfficialResults>>[number];
 
-/** Aktuelle Mitglieder (nicht ausgetreten, Konto nicht gelöscht) als Map userId → Name. */
+/** Aktuelle Mitglieder (nicht ausgetreten, nicht wartend auf Freigabe, Konto nicht gelöscht). */
 export async function currentMembers(tenantId: string) {
   const ms = await db.membership.findMany({
-    where: { tenantId, status: { not: "LEFT" }, user: { deletedAt: null } },
+    where: { tenantId, status: accessStatusWhere(), user: { deletedAt: null } },
     select: { userId: true, joinedAt: true, user: { select: { name: true } } },
     orderBy: { user: { name: "asc" } },
   });
@@ -184,15 +186,18 @@ export async function listFsParticipants(tenantId: string, year: number) {
   const rows = await db.matchParticipant.findMany({
     where: { total: { not: null }, match: { tenantId, date: { gte: from, lt: to }, program: { officialKind: "FS" } } },
     select: {
-      id: true, total: true, zeros: true, isOfficial: true, guestName: true,
-      user: { select: { name: true } },
-      match: { select: { id: true, date: true, program: { select: { name: true, scoringMode: true } } } },
+      id: true, total: true, zeros: true, isOfficial: true, guestName: true, userId: true,
+      user: { select: { name: true, birthDate: true } },
+      match: { select: { id: true, date: true, program: { select: { id: true, name: true, scoringMode: true } } } },
     },
     take: 2000,
   });
   return rows.map((r) => ({
     id: r.id,
     matchId: r.match.id,
+    programId: r.match.program.id,
+    userId: r.userId,
+    birthYear: r.user?.birthDate ? r.user.birthDate.getUTCFullYear() : null,
     name: r.user?.name ?? r.guestName ?? "Gast",
     isGuest: !r.user,
     total: r.total ?? 0,
@@ -202,6 +207,58 @@ export async function listFsParticipants(tenantId: string, year: number) {
     decimal: r.match.program.scoringMode === "RINGS_DECIMAL",
     date: r.match.date,
   }));
+}
+
+export type FsParticipantRow = Awaited<ReturnType<typeof listFsParticipants>>[number];
+
+// ---------------------------------------------------------------------------
+// Feldschiessen-Auszeichnungen (Limiten pro Programm und Jahr)
+// ---------------------------------------------------------------------------
+
+/** Feldschiessen-Programme des Vereins mit Maximum (für die Prüfung der Limiten). */
+export async function listFsPrograms(tenantId: string) {
+  const programs = await listOfficialPrograms(tenantId, "FS");
+  if (!programs.length) return [];
+  const details = await db.program.findMany({ where: { id: { in: programs.map((p) => p.id) } }, select: { id: true, stagesJson: true, scoringMode: true } });
+  const byId = new Map(details.map((d) => [d.id, d]));
+  return programs.map((p) => {
+    const d = byId.get(p.id);
+    const max = d ? programTotals(parseStages(d.stagesJson), d.scoringMode).max : 0;
+    return { id: p.id, name: p.name, max: max > 0 ? max : null, isGlobal: p.tenantId === null };
+  });
+}
+export type FsProgramView = Awaited<ReturnType<typeof listFsPrograms>>[number];
+
+/** Limiten eines Jahres, gruppiert nach Programm (Reihenfolge nach sort). */
+export async function listAwardLimits(tenantId: string, year: number) {
+  const rows = await db.awardLimit.findMany({
+    where: { tenantId, year },
+    select: { id: true, programId: true, category: true, minScore: true, award: true, sort: true, updatedAt: true },
+    orderBy: [{ programId: "asc" }, { sort: "asc" }],
+  });
+  const map = new Map<string, typeof rows>();
+  for (const r of rows) {
+    const list = map.get(r.programId) ?? [];
+    list.push(r);
+    map.set(r.programId, list);
+  }
+  return map;
+}
+
+/** Letztes Jahr vor `year` mit Limiten pro Programm (für «Vorjahr übernehmen»). */
+export async function previousAwardLimits(tenantId: string, year: number) {
+  const rows = await db.awardLimit.findMany({
+    where: { tenantId, year: { lt: year, gte: year - 5 } },
+    select: { programId: true, year: true, category: true, minScore: true, award: true, sort: true },
+    orderBy: [{ year: "desc" }, { sort: "asc" }],
+  });
+  const map = new Map<string, { year: number; limits: typeof rows }>();
+  for (const r of rows) {
+    const cur = map.get(r.programId);
+    if (!cur) map.set(r.programId, { year: r.year, limits: [r] });
+    else if (cur.year === r.year) cur.limits.push(r);
+  }
+  return map;
 }
 
 // ---------------------------------------------------------------------------

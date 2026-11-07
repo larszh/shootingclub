@@ -2,7 +2,7 @@ import "server-only";
 import { db } from "@/lib/db";
 import { addDays, formatDateZurich, zurichToUtc } from "@/lib/time";
 import { feeInvoiceTitle, isStandaloneFeeInvoice } from "@/modules/billing/fee-title";
-import { buildJournal, feeInvoiceKind, isPaidOnline, journalTotals, ONLINE_SETTLE_WINDOW_MS, summarizeAccounts, type JournalDocument, type OnlinePayment } from "./journal";
+import { buildJournal, feeInvoiceKind, isPaidOnline, journalTotals, kioskCashDocuments, ONLINE_SETTLE_WINDOW_MS, reversalDate, summarizeAccounts, type JournalDocument, type OnlinePayment } from "./journal";
 import { ACCOUNT_LABEL, toAccountPlan, type AccountPlan } from "./types";
 import { eventKey, loadAccountingEventDates } from "./events";
 
@@ -57,11 +57,11 @@ function paidByOnline(invoicePaidAt: Date | null, payments: PaymentRow[]) {
 type EventDates = Map<string, Date>;
 
 /**
- * Erstattungsdatum einer Reservation (paymentStatus REFUNDED). Es gibt keine eigene Spalte: Datum aus dem
- * protokollierten Statuswechsel (siehe events.ts), nur ohne Eintrag (ältere Daten) die letzte Änderung.
+ * Erstattungsdatum einer Reservation (paymentStatus REFUNDED): Spalte refundedAt; ältere Reservationen
+ * ohne Spalte aus dem protokollierten Statuswechsel (siehe events.ts), sonst die letzte Änderung.
  */
-function bookingRefundedAt(b: { id: string; paymentStatus: string; updatedAt: Date }, events: EventDates) {
-  return b.paymentStatus === "REFUNDED" ? (events.get(eventKey("refund", "Booking", b.id)) ?? b.updatedAt) : null;
+function bookingRefundedAt(b: { id: string; paymentStatus: string; refundedAt: Date | null; updatedAt: Date }, events: EventDates) {
+  return b.paymentStatus === "REFUNDED" ? reversalDate(b.refundedAt, events.get(eventKey("refund", "Booking", b.id)), b.updatedAt) : null;
 }
 
 function invoiceStatus(s: string): "OPEN" | "PAID" | "CANCELLED" {
@@ -70,19 +70,19 @@ function invoiceStatus(s: string): "OPEN" | "PAID" | "CANCELLED" {
 
 const paymentSelect = { id: true, provider: true, status: true, amountCents: true, currency: true, createdAt: true, updatedAt: true } as const;
 
-export async function loadJournalDocuments(tenantId: string, from: string, to: string): Promise<JournalDocument[]> {
+export async function loadJournalDocuments(tenantId: string, from: string, to: string, opts?: { includeKioskCash?: boolean }): Promise<JournalDocument[]> {
   const { start, end } = periodBounds(from, to);
   const touched = { gte: start };
 
-  const [fees, bookingInvoices, onlineBookingPayments, ammo, cashBookings] = await Promise.all([
+  const [fees, bookingInvoices, onlineBookingPayments, ammo, cashBookings, kioskCash, profile] = await Promise.all([
     db.feeInvoice.findMany({
       where: {
         tenantId,
         issuedAt: { lt: end },
-        OR: [{ issuedAt: touched }, { paidAt: touched }, { updatedAt: touched }, { payments: { some: { updatedAt: touched } } }],
+        OR: [{ issuedAt: touched }, { paidAt: touched }, { cancelledAt: touched }, { updatedAt: touched }, { payments: { some: { updatedAt: touched } } }],
       },
       select: {
-        id: true, number: true, year: true, categoryName: true, amountCents: true, currency: true, status: true, issuedAt: true, paidAt: true, updatedAt: true,
+        id: true, number: true, year: true, categoryName: true, amountCents: true, currency: true, status: true, issuedAt: true, paidAt: true, cancelledAt: true, updatedAt: true,
         runId: true, membershipId: true, run: { select: { title: true } },
         payments: { where: { status: { in: PAYMENT_DONE } }, select: paymentSelect, orderBy: { createdAt: "asc" } },
       },
@@ -91,13 +91,16 @@ export async function loadJournalDocuments(tenantId: string, from: string, to: s
       where: {
         tenantId,
         issuedAt: { lt: end },
-        OR: [{ issuedAt: touched }, { paidAt: touched }, { booking: { updatedAt: touched } }, { booking: { payments: { some: { updatedAt: touched } } } }],
+        OR: [
+          { issuedAt: touched }, { paidAt: touched }, { cancelledAt: touched },
+          { booking: { updatedAt: touched } }, { booking: { refundedAt: touched } }, { booking: { payments: { some: { updatedAt: touched } } } },
+        ],
       },
       select: {
-        id: true, number: true, amountCents: true, currency: true, status: true, issuedAt: true, paidAt: true,
+        id: true, number: true, amountCents: true, currency: true, status: true, issuedAt: true, paidAt: true, cancelledAt: true,
         booking: {
           select: {
-            id: true, startsAt: true, cancelledAt: true, updatedAt: true, paymentStatus: true, resource: { select: { name: true } },
+            id: true, startsAt: true, cancelledAt: true, refundedAt: true, updatedAt: true, paymentStatus: true, resource: { select: { name: true } },
             payments: { where: { status: { in: PAYMENT_DONE } }, select: paymentSelect, orderBy: { createdAt: "asc" } },
           },
         },
@@ -108,18 +111,18 @@ export async function loadJournalDocuments(tenantId: string, from: string, to: s
         status: { in: PAYMENT_DONE },
         booking: { tenantId, invoice: { is: null } },
         createdAt: { lt: end },
-        OR: [{ updatedAt: touched }, { booking: { updatedAt: touched } }],
+        OR: [{ updatedAt: touched }, { booking: { updatedAt: touched } }, { booking: { refundedAt: touched } }],
       },
-      select: { ...paymentSelect, booking: { select: { id: true, startsAt: true, paymentStatus: true, updatedAt: true, resource: { select: { name: true } } } } },
+      select: { ...paymentSelect, booking: { select: { id: true, startsAt: true, paymentStatus: true, refundedAt: true, updatedAt: true, resource: { select: { name: true } } } } },
     }),
     db.ammoOrder.findMany({
       where: {
         tenantId,
         invoiceNumber: { not: null },
         invoiceIssuedAt: { lt: end },
-        OR: [{ invoiceIssuedAt: touched }, { paidAt: touched }, { updatedAt: touched }],
+        OR: [{ invoiceIssuedAt: touched }, { paidAt: touched }, { cancelledAt: touched }, { updatedAt: touched }],
       },
-      select: { id: true, invoiceNumber: true, invoiceIssuedAt: true, totalCents: true, currency: true, status: true, paymentStatus: true, paidAt: true, updatedAt: true },
+      select: { id: true, invoiceNumber: true, invoiceIssuedAt: true, totalCents: true, currency: true, status: true, paymentStatus: true, paidAt: true, cancelledAt: true, updatedAt: true },
     }),
     // Reservationen «Bar / vor Ort»: gelten beim Erfassen als bezahlt, ohne Rechnung und ohne Online-Zahlung.
     db.booking.findMany({
@@ -130,21 +133,27 @@ export async function loadJournalDocuments(tenantId: string, from: string, to: s
         totalCents: { gt: 0 },
         invoice: { is: null },
         createdAt: { lt: end },
-        OR: [{ paidAt: touched }, { updatedAt: touched }],
+        OR: [{ paidAt: touched }, { updatedAt: touched }, { refundedAt: touched }],
       },
-      select: { id: true, startsAt: true, paidAt: true, createdAt: true, updatedAt: true, totalCents: true, currency: true, paymentStatus: true, resource: { select: { name: true } } },
+      select: { id: true, startsAt: true, paidAt: true, createdAt: true, updatedAt: true, refundedAt: true, totalCents: true, currency: true, paymentStatus: true, resource: { select: { name: true } } },
     }),
+    // Barverkäufe der Schützenstube (Gäste und Mitglieder «bar»): nur im Zeitraum, ein Beleg pro Tag.
+    opts?.includeKioskCash === false
+      ? Promise.resolve([])
+      : db.kioskEntry.findMany({ where: { tenantId, paidCash: true, createdAt: { gte: start, lt: end } }, select: { createdAt: true, totalCents: true } }),
+    db.billingProfile.findUnique({ where: { tenantId }, select: { currency: true } }),
   ]);
 
-  // Storno- und Erstattungsdaten aus dem Protokoll statt aus updatedAt (siehe events.ts).
+  // Storno- und Erstattungsdaten stehen in cancelledAt/refundedAt. Nur ältere Belege ohne Spalte lesen
+  // das Datum aus dem Protokoll (siehe events.ts), sonst gilt updatedAt.
   const refundedBookingIds = [
-    ...bookingInvoices.filter((i) => i.booking.paymentStatus === "REFUNDED").map((i) => i.booking.id),
-    ...onlineBookingPayments.flatMap((p) => (p.booking?.paymentStatus === "REFUNDED" ? [p.booking.id] : [])),
-    ...cashBookings.filter((b) => b.paymentStatus === "REFUNDED").map((b) => b.id),
+    ...bookingInvoices.filter((i) => i.booking.paymentStatus === "REFUNDED" && !i.booking.refundedAt).map((i) => i.booking.id),
+    ...onlineBookingPayments.flatMap((p) => (p.booking?.paymentStatus === "REFUNDED" && !p.booking.refundedAt ? [p.booking.id] : [])),
+    ...cashBookings.filter((b) => b.paymentStatus === "REFUNDED" && !b.refundedAt).map((b) => b.id),
   ];
   const events = await loadAccountingEventDates(tenantId, [
-    { entity: "FeeInvoice", ids: fees.filter((f) => f.status === "CANCELLED").map((f) => f.id) },
-    { entity: "AmmoOrder", ids: ammo.filter((o) => o.paymentStatus === "CANCELLED" || o.status === "CANCELLED").map((o) => o.id) },
+    { entity: "FeeInvoice", ids: fees.filter((f) => f.status === "CANCELLED" && !f.cancelledAt).map((f) => f.id) },
+    { entity: "AmmoOrder", ids: ammo.filter((o) => (o.paymentStatus === "CANCELLED" || o.status === "CANCELLED") && !o.cancelledAt).map((o) => o.id) },
     { entity: "Booking", ids: [...new Set(refundedBookingIds)] },
   ]);
 
@@ -171,7 +180,7 @@ export async function loadJournalDocuments(tenantId: string, from: string, to: s
       type: "invoice", source: "FEE", id: f.id, number: f.number, kind, label,
       amountCents: f.amountCents, currency: f.currency, issuedAt: f.issuedAt, status: invoiceStatus(f.status),
       paidAt: f.paidAt, paidOnline: paidByOnline(f.paidAt, f.payments), refundedAt: null,
-      cancelledAt: f.status === "CANCELLED" ? (events.get(eventKey("cancel", "FeeInvoice", f.id)) ?? f.updatedAt) : null,
+      cancelledAt: f.status === "CANCELLED" ? reversalDate(f.cancelledAt, events.get(eventKey("cancel", "FeeInvoice", f.id)), f.updatedAt) : null,
       onlinePayments: f.payments.map((p) => toOnlinePayment(p)),
     });
   }
@@ -186,7 +195,8 @@ export async function loadJournalDocuments(tenantId: string, from: string, to: s
       paidAt: i.paidAt, paidOnline: paidByOnline(i.paidAt, i.booking.payments),
       // Erstattung gilt für die Online-Zahlungen; ohne solche für die per Bank bezahlte Rechnung.
       refundedAt: onlinePaid ? null : refundedAt,
-      cancelledAt: i.status === "CANCELLED" ? (i.booking.cancelledAt ?? i.booking.updatedAt) : null,
+      // Rechnung storniert: eigenes Datum, sonst Storno der Reservation (ältere Rechnungen), sonst letzte Änderung.
+      cancelledAt: i.status === "CANCELLED" ? reversalDate(i.cancelledAt, i.booking.cancelledAt, i.booking.updatedAt) : null,
       onlinePayments: i.booking.payments.map((p) => toOnlinePayment(p, refundedAt)),
     });
   }
@@ -216,18 +226,24 @@ export async function loadJournalDocuments(tenantId: string, from: string, to: s
       amountCents: o.totalCents, currency: o.currency, issuedAt: o.invoiceIssuedAt,
       status: cancelled ? "CANCELLED" : o.paymentStatus === "PAID" ? "PAID" : "OPEN",
       paidAt: o.paidAt, paidOnline: false, refundedAt: null,
-      cancelledAt: cancelled ? (events.get(eventKey("cancel", "AmmoOrder", o.id)) ?? o.updatedAt) : null,
+      cancelledAt: cancelled ? reversalDate(o.cancelledAt, events.get(eventKey("cancel", "AmmoOrder", o.id)), o.updatedAt) : null,
       // Munition ist nie online bezahlbar (Anbieter-AGB), nur per Rechnung.
       onlinePayments: [],
     });
   }
 
+  docs.push(...kioskCashDocuments(kioskCash, profile?.currency ?? "CHF"));
+
   return docs;
 }
 
-/** Journal, Kontensaldi und Kontrollsumme eines Zeitraums. */
-export async function getAccountingJournal(tenantId: string, from: string, to: string) {
-  const [accounts, docs] = await Promise.all([getAccountPlan(tenantId), loadJournalDocuments(tenantId, from, to)]);
-  const entries = buildJournal(docs, accounts, { from, to });
+/**
+ * Journal, Kontensaldi und Kontrollsumme eines Zeitraums. `includeKioskCash` (Standard an): Barverkäufe
+ * der Schützenstube pro Tag als Kasse / Ertrag Schützenstube buchen; aus, wer die Kasse separat führt.
+ */
+export async function getAccountingJournal(tenantId: string, from: string, to: string, opts?: { includeKioskCash?: boolean }) {
+  const includeKioskCash = opts?.includeKioskCash !== false;
+  const [accounts, docs] = await Promise.all([getAccountPlan(tenantId), loadJournalDocuments(tenantId, from, to, { includeKioskCash })]);
+  const entries = buildJournal(docs, accounts, { from, to, includeKioskCash });
   return { accounts, entries, summary: summarizeAccounts(entries, accounts, ACCOUNT_LABEL), totals: journalTotals(entries) };
 }

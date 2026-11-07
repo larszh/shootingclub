@@ -104,7 +104,22 @@ export function statusAfterReturn(current: string, shotsSinceServiceAfter: numbe
 
 const BLOCK_PREFIX = "Sperrgrund: ";
 
-/** Sperrgrund steht als erste Zeile «Sperrgrund: …» in den Notizen. */
+/**
+ * Sperrgrund einer Waffe: das eigene Feld ClubWeapon.blockReason, sonst (Altdaten vor Welle D) die
+ * erste Notizzeile «Sperrgrund: …». Nur bei Status BLOCKED relevant.
+ */
+export function effectiveBlockReason(w: { status: string; blockReason: string | null; notes: string | null }): string | null {
+  if (w.status !== "BLOCKED") return null;
+  return w.blockReason?.trim() || blockReasonOf(w.notes);
+}
+
+/** Bereinigter Sperrgrund für das Feld (Leerzeichen zusammengefasst, höchstens 191 Zeichen). */
+export function cleanBlockReason(reason: string | null | undefined): string | null {
+  const clean = (reason ?? "").replace(/\s+/g, " ").trim().slice(0, 191);
+  return clean || null;
+}
+
+/** Altdaten: Sperrgrund stand früher als erste Zeile «Sperrgrund: …» in den Notizen. */
 export function blockReasonOf(notes: string | null | undefined) {
   const first = (notes ?? "").split("\n")[0] ?? "";
   return first.startsWith(BLOCK_PREFIX) ? first.slice(BLOCK_PREFIX.length).trim() || null : null;

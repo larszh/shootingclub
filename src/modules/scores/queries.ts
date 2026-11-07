@@ -1,5 +1,6 @@
 import "server-only";
 import { db } from "@/lib/db";
+import { accessStatusWhere } from "@/lib/membership-access";
 import type { AppContext } from "@/lib/tenant";
 import type { Prisma } from "@/generated/prisma/client";
 import { safeJson } from "@/lib/utils";
@@ -227,7 +228,7 @@ export type MatchView = NonNullable<Awaited<ReturnType<typeof getMatch>>>;
 export async function listTenantMembers(tenantId: string) {
   const ms = await db.membership.findMany({
     // Ausgetretene und gelöschte Konten nicht zur Auswahl anbieten.
-    where: { tenantId, status: { not: "LEFT" }, user: { deletedAt: null } },
+    where: { tenantId, status: accessStatusWhere(), user: { deletedAt: null } },
     include: { user: { select: { id: true, name: true, email: true, avatarPath: true, updatedAt: true } } },
     orderBy: { user: { name: "asc" } },
   });

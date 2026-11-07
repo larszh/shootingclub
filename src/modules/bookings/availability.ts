@@ -1,4 +1,4 @@
-import { addDays, todayZurich, zurichParts, zurichToUtc } from "@/lib/time";
+import { addDays, todayZurich, zurichParts, zurichToUtc } from "../../lib/time";
 import type { OpeningHours } from "./types";
 
 export type Interval = { startsAt: Date; endsAt: Date };

@@ -5,7 +5,7 @@ import { getAppContext } from "@/lib/tenant";
 import { formatDateTimeZurich, formatDateZurich, todayZurich } from "@/lib/time";
 import { slugify } from "@/lib/utils";
 import { csvAmount, csvResponse, toCsv } from "@/modules/billing/csv";
-import { blockReasonOf, stripBlockReason } from "@/modules/weapons/logic";
+import { stripBlockReason } from "@/modules/weapons/logic";
 import { listWeapons } from "@/modules/weapons/queries";
 import { serviceKindLabel, weaponStatusInfo } from "@/modules/weapons/types";
 
@@ -59,7 +59,7 @@ export async function GET(req: NextRequest) {
   const header = ["Bezeichnung", "Disziplin", "Hersteller", "Modell", "Kaliber", "Seriennummer", "Status", "Sperrgrund", "Schusszähler", "Schuss seit Wartung", "Wartung alle (Schuss)", "Nächste Wartung", "Wartung fällig", "Ausgeliehen an", "Ausgeliehen seit", "Notizen"];
   const rows = weapons.map((w) => [
     w.name, w.discipline ?? "", w.manufacturer ?? "", w.model ?? "", w.caliber ?? "", w.serialNumber ?? "", weaponStatusInfo(w.status).label,
-    blockReasonOf(notes.get(w.id)) ?? "", w.shotCount, w.shotsSinceService, w.serviceEveryShots ?? "", day(w.nextServiceAt), w.service.due ? "ja" : "nein",
+    w.blockReason ?? "", w.shotCount, w.shotsSinceService, w.serviceEveryShots ?? "", day(w.nextServiceAt), w.service.due ? "ja" : "nein",
     w.openLoan?.borrower ?? "", w.openLoan ? dt(w.openLoan.loanedAt) : "", stripBlockReason(notes.get(w.id)) ?? "",
   ]);
   return csvResponse(toCsv([header, ...rows]), `vereinswaffen-${club}-${today}.csv`);

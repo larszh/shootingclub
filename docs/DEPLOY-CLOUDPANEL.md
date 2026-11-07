@@ -112,6 +112,8 @@ npx tsx prisma/seed.ts --presets-only   # oder: npm run db:seed:presets
 
 `scripts/deploy.sh` führt ihn nach `prisma migrate deploy` aus. Den vollen `npm run db:seed` nach der Erstinstallation nicht mehr verwenden: Fehlen `SEED_ADMIN_EMAIL`/`SEED_ADMIN_PASSWORD` in `.env`, legt er `admin@example.ch` mit dem Standardpasswort als Super-Admin an.
 
+**Update auf Welle D**: keine neuen Umgebungsvariablen. Die Migration `20261102000000_wave_d` legt die Tabellen für Verbände, Serien-Reservationen, FS-Limiten, Waffen-Einstellungen und Haushaltsrechnungen an und trägt Storno-/Rückerstattungsdaten aus `updatedAt` nach; `scripts/deploy.sh` sichert die Datenbank wie immer vorher. Die Erinnerung an Reservationen läuft automatisch im stündlichen Job `reminders` (07–21 Uhr). Verbände legt ein Super-Admin unter **Mehr → Globale Verwaltung → Verbände** an.
+
 ### Absicherung
 
 - Die App setzt `X-Frame-Options: SAMEORIGIN` und `Content-Security-Policy: frame-ancestors 'self'` (Schutz gegen Einbetten auf fremden Seiten, `next.config.ts`).
@@ -247,7 +249,9 @@ Unter **Einstellungen → Buchhaltung** (`/admin/accounting`, Recht `accounting.
 - **bexio**: «bexio (CSV für manuellen Import)» herunterladen (Semikolon, UTF-8 mit BOM) und im Buchungsimport von bexio die Spalten zuordnen.
 - **CSV**: generisch mit zusätzlichen Spalten (Währung, Bereich, Art) für Excel oder andere Programme.
 
-Das Journal enthält Beiträge, Ersatzabgabe, Schützenstube, Reservationen (auch «Bar / vor Ort» bezahlte: Bank an Reservationen), Munition und Online-Zahlungen. Es wird aus dem aktuellen Stand der Belege berechnet: nur abgeschlossene Zeiträume exportieren. Gebühren der Zahlungsanbieter und Barverkäufe der Schützenstube werden nicht automatisch gebucht. Jeder Export steht im Protokoll.
+Das Journal enthält Beiträge, Ersatzabgabe, Schützenstube, Reservationen (auch «Bar / vor Ort» bezahlte: Bank an Reservationen), Munition und Online-Zahlungen. Es wird aus dem aktuellen Stand der Belege berechnet: nur abgeschlossene Zeiträume exportieren. Barverkäufe der Schützenstube werden als eine Buchung pro Tag gebucht (Kasse 1000 an Ertrag Schützenstube 3600, Konten `cashAccount`/`kioskAccount` im Kontenplan; abschaltbar mit `kioskCash=0`). Gebühren der Zahlungsanbieter werden weiterhin von Hand gebucht. Jeder Export steht im Protokoll.
+
+Hinweis zum Update auf Welle D: Rechnungen der Schützenstube laufen neu auf das Konto `kioskAccount` (statt Mitgliederbeiträge) und bar bezahlte Reservationen auf `cashAccount` (statt Bank). Bestehende Kontenpläne erhalten die Vorgaben 1000/3600; bitte mit dem eigenen Kontenplan abgleichen, bevor ein Zeitraum über das Update hinweg exportiert wird.
 
 ## Resultat-Import aus elektronischen Trefferanzeigen
 
@@ -302,7 +306,7 @@ Der Job-Runner startet mit dem Node-Prozess (`src/instrumentation.ts`) und führ
 |---|---|---|
 | `mail.send` | 30 s | Mail-Warteschlange verschicken |
 | `cleanup` | stündlich | abgelaufene Sitzungen, Tokens, Einladungen und alte Mails löschen |
-| `reminders` | stündlich | Erinnerungen der Module (Hooks in `src/lib/jobs/registry.ts`) |
+| `reminders` | stündlich | Erinnerungen der Module (Hooks in `src/lib/jobs/registry.ts`: Schichten, Vereinswaffen, Bundesübungen, Reservationen 24 h vorher) |
 | `tenant.purge` | täglich | Vereine 30 Tage nach der Löschung endgültig entfernen (inkl. Dateien) |
 | `scores.backfill` | täglich | gespeicherte Totale älterer Durchgänge nachtragen |
 

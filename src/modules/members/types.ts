@@ -20,7 +20,16 @@ export function isMemberStatus(s: unknown): s is MemberStatus {
   return typeof s === "string" && (MEMBER_STATUSES as readonly string[]).includes(s);
 }
 
+/**
+ * PENDING (Beitrittsanfrage) ist kein zuweisbarer Status: er entsteht nur beim Beitritt mit Freigabe
+ * und endet mit Freigabe (→ ACTIVE) oder Ablehnung (Mitgliedschaft gelöscht). Darum nicht in
+ * MEMBER_STATUSES, aber mit eigener Beschriftung.
+ */
+export const PENDING_STATUS = "PENDING";
+export const PENDING_LABEL = "Wartet auf Freigabe";
+
 export function statusLabel(s: string | null | undefined) {
+  if (s === PENDING_STATUS) return PENDING_LABEL;
   return s && isMemberStatus(s) ? STATUS_LABELS[s] : s ?? "–";
 }
 
@@ -30,6 +39,7 @@ export function statusTone(s: string): "neutral" | "accent" | "ok" | "warn" | "d
     case "JUNIOR": return "accent";
     case "HONORARY": return "accent";
     case "LEFT": return "danger";
+    case "PENDING": return "warn";
     case "SUPPORTER": return "outline";
     default: return "neutral";
   }

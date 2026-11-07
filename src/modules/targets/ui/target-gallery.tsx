@@ -3,7 +3,9 @@
 import { useMemo, useState } from "react";
 import { LayoutGrid, Search, Square, Star, X } from "lucide-react";
 import type { TargetView } from "@/modules/targets/queries";
-import { TARGET_CATEGORIES, categoryLabel, subjectCategory, subjectLabel, type TargetCategory } from "@/modules/targets/types";
+import { TARGET_CATEGORIES, subjectCategory, type TargetCategory } from "@/modules/targets/types";
+import { useT } from "@/components/locale";
+import { targetCategoryText, targetSubjectText } from "@/modules/scores/ui/labels";
 import { Input, Select } from "@/components/ui";
 import { TargetCard } from "./target-card";
 import { cn } from "@/lib/utils";
@@ -23,6 +25,7 @@ function categoryOf(t: TargetView): TargetCategory {
 }
 
 export function TargetGallery({ targets, initial }: { targets: TargetView[]; initial?: Partial<GalleryFilters> }) {
+  const t = useT();
   const [cat, setCatState] = useState<TargetCategory | "all">(initial?.cat ?? "all");
   const [q, setQState] = useState(initial?.q ?? "");
   const [scope, setScopeState] = useState<Scope>(initial?.scope ?? "all");
@@ -38,17 +41,17 @@ export function TargetGallery({ targets, initial }: { targets: TargetView[]; ini
 
   const list = useMemo(() => {
     const needle = norm(q.trim());
-    const filtered = targets.filter((t) => {
-      if (cat !== "all" && categoryOf(t) !== cat) return false;
-      if (scope !== "all" && t.scope !== scope) return false;
-      if (onlyFav && !t.favorite) return false;
-      if (needle && !norm(`${t.name} ${t.description ?? ""} ${subjectLabel(t.subject)} ${categoryLabel(categoryOf(t))}`).includes(needle)) return false;
+    const filtered = targets.filter((x) => {
+      if (cat !== "all" && categoryOf(x) !== cat) return false;
+      if (scope !== "all" && x.scope !== scope) return false;
+      if (onlyFav && !x.favorite) return false;
+      if (needle && !norm(`${x.name} ${x.description ?? ""} ${targetSubjectText(t, x.subject)} ${targetCategoryText(t, categoryOf(x))}`).includes(needle)) return false;
       return true;
     });
     if (!favFirst) return filtered;
     // Stabil sortieren: Favoriten zuerst, sonst Reihenfolge beibehalten
-    return filtered.map((t, i) => ({ t, i })).sort((a, b) => Number(b.t.favorite) - Number(a.t.favorite) || a.i - b.i).map((x) => x.t);
-  }, [targets, cat, scope, onlyFav, favFirst, q]);
+    return filtered.map((x, i) => ({ x, i })).sort((a, b) => Number(b.x.favorite) - Number(a.x.favorite) || a.i - b.i).map((y) => y.x);
+  }, [targets, cat, scope, onlyFav, favFirst, q, t]);
 
   // Filter in der URL halten, damit sie nach «Zurück» erhalten bleiben
   function setFilters(next: Partial<GalleryFilters>) {
@@ -80,39 +83,39 @@ export function TargetGallery({ targets, initial }: { targets: TargetView[]; ini
     <div>
       <div className="animate-fade relative mb-3">
         <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-ink-3" />
-        <Input type="search" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Scheibe suchen, z.B. «Luftpistole»" aria-label="Scheibe suchen" className="pl-9 pr-10" />
+        <Input type="search" value={q} onChange={(e) => setQ(e.target.value)} placeholder={t("shooting.targets.search")} aria-label={t("shooting.targets.searchAria")} className="pl-9 pr-10" />
         {q ? (
-          <button type="button" onClick={() => setQ("")} aria-label="Suche leeren" className="absolute right-1 top-1/2 -translate-y-1/2 flex h-9 w-9 items-center justify-center text-ink-3 hover:text-ink">
+          <button type="button" onClick={() => setQ("")} aria-label={t("shooting.targets.clearSearch")} className="absolute right-1 top-1/2 -translate-y-1/2 flex h-9 w-9 items-center justify-center text-ink-3 hover:text-ink">
             <X className="h-4 w-4" />
           </button>
         ) : null}
       </div>
 
-      <div className="animate-fade flex gap-1.5 overflow-x-auto pb-2 -mx-4 px-4 mb-1 [scrollbar-width:none]" role="group" aria-label="Kategorien">
-        <button type="button" aria-pressed={cat === "all"} onClick={() => setCat("all")} className={chip(cat === "all")}>Alle <span className="opacity-60">{targets.length}</span></button>
+      <div className="animate-fade flex gap-1.5 overflow-x-auto pb-2 -mx-4 px-4 mb-1 [scrollbar-width:none]" role="group" aria-label={t("shooting.targets.categories")}>
+        <button type="button" aria-pressed={cat === "all"} onClick={() => setCat("all")} className={chip(cat === "all")}>{t("shooting.targets.all")} <span className="opacity-60">{targets.length}</span></button>
         {TARGET_CATEGORIES.filter((c) => counts.get(c.key)).map((c) => (
           <button key={c.key} type="button" aria-pressed={cat === c.key} onClick={() => setCat(c.key)} className={chip(cat === c.key)}>
-            {c.label} <span className="opacity-60">{counts.get(c.key)}</span>
+            {targetCategoryText(t, c.key)} <span className="opacity-60">{counts.get(c.key)}</span>
           </button>
         ))}
       </div>
 
       <div className="animate-fade flex flex-wrap items-center gap-2 mb-3">
         <button type="button" aria-pressed={onlyFav} onClick={() => setFilters({ onlyFav: !onlyFav })} className={chip(onlyFav)}>
-          <Star className={cn("h-4 w-4", onlyFav && "fill-current")} /> Nur Favoriten
+          <Star className={cn("h-4 w-4", onlyFav && "fill-current")} /> {t("shooting.targets.onlyFav")}
         </button>
         <label className="inline-flex items-center gap-2 h-10 text-sm text-ink-2 cursor-pointer select-none">
           <input type="checkbox" checked={favFirst} onChange={(e) => setFavFirst(e.target.checked)} className="h-5 w-5 accent-[var(--ink)]" />
-          Favoriten zuerst
+          {t("shooting.targets.favFirst")}
         </label>
         <div className="ml-auto flex items-center gap-2">
-          <Select value={scope} onChange={(e) => setScope(e.target.value as Scope)} aria-label="Quelle" className="h-10 w-auto text-sm">
-            <option value="all">Alle Quellen</option>
-            <option value="global">Global</option>
-            <option value="tenant">Verein</option>
-            <option value="mine">Meine</option>
+          <Select value={scope} onChange={(e) => setScope(e.target.value as Scope)} aria-label={t("shooting.targets.source")} className="h-10 w-auto text-sm">
+            <option value="all">{t("shooting.targets.allSources")}</option>
+            <option value="global">{t("shooting.targets.scope.global")}</option>
+            <option value="tenant">{t("shooting.targets.scope.tenant")}</option>
+            <option value="mine">{t("shooting.targets.scope.mine")}</option>
           </Select>
-          <button type="button" onClick={() => setLarge((v) => !v)} aria-pressed={large} title={large ? "Kompakte Ansicht" : "Grosse Vorschau"} aria-label={large ? "Kompakte Ansicht" : "Grosse Vorschau"}
+          <button type="button" onClick={() => setLarge((v) => !v)} aria-pressed={large} title={large ? t("shooting.targets.compact") : t("shooting.targets.large")} aria-label={large ? t("shooting.targets.compact") : t("shooting.targets.large")}
             className="press hidden md:flex h-10 w-10 items-center justify-center rounded-control border border-line bg-surface text-ink-2">
             {large ? <LayoutGrid className="h-4 w-4" /> : <Square className="h-4 w-4" />}
           </button>
@@ -120,12 +123,12 @@ export function TargetGallery({ targets, initial }: { targets: TargetView[]; ini
       </div>
 
       <div className={cn("stagger grid gap-3", large ? "grid-cols-2 md:grid-cols-2 md:gap-5" : "grid-cols-2 sm:grid-cols-3")}>
-        {list.map((t) => <TargetCard key={t.id} target={t} href={`/targets/${t.id}`} />)}
+        {list.map((x) => <TargetCard key={x.id} target={x} href={`/targets/${x.id}`} tr={t} />)}
       </div>
       {list.length === 0 ? (
         <div className="text-center py-10">
-          <p className="text-sm text-ink-3">Nichts gefunden.</p>
-          <button type="button" onClick={() => setFilters({ q: "", cat: "all", scope: "all", onlyFav: false })} className="mt-2 text-sm font-medium text-ink underline underline-offset-4">Filter zurücksetzen</button>
+          <p className="text-sm text-ink-3">{t("shooting.targets.nothing")}</p>
+          <button type="button" onClick={() => setFilters({ q: "", cat: "all", scope: "all", onlyFav: false })} className="mt-2 text-sm font-medium text-ink underline underline-offset-4">{t("shooting.targets.reset")}</button>
         </div>
       ) : null}
     </div>

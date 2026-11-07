@@ -7,6 +7,7 @@ import { cn } from "@/lib/utils";
 const TABS = [
   { href: "/admin/billing", label: "Übersicht", billingOnly: true },
   { href: "/admin/billing/members", label: "Mitglieder", billingOnly: true },
+  { href: "/admin/billing/invoices", label: "Einzelrechnungen", billingOnly: true },
   { href: "/admin/billing/categories", label: "Kategorien", billingOnly: true },
   { href: "/admin/billing/import", label: "Bankimport", billingOnly: false },
   { href: "/admin/billing/settings", label: "Rechnungsprofil", billingOnly: false },

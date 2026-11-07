@@ -8,37 +8,40 @@ import { useRouter } from "next/navigation";
 import { Check, CreditCard, RotateCcw, X, XCircle } from "lucide-react";
 import { cancelBookingAction, decideBookingAction, markBookingPaidAction, markBookingRefundedAction, payBookingAction } from "@/modules/bookings/actions";
 import { Alert, Button, Field, Textarea } from "@/components/ui";
+import { getT, type Locale, type TFunction } from "@/lib/i18n/core";
 
 /** Meldung für geworfene Fehler (z.B. offline); redirect()/notFound() werden weitergereicht. */
-function failureMessage(err: unknown) {
+function failureMessage(err: unknown, t: TFunction = getT("de")) {
   if (isNavigationError(err)) throw err;
-  return isNetworkError(err) ? "Keine Verbindung. Bitte versuche es nochmals, sobald du wieder online bist." : "Das hat nicht geklappt. Bitte nochmals versuchen.";
+  return isNetworkError(err) ? t("bookings.common.offline") : t("bookings.common.failed");
 }
 
-export function CancelBookingButton({ bookingId }: { bookingId: string }) {
+export function CancelBookingButton({ bookingId, locale = "de" }: { bookingId: string; locale?: Locale }) {
+  const t = getT(locale);
   const [pending, start] = useTransition();
   const [err, setErr] = useState<string | null>(null);
   const router = useRouter();
   return (
     <div>
       <Button type="button" variant="ghost" size="sm" disabled={pending} className="text-ink-3"
-        onClick={async () => { if ((await confirmDialog({ title: "Buchung wirklich stornieren?", tone: "danger", confirmLabel: "Stornieren", cancelLabel: "Behalten" }))) start(async () => {
+        onClick={async () => { if ((await confirmDialog({ title: t("bookings.cancel.confirm"), tone: "danger", confirmLabel: t("bookings.cancel.button"), cancelLabel: t("bookings.common.keep") }))) start(async () => {
           try {
             const r = await cancelBookingAction(bookingId);
             if (!r.ok) setErr(r.error);
             else { setErr(null); router.refresh(); }
           } catch (e) {
-            setErr(failureMessage(e));
+            setErr(failureMessage(e, t));
           }
         }); }}>
-        <XCircle className="h-4 w-4" /> Stornieren
+        <XCircle className="h-4 w-4" /> {t("bookings.cancel.button")}
       </Button>
       {err ? <div className="mt-2"><Alert>{err}</Alert></div> : null}
     </div>
   );
 }
 
-export function PayNowButton({ bookingId }: { bookingId: string }) {
+export function PayNowButton({ bookingId, locale = "de" }: { bookingId: string; locale?: Locale }) {
+  const t = getT(locale);
   const [pending, start] = useTransition();
   const [err, setErr] = useState<string | null>(null);
   return (
@@ -48,10 +51,10 @@ export function PayNowButton({ bookingId }: { bookingId: string }) {
           const r = await payBookingAction(bookingId);
           if (r && !r.ok) setErr(r.error);
         } catch (e) {
-          setErr(failureMessage(e));
+          setErr(failureMessage(e, t));
         }
       })}>
-        <CreditCard className="h-5 w-5" /> {pending ? "Weiterleitung…" : "Jetzt bezahlen"}
+        <CreditCard className="h-5 w-5" /> {pending ? t("bookings.pay.redirecting") : t("bookings.pay.now")}
       </Button>
       {err ? <div className="mt-2"><Alert>{err}</Alert></div> : null}
     </div>

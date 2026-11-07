@@ -12,8 +12,12 @@ import { getCourse, type CourseDetail } from "@/modules/courses/queries";
 import { CHECK_HINT, COURSE_KIND, courseKindLabel, courseStatusInfo, isCourseKind, participantStatusInfo, RESPONSIBILITY_HINT } from "@/modules/courses/types";
 import { MyCourseCard } from "@/modules/courses/ui/my-course";
 import { NavActionButton } from "@/modules/courses/ui/nav-action-button";
+import { formatDate, getRequestLocale, getT } from "@/lib/i18n";
+import { timeRangeText, tOr } from "@/modules/scores/ui/labels";
 
-export const metadata: Metadata = { title: "Kurs" };
+export async function generateMetadata(): Promise<Metadata> {
+  return { title: getT(await getRequestLocale())("shooting.courses.course") };
+}
 
 export default async function CoursePage({ params }: { params: Promise<{ id: string }> }) {
   const ctx = await requireCourses();
@@ -25,13 +29,15 @@ export default async function CoursePage({ params }: { params: Promise<{ id: str
   if (!canManage) {
     const me = course.participants.find((p) => p.userId === ctx.user.id);
     if (!me) notFound();
+    const locale = await getRequestLocale();
+    const t = getT(locale);
     return (
       <div className="max-w-2xl">
-        <PageHeader title={course.name} subtitle={courseKindLabel(course.kind)} back={{ href: "/courses", label: "Kurse" }} />
-        <MyCourseCard course={course} me={me} link={false} />
+        <PageHeader title={course.name} subtitle={tOr(t, `shooting.courses.kind.${course.kind}`, courseKindLabel(course.kind))} back={{ href: "/courses", label: t("shooting.courses.title") }} />
+        <MyCourseCard course={course} me={me} link={false} locale={locale} />
         {course.sessions.length ? (
           <div className="mt-6">
-            <SectionTitle>Lektionen</SectionTitle>
+            <SectionTitle>{t("shooting.courses.sessions")}</SectionTitle>
             <Card className="divide-y divide-line">
               {course.sessions.map((s) => {
                 const v = course.attendanceIdx.get(`${s.id}|${me.id}`);
@@ -39,9 +45,9 @@ export default async function CoursePage({ params }: { params: Promise<{ id: str
                   <div key={s.id} className="flex items-center gap-3 px-4 py-3 text-sm">
                     <div className="min-w-0 flex-1">
                       <div className="font-medium">{s.title}</div>
-                      <div className="text-xs text-ink-3">{formatDateZurich(s.startsAt)}{s.endsAt ? `, ${formatTimeRange(s.startsAt, s.endsAt)}` : ""}</div>
+                      <div className="text-xs text-ink-3">{formatDate(s.startsAt, locale, { weekday: "short" })}{s.endsAt ? `, ${timeRangeText(locale, s.startsAt, s.endsAt)}` : ""}</div>
                     </div>
-                    {v === true ? <Badge tone="ok">anwesend</Badge> : v === false ? <Badge tone="outline">abwesend</Badge> : null}
+                    {v === true ? <Badge tone="ok">{t("shooting.courses.present")}</Badge> : v === false ? <Badge tone="outline">{t("shooting.courses.absent")}</Badge> : null}
                   </div>
                 );
               })}

@@ -7,11 +7,14 @@ import { Alert, Card, ClubhouseIllustration, Field, Input, Select, TeamIllustrat
 import { SubmitButton, submitKeepingValues } from "@/components/ui/form";
 import { Hint, Segmented } from "@/components/ui/controls";
 import { Avatar } from "@/components/avatar";
+import { useT } from "@/components/locale";
+import { translateServerMessage } from "@/components/server-messages";
 
 type Path = "join" | "create";
 
 export function OnboardingForms({ initialCode, codeTenant }: { initialCode?: string; codeTenant?: { name: string; city: string | null; logoUrl: string | null } | null }) {
   const [path, setPath] = useState<Path | null>(initialCode ? "join" : null);
+  const t = useT();
 
   if (!path) {
     return (
@@ -19,16 +22,16 @@ export function OnboardingForms({ initialCode, codeTenant }: { initialCode?: str
         <PathCard
           onClick={() => setPath("join")}
           illustration={<TeamIllustration size={84} />}
-          title="Einem Verein beitreten"
-          text="Du hast einen Beitrittscode vom Vorstand oder einen Einladungslink bekommen."
-          cta="Mit Code beitreten"
+          title={t("shell.onboarding.join.title")}
+          text={t("shell.onboarding.join.text")}
+          cta={t("shell.onboarding.join.cta")}
         />
         <PathCard
           onClick={() => setPath("create")}
           illustration={<ClubhouseIllustration size={84} />}
-          title="Neuen Verein anlegen"
-          text="Für Vorstände, Anlagebetreiber oder eine private Schiessgruppe. Du wirst Inhaber."
-          cta="Verein anlegen"
+          title={t("shell.onboarding.create.title")}
+          text={t("shell.onboarding.create.text")}
+          cta={t("shell.onboarding.create.cta")}
         />
       </div>
     );
@@ -40,19 +43,19 @@ export function OnboardingForms({ initialCode, codeTenant }: { initialCode?: str
         <button
           type="button"
           onClick={() => setPath(null)}
-          aria-label="Zurück zur Auswahl"
+          aria-label={t("shell.onboarding.back")}
           className="press flex h-10 w-10 items-center justify-center rounded-full text-ink-2 hover:bg-surface-2 focus-visible:outline-2 focus-visible:outline-accent"
         >
           <ArrowLeft className="h-5 w-5" />
         </button>
         <Segmented<Path>
-          label="Weg wählen"
+          label={t("shell.onboarding.path")}
           className="flex-1"
           value={path}
           onChange={setPath}
           options={[
-            { value: "join", label: "Beitreten" },
-            { value: "create", label: "Neu anlegen" },
+            { value: "join", label: t("shell.onboarding.path.join") },
+            { value: "create", label: t("shell.onboarding.path.create") },
           ]}
         />
       </div>
@@ -78,6 +81,7 @@ function PathCard({ onClick, illustration, title, text, cta }: { onClick: () => 
 
 function JoinForm({ initialCode, codeTenant }: { initialCode?: string; codeTenant?: { name: string; city: string | null; logoUrl: string | null } | null }) {
   const [state, action, pending] = useActionState(joinTenantAction, null);
+  const t = useT();
   const [code, setCode] = useState(initialCode ?? "");
   const matches = !!codeTenant && code === initialCode;
   return (
@@ -87,18 +91,18 @@ function JoinForm({ initialCode, codeTenant }: { initialCode?: string; codeTenan
           <div className="flex items-center gap-3 rounded-control bg-surface-2 p-3">
             <Avatar name={codeTenant.name} src={codeTenant.logoUrl} size={40} tone="soft" className="rounded-xl" />
             <div className="min-w-0">
-              <p className="text-xs text-ink-3">Du trittst bei</p>
+              <p className="text-xs text-ink-3">{t("shell.onboarding.join.joining")}</p>
               <p className="truncate font-semibold">{codeTenant.name}</p>
             </div>
           </div>
         ) : null}
-        <Field label="Beitrittscode" hint="Den Code erhältst du vom Vereinsadmin. Gross-/Kleinschreibung spielt keine Rolle.">
+        <Field label={t("shell.onboarding.join.code")} hint={t("shell.onboarding.join.codeHint")}>
           <Input
             name="joinCode"
             required
             value={code}
             onChange={(e) => setCode(e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 12))}
-            placeholder="z.B. 7KQ2PX"
+            placeholder={t("shell.onboarding.join.codePlaceholder")}
             className="uppercase font-mono tracking-widest text-lg h-13"
             autoCapitalize="characters"
             autoComplete="off"
@@ -108,11 +112,11 @@ function JoinForm({ initialCode, codeTenant }: { initialCode?: string; codeTenan
             autoFocus
           />
         </Field>
-        {state && !state.ok ? <Alert icon={<AlertCircle className="h-4 w-4" />}>{state.error} Bitte prüfe den Code.</Alert> : null}
-        <SubmitButton className="w-full" size="lg" pending={pending} pendingText="Trete bei…" disabled={code.length < 4}>
-          Beitreten
+        {state && !state.ok ? <Alert icon={<AlertCircle className="h-4 w-4" />}>{translateServerMessage(state.error, t)} {t("shell.onboarding.join.checkCode")}</Alert> : null}
+        <SubmitButton className="w-full" size="lg" pending={pending} pendingText={t("shell.onboarding.join.pending")} disabled={code.length < 4}>
+          {t("shell.onboarding.join.submit")}
         </SubmitButton>
-        <p className="text-xs text-ink-3">Du startest als Mitglied. Der Vereinsadmin kann dir später eine andere Rolle geben.</p>
+        <p className="text-xs text-ink-3">{t("shell.onboarding.join.note")}</p>
       </form>
     </Card>
   );
@@ -121,28 +125,29 @@ function JoinForm({ initialCode, codeTenant }: { initialCode?: string; codeTenan
 function CreateForm() {
   const [state, action, pending] = useActionState(createTenantAction, null);
   const [kind, setKind] = useState("CLUB");
+  const t = useT();
   return (
     <Card className="p-5 animate-fade">
       <form onSubmit={submitKeepingValues(action)} className="space-y-4">
-        <Field label="Name">
-          <Input name="name" required minLength={2} placeholder={kind === "RANGE" ? "z.B. Schiessanlage Allmend" : kind === "PRIVATE" ? "z.B. Pistolengruppe Freitag" : "z.B. Schützengesellschaft Musterhausen"} autoFocus autoComplete="organization" />
+        <Field label={t("shell.onboarding.create.name")}>
+          <Input name="name" required minLength={2} placeholder={t(`shell.onboarding.create.placeholder.${kind === "RANGE" || kind === "PRIVATE" ? kind : "CLUB"}`)} autoFocus autoComplete="organization" />
         </Field>
-        <Field label="Art">
+        <Field label={t("shell.onboarding.create.kind")}>
           <Select name="kind" value={kind} onChange={(e) => setKind(e.target.value)}>
-            <option value="CLUB">Verein</option>
-            <option value="RANGE">Schiessanlage / Indoor-Stand</option>
-            <option value="PRIVATE">Privat / Gruppe</option>
+            <option value="CLUB">{t("shell.onboarding.create.kind.CLUB")}</option>
+            <option value="RANGE">{t("shell.onboarding.create.kind.RANGE")}</option>
+            <option value="PRIVATE">{t("shell.onboarding.create.kind.PRIVATE")}</option>
           </Select>
         </Field>
         <div className="grid grid-cols-3 gap-3">
-          <Field label="Ort" className="col-span-2"><Input name="city" placeholder="Ort" autoComplete="address-level2" /></Field>
-          <Field label="Kanton"><Input name="canton" placeholder="ZH" maxLength={2} className="uppercase" autoCapitalize="characters" /></Field>
+          <Field label={t("shell.onboarding.create.city")} className="col-span-2"><Input name="city" placeholder={t("shell.onboarding.create.city")} autoComplete="address-level2" /></Field>
+          <Field label={t("shell.onboarding.create.canton")}><Input name="canton" placeholder="ZH" maxLength={2} className="uppercase" autoCapitalize="characters" /></Field>
         </div>
-        {state && !state.ok ? <Alert icon={<AlertCircle className="h-4 w-4" />}>{state.error}</Alert> : null}
-        <SubmitButton className="w-full" size="lg" pending={pending} pendingText="Wird angelegt…">Anlegen</SubmitButton>
+        {state && !state.ok ? <Alert icon={<AlertCircle className="h-4 w-4" />}>{translateServerMessage(state.error, t)}</Alert> : null}
+        <SubmitButton className="w-full" size="lg" pending={pending} pendingText={t("shell.onboarding.create.pending")}>{t("shell.onboarding.create.submit")}</SubmitButton>
         <p className="text-xs text-ink-3">
-          Du wirst Inhaber und lädst Mitglieder über einen Beitrittscode ein. Logo, Farben und Module stellst du danach unter «Verein» ein.{" "}
-          <Hint label="Mehr zu Modulen" side="top">Punkteerfassung, Zielscheiben und Anlässe sind gleich aktiv. Module wie Reservationen oder Beiträge schaltest du nur ein, wenn du sie brauchst.</Hint>
+          {t("shell.onboarding.create.note")}{" "}
+          <Hint label={t("shell.onboarding.create.modulesLabel")} side="top">{t("shell.onboarding.create.modulesHint")}</Hint>
         </p>
       </form>
     </Card>

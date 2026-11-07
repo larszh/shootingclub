@@ -5,29 +5,33 @@ import { z } from "zod";
  * damit Seite, Export-Route, Seed und Tests dieselben Definitionen verwenden.
  */
 
-export type AccountKey = "bankAccount" | "receivableAccount" | "feeAccount" | "bookingAccount" | "ammoAccount" | "workFeeAccount" | "feesExpenseAccount";
+export type AccountKey = "bankAccount" | "cashAccount" | "receivableAccount" | "feeAccount" | "bookingAccount" | "ammoAccount" | "workFeeAccount" | "kioskAccount" | "feesExpenseAccount";
 
 export type AccountPlan = Record<AccountKey, string>;
 
 /** Standardkonten nach Schweizer KMU-Kontenrahmen (identisch mit den Defaults im Prisma-Schema). */
 export const DEFAULT_ACCOUNTS: AccountPlan = {
   bankAccount: "1020",
+  cashAccount: "1000",
   receivableAccount: "1100",
   feeAccount: "3000",
   bookingAccount: "3400",
   ammoAccount: "3200",
   workFeeAccount: "3010",
+  kioskAccount: "3600",
   feesExpenseAccount: "6940",
 };
 
 export const ACCOUNT_FIELDS: Array<{ key: AccountKey; label: string; hint: string }> = [
-  { key: "bankAccount", label: "Bank / Post", hint: "Aktivkonto für Zahlungseingänge (KMU 1020 Bankguthaben). Auch Barzahlungen am Stand landen hier – wer eine Kasse führt, bucht sie in der Buchhaltung um." },
+  { key: "bankAccount", label: "Bank / Post", hint: "Aktivkonto für Zahlungseingänge per Bank, Post und online (KMU 1020 Bankguthaben)." },
+  { key: "cashAccount", label: "Kasse", hint: "Aktivkonto für Bargeld (KMU 1000 Kasse): Barverkäufe der Schützenstube und Reservationen «Bar / vor Ort». Wird die Kasse auf die Bank einbezahlt, bucht ihr das in der Buchhaltung (Bank / Kasse)." },
   { key: "receivableAccount", label: "Debitoren", hint: "Forderungen aus Rechnungen (KMU 1100). Rechnung ausgestellt: Soll Debitoren, bezahlt: Haben Debitoren." },
-  { key: "feeAccount", label: "Mitgliederbeiträge", hint: "Ertrag aus Jahresbeiträgen und Vereinsrechnungen (KMU 3000). Auch Rechnungen der Schützenstube (Kiosk) werden hier gebucht." },
+  { key: "feeAccount", label: "Mitgliederbeiträge", hint: "Ertrag aus Jahresbeiträgen und Vereinsrechnungen (KMU 3000)." },
   { key: "workFeeAccount", label: "Ersatzabgabe Arbeitsstunden", hint: "Ertrag aus Rechnungen, deren Bezeichnung mit «Ersatzabgabe» beginnt (Vorschlag 3010)." },
   { key: "bookingAccount", label: "Standmiete / Reservationen", hint: "Ertrag aus Reservationsrechnungen sowie Online- und Barzahlungen von Reservationen (Vorschlag 3400)." },
+  { key: "kioskAccount", label: "Ertrag Schützenstube", hint: "Ertrag aus Rechnungen der Schützenstube (Konsumationen auf Rechnung) und aus Barverkäufen an der Theke (Vorschlag 3600)." },
   { key: "ammoAccount", label: "Munitionsverkauf", hint: "Ertrag aus Munitionsrechnungen (Vorschlag 3200). Munition wird nur per Rechnung verkauft, nie online." },
-  { key: "feesExpenseAccount", label: "Zahlungsgebühren", hint: "Aufwand für Gebühren der Zahlungsanbieter (KMU 6940). Die Anbieter melden die Gebühren nicht einzeln; bucht sie anhand der Abrechnung von Stripe, Worldline oder SumUp manuell." },
+  { key: "feesExpenseAccount", label: "Zahlungsgebühren", hint: "Aufwand für Gebühren der Zahlungsanbieter (KMU 6940). Die Anbieter melden die Gebühren nicht pro Zahlung an Standchef; bucht sie anhand der Abrechnung von Payrexx, Stripe, Worldline oder SumUp manuell (Zahlungsgebühren / Bank)." },
 ];
 
 export const ACCOUNT_LABEL: Record<AccountKey, string> = Object.fromEntries(ACCOUNT_FIELDS.map((f) => [f.key, f.label])) as Record<AccountKey, string>;

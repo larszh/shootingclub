@@ -15,10 +15,13 @@ import { ensureInvoiceForBooking } from "./invoice";
 import { startOnlinePayment } from "./payment-flow";
 import { notifyBooking } from "./notify";
 import { createBookingIfFree, SLOT_TAKEN } from "./create";
-import { checkBookingWindow, windowRejectMessage } from "@/modules/range/booking-window";
+import { checkBookingWindow } from "@/modules/range/booking-window";
 import { bookingAccess, guestMayCancel } from "@/modules/sharing/logic";
 import { audit } from "@/lib/audit";
 import { recordAccountingEvent } from "@/modules/accounting/events";
+import { accessStatusWhere } from "@/lib/membership-access";
+import { getRequestLocale, getT, type TFunction } from "@/lib/i18n";
+import { slotReasonLabel } from "./i18n";
 
 /** Hinweis bei Reservationen der Verwaltung ausserhalb der bewilligten Schiesszeiten (Modul «range»). */
 const OUTSIDE_WINDOW_NOTE = "Achtung: ausserhalb der bewilligten Schiesszeiten";
@@ -35,7 +38,8 @@ async function requireBookingsAdmin() {
 // Mitglieder
 // ---------------------------------------------------------------------------
 
-function personsLimitError(max: number) {
+function personsLimitError(max: number, t?: TFunction) {
+  if (t) return t(max === 1 ? "bookings.err.maxPersonsOne" : "bookings.err.maxPersonsMany", { max });
   return `Höchstens ${max} ${max === 1 ? "Person" : "Personen"} pro Buchung.`;
 }
 
@@ -51,6 +55,7 @@ const createBookingSchema = z.object({
 
 export async function createBookingAction(_prev: ActionResult | null, formData: FormData): Promise<ActionResult> {
   const ctx = await requireModule("bookings");
+  const t = getT(await getRequestLocale());
   const parsed = createBookingSchema.safeParse({
     resourceId: formData.get("resourceId"),
     date: formData.get("date"),
@@ -60,30 +65,30 @@ export async function createBookingAction(_prev: ActionResult | null, formData: 
     paymentMethod: formData.get("paymentMethod") || undefined,
     note: formData.get("note") || undefined,
   });
-  if (!parsed.success) return fail("Bitte Ressource, Datum, Zeit, Dauer und Anzahl Personen wählen.");
+  if (!parsed.success) return fail(t("bookings.err.incomplete"));
   const { resourceId, date, time, durationMinutes, persons, note } = parsed.data;
 
   const [settings, resource] = await Promise.all([getBookingSettings(ctx.tenant.id), getResource(ctx.tenant.id, resourceId)]);
-  if (!resource || !resource.isActive) return fail("Ressource nicht verfügbar.");
+  if (!resource || !resource.isActive) return fail(t("bookings.err.resourceUnavailable"));
   const options = resource.durationOptions ?? settings.durationOptions;
   const option = options.find((o) => o.minutes === durationMinutes);
-  if (!option) return fail("Diese Dauer ist nicht buchbar.");
+  if (!option) return fail(t("bookings.err.durationUnavailable"));
   const maxPersons = maxPersonsFor(resource, settings);
-  if (persons > maxPersons) return fail(personsLimitError(maxPersons));
+  if (persons > maxPersons) return fail(personsLimitError(maxPersons, t));
   const plan = planRequest(option, resource, settings, persons);
 
   await expireUnpaidOnlineBookings(ctx.tenant.id);
   const slots = await getSlotsForDay(ctx.tenant.id, resource, settings, date, durationMinutes, { requestedUnits: plan.units });
   const slot = slots.find((s) => s.time === time);
-  if (!slot) return fail("Diese Zeit liegt ausserhalb der Öffnungszeiten.");
-  if (!slot.available) return fail(`Dieser Termin ist nicht verfügbar (${slot.reason}).`);
+  if (!slot) return fail(t("bookings.err.outsideOpening"));
+  if (!slot.available) return fail(t("bookings.err.slotUnavailable", { reason: slotReasonLabel(slot.reason, t) }));
 
   // Standbetrieb: bewilligte Schiesszeiten. Mitglieder werden abgewiesen, die Verwaltung erhält einen Vermerk.
   let windowNote: string | null = null;
   if (ctx.hasModule("range")) {
     const check = await checkBookingWindow(ctx.tenant.id, resourceId, slot.startsAt, slot.endsAt);
     if (!check.ok) {
-      if (!ctx.can("tenant.manage")) return fail(windowRejectMessage(check));
+      if (!ctx.can("tenant.manage")) return fail(t("bookings.err.outsideWindow", { allowed: check.allowed }));
       windowNote = `${OUTSIDE_WINDOW_NOTE} (${check.allowed})`.slice(0, 191);
     }
   }
@@ -94,9 +99,9 @@ export async function createBookingAction(_prev: ActionResult | null, formData: 
     const allowed: Array<"INVOICE" | "ONLINE"> = [];
     if (settings.allowInvoice) allowed.push("INVOICE");
     if (settings.allowOnline && settings.onlineProvider !== "NONE") allowed.push("ONLINE");
-    if (allowed.length === 0) return fail("Für diesen Verein ist keine Zahlungsart eingerichtet. Bitte Admin kontaktieren.");
+    if (allowed.length === 0) return fail(t("bookings.err.noPaymentMethod"));
     const chosen = parsed.data.paymentMethod && allowed.includes(parsed.data.paymentMethod) ? parsed.data.paymentMethod : allowed.length === 1 ? allowed[0]! : null;
-    if (!chosen) return fail("Bitte Zahlungsart wählen.");
+    if (!chosen) return fail(t("bookings.err.choosePayment"));
     paymentMethod = chosen;
   }
 
@@ -123,10 +128,12 @@ export async function createBookingAction(_prev: ActionResult | null, formData: 
     adminNote: windowNote,
     confirmedAt: status === "CONFIRMED" ? new Date() : null,
   });
-  if (!booking) return fail(SLOT_TAKEN);
+  if (!booking) return fail(t("bookings.err.slotTaken"));
 
   if (status === "CONFIRMED" && paymentMethod === "INVOICE") await ensureInvoiceForBooking(booking.id);
   if (status === "PENDING") void notifyBooking(booking.id, "pending", ctx.user).catch(() => undefined);
+  // Bestätigung per E-Mail an das Mitglied; Online-Zahlungen erst nach Abschluss der Zahlung (Zahlungsfluss).
+  if (status === "CONFIRMED" && paymentMethod !== "ONLINE") void notifyBooking(booking.id, "confirmed", ctx.user).catch(() => undefined);
 
   revalidatePath("/bookings");
   if (status === "CONFIRMED" && paymentMethod === "ONLINE") redirect(`/bookings/${booking.id}/pay`);
@@ -138,44 +145,48 @@ export async function cancelBookingAction(bookingId: string): Promise<ActionResu
   // Kein requireModule: das Mitglied eines Partnervereins storniert beim Eigentümer, auch wenn der
   // eigene Verein das Modul inzwischen ausgeschaltet hat. Im eigenen Verein gilt das Modul (unten).
   const ctx = await requireTenant();
-  if (typeof bookingId !== "string" || !bookingId || bookingId.length > 40) return fail("Nicht gefunden");
+  const t = getT(await getRequestLocale());
+  if (typeof bookingId !== "string" || !bookingId || bookingId.length > 40) return fail(t("bookings.err.notFound"));
   const b = await db.booking.findUnique({ where: { id: bookingId } });
-  if (!b) return fail("Nicht gefunden");
+  if (!b) return fail(t("bookings.err.notFound"));
   // Gemeinsame Anlage: das Mitglied eines Partnervereins storniert die eigene Buchung beim Eigentümer.
   const access = bookingAccess(b, { userId: ctx.user.id, activeTenantId: ctx.tenant.id, canManageActive: ctx.can("tenant.manage") });
-  if (!access) return fail("Nicht gefunden");
+  if (!access) return fail(t("bookings.err.notFound"));
   if (access !== "guest" && !ctx.hasModule("bookings")) redirect("/?module=bookings");
   const isAdmin = access === "admin" || (access === "owner" && ctx.can("tenant.manage"));
-  if (!["PENDING", "CONFIRMED"].includes(b.status)) return fail("Buchung ist bereits beendet.");
+  if (!["PENDING", "CONFIRMED"].includes(b.status)) return fail(t("bookings.err.ended"));
   if (!isAdmin) {
     // Regeln des Vereins, dem die Anlage gehört (bei Partnerbuchungen der Eigentümer).
     const settings = await getBookingSettings(b.tenantId);
     const allowed = guestMayCancel(b, settings.cancellationHours);
-    if (!allowed.ok) return fail(allowed.error);
+    if (!allowed.ok) return fail(t("bookings.err.cancelDeadline", { hours: settings.cancellationHours }));
   }
   const refundNote = b.paymentStatus === "PAID" ? "Rückerstattung prüfen." : null;
   // Offene Zahlungen entfallen mit der Stornierung; bezahlte bleiben sichtbar (Rückerstattung).
   const paymentStatus = ["UNPAID", "PENDING", "FAILED"].includes(b.paymentStatus) ? "NOT_REQUIRED" : b.paymentStatus;
   await db.$transaction([
     db.booking.update({ where: { id: bookingId }, data: { status: "CANCELLED", cancelledAt: new Date(), paymentStatus, adminNote: refundNote ? [b.adminNote, refundNote].filter(Boolean).join(" ").slice(-191) : b.adminNote } }),
-    db.invoice.updateMany({ where: { bookingId, status: "OPEN" }, data: { status: "CANCELLED" } }),
+    db.invoice.updateMany({ where: { bookingId, status: "OPEN" }, data: { status: "CANCELLED", cancelledAt: new Date() } }),
   ]);
   if (access === "guest") void audit({ tenantId: b.tenantId, actorId: ctx.user.id, actorName: ctx.user.name, action: "booking.partner.cancel", entity: "Booking", entityId: b.id, detail: `Storniert durch Mitglied eines Partnervereins (${ctx.tenant.name})` });
-  // Storniert die Verwaltung eine fremde Buchung, wird das Mitglied informiert
-  if (b.userId && b.userId !== ctx.user.id) void notifyBooking(bookingId, "cancelled", ctx.user).catch(() => undefined);
+  // Storniert die Verwaltung eine fremde Buchung, wird das Mitglied informiert; bei der eigenen
+  // Stornierung erhält es eine Bestätigung per E-Mail (notifyBooking unterscheidet).
+  if (b.userId) void notifyBooking(bookingId, "cancelled", ctx.user).catch(() => undefined);
   revalidatePath("/bookings");
   revalidatePath("/admin/bookings");
-  return ok(undefined, "Buchung storniert.");
+  return ok(undefined, t("bookings.msg.cancelled"));
 }
 
 /** Startet die Online-Zahlung und leitet zur Zahlungsseite weiter. */
 export async function payBookingAction(bookingId: string): Promise<ActionResult> {
   const ctx = await requireModule("bookings");
+  const t = getT(await getRequestLocale());
+  if (typeof bookingId !== "string" || !bookingId || bookingId.length > 40) return fail(t("bookings.err.notFound"));
   const b = await db.booking.findUnique({ where: { id: bookingId } });
-  if (!b || b.tenantId !== ctx.tenant.id || b.userId !== ctx.user.id) return fail("Nicht gefunden");
-  if (b.status !== "CONFIRMED") return fail("Buchung ist noch nicht bestätigt.");
-  if (b.paymentStatus === "PAID") return fail("Bereits bezahlt.");
-  if (b.paymentMethod !== "ONLINE") return fail("Diese Buchung wird per Rechnung bezahlt.");
+  if (!b || b.tenantId !== ctx.tenant.id || b.userId !== ctx.user.id) return fail(t("bookings.err.notFound"));
+  if (b.status !== "CONFIRMED") return fail(t("bookings.err.notConfirmed"));
+  if (b.paymentStatus === "PAID") return fail(t("bookings.err.alreadyPaid"));
+  if (b.paymentMethod !== "ONLINE") return fail(t("bookings.err.invoiceOnly"));
   const result = await startOnlinePayment(b, ctx.user.email);
   if (!result.ok) return fail(result.error);
   redirect(result.redirectUrl);
@@ -458,7 +469,7 @@ export async function markBookingRefundedAction(bookingId: string): Promise<Acti
   const ctx = await requireBookingsAdmin();
   const b = await db.booking.findUnique({ where: { id: bookingId } });
   if (!b || b.tenantId !== ctx.tenant.id) return fail("Nicht gefunden");
-  await db.booking.update({ where: { id: bookingId }, data: { paymentStatus: "REFUNDED" } });
+  await db.booking.update({ where: { id: bookingId }, data: { paymentStatus: "REFUNDED", ...(b.paymentStatus !== "REFUNDED" || !b.refundedAt ? { refundedAt: b.refundedAt ?? new Date() } : {}) } });
   if (b.paymentStatus !== "REFUNDED") {
     await recordAccountingEvent({ tenantId: ctx.tenant.id, kind: "refund", entity: "Booking", entityId: bookingId, actorId: ctx.user.id, actorName: ctx.user.name });
   }
@@ -501,7 +512,7 @@ export async function adminCreateBookingAction(_prev: ActionResult | null, formD
   if (!parsed.success) return fail("Bitte Mitglied, Ressource, Datum, Zeit, Dauer und Anzahl Personen wählen.");
   const { userId, resourceId, date, time, durationMinutes, persons, payment, note } = parsed.data;
 
-  const membership = await db.membership.findFirst({ where: { userId, tenantId: ctx.tenant.id, status: { not: "LEFT" }, user: { deletedAt: null } }, select: { id: true } });
+  const membership = await db.membership.findFirst({ where: { userId, tenantId: ctx.tenant.id, status: accessStatusWhere(), user: { deletedAt: null } }, select: { id: true } });
   if (!membership) return fail("Mitglied nicht gefunden oder ausgetreten.");
   const [settings, resource] = await Promise.all([getBookingSettings(ctx.tenant.id), getResource(ctx.tenant.id, resourceId)]);
   if (!resource) return fail("Ressource nicht gefunden.");

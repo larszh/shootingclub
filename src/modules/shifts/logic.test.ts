@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   assignmentHours, canSelfSignUp, canSelfWithdraw, dayOffset, defaultShiftHours, ersatzAmountCents, ersatzCategoryName, expandTemplateDates,
-  formatHours, hoursBalance, memberHours, missingHours, missingQualification, parseStatuses, shiftDurationHours, staffing, weekdayOf,
+  formatHours, hoursBalance, membershipMonthsInYear, memberHours, proRataRequired, roundHalfHours, missingHours, missingQualification, parseStatuses, shiftDurationHours, staffing, weekdayOf,
 } from "./logic";
 
 const shift = (h: number, credit: number | null = null) => ({ startsAt: new Date("2026-05-02T07:00:00Z"), endsAt: new Date(Date.parse("2026-05-02T07:00:00Z") + h * 3_600_000), hoursCredit: credit });
@@ -42,11 +42,13 @@ describe("Stunden", () => {
 
   it("Saldo berücksichtigt Status, Befreiung und Einstellung", () => {
     const settings = { enabled: true, requiredHours: 8, ratePerMissingHourCents: 2500, statuses: ["ACTIVE", "JUNIOR"] };
-    expect(hoursBalance({ status: "ACTIVE", workHoursExempt: false }, 5, settings)).toEqual({ required: 8, done: 5, missing: 3, amountCents: 7500, subject: true });
+    expect(hoursBalance({ status: "ACTIVE", workHoursExempt: false }, 5, settings)).toEqual({ required: 8, done: 5, missing: 3, amountCents: 7500, subject: true, months: 12, proRata: false });
     expect(hoursBalance({ status: "ACTIVE", workHoursExempt: true }, 0, settings).subject).toBe(false);
     expect(hoursBalance({ status: "PASSIVE", workHoursExempt: false }, 0, settings).amountCents).toBe(0);
     expect(hoursBalance({ status: "ACTIVE", workHoursExempt: false }, 0, { ...settings, enabled: false }).missing).toBe(0);
+    expect(hoursBalance({ status: "PENDING", workHoursExempt: false }, 0, { ...settings, statuses: ["ACTIVE", "PENDING"] }).subject).toBe(false);
   });
+
 
   it("parst Status und formatiert", () => {
     expect(parseStatuses("active, JUNIOR,LEFT,foo,ACTIVE", ["ACTIVE", "JUNIOR", "LEFT"])).toEqual(["ACTIVE", "JUNIOR"]);
@@ -104,5 +106,52 @@ describe("Vorlage kopieren", () => {
   it("Tagesverschiebung", () => {
     expect(dayOffset("2026-03-28", "2026-03-29")).toBe(1);
     expect(dayOffset("2026-03-28", "2026-03-28")).toBe(0);
+  });
+});
+
+describe("Pro rata", () => {
+  const day = (s: string) => new Date(`${s}T00:00:00Z`);
+
+  it("zählt Monate ab dem Eintrittsmonat", () => {
+    expect(membershipMonthsInYear(2026, null)).toBe(12);
+    expect(membershipMonthsInYear(2026, day("2019-05-01"))).toBe(12);
+    expect(membershipMonthsInYear(2026, day("2026-01-15"))).toBe(12);
+    expect(membershipMonthsInYear(2026, day("2026-03-31"))).toBe(10);
+    expect(membershipMonthsInYear(2026, day("2026-12-01"))).toBe(1);
+    expect(membershipMonthsInYear(2026, day("2027-02-01"))).toBe(0);
+    // Austritt im Jahr: bis und mit Austrittsmonat
+    expect(membershipMonthsInYear(2026, day("2026-03-01"), day("2026-08-31"))).toBe(6);
+    expect(membershipMonthsInYear(2026, null, day("2025-12-31"))).toBe(0);
+    expect(membershipMonthsInYear(2026, null, day("2027-01-31"))).toBe(12);
+  });
+
+  it("rechnet Soll × Monate / 12, gerundet auf 0.5 h", () => {
+    expect(roundHalfHours(6.67)).toBe(6.5);
+    expect(roundHalfHours(6.75)).toBe(7);
+    expect(roundHalfHours(6.24)).toBe(6);
+    expect(proRataRequired(8, 12)).toBe(8);
+    expect(proRataRequired(8, 10)).toBe(6.5); // 6.67
+    expect(proRataRequired(8, 6)).toBe(4);
+    expect(proRataRequired(8, 1)).toBe(0.5); // 0.67
+    expect(proRataRequired(10, 5)).toBe(4); // 4.17
+    expect(proRataRequired(10, 3)).toBe(2.5);
+    expect(proRataRequired(8, 0)).toBe(0);
+    expect(proRataRequired(0, 6)).toBe(0);
+    // volles Soll bleibt unverändert, auch wenn es nicht auf 0.5 h aufgeht
+    expect(proRataRequired(7.25, 12)).toBe(7.25);
+  });
+
+  it("wirkt auf Saldo und Ersatzabgabe", () => {
+    const settings = { enabled: true, requiredHours: 8, ratePerMissingHourCents: 2500, statuses: ["ACTIVE"], proRata: true };
+    const joined = { status: "ACTIVE", workHoursExempt: false, joinedAt: day("2026-03-10") };
+    expect(hoursBalance(joined, 2, settings, 2026)).toEqual({ required: 6.5, done: 2, missing: 4.5, amountCents: 11250, subject: true, months: 10, proRata: true });
+    // Einstellung aus: volles Soll
+    expect(hoursBalance(joined, 2, { ...settings, proRata: false }, 2026)).toMatchObject({ required: 8, missing: 6, amountCents: 15000, proRata: false, months: 12 });
+    // Vorjahr eingetreten: volles Soll
+    expect(hoursBalance(joined, 2, settings, 2027)).toMatchObject({ required: 8, proRata: false });
+    // Eintritt erst im Folgejahr: im Jahr nicht pflichtig
+    expect(hoursBalance(joined, 0, settings, 2025)).toMatchObject({ subject: false, required: 0, amountCents: 0 });
+    // ohne Jahr (Altaufrufe) volles Soll
+    expect(hoursBalance(joined, 2, settings)).toMatchObject({ required: 8 });
   });
 });

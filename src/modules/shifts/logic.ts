@@ -62,29 +62,89 @@ export function ersatzAmountCents(missing: number, ratePerHourCents: number): nu
   return Math.round((missing * ratePerHourCents) / 5) * 5;
 }
 
-/** CSV «ACTIVE,JUNIOR» → Liste gültiger Status (ohne LEFT, ohne Duplikate). */
+/** Status ohne Arbeitsstundenpflicht (ausgetreten, Beitritt wartet auf Freigabe). */
+const NEVER_SUBJECT = new Set(["LEFT", "PENDING"]);
+
+/** CSV «ACTIVE,JUNIOR» → Liste gültiger Status (ohne LEFT/PENDING, ohne Duplikate). */
 export function parseStatuses(csv: string | null | undefined, allowed: readonly string[]): string[] {
-  const set = new Set((csv ?? "").split(",").map((s) => s.trim().toUpperCase()).filter((s) => s && s !== "LEFT" && allowed.includes(s)));
+  const set = new Set((csv ?? "").split(",").map((s) => s.trim().toUpperCase()).filter((s) => s && !NEVER_SUBJECT.has(s) && allowed.includes(s)));
   return [...set];
 }
 
 /** Gilt die Arbeitsstundenpflicht für diese Mitgliedschaft? */
 export function isSubjectToWorkHours(m: { status: string; workHoursExempt: boolean }, statuses: string[]): boolean {
-  return !m.workHoursExempt && m.status !== "LEFT" && statuses.includes(m.status);
+  return !m.workHoursExempt && !NEVER_SUBJECT.has(m.status) && statuses.includes(m.status);
 }
 
-export type HoursRow = { required: number; done: number; missing: number; amountCents: number; subject: boolean };
+// ---------------------------------------------------------------------------
+// Pro rata (Eintritt bzw. Austritt im Lauf des Jahres)
+// ---------------------------------------------------------------------------
 
-/** Saldo eines Mitglieds für ein Jahr. */
+/** Auf halbe Stunden runden (Soll pro rata). */
+export function roundHalfHours(h: number): number {
+  if (!Number.isFinite(h)) return 0;
+  return Math.round(h * 2) / 2;
+}
+
+/**
+ * Monate des Jahres, in denen jemand Mitglied ist (0–12). Der Eintrittsmonat zählt voll
+ * (Eintritt im März = 10 Monate, März bis Dezember), der Austrittsmonat ebenfalls.
+ * Ohne Eintrittsdatum bzw. Eintritt vor dem Jahr: ab Januar. Daten als @db.Date (UTC-Mitternacht).
+ */
+export function membershipMonthsInYear(year: number, joinedAt: Date | null | undefined, leftAt?: Date | null): number {
+  const startMonth = !joinedAt ? 1 : joinedAt.getUTCFullYear() < year ? 1 : joinedAt.getUTCFullYear() > year ? 13 : joinedAt.getUTCMonth() + 1;
+  const endMonth = !leftAt ? 12 : leftAt.getUTCFullYear() > year ? 12 : leftAt.getUTCFullYear() < year ? 0 : leftAt.getUTCMonth() + 1;
+  return Math.max(0, Math.min(12, endMonth - startMonth + 1));
+}
+
+/** Soll pro rata: Soll × Monate / 12, auf 0.5 h gerundet. 12 Monate = volles Soll. */
+export function proRataRequired(required: number, months: number): number {
+  if (!(required > 0)) return 0;
+  const m = Math.max(0, Math.min(12, Math.round(months)));
+  if (m >= 12) return required;
+  return roundHalfHours((required * m) / 12);
+}
+
+export type HoursRow = {
+  required: number;
+  done: number;
+  missing: number;
+  amountCents: number;
+  subject: boolean;
+  /** Monate, für die das Soll gilt (12 = ganzes Jahr bzw. pro rata aus) */
+  months: number;
+  /** Soll wurde wegen Eintritt/Austritt im Jahr anteilig gekürzt */
+  proRata: boolean;
+};
+
+export type WorkHoursSettingsLite = { enabled: boolean; requiredHours: number; ratePerMissingHourCents: number; statuses: string[]; proRata?: boolean };
+
+/**
+ * Saldo eines Mitglieds für ein Jahr. Mit `settings.proRata` gilt bei Eintritt (bzw. Austritt) im Lauf
+ * des Jahres das anteilige Soll (siehe proRataRequired); das wirkt auch auf die Ersatzabgabe.
+ * Ohne `year` bzw. ohne Eintrittsdatum gilt das volle Soll.
+ */
 export function hoursBalance(
-  m: { status: string; workHoursExempt: boolean },
+  m: { status: string; workHoursExempt: boolean; joinedAt?: Date | null; leftAt?: Date | null },
   done: number,
-  settings: { enabled: boolean; requiredHours: number; ratePerMissingHourCents: number; statuses: string[] },
+  settings: WorkHoursSettingsLite,
+  year?: number,
 ): HoursRow {
-  const subject = settings.enabled && isSubjectToWorkHours(m, settings.statuses);
-  const required = subject ? Math.max(0, settings.requiredHours) : 0;
+  const subjectStatus = settings.enabled && isSubjectToWorkHours(m, settings.statuses);
+  const months = settings.proRata && year !== undefined ? membershipMonthsInYear(year, m.joinedAt, m.leftAt) : 12;
+  const subject = subjectStatus && months > 0;
+  const full = Math.max(0, settings.requiredHours);
+  const required = subject ? proRataRequired(full, months) : 0;
   const missing = subject ? missingHours(required, done) : 0;
-  return { required, done, missing, amountCents: subject ? ersatzAmountCents(missing, settings.ratePerMissingHourCents) : 0, subject };
+  return {
+    required,
+    done,
+    missing,
+    amountCents: subject ? ersatzAmountCents(missing, settings.ratePerMissingHourCents) : 0,
+    subject,
+    months: subject ? months : 12,
+    proRata: subject && months < 12 && full > 0,
+  };
 }
 
 /** Bezeichnung der Ersatzabgabe-Rechnung (auch Erkennungsmerkmal gegen doppelte Verrechnung). */

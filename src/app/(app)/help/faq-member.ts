@@ -844,4 +844,60 @@ export const MEMBER_FAQ: FaqSource[] = [
       ],
     },
   },
+  {
+    id: "beitritt-warten",
+    audience: "member",
+    de: {
+      q: "Ich bin mit dem Code beigetreten, sehe aber nichts. Warum?",
+      keywords: "Beitritt Beitrittscode Freigabe wartet Anfrage Warteseite Zugang Onboarding zurückziehen",
+      a: [
+        { p: "Manche Vereine prüfen neue Personen zuerst («Beitritt mit Freigabe»). Bis die Vereinsleitung deine Anfrage freigibt, siehst du unter [Verein wählen](/onboarding) eine Warteseite und hast noch keinen Zugang zu Daten des Vereins." },
+        { p: "Sobald entschieden ist, erhältst du eine Mitteilung per E-Mail. Auf der Warteseite kannst du die Anfrage auch zurückziehen. Mit einer Einladung per E-Mail hast du sofort Zugang." },
+      ],
+    },
+    fr: {
+      q: "J’ai adhéré avec le code, mais je ne vois rien. Pourquoi ?",
+      keywords: "adhésion code d’adhésion validation en attente demande page d’attente accès retirer",
+      a: [
+        { p: "Certaines sociétés vérifient d’abord les nouvelles personnes (« adhésion avec validation »). Tant que la direction de la société n’a pas validé ta demande, tu vois une page d’attente sous [Choisir une société](/onboarding) et tu n’as pas encore accès aux données de la société." },
+        { p: "Dès qu’une décision est prise, tu reçois un message par e-mail. Sur la page d’attente, tu peux aussi retirer ta demande. Avec une invitation par e-mail, tu as accès tout de suite." },
+      ],
+    },
+    it: {
+      q: "Mi sono iscritto con il codice, ma non vedo niente. Perché?",
+      keywords: "adesione codice di adesione approvazione in attesa richiesta pagina di attesa accesso ritirare",
+      a: [
+        { p: "Alcune società verificano prima le nuove persone («adesione con approvazione»). Finché la direzione della società non approva la tua richiesta, in [Scegliere la società](/onboarding) vedi una pagina di attesa e non hai ancora accesso ai dati della società." },
+        { p: "Appena c’è una decisione ricevi un messaggio per e-mail. Nella pagina di attesa puoi anche ritirare la richiesta. Con un invito per e-mail hai subito accesso." },
+      ],
+    },
+  },
+  {
+    id: "reservation-erinnerung",
+    audience: "member",
+    de: {
+      q: "Erhalte ich eine Bestätigung und eine Erinnerung für meine Reservation?",
+      keywords: "Reservation Buchung Bestätigung Erinnerung E-Mail 24 Stunden Serie Training Mitteilungen",
+      a: [
+        { p: "Ja. Nach einer bestätigten Reservation und nach einer Stornierung erhältst du eine E-Mail. Etwa 24 Stunden vor Beginn folgt eine Erinnerung (zwischen 7 und 21 Uhr). Reservationen aus einer Trainingsserie sind unter [Buchen](/bookings) mit «Serie» markiert." },
+        { p: "Unter [Mitteilungen](/me/notifications) legst du fest, ob Reservations-Mitteilungen per E-Mail kommen." },
+      ],
+    },
+    fr: {
+      q: "Est-ce que je reçois une confirmation et un rappel pour ma réservation ?",
+      keywords: "réservation confirmation rappel e-mail 24 heures série entraînement notifications",
+      a: [
+        { p: "Oui. Après une réservation confirmée et après une annulation, tu reçois un e-mail. Environ 24 heures avant le début suit un rappel (entre 7 h et 21 h). Les réservations d’une série d’entraînement sont marquées « Série » sous [Réserver](/bookings)." },
+        { p: "Sous [Notifications](/me/notifications), tu choisis si les notifications de réservation arrivent par e-mail." },
+      ],
+    },
+    it: {
+      q: "Ricevo una conferma e un promemoria per la mia prenotazione?",
+      keywords: "prenotazione conferma promemoria e-mail 24 ore serie allenamento notifiche",
+      a: [
+        { p: "Sì. Dopo una prenotazione confermata e dopo un annullamento ricevi un’e-mail. Circa 24 ore prima dell’inizio segue un promemoria (tra le 7 e le 21). Le prenotazioni di una serie di allenamento sono contrassegnate con «Serie» in [Prenotare](/bookings)." },
+        { p: "In [Notifiche](/me/notifications) scegli se le notifiche sulle prenotazioni arrivano per e-mail." },
+      ],
+    },
+  },
 ];

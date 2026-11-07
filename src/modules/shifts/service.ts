@@ -6,6 +6,7 @@ import { addDays, formatDateZurich, formatTimeRange, zurichParts } from "@/lib/t
 import { buildIcs } from "@/modules/events/ics";
 import { dayToDbDate, EXPIRY_WARN_DAYS, qualificationLabel } from "@/modules/qualifications/types";
 import { formatHours, staffing } from "./logic";
+import { accessStatusWhere, hasTenantAccess } from "@/lib/membership-access";
 
 // ---------------------------------------------------------------------------
 // iCal für einen einzelnen Einsatz
@@ -28,7 +29,7 @@ export async function buildShiftIcs(userId: string, isSuperAdmin: boolean, shift
   if (!s || s.tenant.deletedAt) return null;
   if (!isSuperAdmin) {
     const m = await db.membership.findUnique({ where: { userId_tenantId: { userId, tenantId: s.tenantId } }, select: { status: true } });
-    if (!m || m.status === "LEFT") return null;
+    if (!m || !hasTenantAccess(m.status)) return null;
   }
   const mod = await db.tenantModule.findUnique({ where: { tenantId_moduleKey: { tenantId: s.tenantId, moduleKey: "shifts" } }, select: { enabled: true } });
   if (!mod?.enabled) return null;
@@ -100,7 +101,7 @@ export async function runShiftReminders(now: Date = new Date()): Promise<{ assig
       // --- 1. 24 h vorher an Eingeteilte --------------------------------------
       const soon = await db.shift.findMany({
         where: { tenantId, startsAt: { gt: now, lte: new Date(now.getTime() + 24 * HOUR) }, OR: [{ eventId: null }, { event: { isCancelled: false } }] },
-        select: { id: true, title: true, startsAt: true, endsAt: true, event: { select: { title: true, location: true } }, assignments: { where: { status: "ASSIGNED", user: { deletedAt: null, memberships: { some: { tenantId, status: { not: "LEFT" } } } } }, select: { id: true, userId: true } } },
+        select: { id: true, title: true, startsAt: true, endsAt: true, event: { select: { title: true, location: true } }, assignments: { where: { status: "ASSIGNED", user: { deletedAt: null, memberships: { some: { tenantId, status: accessStatusWhere() } } } }, select: { id: true, userId: true } } },
       });
       const keys = soon.flatMap((s) => s.assignments.map((a) => `shift-24h:${a.id}`));
       const done = await sentKeys(tenantId, keys);
@@ -178,7 +179,7 @@ async function qualificationExpiryReminders(now: Date) {
   // Nur aktuelle Mitglieder (nicht ausgetreten) des jeweiligen Vereins erinnern.
   const members = rows.length
     ? await db.membership.findMany({
-        where: { status: { not: "LEFT" }, OR: [...new Set(rows.map((r) => r.tenantId))].map((tenantId) => ({ tenantId, userId: { in: rows.filter((r) => r.tenantId === tenantId).map((r) => r.userId) } })) },
+        where: { status: accessStatusWhere(), OR: [...new Set(rows.map((r) => r.tenantId))].map((tenantId) => ({ tenantId, userId: { in: rows.filter((r) => r.tenantId === tenantId).map((r) => r.userId) } })) },
         select: { tenantId: true, userId: true },
       })
     : [];

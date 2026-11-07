@@ -11,6 +11,9 @@ import { feeInvoiceSourceLabel, feeInvoiceTitle, isStandaloneFeeInvoice } from "
 import { getOnlineFeeProviderKey } from "./payments";
 import { canPayFeeInvoiceOnline, feeInvoicePayPath, sourceAllowsOnlinePayment } from "@/lib/payments/logic";
 import { providerLabel as paymentProviderLabel, providerMethods } from "@/lib/payments/catalog";
+import { partnerInvoiceItem, partnerInvoiceWhere, partnerPaymentItem, toPaymentPayee, type PaymentPayee } from "./partner-items";
+
+export { partnerInvoiceItem, partnerInvoiceWhere, partnerPaymentItem, toPaymentPayee, type PaymentPayee } from "./partner-items";
 
 /**
  * Zahlungsübersicht über alle Quellen: Mitgliederbeiträge (FeeInvoice), Reservations-Rechnungen
@@ -58,6 +61,12 @@ export type PaymentItem = {
   external: boolean;
   /** «Online bezahlen» (nur Beitragsrechnungen, nie Munition); null = nicht online bezahlbar */
   payOnlineHref?: string | null;
+  /**
+   * Nur Posten eines Partnervereins (Buchung auf einer gemeinsamen Anlage): Rechnungssteller ist der
+   * Verein, dem die Anlage gehört. Name und Zahlungsangaben dieses Vereins statt des eigenen.
+   */
+  issuer?: { tenantId: string; name: string } | null;
+  payee?: PaymentPayee | null;
 };
 
 /** Bezeichnung eines einzelnen Postens für Listen und Exporte. */
@@ -170,7 +179,8 @@ export async function listMyPayments(ctx: TenantCtx, now: Date): Promise<MyPayme
   ]);
 
   const qrIban = profile.qrIban ? profile.iban : null;
-  const items: PaymentItem[] = [];
+  // Buchungen auf Anlagen von Partnervereinen: Rechnungen und Online-Zahlungen des Eigentümers, nur eigene Posten.
+  const items: PaymentItem[] = await listMyPartnerPayments(tenantId, userId, now);
 
   for (const f of fees) {
     const status = normalizeInvoiceStatus(f.status);
@@ -256,9 +266,12 @@ export async function summarizeMyOpenPayments(ctx: TenantCtx, now: Date) {
       ? db.ammoOrder.findMany({ where: { tenantId, userId, status: "ISSUED", paymentStatus: "UNPAID", invoiceNumber: { not: null } }, select: { totalCents: true, currency: true, dueAt: true } })
       : Promise.resolve([]),
   ]);
+  // Offene Rechnungen von Partnervereinen (gemeinsame Anlage), unabhängig vom eigenen Modul.
+  const partnerOpen = await db.invoice.findMany({ where: partnerInvoiceWhere(tenantId, userId, { status: "OPEN" }), select: { amountCents: true, currency: true, dueAt: true } });
   const rows = [
     ...fees,
     ...invoices,
+    ...partnerOpen,
     ...ammo.map((a) => ({ amountCents: a.totalCents, currency: a.currency, dueAt: a.dueAt })),
   ];
   const dues = rows.map((r) => r.dueAt).filter((d): d is Date => !!d).sort((a, b) => a.getTime() - b.getTime());
@@ -275,6 +288,53 @@ export async function summarizeMyOpenPayments(ctx: TenantCtx, now: Date) {
     nextDue: dues[0] ?? null,
     onlinePay,
   };
+}
+
+/* ------------------------------------------------------------------ Partnervereine */
+
+/**
+ * Rechnungen und Online-Zahlungen von Partnervereinen für das angemeldete Mitglied (nur eigene Buchungen).
+ * Erscheinen unter «Zahlungen» des eigenen Vereins, auch wenn dort das Modul Reservationen aus ist.
+ * Zahlungsangaben und QR-Referenz stammen vom Verein, dem die Anlage gehört.
+ */
+async function listMyPartnerPayments(activeTenantId: string, userId: string, now: Date): Promise<PaymentItem[]> {
+  const [invoices, online] = await Promise.all([
+    db.invoice.findMany({
+      where: partnerInvoiceWhere(activeTenantId, userId),
+      select: {
+        id: true, tenantId: true, number: true, amountCents: true, currency: true, status: true, issuedAt: true, dueAt: true, paidAt: true, reference: true, bookingId: true,
+        booking: { select: { startsAt: true, resource: { select: { name: true } } } },
+      },
+      orderBy: { issuedAt: "desc" },
+      take: 200,
+    }),
+    db.payment.findMany({
+      where: { status: { in: ["PAID", "REFUNDED"] }, bookingId: { not: null }, booking: { userId, viaTenantId: activeTenantId, tenantId: { not: activeTenantId }, invoice: { is: null } } },
+      select: { id: true, provider: true, status: true, amountCents: true, currency: true, createdAt: true, updatedAt: true, bookingId: true, booking: { select: { tenantId: true, paidAt: true, startsAt: true, resource: { select: { name: true } } } } },
+      orderBy: { createdAt: "desc" },
+      take: 200,
+    }),
+  ]);
+  if (!invoices.length && !online.length) return [];
+  const ownerIds = [...new Set([...invoices.map((i) => i.tenantId), ...online.flatMap((p) => (p.booking ? [p.booking.tenantId] : []))])];
+  const tenants = await db.tenant.findMany({ where: { id: { in: ownerIds } }, select: { id: true, name: true } });
+  const names = new Map(tenants.map((t) => [t.id, t.name]));
+  const payees = new Map<string, PaymentPayee>();
+  for (const id of new Set(invoices.map((i) => i.tenantId))) payees.set(id, toPaymentPayee(await getBillingProfile(id, names.get(id) ?? ""), names.get(id) ?? ""));
+
+  const out: PaymentItem[] = [];
+  for (const i of invoices) {
+    const issuer = { tenantId: i.tenantId, name: names.get(i.tenantId) ?? "Partnerverein" };
+    const payee = payees.get(i.tenantId)!;
+    const reference = !payee.qrIban || !payee.iban ? null : i.status === "OPEN" ? await ensureReference("BOOKING", i, payee.iban) : i.reference;
+    out.push(partnerInvoiceItem(i, issuer, payee, reference, now));
+  }
+  for (const p of online) {
+    if (!p.booking) continue;
+    const item = partnerPaymentItem(p, { tenantId: p.booking.tenantId, name: names.get(p.booking.tenantId) ?? "Partnerverein" });
+    if (item) out.push(item);
+  }
+  return out;
 }
 
 function providerLabel(p: string) {

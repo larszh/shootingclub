@@ -7,7 +7,7 @@ import { formatMoney } from "@/lib/money";
 import { requireWeapons } from "@/modules/weapons/guard";
 import { stripBlockReason } from "@/modules/weapons/logic";
 import { defaultMinorReportDays, getWeapon, memberOptions } from "@/modules/weapons/queries";
-import { MINOR_HINT, RESPONSIBILITY_HINT, serviceKindLabel, weaponStatusInfo } from "@/modules/weapons/types";
+import { DEFAULT_MINOR_REPORT_DAYS, MINOR_HINT, RESPONSIBILITY_HINT, serviceKindLabel, weaponStatusInfo } from "@/modules/weapons/types";
 import { LendButton } from "@/modules/weapons/ui/lend-dialog";
 import { ReportButton, ReturnButton } from "@/modules/weapons/ui/loan-actions";
 import { ServiceForm } from "@/modules/weapons/ui/service-form";
@@ -27,7 +27,7 @@ export default async function WeaponDetailPage({ params }: { params: Promise<{ i
   if (!w) notFound();
   const st = weaponStatusInfo(w.status);
   const open = w.loans.find((l) => !l.returnedAt) ?? null;
-  const [members, reportDays] = w.status === "AVAILABLE" ? await Promise.all([memberOptions(ctx.tenant.id), defaultMinorReportDays(ctx.tenant.id)]) : [[], 30];
+  const [members, reportDays] = w.status === "AVAILABLE" ? await Promise.all([memberOptions(ctx.tenant.id), defaultMinorReportDays(ctx.tenant.id)]) : [[], DEFAULT_MINOR_REPORT_DAYS];
   const today = todayZurich();
   const sv = w.service;
   const notes = stripBlockReason(w.notes);
@@ -109,7 +109,7 @@ export default async function WeaponDetailPage({ params }: { params: Promise<{ i
       {canManage ? (
         <>
           <SectionTitle>Status</SectionTitle>
-          <Card className="animate-rise mb-4 p-4"><StatusActions weapon={{ id: w.id, name: w.name, status: w.status, hasLoans: w.loans.length > 0 }} /></Card>
+          <Card className="animate-rise mb-4 p-4"><StatusActions weapon={{ id: w.id, name: w.name, status: w.status, hasLoans: w.loans.length > 0, blockReason: w.blockReason }} /></Card>
         </>
       ) : null}
 

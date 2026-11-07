@@ -15,7 +15,7 @@ export default async function ShiftSettingsPage() {
     <div>
       <PageHeader title="Arbeitsstunden" subtitle="Soll pro Jahr und Ersatzabgabe" back={{ href: "/admin/shifts", label: "Einsätze" }} />
       <WorkSettingsForm
-        initial={{ enabled: s.enabled, requiredHours: s.requiredHours, rate: s.ratePerMissingHourCents ? (s.ratePerMissingHourCents / 100).toFixed(2) : "", statuses: s.statuses }}
+        initial={{ enabled: s.enabled, proRata: s.proRata, requiredHours: s.requiredHours, rate: s.ratePerMissingHourCents ? (s.ratePerMissingHourCents / 100).toFixed(2) : "", statuses: s.statuses }}
         statusOptions={WORK_STATUS_OPTIONS.map((v) => ({ value: v, label: statusLabel(v) }))}
       />
     </div>

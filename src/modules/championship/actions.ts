@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { z } from "zod";
 import { db } from "@/lib/db";
+import { accessStatusWhere } from "@/lib/membership-access";
 import { audit } from "@/lib/audit";
 import { notify } from "@/lib/notify";
 import { fail, ok, type ActionResult } from "@/lib/action-result";
@@ -125,7 +126,7 @@ export async function setChampionshipPublishedAction(id: string, published: bool
       const rankedIds = [...ranking.ranked, ...ranking.unclassified].map((e) => e.userId);
       // Ausgetretene Mitglieder bleiben in der Rangliste, erhalten aber keine Mitteilung.
       const active = rankedIds.length
-        ? await db.membership.findMany({ where: { tenantId, userId: { in: rankedIds }, status: { not: "LEFT" }, user: { deletedAt: null } }, select: { userId: true } })
+        ? await db.membership.findMany({ where: { tenantId, userId: { in: rankedIds }, status: accessStatusWhere(), user: { deletedAt: null } }, select: { userId: true } })
         : [];
       const userIds = active.map((m) => m.userId);
       if (userIds.length) {

@@ -1,5 +1,6 @@
 import "server-only";
 import { db } from "@/lib/db";
+import { accessStatusWhere } from "@/lib/membership-access";
 import { addDays, todayZurich } from "@/lib/time";
 import { dayToDbDate, EXPIRY_WARN_DAYS, qualificationState } from "./types";
 
@@ -16,7 +17,7 @@ export async function listQualifications(tenantId: string, f: QualificationFilte
   const rows = await db.qualification.findMany({
     where: {
       tenantId,
-      user: { deletedAt: null, ...(f.q ? { name: { contains: f.q } } : {}), memberships: { some: { tenantId, status: { not: "LEFT" } } } },
+      user: { deletedAt: null, ...(f.q ? { name: { contains: f.q } } : {}), memberships: { some: { tenantId, status: accessStatusWhere() } } },
       ...(f.kind ? { kind: f.kind } : {}),
       ...(f.userId ? { userId: f.userId } : {}),
       ...(f.expiring ? { validUntil: { not: null, lte: dayToDbDate(addDays(today, EXPIRY_WARN_DAYS)) } } : {}),
@@ -34,7 +35,7 @@ export type QualificationRow = Awaited<ReturnType<typeof listQualifications>>[nu
 
 export async function qualificationCounts(tenantId: string) {
   const today = todayZurich();
-  const base = { tenantId, user: { deletedAt: null, memberships: { some: { tenantId, status: { not: "LEFT" } } } } };
+  const base = { tenantId, user: { deletedAt: null, memberships: { some: { tenantId, status: accessStatusWhere() } } } };
   const [total, expired, expiring] = await Promise.all([
     db.qualification.count({ where: base }),
     db.qualification.count({ where: { ...base, validUntil: { lt: dayToDbDate(today) } } }),

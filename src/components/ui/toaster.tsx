@@ -103,7 +103,7 @@ function ToastCard({ item }: { item: ToastItem }) {
         <Icon className={cn("mt-0.5 h-5 w-5 shrink-0", cls)} aria-hidden />
         <div className="min-w-0 flex-1 text-[15px] leading-snug">
           <p className="font-medium">
-            <span className="sr-only">{item.tone === "error" ? "Fehler: " : item.tone === "success" ? "Erledigt: " : ""}</span>
+            <span className="sr-only">{item.tone === "error" ? t("shell.ui.toastError") : item.tone === "success" ? t("shell.ui.toastSuccess") : ""}</span>
             {item.message}
           </p>
           {item.description ? <p className="mt-0.5 text-sm text-ink-3">{item.description}</p> : null}

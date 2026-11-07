@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { db } from "@/lib/db";
+import { accessStatusWhere } from "@/lib/membership-access";
 import { audit } from "@/lib/audit";
 import { fail, ok, type ActionResult } from "@/lib/action-result";
 import { requireTenant } from "@/lib/tenant";
@@ -53,7 +54,7 @@ export async function saveQualificationAction(_prev: ActionResult | null, fd: Fo
   }
   const v = parsed.data;
   const tenantId = ctx.tenant.id;
-  const member = await db.membership.findFirst({ where: { tenantId, userId: v.userId, status: { not: "LEFT" }, user: { deletedAt: null } }, select: { user: { select: { name: true } } } });
+  const member = await db.membership.findFirst({ where: { tenantId, userId: v.userId, status: accessStatusWhere(), user: { deletedAt: null } }, select: { user: { select: { name: true } } } });
   if (!member) return fail("Mitglied nicht gefunden.", { userId: "Mitglied nicht gefunden." });
   const data = {
     userId: v.userId, kind: v.kind, label: v.label, number: v.number, note: v.note,

@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { ExternalLink, Settings } from "lucide-react";
 import { requireTenant } from "@/lib/tenant";
 import { db } from "@/lib/db";
+import { accessStatusWhere } from "@/lib/membership-access";
 import { Card, LinkButton, PageHeader } from "@/components/ui";
 import { TenantLogo } from "@/components/logo";
 import { userAvatarUrl } from "@/components/avatar";
@@ -21,7 +22,7 @@ export default async function MembersDirectoryPage() {
     db.tenant.findUniqueOrThrow({ where: { id: ctx.tenant.id }, select: { name: true, city: true, canton: true, description: true, website: true } }),
     db.membership.findMany({
       // Ausgetretene erscheinen nicht im Verzeichnis.
-      where: { tenantId: ctx.tenant.id, status: { not: "LEFT" } },
+      where: { tenantId: ctx.tenant.id, status: accessStatusWhere() },
       select: { id: true, role: true, status: true, createdAt: true, joinedAt: true, user: { select: { id: true, name: true, email: true, phone: true, avatarPath: true, updatedAt: true } } },
     }),
   ]);

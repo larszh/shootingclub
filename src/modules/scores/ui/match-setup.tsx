@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { Check, CloudOff, Plus, Search, Star, UserPlus, X } from "lucide-react";
 import { formatDistances } from "@/modules/scores/types";
 import { getT, type Locale } from "@/lib/i18n/core";
-import { disciplineText, tCount } from "./labels";
+import { disciplineText, scoreErrorText, tCount } from "./labels";
 import { Alert, Button, Card, Field, Input } from "@/components/ui";
 import { Spinner } from "@/components/ui/form";
 import { Avatar } from "@/components/avatar";
@@ -175,7 +175,7 @@ export function MatchSetup({
             return;
           }
           if (r && r.retry === false) {
-            setError(r.error ?? t("shooting.setup.createFailed"));
+            setError(r.error ? scoreErrorText(t, r.error) : t("shooting.setup.createFailed"));
             setClientId(null);
             setBusy(false);
             return;

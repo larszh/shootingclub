@@ -87,13 +87,13 @@ export default async function PaymentsPage({ searchParams }: { searchParams: Pro
               // Online-Zahlung nur für Beitragsrechnungen (FeeInvoice), nie für Munition.
               i.payOnlineHref && i.source === "FEE" ? (
                 <div key={i.key} className="space-y-2">
-                  <OpenPaymentCard item={i} payee={payee} locale={locale} />
+                  <OpenPaymentCard item={i} payee={i.payee ?? payee} locale={locale} />
                   <LinkButton href={i.payOnlineHref} prefetch={false} className="w-full" aria-label={t("money.payOnline.aria", { title: i.title, number: i.number })}>
                     <CreditCard className="h-4 w-4" aria-hidden /> {t("money.payOnline.button")}
                   </LinkButton>
                 </div>
               ) : (
-                <OpenPaymentCard key={i.key} item={i} payee={payee} locale={locale} />
+                <OpenPaymentCard key={i.key} item={i} payee={i.payee ?? payee} locale={locale} />
               ),
             )}
           </div>

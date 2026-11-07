@@ -35,6 +35,18 @@ export function OfflineOverviewLink() {
   );
 }
 
+/**
+ * Seitentitel der statischen Offline-Seiten in der gespeicherten Sprache (die Metadaten sind
+ * zur Build-Zeit fix auf Deutsch, daher hier im Browser nachgeführt).
+ */
+export function OfflineDocumentTitle({ page }: { page: "home" | "match" | "new" }) {
+  const t = useT();
+  useEffect(() => {
+    document.title = `${t(`shell.offline.pageTitle.${page}`)} · Standchef`;
+  }, [t, page]);
+  return null;
+}
+
 /** Übersicht ohne Verbindung: was ist auf dem Gerät gespeichert, was wartet auf Übertragung. */
 export function OfflineHome() {
   const t = useT();

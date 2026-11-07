@@ -17,7 +17,7 @@ export default async function ImportPage() {
   return (
     <div>
       <PageHeader title="Mitglieder importieren" subtitle="Aus ClubDesk, WebLing oder Excel (CSV oder .xlsx)" back={{ href: "/admin/members", label: "Mitglieder" }} />
-      <MembersNav active="import" canManage counts={{ households }} />
+      <MembersNav active="import" canApprove={ctx.can("members.approve")} tenantId={ctx.tenant.id} canManage counts={{ households }} />
       <ImportWizard
         fields={IMPORT_FIELDS.map((f) => ({ value: f, label: FIELD_LABELS[f] }))}
         presets={(Object.keys(IMPORT_PRESETS) as ImportPresetId[]).map((id) => ({ id, label: IMPORT_PRESETS[id].label, hint: IMPORT_PRESETS[id].hint }))}

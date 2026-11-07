@@ -166,7 +166,9 @@ export type TabItem<T extends string> = { value: T; label: React.ReactNode; coun
  *   <Tabs items={[{ value: "a", label: "Offen" }, { value: "b", label: "Erledigt" }]} value={tab} onChange={setTab} />
  *   <TabPanel value="a" current={tab}>…</TabPanel>
  */
-export function Tabs<T extends string>({ items, value, onChange, label = "Ansicht wählen", className, idBase }: { items: TabItem<T>[]; value: T; onChange: (v: T) => void; label?: string; className?: string; idBase?: string }) {
+export function Tabs<T extends string>({ items, value, onChange, label: labelProp, className, idBase }: { items: TabItem<T>[]; value: T; onChange: (v: T) => void; label?: string; className?: string; idBase?: string }) {
+  const t = useT();
+  const label = labelProp ?? t("shell.ui.chooseView");
   const auto = useId();
   const base = idBase ?? auto;
   const refs = useRef<Array<HTMLButtonElement | null>>([]);

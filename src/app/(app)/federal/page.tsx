@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { BadgeCheck, CalendarClock, Download, FileText, Flag, Printer, ShieldCheck, Trophy, Users } from "lucide-react";
+import { Award, BadgeCheck, CalendarClock, Download, FileText, Flag, Printer, ShieldCheck, Trophy, Users } from "lucide-react";
 import { Alert, Badge, Button, Card, EmptyState, Input, LinkButton, LinkTabs, PageHeader, SectionTitle, Select, StatCard } from "@/components/ui";
 import { formatDateZurich } from "@/lib/time";
 import { formatScore } from "@/lib/utils";
@@ -11,7 +11,6 @@ import {
   currentMembers,
   currentSwissYear,
   getFederalYear,
-  listFsParticipants,
   listOfficialPrograms,
   listOfficialResults,
   listOpEvents,
@@ -34,32 +33,42 @@ import {
   yearOptions,
 } from "@/modules/federal/types";
 import { FederalYearForm } from "@/modules/federal/ui/year-form";
+import { fsAwardsOverview } from "@/modules/federal/awards-queries";
+import { formatDate, getRequestLocale, getT, type Locale, type TFunction } from "@/lib/i18n";
+import { officialKindText, tCount } from "@/modules/scores/ui/labels";
 import { StartFederalMatchForm } from "@/modules/federal/ui/start-match-form";
 
-export const metadata: Metadata = { title: "Bundesübungen" };
+export async function generateMetadata(): Promise<Metadata> {
+  return { title: getT(await getRequestLocale())("shooting.federal.title") };
+}
+
+/** Datum eines Anlasses (mit Uhrzeit, ausser ganztägig) im Format der Sprache. */
+function eventDate(d: Date, allDay: boolean, locale: Locale): string {
+  return formatDate(d, locale, allDay ? { weekday: "short" } : { weekday: "short", hour: "2-digit", minute: "2-digit" });
+}
 
 type SP = { year?: string; kind?: string; status?: string; eventId?: string; q?: string; denied?: string };
 
-function PassBadge({ passed }: { passed: boolean | null }) {
-  if (passed === true) return <Badge tone="ok">bestanden</Badge>;
-  if (passed === false) return <Badge tone="danger">nicht bestanden</Badge>;
-  return <Badge tone="outline">ohne Regel</Badge>;
+function PassBadge({ passed, t }: { passed: boolean | null; t: TFunction }) {
+  if (passed === true) return <Badge tone="ok">{t("shooting.federal.pass.passed")}</Badge>;
+  if (passed === false) return <Badge tone="danger">{t("shooting.federal.pass.failed")}</Badge>;
+  return <Badge tone="outline">{t("shooting.federal.pass.none")}</Badge>;
 }
 
-function ResultItem({ r, showName }: { r: OfficialResultRow; showName: boolean }) {
+function ResultItem({ r, showName, t }: { r: OfficialResultRow; showName: boolean; t: TFunction }) {
   return (
     <Link href={`/scores/matches/${r.matchId}`} className="press flex items-center gap-3 px-4 py-3 hover:bg-surface-2/60">
       <div className="min-w-0 flex-1">
         <div className="font-medium truncate">{showName ? r.name : r.program}</div>
         <div className="text-xs text-ink-3 truncate">
-          {formatSwissDate(r.date)} · {showName ? `${r.program} · ` : ""}{officialKindLabel(r.kind)}{r.attempt ? ` · ${r.attempt}. Versuch` : ""}{r.eventTitle ? ` · ${r.eventTitle}` : ""}
+          {formatSwissDate(r.date)} · {showName ? `${r.program} · ` : ""}{officialKindText(t, r.kind)}{r.attempt ? t("shooting.federal.attempt", { n: r.attempt }) : ""}{r.eventTitle ? ` · ${r.eventTitle}` : ""}
         </div>
       </div>
       <div className="shrink-0 text-right">
         <div className="font-semibold tabular-nums">{r.total === null ? "–" : formatScore(r.total, r.decimal)}</div>
-        <div className="text-[11px] text-ink-3 tabular-nums">{r.zeros ?? 0} Nuller</div>
+        <div className="text-[11px] text-ink-3 tabular-nums">{t("shooting.federal.zeros", { n: r.zeros ?? 0 })}</div>
       </div>
-      <div className="shrink-0"><PassBadge passed={r.passed} /></div>
+      <div className="shrink-0"><PassBadge passed={r.passed} t={t} /></div>
     </Link>
   );
 }
@@ -73,6 +82,8 @@ export default async function FederalPage({ searchParams }: { searchParams: Prom
   const today = swissDay(now);
   const all = canSeeAll(ctx);
   const canVerify = ctx.can("results.verify");
+  const locale = await getRequestLocale();
+  const t = getT(locale);
   const yearTabs = yearOptions(thisYear).map((y) => ({ value: String(y), href: `/federal?year=${y}`, label: String(y) }));
 
   const [fy, events, myResults] = await Promise.all([
@@ -91,36 +102,36 @@ export default async function FederalPage({ searchParams }: { searchParams: Prom
 
   const header = (
     <PageHeader
-      title="Bundesübungen"
-      subtitle={`${ctx.tenant.name} · Obligatorisch und Feldschiessen ${year}`}
-      action={<LinkButton href="/federal/nachweis" variant="secondary" size="sm" className="h-11"><FileText className="h-4 w-4" aria-hidden /> Schiessnachweis</LinkButton>}
+      title={t("shooting.federal.title")}
+      subtitle={t("shooting.federal.subtitle", { club: ctx.tenant.name, year })}
+      action={<LinkButton href="/federal/nachweis" variant="secondary" size="sm" className="h-11"><FileText className="h-4 w-4" aria-hidden /> {t("shooting.federal.nachweis")}</LinkButton>}
     />
   );
 
   // ---- Ansicht für Mitglieder: eigener Stand ------------------------------------
   const mine = (
     <>
-      <SectionTitle>Mein Obligatorisch {year}</SectionTitle>
+      <SectionTitle>{t("shooting.federal.myOp", { year })}</SectionTitle>
       <Card className="animate-rise p-4">
         <div className="flex items-center gap-3">
           <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-accent-soft text-accent"><ShieldCheck className="h-5 w-5" aria-hidden /></span>
           <div className="min-w-0">
             <div className="font-semibold">
-              {myStatus?.status === "passed" ? "Bestanden" : myStatus?.status === "failed" ? "Noch nicht bestanden" : myStatus ? "Amtlich erfasst" : "Noch kein amtliches Resultat"}
+              {myStatus?.status === "passed" ? t("shooting.federal.status.passed") : myStatus?.status === "failed" ? t("shooting.federal.status.failed") : myStatus ? t("shooting.federal.status.recorded") : t("shooting.federal.status.none")}
             </div>
             <div className="text-xs text-ink-3">
-              {myStatus ? `${myStatus.attempts} ${myStatus.attempts === 1 ? "Versuch" : "Versuche"} · zuletzt ${formatSwissDate(myStatus.lastDate)}` : "Sobald der Schützenmeister dein Resultat bestätigt, erscheint es hier."}
+              {myStatus ? tCount(t, "shooting.federal.attempts", myStatus.attempts, { date: formatSwissDate(myStatus.lastDate) }) : t("shooting.federal.waiting")}
             </div>
           </div>
-          {myStatus?.status === "passed" ? <Badge tone="ok" className="ml-auto">bestanden</Badge> : myStatus?.status === "failed" ? <Badge tone="danger" className="ml-auto">verblieben</Badge> : null}
+          {myStatus?.status === "passed" ? <Badge tone="ok" className="ml-auto">{t("shooting.federal.pass.passed")}</Badge> : myStatus?.status === "failed" ? <Badge tone="danger" className="ml-auto">{t("shooting.federal.remained")}</Badge> : null}
         </div>
         {myStatus?.status === "failed" ? (
-          <p className="mt-3 text-sm text-ink-2">Du kannst es an einem weiteren Schiesstag nochmals versuchen. Wer das Obligatorisch nicht besteht, muss allenfalls einen Nachschiesskurs besuchen – gemäss den Vorgaben. Der Schützenmeister gibt dir gerne Auskunft.</p>
+          <p className="mt-3 text-sm text-ink-2">{t("shooting.federal.retry")}</p>
         ) : null}
       </Card>
       {myResults.length ? (
         <Card className="animate-rise mt-3 divide-y divide-line overflow-hidden">
-          {myResults.map((r) => <ResultItem key={r.id} r={r} showName={false} />)}
+          {myResults.map((r) => <ResultItem key={r.id} r={r} showName={false} t={t} />)}
         </Card>
       ) : null}
     </>
@@ -128,7 +139,7 @@ export default async function FederalPage({ searchParams }: { searchParams: Prom
 
   const eventsList = (
     <>
-      <SectionTitle>Schiesstage Obligatorisch {year}</SectionTitle>
+      <SectionTitle>{t("shooting.federal.days", { year })}</SectionTitle>
       {events.length ? (
         <Card className="animate-rise divide-y divide-line overflow-hidden">
           {events.map((e) => (
@@ -136,10 +147,10 @@ export default async function FederalPage({ searchParams }: { searchParams: Prom
               <div className="flex items-start justify-between gap-3">
                 <Link href={`/events/${e.id}`} className="min-w-0 hover:underline">
                   <div className="font-medium truncate">{e.title}</div>
-                  <div className="text-xs text-ink-3">{formatDateZurich(e.startsAt, e.allDay ? undefined : { hour: "2-digit", minute: "2-digit" })}{e.location ? ` · ${e.location}` : ""}</div>
+                  <div className="text-xs text-ink-3">{eventDate(e.startsAt, e.allDay, locale)}{e.location ? ` · ${e.location}` : ""}</div>
                 </Link>
                 <div className="flex shrink-0 flex-col items-end gap-1">
-                  {e.isCancelled ? <Badge tone="warn">abgesagt</Badge> : null}
+                  {e.isCancelled ? <Badge tone="warn">{t("shooting.federal.cancelled")}</Badge> : null}
                   {e.yesCount ? <Badge tone="outline"><Users className="mr-1 h-3 w-3" aria-hidden />{e.yesCount}</Badge> : null}
                 </div>
               </div>
@@ -147,7 +158,7 @@ export default async function FederalPage({ searchParams }: { searchParams: Prom
                 <div className="mt-2 flex flex-wrap gap-2">
                   {e.matches.map((m) => (
                     <LinkButton key={m.id} href={`/scores/matches/${m.id}`} variant="secondary" size="sm" className="h-11">
-                      {m.programName} · {m.officialCount}/{m.participantCount} bestätigt
+                      {t("shooting.federal.confirmedCount", { name: m.programName, official: m.officialCount, total: m.participantCount })}
                     </LinkButton>
                   ))}
                 </div>
@@ -156,7 +167,7 @@ export default async function FederalPage({ searchParams }: { searchParams: Prom
           ))}
         </Card>
       ) : (
-        <EmptyState icon={<CalendarClock className="h-5 w-5" />} title="Keine Schiesstage erfasst" text="Schiesstage sind Anlässe der Art «Obligatorisch» im Kalender des Vereins." />
+        <EmptyState icon={<CalendarClock className="h-5 w-5" />} title={t("shooting.federal.noDays")} text={t("shooting.federal.noDaysText")} />
       )}
     </>
   );
@@ -165,10 +176,10 @@ export default async function FederalPage({ searchParams }: { searchParams: Prom
     return (
       <div>
         {header}
-        <LinkTabs items={yearTabs} active={String(year)} label="Jahr wählen" className="mb-4" />
+        <LinkTabs items={yearTabs} active={String(year)} label={t("shooting.federal.yearAria")} className="mb-4" />
         {mine}
         {eventsList}
-        <p className="mt-6 text-xs text-ink-3">{FEDERAL_RESPONSIBILITY_HINT}</p>
+        <p className="mt-6 text-xs text-ink-3">{t("shooting.federal.responsibility")}</p>
       </div>
     );
   }
@@ -179,10 +190,10 @@ export default async function FederalPage({ searchParams }: { searchParams: Prom
   const eventFilter = events.some((e) => e.id === sp.eventId) ? sp.eventId : "";
   const q = (sp.q ?? "").slice(0, 60);
 
-  const [opResults, filtered, fs, members, programs] = await Promise.all([
+  const [opResults, filtered, fsAwards, members, programs] = await Promise.all([
     listOfficialResults(ctx.tenant.id, year, { kind: "OP" }),
     listOfficialResults(ctx.tenant.id, year, { kind: kindFilter || undefined, status: statusFilter || undefined, eventId: eventFilter || undefined, q: q || undefined }),
-    listFsParticipants(ctx.tenant.id, year),
+    fsAwardsOverview(ctx.tenant.id, year),
     currentMembers(ctx.tenant.id),
     canVerify ? listOfficialPrograms(ctx.tenant.id) : Promise.resolve([]),
   ]);
@@ -194,6 +205,7 @@ export default async function FederalPage({ searchParams }: { searchParams: Prom
     .filter((s) => s.status === "failed" && memberNames.has(s.userId))
     .map((s) => ({ ...s, name: memberNames.get(s.userId)! }))
     .sort((a, b) => a.name.localeCompare(b.name, "de-CH"));
+  const fs = fsAwards.participants;
   const fsRanked = rankFs(fs);
   const openEvents = events.filter((e) => !e.isCancelled);
   const exportQs = new URLSearchParams({ year: String(year), ...(kindFilter ? { kind: kindFilter } : {}), ...(eventFilter ? { eventId: eventFilter } : {}) }).toString();
@@ -279,7 +291,7 @@ export default async function FederalPage({ searchParams }: { searchParams: Prom
       )}
 
       {/* Feldschiessen */}
-      <SectionTitle>Feldschiessen {year}</SectionTitle>
+      <SectionTitle action={<LinkButton href={`/federal/awards?year=${year}`} variant="secondary" size="sm" className="h-11"><Award className="h-4 w-4" aria-hidden /> Auszeichnungen</LinkButton>}>Feldschiessen {year}</SectionTitle>
       {fsRanked.length ? (
         <Card className="animate-rise divide-y divide-line overflow-hidden">
           {fsRanked.map((r) => (
@@ -293,6 +305,10 @@ export default async function FederalPage({ searchParams }: { searchParams: Prom
                 <span className="block font-semibold tabular-nums">{formatScore(r.total, r.decimal)}</span>
                 <span className="block text-[11px] text-ink-3 tabular-nums">{r.zeros ?? 0} Nuller</span>
               </span>
+              {(() => {
+                const a = fsAwards.byParticipant.get(r.id);
+                return a?.status === "award" ? <Badge tone="ok" className="shrink-0">{a.award}</Badge> : null;
+              })()}
               {r.isOfficial ? <BadgeCheck className="h-4 w-4 shrink-0 text-accent" aria-label="amtlich bestätigt" /> : <span className="w-4 shrink-0" />}
             </Link>
           ))}
@@ -333,7 +349,7 @@ export default async function FederalPage({ searchParams }: { searchParams: Prom
       </form>
       {shown.length ? (
         <Card className="animate-rise divide-y divide-line overflow-hidden">
-          {shown.map((r) => <ResultItem key={r.id} r={r} showName />)}
+          {shown.map((r) => <ResultItem key={r.id} r={r} showName t={t} />)}
         </Card>
       ) : (
         <EmptyState icon={<BadgeCheck className="h-5 w-5" />} title="Keine amtlichen Resultate" text="Resultate erscheinen hier, sobald der Schützenmeister sie im Durchgang amtlich bestätigt." />
@@ -343,7 +359,7 @@ export default async function FederalPage({ searchParams }: { searchParams: Prom
 
       {mine}
 
-      <Alert tone="info" className="mt-6">{FEDERAL_RESPONSIBILITY_HINT} Feldschiessen-Auszeichnungen (Kranz, Karte) werden noch nicht berechnet.</Alert>
+      <Alert tone="info" className="mt-6">{FEDERAL_RESPONSIBILITY_HINT} Feldschiessen-Auszeichnungen werden mit den vom Verein erfassten Limiten berechnet (Limiten gemäss Ausschreibung eintragen).</Alert>
     </div>
   );
 }

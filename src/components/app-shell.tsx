@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Home, Target, Crosshair, Menu, CalendarDays, Megaphone, MessageCircle, FolderOpen, Package, Wallet, Settings, Users, FileUp, House, History, Server, BadgeCheck, Trophy, Tv, DoorOpen, HandHelping, GraduationCap, Shield, Coffee, FileInput, BookOpenCheck, Code2, Handshake } from "lucide-react";
+import { Home, Target, Crosshair, Menu, CalendarDays, Megaphone, MessageCircle, FolderOpen, Package, Wallet, Settings, Users, FileUp, House, History, Server, BadgeCheck, Trophy, Tv, DoorOpen, HandHelping, GraduationCap, Shield, Coffee, FileInput, BookOpenCheck, Code2, Handshake, Landmark, UserPlus } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { TenantLogo } from "@/components/logo";
 import { Avatar } from "@/components/avatar";
@@ -29,6 +29,8 @@ type NavItem = {
   requires?: keyof ShellAdmin;
   /** Nie als eigener Tab in der mobilen Tableiste (nur Seitenleiste und «Mehr») */
   noTab?: boolean;
+  /** Zähler neben dem Eintrag (z.B. offene Beitrittsanfragen) */
+  count?: number;
 };
 
 type NavGroup = "schiessen" | "verein";
@@ -70,7 +72,7 @@ const NAV: NavItem[] = [
   { href: "/weapons", label: "shell.nav.weapons", sideLabel: "shell.nav.weapons.side", icon: Shield, modules: ["weapons"], group: "verein", requires: "weapons" },
   { href: "/kiosk", label: "shell.nav.kiosk", sideLabel: "shell.nav.kiosk.side", icon: Coffee, modules: ["kiosk"], group: "verein" },
   // Verwaltung und Verzeichnis liegen mobil unter «Mehr» (Tableiste bleibt bei 5 Einträgen).
-  { href: "/me", label: "shell.nav.more", icon: Menu, alsoActive: ["/admin", "/members", "/super", "/help"] },
+  { href: "/me", label: "shell.nav.more", icon: Menu, alsoActive: ["/admin", "/members", "/super", "/help", "/association"] },
 ];
 
 export type ShellTenant = { id: string; name: string; logoUrl: string | null };
@@ -86,6 +88,10 @@ export type ShellAdmin = {
   scoreImport?: boolean; // match.viewAll oder tenant.programs.manage: Resultat-Import
   accounting?: boolean; // accounting.export: Buchhaltungsexport
   kiosk?: boolean; // kiosk.manage: Schützenstube verwalten
+  /** members.approve: Zahl offener Beitrittsanfragen (null/undefined = kein Recht) */
+  requests?: number | null;
+  /** Verbandsbereich (Super-Admin oder AssociationAdmin): Link «Verband» nach /association */
+  associationArea?: boolean;
 };
 
 function adminLinks(a: ShellAdmin | null | undefined, modules: ModuleKey[]): NavItem[] {
@@ -94,6 +100,7 @@ function adminLinks(a: ShellAdmin | null | undefined, modules: ModuleKey[]): Nav
   const on = (m: ModuleKey) => modules.includes(m);
   if (a.settings) out.push({ href: "/admin", label: "shell.admin.settings", icon: Settings });
   if (a.members) out.push({ href: "/admin/members", label: "shell.admin.members", icon: Users });
+  if (a.requests != null) out.push({ href: "/admin/members/requests", label: "shell.admin.requests", icon: UserPlus, count: a.requests });
   if (a.membersManage) {
     out.push({ href: "/admin/members/import", label: "shell.admin.import", icon: FileUp });
     out.push({ href: "/admin/members/households", label: "shell.admin.households", icon: House });
@@ -102,7 +109,10 @@ function adminLinks(a: ShellAdmin | null | undefined, modules: ModuleKey[]): Nav
   if (a.kiosk && on("kiosk")) out.push({ href: "/admin/kiosk", label: "shell.admin.kiosk", icon: Coffee });
   if (a.accounting) out.push({ href: "/admin/accounting", label: "shell.admin.accounting", icon: BookOpenCheck });
   if (a.settings) out.push({ href: "/admin/embed", label: "shell.admin.embed", icon: Code2 });
+  if (a.settings) out.push({ href: "/admin/association", label: "shell.admin.association", icon: Landmark });
   if (a.audit) out.push({ href: "/admin/audit", label: "shell.admin.audit", icon: History });
+  if (a.associationArea) out.push({ href: "/association", label: "shell.admin.associationArea", icon: Landmark });
+  if (a.system) out.push({ href: "/super/associations", label: "shell.admin.associations", icon: Landmark });
   if (a.system) out.push({ href: "/super/system", label: "shell.admin.system", icon: Server });
   return out;
 }
@@ -165,7 +175,7 @@ export function AppShell({
       <Link key={n.href} href={n.href} aria-current={active ? "page" : undefined}
         className={cn("flex items-center gap-3 rounded-control px-3 h-11 text-[15px] font-medium transition-colors", active ? "bg-accent-soft text-accent" : "text-ink-2 hover:bg-surface-2")}>
         <n.icon className="h-5 w-5" /> <span className="flex-1">{t(n.sideLabel ?? n.label)}</span>
-        {n.href === "/chat" && chatOn ? <ChatUnreadBadge initial={chatUnread ?? 0} /> : null}
+        {n.href === "/chat" && chatOn ? <ChatUnreadBadge locale={locale} initial={chatUnread ?? 0} /> : null}
       </Link>
     );
   };
@@ -203,6 +213,9 @@ export function AppShell({
                   <Link key={n.href} href={n.href} aria-current={active ? "page" : undefined}
                     className={cn("flex items-center gap-3 rounded-control px-3 h-11 text-[15px] font-medium transition-colors", active ? "bg-accent-soft text-accent" : "text-ink-2 hover:bg-surface-2")}>
                     <n.icon className="h-5 w-5" /> <span className="flex-1">{t(n.label)}</span>
+                    {n.count ? (
+                      <span className="min-w-5 rounded-full bg-warn px-1.5 text-center text-[11px] font-semibold leading-5 text-warn-ink" aria-label={t("shell.admin.requestsCount", { n: n.count })}>{n.count > 99 ? "99+" : n.count}</span>
+                    ) : null}
                   </Link>
                 );
               })}
@@ -244,7 +257,7 @@ export function AppShell({
                   <span className={cn("relative flex h-8 w-full max-w-14 items-center justify-center rounded-full transition-colors", active ? "bg-accent text-accent-ink" : "text-ink-3")}>
                     <n.icon className="h-5 w-5" />
                     {badgeTab === n.href ? (
-                      <ChatUnreadBadge initial={chatUnread ?? 0} className="absolute -top-1 right-0.5 ring-2 ring-surface" />
+                      <ChatUnreadBadge locale={locale} initial={chatUnread ?? 0} className="absolute -top-1 right-0.5 ring-2 ring-surface" />
                     ) : null}
                   </span>
                   <span className={cn("truncate max-w-full px-0.5", active ? "text-ink" : "text-ink-3")}>{t(n.label)}</span>

@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { Bell, BookUser, CalendarDays, ChevronRight, CreditCard, FileUp, FolderOpen, History, Home, KeyRound, LogOut, Mail, Megaphone, MessageCircle, Package, Server, Settings, Shield, ShieldCheck, Target, Users, BarChart3, Wallet, BadgeCheck, Trophy, Tv, DoorOpen, HandHelping, GraduationCap, Award, Boxes, Clock, Coffee, FileInput, BookOpenCheck, Code2, Handshake } from "lucide-react";
+import { Bell, BookUser, CalendarDays, ChevronRight, CreditCard, FileUp, FolderOpen, History, Home, KeyRound, LogOut, Mail, Megaphone, MessageCircle, Package, Server, Settings, Shield, ShieldCheck, Target, Users, BarChart3, Wallet, BadgeCheck, Trophy, Tv, DoorOpen, HandHelping, GraduationCap, Award, Boxes, Clock, Coffee, FileInput, BookOpenCheck, Code2, Handshake, Landmark, UserPlus } from "lucide-react";
 import { getAppContext } from "@/lib/tenant";
 import { db } from "@/lib/db";
 import { logoutAction } from "@/modules/core/auth-actions";
@@ -11,6 +11,7 @@ import { formatDate, getRequestLocale, getT, type TFunction } from "@/lib/i18n";
 import { todayZurich } from "@/lib/time";
 import { accessStatusWhere } from "@/lib/membership-access";
 import { dateOnly } from "@/modules/members/types";
+import { hasAssociationArea } from "@/modules/association/queries";
 import { AvatarCard, ProfileForm, TenantSwitcher, ThemePicker } from "./forms";
 
 export async function generateMetadata(): Promise<Metadata> {
@@ -56,6 +57,12 @@ export default async function MePage() {
   const adminShifts = ctx.hasModule("shifts") && can("shifts.manage");
   const adminQuali = can("qualifications.manage") || canViewMembers;
   const adminStock = ctx.hasModule("ammo") && canManageAmmo;
+  // Welle D: Beitrittsanfragen, Verband
+  const canApprove = can("members.approve");
+  const [pendingRequests, associationArea] = await Promise.all([
+    canApprove && ctx.tenant ? db.membership.count({ where: { tenantId: ctx.tenant.id, status: "PENDING", user: { deletedAt: null } } }) : Promise.resolve(0),
+    hasAssociationArea(ctx.user),
+  ]);
 
   const profile = await db.user.findUniqueOrThrow({ where: { id: ctx.user.id }, select: { phone: true, birthDate: true } });
   const memberships = await db.membership.findMany({
@@ -132,12 +139,13 @@ export default async function MePage() {
               </Card>
             </>
           ) : null}
-          {canManage || canManageAmmo || canViewMembers || canAudit || adminRange || adminShifts || adminQuali || adminAccounting || adminKiosk ? (
+          {canManage || canManageAmmo || canViewMembers || canAudit || canApprove || adminRange || adminShifts || adminQuali || adminAccounting || adminKiosk ? (
             <>
               <SectionTitle>{t("shell.nav.group.admin")}</SectionTitle>
               <Card className="animate-rise divide-y divide-line overflow-hidden">
                 {canManage ? <Row href="/admin" icon={<Settings className="h-4 w-4" />} label={t("shell.me.row.admin")} /> : null}
                 {canViewMembers ? <Row href="/admin/members" icon={<Users className="h-4 w-4" />} label={t("shell.me.row.adminMembers")} /> : null}
+                {canApprove ? <Row href="/admin/members/requests" icon={<UserPlus className="h-4 w-4" />} label={t("shell.me.row.adminRequests")} hint={pendingRequests ? t("shell.me.hint.adminRequests", { n: pendingRequests }) : undefined} /> : null}
                 {canManageMembers ? <Row href="/admin/members/invitations" icon={<Mail className="h-4 w-4" />} label={t("shell.me.row.adminInvite")} /> : null}
                 {canManageMembers ? <Row href="/admin/members/import" icon={<FileUp className="h-4 w-4" />} label={t("shell.me.row.adminImport")} /> : null}
                 {canManageMembers ? <Row href="/admin/members/households" icon={<Home className="h-4 w-4" />} label={t("shell.me.row.adminHouseholds")} /> : null}
@@ -154,10 +162,20 @@ export default async function MePage() {
                 {adminKiosk ? <Row href="/admin/kiosk" icon={<Coffee className="h-4 w-4" />} label={t("shell.me.row.adminKiosk")} hint={t("shell.me.hint.adminKiosk")} /> : null}
                 {adminAccounting ? <Row href="/admin/accounting" icon={<BookOpenCheck className="h-4 w-4" />} label={t("shell.me.row.adminAccounting")} hint={t("shell.me.hint.adminAccounting")} /> : null}
                 {canManage ? <Row href="/admin/embed" icon={<Code2 className="h-4 w-4" />} label={t("shell.me.row.adminEmbed")} hint={t("shell.me.hint.adminEmbed")} /> : null}
+                {canManage ? <Row href="/admin/association" icon={<Landmark className="h-4 w-4" />} label={t("shell.me.row.adminAssociation")} hint={t("shell.me.hint.adminAssociation")} /> : null}
                 {canAudit ? <Row href="/admin/audit" icon={<History className="h-4 w-4" />} label={t("shell.me.row.adminAudit")} /> : null}
               </Card>
             </>
           ) : null}
+        </>
+      ) : null}
+
+      {associationArea && !ctx.user.isSuperAdmin ? (
+        <>
+          <SectionTitle>{t("shell.me.row.associationArea")}</SectionTitle>
+          <Card className="animate-rise divide-y divide-line overflow-hidden">
+            <Row href="/association" icon={<Landmark className="h-4 w-4" />} label={t("shell.me.row.associationArea")} hint={t("shell.me.hint.associationArea")} />
+          </Card>
         </>
       ) : null}
 
@@ -166,6 +184,8 @@ export default async function MePage() {
           <SectionTitle>{t("shell.me.superAdmin")}</SectionTitle>
           <Card className="animate-rise divide-y divide-line overflow-hidden">
             <Row href="/super" icon={<Shield className="h-4 w-4" />} label={t("shell.me.row.super")} />
+            <Row href="/super/associations" icon={<Landmark className="h-4 w-4" />} label={t("shell.me.row.superAssociations")} />
+            <Row href="/association" icon={<Landmark className="h-4 w-4" />} label={t("shell.me.row.associationArea")} hint={t("shell.me.hint.associationArea")} />
             <Row href="/super/system" icon={<Server className="h-4 w-4" />} label={t("shell.me.row.system")} />
           </Card>
         </>

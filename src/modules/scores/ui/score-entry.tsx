@@ -16,7 +16,7 @@ import { cellKey, type ScoreMatch, type SyncEvent } from "@/lib/offline/types";
 import { StageTimer } from "./stage-timer";
 import { formatZonePoints } from "./zone-legend";
 import { getT, type Locale } from "@/lib/i18n/core";
-import { positionText, tCount } from "./labels";
+import { positionText, scoreErrorText, tCount } from "./labels";
 
 type CellState = Record<string, number>;
 
@@ -214,7 +214,7 @@ export function ScoreEntry({ match, storageKey, tenantId, userId, persistView = 
           setFailed((f) => ({ ...f, [ck]: ev.result.error ?? t("shooting.common.error") }));
         }
       } else if (op.type === "setMatchStatus") {
-        if (ev.type === "failed") setNotice(ev.result.error ?? t("shooting.entry.statusNotSaved"));
+        if (ev.type === "failed") setNotice(ev.result.error ? scoreErrorText(t, ev.result.error) : t("shooting.entry.statusNotSaved"));
         else if (isServerMatch) router.refresh();
       }
     },
@@ -310,7 +310,7 @@ export function ScoreEntry({ match, storageKey, tenantId, userId, persistView = 
         start(async () => {
           try {
             const res = await setMatchStatusAction(match.id!, next);
-            if (!res.ok) setNotice(res.error);
+            if (!res.ok) setNotice(scoreErrorText(t, res.error));
             router.refresh();
           } catch {
             setStatus(finished ? "FINISHED" : "OPEN");
@@ -347,7 +347,7 @@ export function ScoreEntry({ match, storageKey, tenantId, userId, persistView = 
         // Bei Erfolg leitet die Server Action auf /scores um; zurück kommt nur ein Fehler
         const res = await deleteMatchAction(serverId!);
         if (res && !res.ok) {
-          setNotice(res.error);
+          setNotice(scoreErrorText(t, res.error));
           router.refresh();
         } else await discardLocal();
       } catch (e) {
@@ -504,7 +504,7 @@ export function ScoreEntry({ match, storageKey, tenantId, userId, persistView = 
         ) : null}
         <div className="mt-2 min-h-4 text-[11px] text-ink-3 text-right" aria-live="polite">
           {failed[activeCell] ? (
-            <span className="inline-flex items-center gap-1 text-accent"><AlertTriangle className="h-3 w-3" /> {t("shooting.entry.notSavedWith", { error: failed[activeCell] })}</span>
+            <span className="inline-flex items-center gap-1 text-accent"><AlertTriangle className="h-3 w-3" /> {t("shooting.entry.notSavedWith", { error: scoreErrorText(t, failed[activeCell]) })}</span>
           ) : dirty[activeCell] !== undefined ? (
             online ? <span className="inline-flex items-center gap-1"><Loader2 className="h-3 w-3 animate-spin" /> {t("shooting.entry.saving")}</span>
               : <span className="inline-flex items-center gap-1 text-warn"><CloudOff className="h-3 w-3" /> {t("shooting.entry.savedOnDevice")}</span>

@@ -4,6 +4,7 @@ import type { AppContext } from "@/lib/tenant";
 import { safeJson } from "@/lib/utils";
 import { computeSlots } from "./availability";
 import { bookingAccess } from "@/modules/sharing/logic";
+import { accessStatusWhere } from "@/lib/membership-access";
 import { bookingUnits } from "./pricing";
 import { DEFAULT_DURATIONS, DEFAULT_OPENING_HOURS, durationOptionSchema, openingHoursSchema, type DurationOption, type OpeningHours } from "./types";
 import { z } from "zod";
@@ -224,7 +225,7 @@ export function cancellationInfo(b: { startsAt: Date; status: string }, cancella
 export async function listMembersForBooking(tenantId: string) {
   const rows = await db.membership.findMany({
     // Ausgetretene und gelöschte Konten nicht zur Auswahl anbieten.
-    where: { tenantId, status: { not: "LEFT" }, user: { deletedAt: null } },
+    where: { tenantId, status: accessStatusWhere(), user: { deletedAt: null } },
     include: { user: { select: { id: true, name: true, email: true, avatarPath: true, updatedAt: true } } },
     orderBy: { user: { name: "asc" } },
   });

@@ -38,7 +38,16 @@ export default async function AdminBillingPage({ searchParams }: { searchParams:
 
       <div className="stagger grid grid-cols-2 sm:grid-cols-4 gap-2.5">
         <Card className="p-4"><div className="text-2xl font-semibold tabular-nums">{stats.withCategory}<span className="text-sm text-ink-3 font-normal"> / {stats.members}</span></div><div className="text-xs text-ink-3">Mitglieder mit Beitrag</div></Card>
-        <Card className="p-4"><div className="text-2xl font-semibold tabular-nums">{stats.invoiced}</div><div className="text-xs text-ink-3">Rechnungen {year}</div></Card>
+        <Card className="p-4">
+          <div className="text-2xl font-semibold tabular-nums">{stats.invoiced}</div>
+          <div className="text-xs text-ink-3">Rechnungen {year}</div>
+          {stats.coverage.withFee ? (
+            <div className="mt-1 text-xs text-ink-3">
+              {stats.coverage.household ? `${stats.coverage.household} in Haushaltsrechnung · ` : ""}
+              <span className={stats.coverage.notInvoiced ? "text-warn" : undefined}>{stats.coverage.notInvoiced} nicht verrechnet</span>
+            </div>
+          ) : null}
+        </Card>
         <Card className="p-4"><div className="text-2xl font-semibold tabular-nums">{formatMoney(stats.openCents, profile.currency)}</div><div className="text-xs text-ink-3">offen ({stats.open}{stats.overdue ? `, ${stats.overdue} überfällig` : ""})</div></Card>
         <Card className="p-4"><div className="text-2xl font-semibold tabular-nums">{formatMoney(stats.paidCents, profile.currency)}</div><div className="text-xs text-ink-3">bezahlt ({stats.paid})</div></Card>
       </div>

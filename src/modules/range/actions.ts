@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { z } from "zod";
 import { db } from "@/lib/db";
+import { accessStatusWhere } from "@/lib/membership-access";
 import { getCurrentUser } from "@/lib/auth";
 import { setActiveTenantCookie } from "@/lib/tenant";
 import { audit } from "@/lib/audit";
@@ -51,7 +52,7 @@ const NO_RIGHT = "Keine Berechtigung.";
 /** Aktives Mitglied des Vereins (nicht ausgetreten, Konto nicht gelöscht). */
 async function activeMember(tenantId: string, userId: string) {
   return db.membership.findFirst({
-    where: { tenantId, userId, status: { not: "LEFT" }, user: { deletedAt: null } },
+    where: { tenantId, userId, status: accessStatusWhere(), user: { deletedAt: null } },
     select: { user: { select: { id: true, name: true, birthDate: true } } },
   });
 }

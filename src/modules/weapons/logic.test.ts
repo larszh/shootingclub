@@ -1,8 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
   ageOn, blockReasonOf, inferReportDays, isLoanOverdue, isMinorOn, isoWeekKey, minorReportState, parseCostToCents, reportDueFrom,
-  serviceInfo, statusAfterReturn, stripBlockReason, withBlockReason,
+  serviceInfo, statusAfterReturn, stripBlockReason, withBlockReason, effectiveBlockReason, cleanBlockReason,
 } from "./logic";
+import { DEFAULT_MINOR_REPORT_DAYS, resolveWeaponSettings, weaponSettingsSchema } from "./types";
 
 const d = (s: string) => new Date(s);
 
@@ -83,6 +84,30 @@ describe("Sperrgrund", () => {
     expect(withBlockReason(n, "Lauf")).toBe("Sperrgrund: Lauf\nGriff links");
     expect(blockReasonOf("Griff links")).toBeNull();
     expect(stripBlockReason("Sperrgrund: x")).toBeNull();
+  });
+
+  it("eigenes Feld vor Altdaten in den Notizen, nur bei «Gesperrt»", () => {
+    expect(effectiveBlockReason({ status: "BLOCKED", blockReason: "Lauf defekt", notes: "Sperrgrund: alt" })).toBe("Lauf defekt");
+    expect(effectiveBlockReason({ status: "BLOCKED", blockReason: null, notes: "Sperrgrund: alt\nNotiz" })).toBe("alt");
+    expect(effectiveBlockReason({ status: "BLOCKED", blockReason: "  ", notes: null })).toBeNull();
+    expect(effectiveBlockReason({ status: "AVAILABLE", blockReason: "Lauf defekt", notes: null })).toBeNull();
+    expect(cleanBlockReason("  Abzug   klemmt ")).toBe("Abzug klemmt");
+    expect(cleanBlockReason("")).toBeNull();
+    expect(cleanBlockReason("x".repeat(300))).toHaveLength(191);
+  });
+});
+
+describe("Einstellungen", () => {
+  it("fällt ohne Datensatz auf die Standardwerte zurück", () => {
+    expect(resolveWeaponSettings(null)).toEqual({ minorReportDays: DEFAULT_MINOR_REPORT_DAYS, serviceEveryShotsDefault: null, saved: false });
+    expect(resolveWeaponSettings({ minorReportDays: 14, serviceEveryShotsDefault: 1500 })).toEqual({ minorReportDays: 14, serviceEveryShotsDefault: 1500, saved: true });
+    expect(resolveWeaponSettings({ minorReportDays: 0, serviceEveryShotsDefault: 0 })).toEqual({ minorReportDays: DEFAULT_MINOR_REPORT_DAYS, serviceEveryShotsDefault: null, saved: true });
+  });
+
+  it("prüft die Eingaben", () => {
+    expect(weaponSettingsSchema.parse({ minorReportDays: "", serviceEveryShotsDefault: "" })).toEqual({ minorReportDays: DEFAULT_MINOR_REPORT_DAYS, serviceEveryShotsDefault: null });
+    expect(weaponSettingsSchema.parse({ minorReportDays: "10", serviceEveryShotsDefault: "2'000" })).toEqual({ minorReportDays: 10, serviceEveryShotsDefault: 2000 });
+    expect(weaponSettingsSchema.safeParse({ minorReportDays: "400", serviceEveryShotsDefault: "" }).success).toBe(false);
   });
 });
 

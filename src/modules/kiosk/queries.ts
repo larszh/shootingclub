@@ -1,6 +1,7 @@
 import "server-only";
 import type { Prisma } from "@/generated/prisma/client";
 import { db } from "@/lib/db";
+import { accessStatusWhere } from "@/lib/membership-access";
 import { todayZurich, zurichToUtc, addDays } from "@/lib/time";
 import { cashByDay, groupForBilling, periodToUtcRange, sumCents, type EntryStatusFilter, type Period } from "./logic";
 
@@ -18,7 +19,7 @@ export async function counterMembers(tenantId: string) {
   const since = new Date(Date.now() - 30 * 86_400_000);
   const [members, recent] = await Promise.all([
     db.membership.findMany({
-      where: { tenantId, status: { not: "LEFT" }, user: { deletedAt: null } },
+      where: { tenantId, status: accessStatusWhere(), user: { deletedAt: null } },
       select: { memberNumber: true, user: { select: { id: true, name: true, avatarPath: true, updatedAt: true } } },
       orderBy: { user: { name: "asc" } },
     }),
@@ -127,7 +128,7 @@ export type EntryRow = Awaited<ReturnType<typeof listEntries>>["rows"][number];
 /** Personen, die im Verein Einträge haben (für den Filter); ohne gelöschte Konten. */
 export async function entryMemberOptions(tenantId: string) {
   const rows = await db.membership.findMany({
-    where: { tenantId, status: { not: "LEFT" }, user: { deletedAt: null } },
+    where: { tenantId, status: accessStatusWhere(), user: { deletedAt: null } },
     select: { user: { select: { id: true, name: true } } },
     orderBy: { user: { name: "asc" } },
   });

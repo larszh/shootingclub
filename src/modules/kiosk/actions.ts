@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { db } from "@/lib/db";
+import { accessStatusWhere } from "@/lib/membership-access";
 import { audit } from "@/lib/audit";
 import { fail, ok, type ActionResult } from "@/lib/action-result";
 import { requireModule } from "@/lib/tenant";
@@ -134,7 +135,7 @@ export async function recordEntriesAction(input: EntryInput): Promise<ActionResu
 
   let who = "Gast";
   if (v.userId) {
-    const m = await db.membership.findFirst({ where: { tenantId, userId: v.userId, status: { not: "LEFT" }, user: { deletedAt: null } }, select: { user: { select: { name: true } } } });
+    const m = await db.membership.findFirst({ where: { tenantId, userId: v.userId, status: accessStatusWhere(), user: { deletedAt: null } }, select: { user: { select: { name: true } } } });
     if (!m) return fail("Mitglied nicht gefunden oder ausgetreten.");
     who = m.user.name;
   } else if (v.guestName) {

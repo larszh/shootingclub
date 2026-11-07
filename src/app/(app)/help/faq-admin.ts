@@ -917,4 +917,116 @@ export const ADMIN_FAQ: FaqSource[] = [
       ],
     },
   },
+  {
+    id: "beitritt-freigabe",
+    audience: "admin",
+    de: {
+      q: "Wie prüfe ich neue Mitglieder, bevor sie Zugang erhalten?",
+      keywords: "Beitritt mit Freigabe Beitrittsanfragen Beitrittscode freigeben ablehnen wartet PENDING Anfragen",
+      a: [
+        { p: "Unter [Beitrittsanfragen](/admin/members/requests) schaltest du «Beitritt mit Freigabe» ein. Wer danach mit dem Beitrittscode beitritt, wartet, bis eine Person mit Admin-Rolle die Anfrage freigibt oder ablehnt. Die Verwaltung erhält bei jeder neuen Anfrage eine Mitteilung." },
+        { p: "Wartende Personen sehen keine Vereinsdaten, erhalten keine Rechnungen und zählen nicht als Mitglieder. Einladungen per E-Mail gelten weiterhin sofort." },
+      ],
+    },
+    fr: {
+      q: "Comment vérifier les nouveaux membres avant qu’ils aient accès ?",
+      keywords: "adhésion avec validation demandes d’adhésion code d’adhésion valider refuser en attente demandes",
+      a: [
+        { p: "Sous [Demandes d’adhésion](/admin/members/requests), tu actives « Adhésion avec validation ». Ensuite, quiconque adhère avec le code attend qu’une personne avec le rôle admin valide ou refuse la demande. L’administration reçoit un message à chaque nouvelle demande." },
+        { p: "Les personnes en attente ne voient aucune donnée de la société, ne reçoivent pas de factures et ne comptent pas comme membres. Les invitations par e-mail restent valables immédiatement." },
+      ],
+    },
+    it: {
+      q: "Come verifico i nuovi membri prima che abbiano accesso?",
+      keywords: "adesione con approvazione richieste di adesione codice di adesione approvare rifiutare in attesa richieste",
+      a: [
+        { p: "In [Richieste di adesione](/admin/members/requests) attivi «Adesione con approvazione». In seguito chi aderisce con il codice attende che una persona con ruolo admin approvi o rifiuti la richiesta. L’amministrazione riceve un messaggio a ogni nuova richiesta." },
+        { p: "Le persone in attesa non vedono dati della società, non ricevono fatture e non contano come membri. Gli inviti per e-mail restano validi subito." },
+      ],
+    },
+  },
+  {
+    id: "serienbuchung",
+    audience: "admin",
+    de: {
+      q: "Wie reserviere ich ein wöchentliches Training?",
+      keywords: "Serie Serienbuchung wiederkehrend wöchentlich Training Reservation Wochentage Konflikte stornieren Trainer",
+      a: [
+        { p: "Unter [Serien](/bookings/series) legen Trainerinnen und Trainer eine Serie an: Anlage, Wochentage, Zeit, Zeitraum und Personen. «Termine prüfen» zeigt jeden Termin; Termine mit Konflikt (geschlossen, gesperrt, voll, ausserhalb der Schiesszeiten) werden übersprungen." },
+        { p: "Serien-Reservationen sind kostenlos und sofort bestätigt. Du kannst einzelne Termine oder die ganze Serie stornieren; vergangene Termine bleiben erhalten." },
+      ],
+    },
+    fr: {
+      q: "Comment réserver un entraînement hebdomadaire ?",
+      keywords: "série réservation récurrente hebdomadaire entraînement jours de la semaine conflits annuler entraîneur",
+      a: [
+        { p: "Sous [Séries](/bookings/series), les entraîneuses et entraîneurs créent une série : installation, jours de la semaine, heure, période et personnes. « Vérifier les dates » affiche chaque date ; les dates en conflit (fermé, bloqué, complet, hors des heures de tir) sont sautées." },
+        { p: "Les réservations en série sont gratuites et confirmées tout de suite. Tu peux annuler des dates isolées ou toute la série ; les dates passées sont conservées." },
+      ],
+    },
+    it: {
+      q: "Come prenoto un allenamento settimanale?",
+      keywords: "serie prenotazione ricorrente settimanale allenamento giorni della settimana conflitti annullare allenatore",
+      a: [
+        { p: "In [Serie](/bookings/series) allenatrici e allenatori creano una serie: impianto, giorni della settimana, orario, periodo e persone. «Verificare le date» mostra ogni data; le date in conflitto (chiuso, bloccato, pieno, fuori dagli orari di tiro) vengono saltate." },
+        { p: "Le prenotazioni in serie sono gratuite e confermate subito. Puoi annullare singole date o l’intera serie; le date passate restano conservate." },
+      ],
+    },
+  },
+  {
+    id: "verband",
+    audience: "admin",
+    de: {
+      q: "Wie verbinde ich den Verein mit dem Kantonal- oder Regionalverband?",
+      keywords: "Verband Kantonalverband Regionalverband Verbandscode teilen Statistik Rangliste Einwilligung Namen teilen austreten",
+      a: [
+        { p: "Unter [Verband](/admin/association) gibst du den Code ein, den du vom Verband erhältst, und bestätigst die Einwilligung. Der Verband gibt die Anfrage frei. Danach sieht er zusammengefasste Zahlen: Mitgliederzahl, Obligatorisch- und Feldschiessen-Beteiligung, Fristen." },
+        { p: "Namen in der Verbandsrangliste erscheinen nur, wenn du «Namen teilen» einschaltest. Kontaktdaten, Rechnungen, Chat und Dateien teilt Standchef nie. Du kannst die Verbindung jederzeit beenden, der Zugriff endet sofort." },
+      ],
+    },
+    fr: {
+      q: "Comment relier la société à l’association cantonale ou régionale ?",
+      keywords: "association cantonale régionale code de l’association partager statistiques classement consentement partager les noms quitter",
+      a: [
+        { p: "Sous [Association](/admin/association), saisis le code reçu de l’association et confirme le consentement. L’association valide la demande. Ensuite, elle voit des chiffres agrégés : nombre de membres, participation au tir obligatoire et au tir en campagne, délais." },
+        { p: "Les noms n’apparaissent dans le classement de l’association que si tu actives « Partager les noms ». Standchef ne partage jamais les coordonnées, les factures, le chat ni les fichiers. Tu peux mettre fin au lien à tout moment, l’accès cesse immédiatement." },
+      ],
+    },
+    it: {
+      q: "Come collego la società alla federazione cantonale o regionale?",
+      keywords: "federazione cantonale regionale codice della federazione condividere statistiche classifica consenso condividere i nomi uscire",
+      a: [
+        { p: "In [Federazione](/admin/association) inserisci il codice ricevuto dalla federazione e confermi il consenso. La federazione approva la richiesta. In seguito vede cifre aggregate: numero di membri, partecipazione al tiro obbligatorio e al tiro in campagna, scadenze." },
+        { p: "I nomi compaiono nella classifica della federazione solo se attivi «Condividere i nomi». Standchef non condivide mai dati di contatto, fatture, chat e file. Puoi terminare il collegamento in qualsiasi momento, l’accesso cessa subito." },
+      ],
+    },
+  },
+  {
+    id: "feldschiessen-auszeichnungen",
+    audience: "admin",
+    de: {
+      q: "Wie berechnet Standchef die Auszeichnungen im Feldschiessen?",
+      keywords: "Feldschiessen Auszeichnungen Limiten Kranz Anerkennungskarte Kategorie Alter Ausschreibung Druckliste",
+      a: [
+        { p: "Unter [Auszeichnungen](/federal/awards) trägst du pro Programm und Jahr die Limiten gemäss Ausschreibung ein, je Zeile Kategorie, Alter von/bis, Limite und Auszeichnung. Standchef ordnet jede Teilnehmerin und jeden Teilnehmer nach Jahrgang der passenden Kategorie zu und zeigt die erreichte Auszeichnung." },
+        { p: "Offizielle Limiten sind nicht eingebaut: die Vorlage ist ein Beispiel und muss geprüft werden. Für die Abgabe gibt es eine Druckliste und einen CSV-Export." },
+      ],
+    },
+    fr: {
+      q: "Comment Standchef calcule-t-il les distinctions du tir en campagne ?",
+      keywords: "tir en campagne distinctions limites couronne carte-couronne catégorie âge plan de tir liste à imprimer",
+      a: [
+        { p: "Sous [Distinctions](/federal/awards), tu saisis par programme et par année les limites selon le plan de tir, une ligne par catégorie, âge de/à, limite et distinction. Standchef attribue chaque participante et chaque participant à la bonne catégorie selon l’année de naissance et affiche la distinction obtenue." },
+        { p: "Aucune limite officielle n’est intégrée : le modèle est un exemple et doit être vérifié. Pour la remise, il y a une liste à imprimer et un export CSV." },
+      ],
+    },
+    it: {
+      q: "Come calcola Standchef le distinzioni del tiro in campagna?",
+      keywords: "tiro in campagna distinzioni limiti corona carta di riconoscimento categoria età piano di tiro lista da stampare",
+      a: [
+        { p: "In [Distinzioni](/federal/awards) inserisci per programma e anno i limiti secondo il piano di tiro, una riga per categoria, età da/a, limite e distinzione. Standchef assegna ogni partecipante alla categoria giusta in base all’anno di nascita e mostra la distinzione ottenuta." },
+        { p: "Non sono integrati limiti ufficiali: il modello è un esempio e va verificato. Per la consegna ci sono una lista da stampare e un’esportazione CSV." },
+      ],
+    },
+  },
 ];

@@ -3,12 +3,12 @@ import { db } from "@/lib/db";
 import { audit } from "@/lib/audit";
 
 /**
- * Buchungsrelevante Statuswechsel (Storno, Rückerstattung) mit eigenem Datum.
+ * Buchungsrelevante Statuswechsel (Storno, Rückerstattung) im Protokoll.
  *
- * Die Belege haben keine eigene Spalte für das Storno- bzw. Erstattungsdatum; `updatedAt` ändert sich
- * bei jeder späteren Bearbeitung (z.B. einer Notiz) und würde die Gegenbuchung in eine andere Periode
- * verschieben. Deshalb protokollieren die Module den Statuswechsel im Audit-Log, und das Journal liest
- * das Datum von dort. Nur ältere Belege ohne Eintrag fallen auf `updatedAt` zurück.
+ * Das Datum steht heute in eigenen Spalten (FeeInvoice/Invoice/AmmoOrder.cancelledAt,
+ * Booking.refundedAt), die beim Statuswechsel gesetzt werden. Der Protokolleintrag bleibt als
+ * Nachweis (wer, wann) und ist der Rückfall für ältere Belege ohne Spalte; erst danach gilt `updatedAt`
+ * (siehe reversalDate in journal.ts).
  */
 
 export const ACCOUNTING_EVENT = {

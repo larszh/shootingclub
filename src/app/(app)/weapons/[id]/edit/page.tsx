@@ -21,7 +21,7 @@ export default async function EditWeaponPage({ params }: { params: Promise<{ id:
         initial={{
           id: w.id, name: w.name, discipline: w.discipline, manufacturer: w.manufacturer, model: w.model, caliber: w.caliber, serialNumber: w.serialNumber,
           shotCount: w.shotCount, serviceEveryShots: w.serviceEveryShots, nextServiceAt: w.nextServiceAt ? w.nextServiceAt.toISOString().slice(0, 10) : null,
-          notes: stripBlockReason(w.notes),
+          notes: stripBlockReason(w.notes), status: w.status, blockReason: w.blockReason,
         }}
       />
     </div>

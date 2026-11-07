@@ -9,7 +9,7 @@ import { SubmitButton, submitKeepingValues } from "@/components/ui/form";
 import { toast } from "@/lib/ui-feedback";
 import { saveWorkSettingsAction } from "@/modules/shifts/actions";
 
-export function WorkSettingsForm({ initial, statusOptions }: { initial: { enabled: boolean; requiredHours: number; rate: string; statuses: string[] }; statusOptions: Array<{ value: string; label: string }> }) {
+export function WorkSettingsForm({ initial, statusOptions }: { initial: { enabled: boolean; proRata: boolean; requiredHours: number; rate: string; statuses: string[] }; statusOptions: Array<{ value: string; label: string }> }) {
   const router = useRouter();
   const [state, action, pending] = useActionState(saveWorkSettingsAction, null);
   const err = state && !state.ok ? state.fieldErrors : undefined;
@@ -32,6 +32,12 @@ export function WorkSettingsForm({ initial, statusOptions }: { initial: { enable
             <Input name="rate" inputMode="decimal" defaultValue={initial.rate} placeholder="z.B. 30.00" />
           </Field>
         </div>
+        <Switch
+          name="proRata"
+          defaultChecked={initial.proRata}
+          label="Pro rata bei Eintritt im Lauf des Jahres"
+          description="Wer im Jahr eintritt, schuldet nur den Anteil: Soll × verbleibende Monate / 12 (Eintrittsmonat zählt voll), auf 0.5 h gerundet. Gilt auch für die Ersatzabgabe. Massgebend ist das Eintrittsdatum im Mitgliederdetail."
+        />
         <fieldset>
           <legend className="mb-1.5 text-sm font-medium text-ink-2">Gilt für Mitglieder mit Status</legend>
           <div className="grid grid-cols-1 gap-1 sm:grid-cols-2">

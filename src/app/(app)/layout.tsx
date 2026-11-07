@@ -7,6 +7,8 @@ import { BrandTheme } from "@/components/brand-theme";
 import { DEFAULT_THEME_COLORS, brandColors } from "@/lib/brand";
 import { getUnreadChatCount } from "@/modules/chat/queries";
 import { getRequestLocale, getT } from "@/lib/i18n";
+import { db } from "@/lib/db";
+import { hasAssociationArea } from "@/modules/association/queries";
 
 /**
  * Browser-Leiste (theme-color): mit Vereinsfarbe die Akzentfarbe, sonst der Seitenhintergrund
@@ -42,6 +44,13 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   const t = getT(locale);
   // Startwert für den Ungelesen-Zähler; danach aktualisiert ihn der Chat-Stream im Browser.
   const chatUnread = ctx.tenant && ctx.hasModule("chat") ? await getUnreadChatCount(ctx.user.id, ctx.tenant.id).catch(() => 0) : null;
+  // Offene Beitrittsanfragen (nur mit members.approve) und Zugang zum Verbandsbereich
+  const [pendingRequests, associationArea] = await Promise.all([
+    ctx.tenant && ctx.can("members.approve")
+      ? db.membership.count({ where: { tenantId: ctx.tenant.id, status: "PENDING", user: { deletedAt: null } } }).catch(() => 0)
+      : Promise.resolve(null),
+    hasAssociationArea(ctx.user).catch(() => false),
+  ]);
   return (
     <>
       <BrandTheme brandColor={ctx.tenant?.brandColor} brandColor2={ctx.tenant?.brandColor2} />
@@ -62,6 +71,8 @@ export default async function AppLayout({ children }: { children: React.ReactNod
           scoreImport: ctx.can("match.viewAll") || ctx.can("tenant.programs.manage"),
           accounting: ctx.can("accounting.export"),
           kiosk: ctx.can("kiosk.manage"),
+          requests: pendingRequests,
+          associationArea,
         }}
       >
         {ctx.tenant?.deletedAt ? (

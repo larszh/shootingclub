@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { AlertTriangle, ChevronRight, Download, HandHelping, Plus, Wrench } from "lucide-react";
+import { AlertTriangle, ChevronRight, Download, HandHelping, Plus, Settings, Wrench } from "lucide-react";
 import { Alert, Badge, Card, EmptyState, LinkButton, LinkTabs, PageHeader, StatCard } from "@/components/ui";
 import { formatDateZurich } from "@/lib/time";
 import { requireWeapons } from "@/modules/weapons/guard";
@@ -67,6 +67,7 @@ export default async function WeaponsPage({ searchParams }: { searchParams: Prom
         <LendButton weapons={available.map((w) => ({ id: w.id, name: w.name }))} members={members} defaultReportDays={reportDays} label="Waffe ausleihen" />
         <LinkButton href="/weapons/loans" variant="secondary"><HandHelping className="h-4 w-4" /> Ausleihen &amp; Rückgabe</LinkButton>
         {canManage ? <LinkButton href="/api/export/weapons" variant="ghost" prefetch={false}><Download className="h-4 w-4" /> CSV</LinkButton> : null}
+        {canManage ? <LinkButton href="/admin/weapons/settings" variant="ghost"><Settings className="h-4 w-4" /> Einstellungen</LinkButton> : null}
       </div>
 
       <LinkTabs items={tabs} active={status ?? "active"} label="Status wählen" className="mb-3" />

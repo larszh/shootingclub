@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildJournal, cleanText, feeInvoiceKind, isPaidOnline, journalTotals, summarizeAccounts, type InvoiceDoc, type JournalEntry, type PaymentDoc } from "./journal";
+import { buildJournal, cleanText, feeInvoiceKind, isPaidOnline, journalTotals, kioskCashDocuments, reversalDate, summarizeAccounts, type InvoiceDoc, type JournalEntry, type PaymentDoc } from "./journal";
 import { ACCOUNT_LABEL, DEFAULT_ACCOUNTS } from "./types";
 
 const A = DEFAULT_ACCOUNTS;
@@ -65,7 +65,8 @@ describe("buildJournal", () => {
       invoice({ id: "c", number: "A3", kind: "booking", source: "BOOKING" }),
       invoice({ id: "d", number: "A4", kind: "ammo", source: "AMMO" }),
     ];
-    expect(buildJournal(docs, A, YEAR).map((x) => x.credit)).toEqual(["3010", "3000", "3400", "3200"]);
+    // Schützenstube hat ein eigenes Ertragskonto (kioskAccount, Standard 3600)
+    expect(buildJournal(docs, A, YEAR).map((x) => x.credit)).toEqual(["3010", "3600", "3400", "3200"]);
   });
 
   it("verwendet den angepassten Kontenplan", () => {
@@ -141,17 +142,17 @@ describe("buildJournal", () => {
     expect(r.map((x) => `${x.debit}/${x.credit}/${x.type}`)).toEqual(["1020/3400/payment", "3400/1020/refund"]);
   });
 
-  it("Barzahlung ohne Rechnung: Bank an Reservationen, Erstattung als Gegenbuchung", () => {
+  it("Barzahlung ohne Rechnung: Kasse an Reservationen, Erstattung als Gegenbuchung", () => {
     const p: PaymentDoc = {
       type: "payment", source: "CASH", id: "bk1", number: "BAR-ABCDEF12", kind: "booking", label: "Reservation Stand 1 31.10.2026",
       payment: { id: "bk1", provider: "CASH", amountCents: 2160, currency: "CHF", paidAt: new Date("2026-10-31T10:00:00Z"), refundedAt: null },
     };
     const e = buildJournal([p], A, YEAR);
     expect(e).toHaveLength(1);
-    expect(e[0]).toMatchObject({ date: "2026-10-31", debit: "1020", credit: "3400", amountCents: 2160, doc: "BAR-ABCDEF12", source: "CASH", type: "payment" });
+    expect(e[0]).toMatchObject({ date: "2026-10-31", debit: "1000", credit: "3400", amountCents: 2160, doc: "BAR-ABCDEF12", source: "CASH", type: "payment" });
     expect(e[0]!.text).toBe("Barzahlung Reservation Stand 1 31.10.2026");
     const r = buildJournal([{ ...p, payment: { ...p.payment, refundedAt: new Date("2026-11-02T10:00:00Z") } }], A, YEAR);
-    expect(r.map((x) => `${x.debit}/${x.credit}/${x.type}`)).toEqual(["1020/3400/payment", "3400/1020/refund"]);
+    expect(r.map((x) => `${x.debit}/${x.credit}/${x.type}`)).toEqual(["1000/3400/payment", "3400/1000/refund"]);
   });
 
   it("filtert nach Periode (beide Grenzen inklusive)", () => {
@@ -218,5 +219,64 @@ describe("summarizeAccounts", () => {
     const entries = buildJournal([invoice({ kind: "workfee" })], plan, YEAR);
     const s = summarizeAccounts(entries, plan, ACCOUNT_LABEL);
     expect(s.find((x) => x.account === "3000")!.names).toEqual(["Mitgliederbeiträge", "Ersatzabgabe Arbeitsstunden"]);
+  });
+});
+
+describe("reversalDate", () => {
+  it("Spalte vor Protokoll vor letzter Änderung", () => {
+    const col = new Date("2026-03-01T10:00:00Z");
+    const log = new Date("2026-03-02T10:00:00Z");
+    const upd = new Date("2026-05-01T10:00:00Z");
+    expect(reversalDate(col, log, upd)).toBe(col);
+    expect(reversalDate(null, log, upd)).toBe(log);
+    expect(reversalDate(null, undefined, upd)).toBe(upd);
+  });
+
+  it("späte Bearbeitung verschiebt das Storno nicht in eine andere Periode", () => {
+    const cancelledAt = reversalDate(new Date("2026-03-31T20:00:00Z"), null, new Date("2026-04-15T08:00:00Z"));
+    const e = buildJournal([invoice({ status: "CANCELLED", cancelledAt })], A, { from: "2026-04-01", to: "2026-04-30" });
+    // 31.03. 20:00 UTC ist in Zürich bereits der 31.03. (22:00): Storno gehört in den März.
+    expect(e).toEqual([]);
+    const march = buildJournal([invoice({ status: "CANCELLED", cancelledAt })], A, { from: "2026-03-01", to: "2026-03-31" });
+    expect(march.map((x) => [x.date, x.type])).toEqual([["2026-03-31", "reversal"]]);
+  });
+});
+
+describe("Barverkäufe Schützenstube", () => {
+  const entries = [
+    { createdAt: new Date("2026-10-31T09:00:00Z"), totalCents: 450 },
+    { createdAt: new Date("2026-10-31T21:30:00Z"), totalCents: 300 }, // 22:30 Zürich, gleicher Tag
+    { createdAt: new Date("2026-10-31T23:30:00Z"), totalCents: 500 }, // 00:30 Zürich, nächster Tag
+    { createdAt: new Date("2026-11-01T10:00:00Z"), totalCents: 0 },
+  ];
+
+  it("ein Beleg pro Kalendertag in Schweizer Zeit", () => {
+    const docs = kioskCashDocuments(entries, "CHF");
+    expect(docs.map((d) => [d.number, d.payment.amountCents, d.label])).toEqual([
+      ["KASSE-20261031", 750, "Schützenstube 31.10.2026 (2 Positionen)"],
+      ["KASSE-20261101", 500, "Schützenstube 01.11.2026 (1 Position)"],
+    ]);
+  });
+
+  it("Soll Kasse / Haben Ertrag Schützenstube, abschaltbar", () => {
+    const docs = kioskCashDocuments(entries, "CHF");
+    const e = buildJournal(docs, A, YEAR);
+    expect(e.map((x) => [x.date, x.debit, x.credit, x.amountCents, x.source, x.kind])).toEqual([
+      ["2026-10-31", "1000", "3600", 750, "KIOSK", "kiosk"],
+      ["2026-11-01", "1000", "3600", 500, "KIOSK", "kiosk"],
+    ]);
+    expect(e[0]!.text).toBe("Barverkäufe Schützenstube 31.10.2026 (2 Positionen)");
+    expect(balanceSum(e)).toBe(0);
+    expect(buildJournal(docs, A, { ...YEAR, includeKioskCash: false })).toEqual([]);
+    const plan = { ...A, cashAccount: "1001", kioskAccount: "3650" };
+    expect(buildJournal(docs, plan, YEAR).map((x) => `${x.debit}/${x.credit}`)).toEqual(["1001/3650", "1001/3650"]);
+  });
+
+  it("Online-Zahlungen bleiben auf der Bank", () => {
+    const p: PaymentDoc = {
+      type: "payment", source: "ONLINE", id: "p1", number: "ONL-1", kind: "booking", label: "Reservation",
+      payment: { id: "p1", provider: "PAYREXX", amountCents: 1000, currency: "CHF", paidAt: new Date("2026-02-01T10:00:00Z"), refundedAt: null },
+    };
+    expect(buildJournal([p], A, YEAR)[0]).toMatchObject({ debit: "1020", credit: "3400" });
   });
 });
