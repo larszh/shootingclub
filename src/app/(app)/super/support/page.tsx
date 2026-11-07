@@ -5,6 +5,7 @@ import { Alert, Card, PageHeader } from "@/components/ui";
 import { getRequestLocale, getT } from "@/lib/i18n";
 import { aiAvailability } from "@/lib/ai";
 import { AiChat } from "@/components/ai/chat";
+import { chatStorageKey, SUPPORT_CHAT_STORAGE_KEY } from "@/modules/ai/help/history";
 
 export async function generateMetadata(): Promise<Metadata> {
   return { title: getT(await getRequestLocale())("aihelp.support.title") };
@@ -23,7 +24,8 @@ export default async function SupportAssistantPage() {
         <Card className="animate-rise p-4">
           <AiChat
             endpoint="/api/ai/help/support"
-            storageKey="sc-ai-support-chat"
+            storageKey={chatStorageKey(SUPPORT_CHAT_STORAGE_KEY, user.id, null)}
+            mode="support"
             intro={t("aihelp.support.intro")}
             suggestions={[t("aihelp.support.suggest.payments"), t("aihelp.support.suggest.ai"), t("aihelp.support.suggest.reply")]}
             placeholder={t("aihelp.support.placeholder")}

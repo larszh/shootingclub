@@ -7,24 +7,28 @@ import { getBookingSettings, listResources } from "@/modules/bookings/queries";
 import { maxPersonsFor } from "@/modules/bookings/pricing";
 import { SeriesForm } from "@/modules/bookings/ui/series-form";
 import { addDays, todayZurich } from "@/lib/time";
+import { getRequestLocale, getT } from "@/lib/i18n";
 
-export const metadata: Metadata = { title: "Neue Serie" };
+export async function generateMetadata(): Promise<Metadata> {
+  return { title: getT(await getRequestLocale())("bookings.series.new") };
+}
 
 export default async function NewSeriesPage() {
   const ctx = await requirePermission("bookings.series");
   if (!ctx.hasModule("bookings")) redirect("/?module=bookings");
   const [settings, resources] = await Promise.all([getBookingSettings(ctx.tenant.id), listResources(ctx.tenant.id)]);
   const today = todayZurich();
+  const t = getT(await getRequestLocale());
   return (
     <div>
-      <PageHeader title="Neue Serie" subtitle="Wiederkehrende Reservation, z.B. jeden Dienstag" back={{ href: "/bookings/series", label: "Serien" }} />
+      <PageHeader title={t("bookings.series.new")} subtitle={t("bookings.series.newSub")} back={{ href: "/bookings/series", label: t("bookings.list.series") }} />
       {resources.length ? (
         <>
           <SeriesForm resources={resources.map((r) => ({ id: r.id, name: r.name, maxPersons: maxPersonsFor(r, settings) }))} today={today} defaultUntil={addDays(today, 12 * 7)} />
-          <p className="mt-3 px-1 text-xs text-ink-3">Jeder Termin wird einzeln geprüft (Öffnungszeiten, Sperrzeiten, Belegung{ctx.hasModule("range") ? ", Schiesszeiten" : ""}). Belegte Termine werden übersprungen. Serientermine sind bestätigt und kostenlos.</p>
+          <p className="mt-3 px-1 text-xs text-ink-3">{t(ctx.hasModule("range") ? "bookings.series.checkInfoRange" : "bookings.series.checkInfo")}</p>
         </>
       ) : (
-        <EmptyState icon={<CalendarDays className="h-5 w-5" />} title="Noch keine Ressourcen" text="Die Verwaltung muss zuerst eine Anlage, Bahn oder einen Raum anlegen." />
+        <EmptyState icon={<CalendarDays className="h-5 w-5" />} title={t("bookings.series.noResources")} text={t("bookings.series.noResourcesText")} />
       )}
     </div>
   );

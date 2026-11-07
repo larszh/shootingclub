@@ -3,7 +3,7 @@
  * Server-Seiten und Client-Komponenten rufen die Helfer mit ihrer `t`-Funktion auf.
  * Wörterbuch: src/lib/i18n/extra/admin1/ammo.ts (Namensraum «adm1.ammo.»).
  */
-import { INTL_LOCALE, normalizeLocale, type TFunction } from "@/lib/i18n/core";
+import { formatNumberL, type TFunction } from "@/lib/i18n/core";
 import { FUNDING_TYPES, STOCK_KINDS } from "@/modules/ammo/stock";
 import { ORDER_STATUSES, PAYMENT_STATUSES } from "@/modules/ammo/types";
 
@@ -41,11 +41,11 @@ export function fundingShortT(f: string, t: TFunction) {
 
 /** Schuss-Anzahl in der Sprache der Person («1'000 Schuss», «1 000 cartouches»). */
 export function roundsT(n: number, locale: string | null | undefined, t: TFunction) {
-  const num = new Intl.NumberFormat(INTL_LOCALE[normalizeLocale(locale)]).format(n);
+  const num = formatNumberL(n, locale);
   return t(n === 1 || n === -1 ? "money.ammo.rounds.one" : "money.ammo.rounds.other", { n: num });
 }
 
 /** Ganze Zahl in der Sprache der Person. */
 export function numT(n: number, locale: string | null | undefined) {
-  return new Intl.NumberFormat(INTL_LOCALE[normalizeLocale(locale)]).format(n);
+  return formatNumberL(n, locale);
 }

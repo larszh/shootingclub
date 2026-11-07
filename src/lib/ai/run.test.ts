@@ -29,7 +29,8 @@ vi.mock("@/lib/db", () => ({
     },
     tenantModule: { findUnique: vi.fn(async () => ({ enabled: state.moduleEnabled })) },
     aiUsage: {
-      aggregate: vi.fn(async () => ({ _sum: { inputTokens: state.used, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 } })),
+      // monthTokensUsed gewichtet pro Modell (Budget-Tokens); Ausgabe zählt mehr als Eingabe.
+      groupBy: vi.fn(async () => [{ model: "claude-opus-5-5", _sum: { inputTokens: 0, outputTokens: state.used, cacheReadTokens: 0, cacheWriteTokens: 0 } }]),
       create: vi.fn(async ({ data }: { data: Record<string, unknown> }) => {
         state.usage.push(data);
         return data;
@@ -193,9 +194,10 @@ describe("runStructured", () => {
   });
 });
 
-function fakeStream(texts: string[], final: Record<string, unknown> | Error) {
+function fakeStream(texts: string[], final: Record<string, unknown> | Error, current?: Record<string, unknown>) {
   return {
     abort: vi.fn(),
+    currentMessage: current,
     async *[Symbol.asyncIterator]() {
       for (const t of texts) yield { type: "content_block_delta", index: 0, delta: { type: "text_delta", text: t } };
       if (final instanceof Error) throw final;
@@ -225,6 +227,21 @@ describe("streamText", () => {
     stream.mockReturnValue(fakeStream([], new Anthropic.APIConnectionError({ message: "down" })));
     expect(splitAiStream(await readAll(await streamText(base))).error).toBe("network");
     expect(state.usage.map((u) => u.errorCode)).toEqual(["refused", "network"]);
+  });
+
+  it("Abbruch mitten im Stream zählt bereits verrechnete Token", async () => {
+    const started = message({ model: "claude-opus-5-5", usage: { input_tokens: 40, output_tokens: 1, cache_read_input_tokens: 10_000, cache_creation_input_tokens: 0 } });
+    stream.mockReturnValue(fakeStream(["Zuerst ", "öffnest du die Reservation"], new Anthropic.APIUserAbortError(), started));
+    expect(splitAiStream(await readAll(await streamText(base))).error).toBe("aborted");
+    expect(state.usage[0]).toMatchObject({ ok: false, errorCode: "aborted", model: "claude-opus-5-5", inputTokens: 40, cacheReadTokens: 10_000 });
+    expect(state.usage[0]!.outputTokens).toBeGreaterThan(1);
+  });
+
+  it("Fehler-Event im Stream (ohne Status) → overloaded", async () => {
+    const err = new Anthropic.APIError(undefined, { type: "error", error: { type: "overloaded_error" } }, undefined, new Headers(), "overloaded_error");
+    stream.mockReturnValue(fakeStream(["x"], err));
+    expect(splitAiStream(await readAll(await streamText(base))).error).toBe("overloaded");
+    expect(state.usage[0]).toMatchObject({ errorCode: "overloaded" });
   });
 
   it("Prüfungen vor dem Stream", async () => {
@@ -261,6 +278,10 @@ describe("toAiError", () => {
     [new Anthropic.InternalServerError(529, {}, "x", new Headers()), "overloaded"],
     [new Anthropic.APIConnectionTimeoutError(), "network"],
     [new Anthropic.APIUserAbortError(), "aborted"],
+    [new Anthropic.APIError(undefined, { type: "error", error: { type: "overloaded_error" } }, undefined, new Headers(), "overloaded_error"), "overloaded"],
+    [new Anthropic.APIError(undefined, { type: "error", error: { type: "rate_limit_error" } }, undefined, new Headers(), "rate_limit_error"), "rateLimited"],
+    [new Anthropic.APIError(undefined, { type: "error", error: { type: "invalid_request_error" } }, undefined, new Headers(), "invalid_request_error"), "badRequest"],
+    [new Anthropic.APIError(undefined, { type: "error", error: { type: "weird" } }, undefined, new Headers(), null), "unknown"],
     [new Error("boom"), "unknown"],
   ] as const)("%s → %s", (err, code) => {
     expect(toAiError(err).code).toBe(code);

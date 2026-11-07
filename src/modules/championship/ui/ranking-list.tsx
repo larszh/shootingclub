@@ -5,6 +5,7 @@ import { cn } from "@/lib/utils";
 import type { RankingEntry } from "@/modules/championship/ranking";
 import { NO_CATEGORY, formatPoints } from "@/modules/championship/types";
 import { DEFAULT_LOCALE, getT, type Locale } from "@/lib/i18n/core";
+import { localizedProgramName } from "@/modules/scores/preset-i18n";
 
 type Row = RankingEntry & { shownRank: number | null };
 
@@ -34,7 +35,7 @@ export function RankingList({ rows, championshipId, meId, showCategory = true, l
                 {showCategory && e.category !== NO_CATEGORY ? <Badge>{e.category}</Badge> : null}
               </div>
               <div className="truncate text-xs text-ink-3">
-                {e.programs.filter((p) => p.counted.length).map((p) => `${p.name}: ${formatPoints(p.weighted)}`).join(" · ")}
+                {e.programs.filter((p) => p.counted.length).map((p) => `${localizedProgramName(p.name, locale)}: ${formatPoints(p.weighted)}`).join(" · ")}
                 {e.bonus ? t("shooting.champ.bonusInline", { n: formatPoints(e.bonus) }) : ""}
                 {e.missingRequired.length ? t("shooting.champ.missingInline", { list: e.missingRequired.join(", ") }) : ""}
               </div>

@@ -6,17 +6,42 @@ import { Button } from "@/components/ui";
 import { useT } from "@/components/locale";
 import { readAiStream } from "@/lib/ai/stream-client";
 import { cn } from "@/lib/utils";
-import { HELP_MAX_QUESTION_CHARS, trimHistory, type ChatTurn } from "@/modules/ai/help/history";
+import { chatStorageBase, HELP_MAX_QUESTION_CHARS, trimHistory, type ChatTurn } from "@/modules/ai/help/history";
+import { helpStreamErrorKey } from "@/modules/ai/help/failure";
 import { MarkdownLite } from "./markdown";
 
-/** Angezeigte Nachricht (error: i18n-Schlüssel eines Fehlers zu dieser Antwort). */
-type ShownTurn = ChatTurn & { error?: string; pending?: boolean };
+/**
+ * Angezeigte Nachricht (error: i18n-Schlüssel eines Fehlers zu dieser Antwort; failed: Frage ohne
+ * Antwort – bleibt sichtbar, geht aber nicht mehr als Verlauf an Claude und wird nicht gespeichert).
+ */
+type ShownTurn = ChatTurn & { error?: string; pending?: boolean; failed?: boolean };
+
+/** Nur Nachrichten, die als Verlauf zählen (keine Fehler, keine laufende Antwort, keine unbeantwortete Frage). */
+function settled(turns: readonly ShownTurn[]): ShownTurn[] {
+  return turns.filter((x) => !x.pending && !x.error && !x.failed && x.content);
+}
 
 /** Höchstens so viele Nachrichten bleiben sichtbar (älteste fallen weg). */
 const MAX_SHOWN = 40;
 
+/** Verläufe anderer Personen/Vereine (gleiche Basis, anderer Schlüssel) aus diesem Tab entfernen. */
+function purgeOthers(key: string) {
+  try {
+    const base = chatStorageBase(key);
+    const stale: string[] = [];
+    for (let i = 0; i < sessionStorage.length; i++) {
+      const k = sessionStorage.key(i);
+      if (k && k !== key && (k === base || k.startsWith(`${base}:`))) stale.push(k);
+    }
+    for (const k of stale) sessionStorage.removeItem(k);
+  } catch {
+    // Speicher nicht verfügbar
+  }
+}
+
 function loadStored(key: string | undefined): ShownTurn[] {
   if (!key) return [];
+  purgeOthers(key);
   try {
     const raw = sessionStorage.getItem(key);
     if (!raw) return [];
@@ -34,7 +59,7 @@ function loadStored(key: string | undefined): ShownTurn[] {
 function store(key: string | undefined, turns: ShownTurn[]) {
   if (!key) return;
   try {
-    const keep = turns.filter((x) => !x.pending && !x.error && x.content).map((x) => ({ role: x.role, content: x.content }));
+    const keep = settled(turns).map((x) => ({ role: x.role, content: x.content }));
     sessionStorage.setItem(key, JSON.stringify(keep.slice(-MAX_SHOWN)));
   } catch {
     // Speicher nicht verfügbar (privates Fenster) – Verlauf nur im Speicher
@@ -44,8 +69,10 @@ function store(key: string | undefined, turns: ShownTurn[]) {
 export type AiChatProps = {
   /** Route-Handler, z.B. "/api/ai/help" */
   endpoint: string;
-  /** Verlauf in sessionStorage merken (pro Tab) */
+  /** Verlauf in sessionStorage merken (pro Tab); Schlüssel mit chatStorageKey() pro Person und Verein */
   storageKey?: string;
+  /** Welche Fehlertexte: «help» freundlich für Mitglieder, «support» die allgemeinen ai.*-Texte */
+  mode?: "help" | "support";
   /** Begrüssung über dem leeren Verlauf */
   intro?: string;
   /** Vorschläge zum Antippen (bereits übersetzt) */
@@ -62,7 +89,7 @@ export type AiChatProps = {
  * Chat mit Claude über einen Streaming-Route-Handler. Der Verlauf bleibt im Browser; pro Anfrage
  * gehen die letzten Nachrichten mit (gekürzt mit trimHistory).
  */
-export function AiChat({ endpoint, storageKey, intro, suggestions, placeholder, onNavigate, className, autoFocus }: AiChatProps) {
+export function AiChat({ endpoint, storageKey, mode = "help", intro, suggestions, placeholder, onNavigate, className, autoFocus }: AiChatProps) {
   const t = useT();
   const [turns, setTurns] = useState<ShownTurn[]>([]);
   const [draft, setDraft] = useState("");
@@ -95,7 +122,7 @@ export function AiChat({ endpoint, storageKey, intro, suggestions, placeholder, 
     async (question: string) => {
       const q = question.trim().slice(0, HELP_MAX_QUESTION_CHARS);
       if (!q || busy) return;
-      const history = trimHistory([...turns.filter((x) => !x.error && !x.pending), { role: "user", content: q }]);
+      const history = trimHistory([...settled(turns), { role: "user", content: q }]);
       setDraft("");
       setBusy(true);
       setTurns((prev) => [...prev, { role: "user" as const, content: q }, { role: "assistant" as const, content: "", pending: true }].slice(-MAX_SHOWN));
@@ -105,7 +132,12 @@ export function AiChat({ endpoint, storageKey, intro, suggestions, placeholder, 
         setTurns((prev) => {
           const next = [...prev];
           const last = next.at(-1);
-          if (last && last.role === "assistant") next[next.length - 1] = { ...last, ...patch };
+          if (last && last.role === "assistant") {
+            next[next.length - 1] = { ...last, ...patch };
+            // Ohne Antwort: die Frage nicht in spätere Anfragen mitnehmen
+            const q = next.at(-2);
+            if (patch.error && q?.role === "user") next[next.length - 2] = { ...q, failed: true };
+          }
           return next;
         });
       try {
@@ -128,7 +160,7 @@ export function AiChat({ endpoint, storageKey, intro, suggestions, placeholder, 
         }
         const out = await readAiStream(res, (text) => update({ content: text, pending: !text }));
         if (ctrl.signal.aborted || out.error === "aborted") update({ pending: false, content: out.text, error: out.text ? undefined : "ai.error.aborted" });
-        else if (out.error) update({ pending: false, content: out.error === "refused" ? "" : out.text, error: out.error === "rateLimited" ? "aihelp.error.rateLimited" : `ai.error.${out.error}` });
+        else if (out.error) update({ pending: false, content: out.error === "refused" ? "" : out.text, error: helpStreamErrorKey(mode, out.error) });
         else update({ pending: false, content: out.text, error: out.text ? undefined : "ai.error.unknown" });
       } catch {
         update({ pending: false, error: ctrl.signal.aborted ? "ai.error.aborted" : "ai.error.network" });
@@ -137,7 +169,7 @@ export function AiChat({ endpoint, storageKey, intro, suggestions, placeholder, 
         setBusy(false);
       }
     },
-    [busy, endpoint, turns],
+    [busy, endpoint, mode, turns],
   );
 
   const reset = () => {

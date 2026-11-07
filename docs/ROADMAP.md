@@ -80,7 +80,8 @@ Details im README.
 - **Offen aus Welle E**:
   - CHF-Schätzungen der Claude-Kosten beruhen auf angenommenen Preisen (`CHF_PER_MILLION` in `src/modules/ai/usage/logic.ts`); vor dem Einsatz mit der Preisliste von Anthropic abgleichen.
   - Kein Live-Test gegen die Anthropic-API (alle Tests mit gemocktem Client); vor dem Einsatz mit einem Testschlüssel prüfen.
-  - Noch Deutsch: Upload-Fehler aus dem Speicher-Adapter (`src/lib/file-storage`), Meldungen des Mitglieder-Imports, Formulare der Feldschiessen-Limiten (`AWARD_FORMAT_HINT`), öffentliche Website-Widgets, CSV-Köpfe des Verbands-Exports, Admin-Editoren für Anlässe und Mitteilungen (ausser den KI-Teilen), Produkt-Vorschläge in Schützenstube und Munition, gespeicherte Protokolltexte.
+  - Noch Deutsch: Upload-Fehler aus dem Speicher-Adapter (`src/lib/file-storage`), Meldungen des Mitglieder-Imports, Formulare der Feldschiessen-Limiten (`AWARD_FORMAT_HINT`), öffentliche Website-Widgets, CSV-Köpfe des Verbands-Exports, Formulare der Anlässe/Mitteilungen (Editoren, ausser den KI-Teilen), Zonen-Editor im Programm-Editor, Produkt-Vorschläge in Schützenstube und Munition, gespeicherte Protokolltexte, Dauer-Fehler mit Zeilenbezug in den Reservations-Einstellungen («Dauer 60 Min.: …»).
+  - Inzwischen übersetzt: Reservationen-Verwaltung (inkl. serverseitiger Meldungen der Reservations-Aktionen: Einstellungen, Ressourcen, Sperrzeiten, Buchung erfassen, Zahlungsanbieter), Serien, Programm-Editor, Auszeichnungen Feldschiessen und Anlässe-Verwaltung (Listen, Aktionen).
   - Mitglieder wählen ihre Waffenkategorie für Auszeichnungen noch nicht selbst in der Punkteerfassung (Komponente vorhanden, heute setzt der Vorstand sie unter `/federal/awards`).
   - Übersetzungen von Standordnungs-Entwürfen bleiben beim Löschen des Entwurfs bis zur Vereinslöschung liegen (harmlos).
   - Ratenbegrenzung der KI-Funktionen im Arbeitsspeicher (eine PM2-Instanz).

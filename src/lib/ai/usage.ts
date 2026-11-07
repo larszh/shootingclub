@@ -2,6 +2,7 @@ import "server-only";
 import { db } from "@/lib/db";
 import { startOfMonthZurich } from "./month";
 import type { AiErrorCode } from "./types";
+import { budgetTokens } from "@/modules/ai/usage/logic";
 
 export type AiTokenUsage = { inputTokens: number; outputTokens: number; cacheReadTokens: number; cacheWriteTokens: number };
 
@@ -17,23 +18,37 @@ export function usageFrom(u: { input_tokens?: number | null; output_tokens?: num
   };
 }
 
-/** Summe, die gegen das Monatslimit zählt: alle Token-Arten. */
+/**
+ * Rohe Summe aller Token-Arten (nur Anzeige). Gegen das Monatslimit zählen gewichtete
+ * Budget-Tokens (`budgetTokens`, siehe monthTokensUsed).
+ */
 export function totalTokens(u: AiTokenUsage): number {
   return u.inputTokens + u.outputTokens + u.cacheReadTokens + u.cacheWriteTokens;
 }
 
-/** Verbrauchte Tokens im laufenden Monat (Schweizer Zeit) für Plattform bzw. Verein. */
+/** Verbrauchte Budget-Tokens im laufenden Monat (Schweizer Zeit) für Plattform bzw. Verein. */
 export async function monthTokensUsed(ref: { scope: "platform" } | { scope: "tenant"; tenantId: string }, now: Date = new Date()): Promise<number> {
   const since = startOfMonthZurich(now);
   const where = ref.scope === "platform"
     ? { scope: "PLATFORM", createdAt: { gte: since } }
     : { scope: "TENANT", tenantId: ref.tenantId, createdAt: { gte: since } };
-  const agg = await db.aiUsage.aggregate({
+  // Gewichtet nach Preis (Ausgabe, Cache-Lesen, Cache-Schreiben), damit ein CHF-Budget beim
+  // geschätzten Verbrauch sperrt und nicht schon bei einem Bruchteil davon.
+  const rows = await db.aiUsage.groupBy({
+    by: ["model"],
     where,
     _sum: { inputTokens: true, outputTokens: true, cacheReadTokens: true, cacheWriteTokens: true },
   });
-  const s = agg._sum;
-  return (s.inputTokens ?? 0) + (s.outputTokens ?? 0) + (s.cacheReadTokens ?? 0) + (s.cacheWriteTokens ?? 0);
+  let total = 0;
+  for (const r of rows) {
+    total += budgetTokens({
+      inputTokens: r._sum.inputTokens ?? 0,
+      outputTokens: r._sum.outputTokens ?? 0,
+      cacheReadTokens: r._sum.cacheReadTokens ?? 0,
+      cacheWriteTokens: r._sum.cacheWriteTokens ?? 0,
+    }, r.model);
+  }
+  return total;
 }
 
 export type LogUsageInput = {

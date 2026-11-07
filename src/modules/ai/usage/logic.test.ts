@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-  addMonths, blendedChfPerMillion, buildUsageTable, chfForTokens, estimateChf, isMonthKey, limitPercent,
+  addMonths, blendedChfPerMillion, budgetTokens, buildUsageTable, chfForTokens, estimateChf, isMonthKey, limitPercent,
   monthKeyZurich, monthRangeZurich, pickMonth, recentMonths, tokensForChf,
 } from "./logic";
 
@@ -53,6 +53,20 @@ describe("CHF-Schätzung", () => {
     expect(chfForTokens(tokens, "claude-opus-5-5")).toBe(81);
     expect(tokensForChf(-1, "claude-opus-5-5")).toBe(0);
     expect(chfForTokens(0, "claude-opus-5-5")).toBe(0);
+  });
+  it("Budget-Tokens passen zur CHF-Schätzung (Cache gewichtet)", () => {
+    const z = { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 };
+    // 80 % Eingabe / 20 % Ausgabe zählt 1:1
+    expect(budgetTokens({ ...z, inputTokens: 800_000, outputTokens: 200_000 }, "claude-opus-5-5")).toBe(1_000_000);
+    // Cache-Lesen ist viel günstiger als ein Mischtoken
+    expect(budgetTokens({ ...z, cacheReadTokens: 1_000_000 }, "claude-sonnet-5-5")).toBe(Math.round((0.27 / 4.86) * 1_000_000));
+    // Hilfe-Frage mit grossem Cache-Prompt: CHF-10-Budget reicht für ≈ CHF 10 geschätzten Verbrauch
+    const q = { inputTokens: 300, outputTokens: 400, cacheReadTokens: 10_000, cacheWriteTokens: 0 };
+    const model = "claude-opus-5-5";
+    const limit = tokensForChf(10, model);
+    const questions = Math.floor(limit / budgetTokens(q, model));
+    expect(estimateChf(q, model) * questions).toBeGreaterThan(9.9);
+    expect(estimateChf(q, model) * questions).toBeLessThanOrEqual(10.01);
   });
 });
 

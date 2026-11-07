@@ -3,8 +3,10 @@ import { CalendarDays, ChevronRight, Clock, MapPin, Plus } from "lucide-react";
 import { Card, SectionTitle } from "@/components/ui";
 import { cn } from "@/lib/utils";
 import type { AppContext, ActiveTenant } from "@/lib/tenant";
-import { listCurrentAnnouncements, listEvents } from "../queries";
-import { getRequestLocale, getT } from "@/lib/i18n";
+import { eventDescriptions, listCurrentAnnouncements, listEvents } from "../queries";
+import { getRequestLocale, getT, getTenantLocale } from "@/lib/i18n";
+import { displayContent } from "@/modules/ai/content/service";
+import { TranslationSwitchButton, TranslationToggle } from "@/modules/ai/content/ui/translation-toggle";
 import { whenLabelL } from "./i18n";
 import { AnnouncementCard } from "./announcement-card";
 import { DateBadge, KindChip } from "./bits";
@@ -17,9 +19,19 @@ function hasEvents(ctx: AppContext): ctx is AppContext & { tenant: ActiveTenant 
 /** Nächste Anlässe (max. 3) für die Startseite. Rendert nichts, wenn das Modul aus ist. */
 export async function UpcomingEventsCard({ ctx, limit = 3 }: { ctx: AppContext; limit?: number }) {
   if (!hasEvents(ctx)) return null;
-  const events = (await listEvents(ctx, { tab: "upcoming", limit: limit + 2 })).slice(0, limit);
+  const [rawEvents, locale, sourceLocale] = await Promise.all([
+    listEvents(ctx, { tab: "upcoming", limit: limit + 2 }).then((list) => list.slice(0, limit)),
+    getRequestLocale(),
+    getTenantLocale(ctx.tenant.id),
+  ]);
+  // Titel in der Sprache des Mitglieds – nur wenn der ganze Anlass aktuell übersetzt ist (wie auf /events).
+  const descriptions = locale === sourceLocale ? new Map<string, string | null>() : await eventDescriptions(ctx.tenant.id, rawEvents.map((e) => e.id));
+  const titles = await displayContent(ctx.tenant.id, "event", rawEvents.map((e) => ({ id: e.id, sources: { title: e.title, description: descriptions.get(e.id) ?? null } })), locale);
+  const events = rawEvents.map((e) => {
+    const d = titles.get(e.id);
+    return d?.translated && d.fields.title ? { ...e, title: d.fields.title } : e;
+  });
   const canManage = ctx.can("events.manage");
-  const locale = await getRequestLocale();
   const t = getT(locale);
 
   return (
@@ -66,13 +78,26 @@ export async function AnnouncementsCard({ ctx, limit = 3 }: { ctx: AppContext; l
   if (!hasEvents(ctx)) return null;
   const items = await listCurrentAnnouncements(ctx.tenant.id, limit);
   if (!items.length) return null;
-  const locale = await getRequestLocale();
+  const [locale, sourceLocale] = await Promise.all([getRequestLocale(), getTenantLocale(ctx.tenant.id)]);
   const t = getT(locale);
+  // Mitteilungen in der Sprache des Mitglieds, wenn aktuell übersetzt (sonst Original) – wie auf /events.
+  const shown = await displayContent(ctx.tenant.id, "announcement", items.map((a) => ({ id: a.id, sources: { title: a.title, body: a.body } })), locale);
   return (
     <section>
       <SectionTitle action={<Link href="/events" className="text-xs text-ink-3 hover:text-ink">{t("money.payments.all")}</Link>}>{t("money.news.title")}</SectionTitle>
       <div className="stagger space-y-2.5">
-        {items.map((a) => <AnnouncementCard key={a.id} a={a} compact locale={locale} />)}
+        {items.map((a) => {
+          const d = shown.get(a.id);
+          if (!d?.translated) return <AnnouncementCard key={a.id} a={a} compact locale={locale} />;
+          const switchBtn = <TranslationSwitchButton locale={locale} sourceLocale={sourceLocale} reviewed={d.reviewed} />;
+          return (
+            <TranslationToggle
+              key={a.id}
+              translated={<AnnouncementCard a={{ ...a, title: d.fields.title ?? a.title, body: d.fields.body ?? a.body }} compact locale={locale}>{switchBtn}</AnnouncementCard>}
+              original={<AnnouncementCard a={a} compact locale={locale}>{switchBtn}</AnnouncementCard>}
+            />
+          );
+        })}
       </div>
     </section>
   );

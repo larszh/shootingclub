@@ -10,6 +10,8 @@
  * frenchSpacing() setzt die geschützten Leerzeichen (Guillemets, vor ? ! ; und :).
  * Platzhalter {name} usw. sind in allen Sprachen identisch.
  */
+import uiRows from "./misc/ui";
+
 type Row = readonly [de: string, fr: string, it: string, en: string];
 
 function frenchSpacing(s: string): string {
@@ -21,6 +23,7 @@ function frenchSpacing(s: string): string {
 }
 
 const ROWS: Record<string, Row> = {
+  ...uiRows,
   // ---------------------------------------------------------------- Navigation Welle E (Claude, Übersetzungen)
   "misc.nav.superTranslations": ["Übersetzungen", "Traductions", "Traduzioni", "Translations"],
   "misc.nav.superAi": ["Claude (KI)", "Claude (IA)", "Claude (IA)", "Claude (AI)"],

@@ -2,7 +2,7 @@ import "server-only";
 import { db } from "@/lib/db";
 import { roleAtLeast, isTenantRole } from "@/lib/permissions";
 import { userAvatarUrl } from "@/components/avatar";
-import { formatDateZurich } from "@/lib/time";
+import { formatDate } from "@/lib/i18n/core";
 import { stricterRole } from "./types";
 
 export type FolderNode = {
@@ -64,7 +64,7 @@ export type FileRow = {
 export type FolderRow = { id: string; name: string; minRole: string; effectiveMinRole: string; fileCount: number; folderCount: number };
 
 /** Daten für die Seite /files: Ordnerinhalt oder Suchergebnis, nur sichtbare Ordner. */
-export async function getFilesView(opts: { tenantId: string; role: string | null; isSuperAdmin: boolean; folderId: string | null; q: string }) {
+export async function getFilesView(opts: { tenantId: string; role: string | null; isSuperAdmin: boolean; folderId: string | null; q: string; locale?: string | null }) {
   const { tenantId, role, isSuperAdmin } = opts;
   const tree = await loadFolderTree(tenantId);
   const visible = [...tree.values()].filter((n) => canSeeFolder(n, role, isSuperAdmin));
@@ -115,7 +115,7 @@ export async function getFilesView(opts: { tenantId: string; role: string | null
     mimeType: f.mimeType,
     sizeBytes: f.sizeBytes,
     createdAt: f.createdAt.toISOString(),
-    createdLabel: formatDateZurich(f.createdAt, { weekday: undefined }),
+    createdLabel: formatDate(f.createdAt, opts.locale ?? "de"),
     folderId: f.folderId,
     folderPath: f.folderId ? tree.get(f.folderId)?.path.map((p) => p.name).join(" / ") ?? null : null,
     uploadedById: f.uploadedById,

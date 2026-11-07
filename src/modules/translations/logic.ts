@@ -63,9 +63,18 @@ export type DictionaryContext = {
   override: (locale: Locale, key: string) => string | undefined;
 };
 
-/** Normalisiert Zeilenumbrüche und schneidet Leerraum am Rand ab. */
-export function normalizeValue(v: string): string {
-  return v.replace(/\r\n?/g, "\n").trim();
+/**
+ * Normalisiert Zeilenumbrüche und schneidet Leerraum am Rand ab. Mit `padding` (mitgelieferter
+ * Text) wird dessen Leerraum am Anfang/Ende wieder angefügt: Texte wie « (ich)» oder
+ * « · {n} offen» werden an andere Texte angehängt, das Leerzeichen ist Teil des Textes.
+ * Leer bleibt leer.
+ */
+export function normalizeValue(v: string, padding?: string): string {
+  const core = v.replace(/\r\n?/g, "\n").trim();
+  if (!core || !padding) return core;
+  const lead = /^\s*/.exec(padding)![0];
+  const trail = /\s*$/.exec(padding)![0];
+  return lead.length === padding.length ? core : lead + core + trail;
 }
 
 /** Prüft einen nicht-leeren Wert. null = in Ordnung. */
@@ -93,8 +102,8 @@ export type PlannedChange = {
  * → Übersteuerung löschen. null = keine Änderung.
  */
 export function planChange(ctx: DictionaryContext, locale: Locale, key: string, raw: string): PlannedChange | null {
-  const value = normalizeValue(raw);
   const base = ctx.base(locale, key);
+  const value = normalizeValue(raw, base ?? ctx.reference(locale, key));
   const current = ctx.override(locale, key);
   const before = current ?? base ?? "";
   if (value === "" || value === base) {
@@ -227,12 +236,14 @@ export type AiSuggestion = { key: string; text: string };
 
 /**
  * Prüft Claudes Vorschläge: nur angefragte Schlüssel, Platzhalter wie im Deutschen, nicht leer.
- * Ungültige landen in `rejected` (werden in der Vorschau nicht angeboten).
+ * Ungültige landen in `rejected` (werden in der Vorschau nicht angeboten). Leerraum am Rand
+ * kommt aus `padding` (Standard: Referenz), damit angehängte Texte ihr Leerzeichen behalten.
  */
 export function filterSuggestions(
   requested: readonly string[],
   suggestions: readonly AiSuggestion[],
   reference: (key: string) => string | undefined,
+  padding: (key: string) => string | undefined = reference,
 ): { accepted: AiSuggestion[]; rejected: Array<{ key: string; reason: "unknown" | "empty" | "placeholders" | "tooLong" }>; missing: string[] } {
   const want = new Set(requested);
   const done = new Set<string>();
@@ -244,7 +255,7 @@ export function filterSuggestions(
       continue;
     }
     done.add(s.key);
-    const text = normalizeValue(s.text);
+    const text = normalizeValue(s.text, padding(s.key));
     if (!text) rejected.push({ key: s.key, reason: "empty" });
     else if (text.length > MAX_VALUE_LENGTH) rejected.push({ key: s.key, reason: "tooLong" });
     else if (!checkPlaceholders(reference(s.key), text).ok) rejected.push({ key: s.key, reason: "placeholders" });

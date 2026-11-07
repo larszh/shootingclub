@@ -8,7 +8,7 @@
  *   Unbekannte Texte bleiben unverändert.
  * - `localizePaymentItem`: Anzeige eines Zahlungspostens aus der Übersicht in der gewünschten Sprache.
  */
-import { getT, normalizeLocale, type Locale, type TFunction } from "@/lib/i18n/core";
+import { displayUserName, getT, normalizeLocale, type Locale, type TFunction } from "@/lib/i18n/core";
 import money from "@/lib/i18n/extra/money";
 
 export function tPlural(t: TFunction, base: string, n: number, vars?: Record<string, string | number>): string {
@@ -93,6 +93,7 @@ export function localizePaymentItem<T extends LocalizablePaymentItem>(item: T, l
       ? t("money.source.memberFee")
       : item.sourceLabel ?? t(`money.source.${item.source}`);
   if (l === "de") return { ...item, sourceText };
+  if ("memberName" in item && typeof item.memberName === "string") item = { ...item, memberName: displayUserName(item.memberName, t) };
   let title = item.title;
   let detail = item.detail;
   let number = item.number;

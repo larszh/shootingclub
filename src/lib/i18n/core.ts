@@ -66,8 +66,10 @@ const DICTS: Record<Locale, Dict> = mergeDicts(
 
 // ---------------------------------------------------------------------------
 // Übersteuerungen (Admin → Übersetzungen). Liegen auf globalThis, damit Server-Bundles
-// (Instrumentation, RSC, SSR) im selben Prozess dieselbe Tabelle sehen; im Browser setzt
-// <I18nOverrides> sie beim Rendern aus den Daten des Root-Layouts.
+// (Instrumentation, RSC, SSR) im selben Prozess dieselbe Tabelle sehen. Auf dem Server schreibt
+// nur overrides.ts (Laden aus der DB); im Browser setzt <I18nOverrides> sie beim Rendern aus
+// den Daten des Root-Layouts (beim vollen Laden und nach router.refresh(), nicht bei
+// Client-Navigationen – offene Sitzungen anderer sehen Client-Texte erst nach dem Neuladen).
 
 export type OverrideMap = Partial<Record<Locale, Dict>>;
 
@@ -167,8 +169,44 @@ export function formatDateTime(d: Date, locale: string | null | undefined): stri
   return formatDate(d, locale, { hour: "2-digit", minute: "2-digit" });
 }
 
+/**
+ * Platzhalter-Namen, die als Text gespeichert werden (Pseudonymisierung beim Löschen eines Kontos,
+ * Gäste, ehemalige Mitglieder), für die Anzeige in der Sprache der Person. Andere Namen bleiben.
+ */
+const PLACEHOLDER_NAME_KEY: Record<string, string> = {
+  "Gelöschtes Mitglied": "misc.user.deleted",
+  "Ehemaliges Mitglied": "misc.user.former",
+  "Gast": "misc.user.guest",
+};
+
+export function displayUserName(name: string, t: TFunction): string;
+export function displayUserName(name: string | null | undefined, t: TFunction): string | null | undefined;
+export function displayUserName(name: string | null | undefined, t: TFunction): string | null | undefined {
+  const key = name ? PLACEHOLDER_NAME_KEY[name] : undefined;
+  return key ? t(key) : name;
+}
+
+/**
+ * Tausendertrennzeichen je Sprache, unabhängig von der ICU-Version: Node und Chromium liefern für
+ * de-CH/en-CH/it-CH teils U+2019, teils den ASCII-Apostroph, für fr-CH verschiedene Leerzeichen.
+ * Unterschiedliche Ausgaben auf Server und Client lösen Hydrierungsfehler (React #418) aus.
+ */
+const GROUP_SEPARATOR: Record<Locale, string> = { de: "’", fr: "\u202F", it: "’", en: "’" };
+
+/** Intl-Ausgabe mit festem Tausendertrennzeichen und geschützten Leerzeichen (Server = Client). */
+function stableFormat(nf: Intl.NumberFormat, l: Locale, n: number): string {
+  return nf.formatToParts(n).map((p) => (p.type === "group" ? GROUP_SEPARATOR[l] : p.type === "literal" ? p.value.replace(/\s/g, "\u00A0") : p.value)).join("");
+}
+
+/**
+ * Zahl in der Sprache der Person («1’500», fr «1 500»). Für alles, was auch in Client-Komponenten
+ * gerendert wird, statt `new Intl.NumberFormat(...).format()`.
+ */
+export function formatNumberL(n: number, locale: string | null | undefined, opts?: Intl.NumberFormatOptions): string {
+  const l = normalizeLocale(locale);
+  return stableFormat(new Intl.NumberFormat(INTL_LOCALE[l], opts), l, n);
+}
+
 export function formatMoneyLocale(cents: number, locale: string | null | undefined, currency = "CHF"): string {
-  return new Intl.NumberFormat(INTL_LOCALE[normalizeLocale(locale)], {
-    style: "currency", currency, minimumFractionDigits: 2,
-  }).format(cents / 100);
+  return formatNumberL(cents / 100, locale, { style: "currency", currency, minimumFractionDigits: 2 });
 }

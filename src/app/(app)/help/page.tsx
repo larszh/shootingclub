@@ -6,6 +6,7 @@ import { Alert, PageHeader } from "@/components/ui";
 import { getRequestLocale, getT } from "@/lib/i18n";
 import { aiAvailability } from "@/lib/ai";
 import { HelpAssistantPanel } from "@/components/ai/help-panel";
+import { chatStorageKey, HELP_CHAT_STORAGE_KEY } from "@/modules/ai/help/history";
 import { helpSuggestionKeys } from "@/modules/ai/help/suggestions";
 import { Faq } from "./faq";
 import { visibleFaq } from "./faq-access";
@@ -41,7 +42,7 @@ export default async function HelpPage() {
   return (
     <div>
       <PageHeader title={t("shell.common.help")} subtitle={t("shell.help.subtitle")} back={{ href: "/me", label: t("shell.nav.more") }} />
-      {assistant === "on" ? <HelpAssistantPanel suggestions={helpSuggestionKeys(ctx).map((k) => t(k))} /> : null}
+      {assistant === "on" ? <HelpAssistantPanel suggestions={helpSuggestionKeys(ctx).map((k) => t(k))} storageKey={chatStorageKey(HELP_CHAT_STORAGE_KEY, ctx.user.id, ctx.tenant?.id)} /> : null}
       {assistant === "limit" ? <Alert tone="info" className="mb-4">{t("aihelp.unavailable.limitReached")}</Alert> : null}
       {assistant === "setup" ? (
         <Alert tone="info" className="mb-4" icon={<Sparkles className="h-4 w-4" aria-hidden />} title={t("aihelp.setup.title")}>

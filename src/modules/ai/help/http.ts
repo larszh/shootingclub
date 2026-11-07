@@ -31,13 +31,48 @@ export function sameOrigin(req: NextRequest): boolean {
   }
 }
 
-/** Prüft Herkunft und Inhalt; liefert die Nachrichten oder eine Fehlerantwort. */
+/**
+ * Höchstgrösse des Anfrage-Körpers. Der Browser schickt höchstens HELP_MAX_HISTORY_CHARS Zeichen
+ * Verlauf (gekürzt mit trimHistory) – 256 KB lassen viel Reserve für JSON und UTF-8.
+ */
+export const HELP_MAX_BODY_BYTES = 256 * 1024;
+
+/** Körper lesen, aber nie mehr als `max` Bytes (auch ohne Content-Length, z.B. chunked). null = zu gross. */
+async function readBodyCapped(req: NextRequest, max: number): Promise<string | null> {
+  const declared = Number(req.headers.get("content-length") ?? "");
+  if (Number.isFinite(declared) && declared > max) return null;
+  if (!req.body) return "";
+  const reader = req.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let size = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    size += value.byteLength;
+    if (size > max) {
+      await reader.cancel().catch(() => {});
+      return null;
+    }
+    chunks.push(value);
+  }
+  const all = new Uint8Array(size);
+  let off = 0;
+  for (const c of chunks) {
+    all.set(c, off);
+    off += c.byteLength;
+  }
+  return new TextDecoder().decode(all);
+}
+
+/** Prüft Herkunft, Grösse und Inhalt; liefert die Nachrichten oder eine Fehlerantwort. */
 export async function readHelpRequest(req: NextRequest): Promise<{ ok: true; messages: ChatTurn[] } | { ok: false; res: NextResponse }> {
   if (!sameOrigin(req)) return { ok: false, res: plainError("ai.error.badRequest", 403) };
   if (!(req.headers.get("content-type") ?? "").includes("application/json")) return { ok: false, res: plainError("ai.error.badRequest", 415) };
   let body: unknown;
   try {
-    body = await req.json();
+    const raw = await readBodyCapped(req, HELP_MAX_BODY_BYTES);
+    if (raw === null) return { ok: false, res: plainError("ai.error.badRequest", 413) };
+    body = JSON.parse(raw);
   } catch {
     return { ok: false, res: plainError("ai.error.badRequest", 400) };
   }

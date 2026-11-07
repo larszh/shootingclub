@@ -8,6 +8,7 @@ import { disciplineLabel, formatDistances } from "@/modules/scores/types";
 import { officialKindText, tOr } from "@/modules/scores/ui/labels";
 import { getRequestLocale, getT } from "@/lib/i18n";
 import { ProgramArchiveButton } from "@/modules/scores/ui/admin-controls";
+import { localizedProgramName } from "@/modules/scores/preset-i18n";
 
 export async function generateMetadata(): Promise<Metadata> {
   return { title: getT(await getRequestLocale())("adm2.super.programs") };
@@ -15,7 +16,8 @@ export async function generateMetadata(): Promise<Metadata> {
 
 export default async function SuperProgramsPage() {
   await requireSuperAdmin();
-  const t = getT(await getRequestLocale());
+  const locale = await getRequestLocale();
+  const t = getT(locale);
   const programs = await listGlobalPrograms();
   return (
     <div>
@@ -24,7 +26,7 @@ export default async function SuperProgramsPage() {
         {programs.map((p) => (
           <div key={p.id} className="flex items-center gap-3 px-4 py-3">
             <div className="min-w-0 flex-1">
-              <Link href={`/super/programs/${p.id}/edit`} className="font-medium hover:underline">{p.name}</Link>
+              <Link href={`/super/programs/${p.id}/edit`} className="font-medium hover:underline">{localizedProgramName(p.name, locale)}</Link>
               <div className="text-xs text-ink-3">{tOr(t, `shooting.discipline.${p.discipline}`, disciplineLabel(p.discipline))} · {formatDistances(p.totals.distances)} · {t("adm2.super.p.shots", { n: p.totals.shots })}{p.isArchived ? t("adm2.super.p.archivedSuffix") : ""}</div>
             </div>
             {p.officialKind ? <Badge tone="accent">{officialKindText(t, p.officialKind)}</Badge> : null}

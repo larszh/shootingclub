@@ -4,12 +4,14 @@ import { notFound, redirect } from "next/navigation";
 import { requirePermission } from "@/lib/tenant";
 import { Alert, Badge, Card, PageHeader, SectionTitle } from "@/components/ui";
 import { getSeries } from "@/modules/bookings/series-queries";
-import { cancellableOccurrences, weekdaysLabel } from "@/modules/bookings/series";
-import { BOOKING_STATUS } from "@/modules/bookings/types";
+import { cancellableOccurrences } from "@/modules/bookings/series";
+import { bookingStatusView, formatDateL, formatTimeRangeL, weekdaysLabelL } from "@/modules/bookings/i18n";
 import { CancelOccurrenceButton, CancelSeriesButton } from "@/modules/bookings/ui/series-buttons";
-import { formatDateZurich, formatTimeRange } from "@/lib/time";
+import { formatDate, getRequestLocale, getT, type Locale, type TFunction } from "@/lib/i18n";
 
-export const metadata: Metadata = { title: "Serie" };
+export async function generateMetadata(): Promise<Metadata> {
+  return { title: getT(await getRequestLocale())("bookings.series.badge") };
+}
 
 export default async function SeriesDetailPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ created?: string; skipped?: string }> }) {
   const ctx = await requirePermission("bookings.series");
@@ -24,46 +26,48 @@ export default async function SeriesDetailPage({ params, searchParams }: { param
   const past = s.bookings.filter((b) => b.endsAt < now);
   const created = Number(sp.created);
   const skipped = Number(sp.skipped);
-  const day = (d: Date) => formatDateZurich(d, { weekday: undefined, timeZone: "UTC" });
+  const locale = await getRequestLocale();
+  const t = getT(locale);
+  const day = (d: Date) => formatDate(d, locale, { timeZone: "UTC" });
 
   return (
     <div>
-      <PageHeader title={`${s.resource.name} · ${weekdaysLabel(s.weekdays)}`} subtitle={`${s.startTime}–${s.endTime} · ${day(s.fromDate)} – ${day(s.untilDate)}`} back={{ href: "/bookings/series", label: "Serien" }}
-        action={s.status === "CANCELLED" ? <Badge tone="outline">Storniert</Badge> : <Badge tone="ok">Aktiv</Badge>} />
+      <PageHeader title={`${s.resource.name} · ${weekdaysLabelL(s.weekdays, locale)}`} subtitle={`${s.startTime}–${s.endTime} · ${day(s.fromDate)} – ${day(s.untilDate)}`} back={{ href: "/bookings/series", label: t("bookings.list.series") }}
+        action={s.status === "CANCELLED" ? <Badge tone="outline">{t("bookings.status.CANCELLED")}</Badge> : <Badge tone="ok">{t("bookings.series.active")}</Badge>} />
 
       {Number.isInteger(created) && created > 0 ? (
         <div className="mb-4"><Alert tone={skipped > 0 ? "warn" : "ok"}>
-          {created === 1 ? "1 Termin angelegt" : `${created} Termine angelegt`}{skipped > 0 ? `, ${skipped} wegen Konflikt übersprungen` : ""}.
+          {t(created === 1 ? "bookings.series.created.one" : "bookings.series.created.other", { n: created })}{skipped > 0 ? `, ${t("bookings.series.createdSkipped", { n: skipped })}` : ""}.
         </Alert></div>
       ) : null}
 
       <Card className="animate-rise divide-y divide-line overflow-hidden">
-        <Row k="Wochentage" v={weekdaysLabel(s.weekdays, true)} />
-        <Row k="Zeit" v={`${s.startTime}–${s.endTime}`} />
-        <Row k="Personen" v={String(s.persons)} />
-        {s.user ? <Row k="Angelegt von" v={s.user.name} /> : null}
-        {s.note ? <Row k="Bemerkung" v={s.note} /> : null}
+        <Row k={t("bookings.series.f.weekdays")} v={weekdaysLabelL(s.weekdays, locale, true)} />
+        <Row k={t("bookings.series.time")} v={`${s.startTime}–${s.endTime}`} />
+        <Row k={t("bookings.detail.persons")} v={String(s.persons)} />
+        {s.user ? <Row k={t("bookings.series.createdBy")} v={s.user.name} /> : null}
+        {s.note ? <Row k={t("bookings.detail.note")} v={s.note} /> : null}
       </Card>
 
-      <SectionTitle>{upcoming.length === 1 ? "1 kommender Termin" : `${upcoming.length} kommende Termine`}</SectionTitle>
+      <SectionTitle>{t(upcoming.length === 1 ? "bookings.series.upcoming.one" : "bookings.series.upcoming.other", { n: upcoming.length })}</SectionTitle>
       {upcoming.length ? (
         <Card className="animate-rise divide-y divide-line overflow-hidden">
-          {upcoming.map((b) => <Occurrence key={b.id} b={b} canCancel={cancellable.has(b.id)} />)}
+          {upcoming.map((b) => <Occurrence key={b.id} b={b} canCancel={cancellable.has(b.id)} locale={locale} t={t} />)}
         </Card>
-      ) : <p className="text-sm text-ink-3">Keine kommenden Termine.</p>}
+      ) : <p className="text-sm text-ink-3">{t("bookings.series.noUpcoming")}</p>}
 
       {past.length ? (
         <>
-          <SectionTitle>Vergangene</SectionTitle>
+          <SectionTitle>{t("bookings.series.past")}</SectionTitle>
           <Card className="animate-rise divide-y divide-line overflow-hidden">
-            {past.slice(-20).reverse().map((b) => <Occurrence key={b.id} b={b} canCancel={false} />)}
+            {past.slice(-20).reverse().map((b) => <Occurrence key={b.id} b={b} canCancel={false} locale={locale} t={t} />)}
           </Card>
         </>
       ) : null}
 
       {s.status === "ACTIVE" && cancellable.size ? (
         <>
-          <SectionTitle>Aktionen</SectionTitle>
+          <SectionTitle>{t("bookings.series.actions")}</SectionTitle>
           <CancelSeriesButton seriesId={s.id} upcoming={cancellable.size} />
         </>
       ) : null}
@@ -71,13 +75,13 @@ export default async function SeriesDetailPage({ params, searchParams }: { param
   );
 }
 
-function Occurrence({ b, canCancel }: { b: { id: string; startsAt: Date; endsAt: Date; status: string }; canCancel: boolean }) {
-  const st = BOOKING_STATUS[b.status] ?? { label: b.status, tone: "neutral" as const };
-  const label = formatDateZurich(b.startsAt);
+function Occurrence({ b, canCancel, locale, t }: { b: { id: string; startsAt: Date; endsAt: Date; status: string }; canCancel: boolean; locale: Locale; t: TFunction }) {
+  const st = bookingStatusView(b.status, t);
+  const label = formatDateL(b.startsAt, locale);
   return (
     <div className="flex items-center gap-3 px-4 py-2 min-h-14 text-sm">
       <Link href={`/bookings/${b.id}`} className={`min-w-0 flex-1 hover:underline ${b.status === "CANCELLED" ? "text-ink-3 line-through" : ""}`}>
-        <span className="tabular-nums">{label}</span> · <span className="tabular-nums">{formatTimeRange(b.startsAt, b.endsAt)}</span>
+        <span className="tabular-nums">{label}</span> · <span className="tabular-nums">{formatTimeRangeL(b.startsAt, b.endsAt, locale)}</span>
       </Link>
       {b.status !== "CONFIRMED" ? <Badge tone={st.tone}>{st.label}</Badge> : null}
       {canCancel ? <CancelOccurrenceButton bookingId={b.id} label={label} /> : null}

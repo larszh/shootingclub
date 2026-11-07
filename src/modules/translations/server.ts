@@ -119,7 +119,12 @@ async function translateChunkOnce(opts: ChunkOpts): Promise<ChunkResult> {
     signal: opts.signal,
   });
   const requested = items.map((i) => i.key);
-  const out = filterSuggestions(requested, res.data.items, (k) => referenceText(opts.locale, k));
+  const out = filterSuggestions(
+    requested,
+    res.data.items,
+    (k) => referenceText(opts.locale, k),
+    (k) => baseText(opts.locale, k) ?? referenceText(opts.locale, k),
+  );
   const skipped = opts.keys.filter((k) => !requested.includes(k));
   return { ...out, missing: [...out.missing, ...skipped], model: res.model };
 }

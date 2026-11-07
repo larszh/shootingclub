@@ -6,6 +6,7 @@ import { z } from "zod";
 import { db } from "@/lib/db";
 import { requireModule, requirePermission, requireTenant } from "@/lib/tenant";
 import { fail, ok, type ActionResult } from "@/lib/action-result";
+import { lfail, lok } from "@/lib/i18n/extra/admin1/action-result";
 import { zurichToUtc } from "@/lib/time";
 import { parseMoneyToCents } from "@/lib/money";
 import { getBookingSettings, getResource, getSlotsForDay, expireUnpaidOnlineBookings } from "./queries";
@@ -260,9 +261,9 @@ export async function saveBookingSettingsAction(_prev: ActionResult | null, form
     durationOptions = parseDurations(formData.get("durationsJson"));
     openingHours = JSON.parse(String(formData.get("openingHoursJson") ?? "{}"));
   } catch (e) {
-    return fail(durationsError(e, "Ungültige Eingaben bei Dauer oder Öffnungszeiten."));
+    return lfail(durationsError(e, "Ungültige Eingaben bei Dauer oder Öffnungszeiten."));
   }
-  if (new Set(durationOptions.map((d) => d.minutes)).size !== durationOptions.length) return fail("Jede Dauer darf nur einmal vorkommen.");
+  if (new Set(durationOptions.map((d) => d.minutes)).size !== durationOptions.length) return lfail("Jede Dauer darf nur einmal vorkommen.");
   const parsed = settingsSchema.safeParse({
     currency: formData.get("currency") || "CHF",
     slotStepMinutes: formData.get("slotStepMinutes"),
@@ -287,13 +288,13 @@ export async function saveBookingSettingsAction(_prev: ActionResult | null, form
   });
   if (!parsed.success) {
     const i = parsed.error.issues[0];
-    return fail(i ? `${i.path.join(".")}: ${i.message}` : "Ungültige Eingabe");
+    return lfail(i ? `${i.path.join(".")}: ${i.message}` : "Ungültige Eingabe");
   }
   const s = parsed.data;
-  if (s.allowOnline && s.onlineProvider === "NONE") return fail("Für Online-Zahlung muss ein Zahlungsanbieter gewählt sein.");
+  if (s.allowOnline && s.onlineProvider === "NONE") return lfail("Für Online-Zahlung muss ein Zahlungsanbieter gewählt sein.");
   if (s.allowOnline && s.onlineProvider !== "NONE") {
     const cfg = await db.paymentProviderConfig.findUnique({ where: { tenantId_provider: { tenantId: ctx.tenant.id, provider: s.onlineProvider } } });
-    if (!cfg?.enabled) return fail(`${s.onlineProvider} ist noch nicht eingerichtet oder nicht aktiviert (Reiter «Zahlungsanbieter»).`);
+    if (!cfg?.enabled) return lfail(`${s.onlineProvider} ist noch nicht eingerichtet oder nicht aktiviert (Reiter «Zahlungsanbieter»).`);
   }
   const data = {
     currency: s.currency,
@@ -320,7 +321,7 @@ export async function saveBookingSettingsAction(_prev: ActionResult | null, form
   await db.bookingSettings.upsert({ where: { tenantId: ctx.tenant.id }, create: { tenantId: ctx.tenant.id, ...data }, update: data });
   revalidatePath("/bookings");
   revalidatePath("/admin/bookings");
-  return ok(undefined, "Einstellungen gespeichert.");
+  return lok(undefined, "Einstellungen gespeichert.");
 }
 
 // ---------------------------------------------------------------------------
@@ -335,9 +336,9 @@ export async function saveResourceAction(_prev: ActionResult | null, formData: F
     const raw = formData.get("durationsJson");
     durationOptions = raw && formData.get("ownDurations") === "on" ? parseDurations(raw) : undefined;
   } catch (e) {
-    return fail(durationsError(e, "Ungültige Dauer-Angaben."));
+    return lfail(durationsError(e, "Ungültige Dauer-Angaben."));
   }
-  if (durationOptions && new Set(durationOptions.map((d) => d.minutes)).size !== durationOptions.length) return fail("Jede Dauer darf nur einmal vorkommen.");
+  if (durationOptions && new Set(durationOptions.map((d) => d.minutes)).size !== durationOptions.length) return lfail("Jede Dauer darf nur einmal vorkommen.");
   const parsed = resourceSchema.safeParse({
     name: formData.get("name"),
     description: formData.get("description") || undefined,
@@ -347,12 +348,12 @@ export async function saveResourceAction(_prev: ActionResult | null, formData: F
     durationOptions,
     isActive: formData.get("isActive") !== "off",
   });
-  if (!parsed.success) return fail(parsed.error.issues[0]?.message ?? "Ungültige Eingabe");
+  if (!parsed.success) return lfail(parsed.error.issues[0]?.message ?? "Ungültige Eingabe");
   const r = parsed.data;
   const data = { name: r.name, description: r.description ?? null, kind: r.kind, capacity: r.capacity, maxPersons: r.maxPersons, isActive: r.isActive, durationOptionsJson: r.durationOptions && r.durationOptions.length ? JSON.stringify(r.durationOptions) : null };
   if (id) {
     const ex = await db.resource.findUnique({ where: { id } });
-    if (!ex || ex.tenantId !== ctx.tenant.id) return fail("Nicht gefunden");
+    if (!ex || ex.tenantId !== ctx.tenant.id) return lfail("Nicht gefunden");
     await db.resource.update({ where: { id }, data });
   } else {
     const count = await db.resource.count({ where: { tenantId: ctx.tenant.id } });
@@ -366,21 +367,21 @@ export async function saveResourceAction(_prev: ActionResult | null, formData: F
 export async function setResourceActiveAction(id: string, active: boolean): Promise<ActionResult> {
   const ctx = await requireBookingsAdmin();
   const ex = await db.resource.findUnique({ where: { id } });
-  if (!ex || ex.tenantId !== ctx.tenant.id) return fail("Nicht gefunden");
+  if (!ex || ex.tenantId !== ctx.tenant.id) return lfail("Nicht gefunden");
   await db.resource.update({ where: { id }, data: { isActive: active } });
   revalidatePath("/bookings");
   revalidatePath("/admin/bookings/resources");
-  return ok();
+  return lok();
 }
 
 export async function deleteResourceAction(id: string): Promise<ActionResult> {
   const ctx = await requireBookingsAdmin();
   const ex = await db.resource.findUnique({ where: { id }, include: { _count: { select: { bookings: true } } } });
-  if (!ex || ex.tenantId !== ctx.tenant.id) return fail("Nicht gefunden");
-  if (ex._count.bookings > 0) return fail("Ressource hat Buchungen. Bitte deaktivieren statt löschen.");
+  if (!ex || ex.tenantId !== ctx.tenant.id) return lfail("Nicht gefunden");
+  if (ex._count.bookings > 0) return lfail("Ressource hat Buchungen. Bitte deaktivieren statt löschen.");
   await db.resource.delete({ where: { id } });
   revalidatePath("/admin/bookings/resources");
-  return ok();
+  return lok();
 }
 
 const blockSchema = z.object({
@@ -402,28 +403,28 @@ export async function addBlockAction(_prev: ActionResult | null, formData: FormD
     to: formData.get("to"),
     reason: formData.get("reason") || undefined,
   });
-  if (!parsed.success) return fail("Bitte Datum und Zeiten angeben.");
+  if (!parsed.success) return lfail("Bitte Datum und Zeiten angeben.");
   const { resourceId, date, from, toDate, to, reason } = parsed.data;
   const startsAt = zurichToUtc(date, from);
   const endsAt = zurichToUtc(toDate ?? date, to);
-  if (endsAt <= startsAt) return fail("Ende muss nach dem Beginn liegen.");
+  if (endsAt <= startsAt) return lfail("Ende muss nach dem Beginn liegen.");
   if (resourceId) {
     const r = await db.resource.findUnique({ where: { id: resourceId } });
-    if (!r || r.tenantId !== ctx.tenant.id) return fail("Ressource nicht gefunden");
+    if (!r || r.tenantId !== ctx.tenant.id) return lfail("Ressource nicht gefunden");
   }
   await db.resourceBlock.create({ data: { tenantId: ctx.tenant.id, resourceId: resourceId ?? null, startsAt, endsAt, reason: reason ?? null } });
   revalidatePath("/bookings");
   revalidatePath("/admin/bookings/resources");
-  return ok(undefined, "Sperrzeit angelegt.");
+  return lok(undefined, "Sperrzeit angelegt.");
 }
 
 export async function deleteBlockAction(id: string): Promise<ActionResult> {
   const ctx = await requireBookingsAdmin();
   const b = await db.resourceBlock.findUnique({ where: { id } });
-  if (!b || b.tenantId !== ctx.tenant.id) return fail("Nicht gefunden");
+  if (!b || b.tenantId !== ctx.tenant.id) return lfail("Nicht gefunden");
   await db.resourceBlock.delete({ where: { id } });
   revalidatePath("/admin/bookings/resources");
-  return ok();
+  return lok();
 }
 
 // ---------------------------------------------------------------------------
@@ -433,28 +434,28 @@ export async function deleteBlockAction(id: string): Promise<ActionResult> {
 export async function decideBookingAction(bookingId: string, decision: "APPROVE" | "REJECT", adminNote?: string): Promise<ActionResult> {
   const ctx = await requireBookingsAdmin();
   const b = await db.booking.findUnique({ where: { id: bookingId } });
-  if (!b || b.tenantId !== ctx.tenant.id) return fail("Nicht gefunden");
-  if (b.status !== "PENDING") return fail("Buchung wartet nicht auf Freigabe.");
-  if (decision !== "APPROVE" && decision !== "REJECT") return fail("Ungültige Entscheidung");
+  if (!b || b.tenantId !== ctx.tenant.id) return lfail("Nicht gefunden");
+  if (b.status !== "PENDING") return lfail("Buchung wartet nicht auf Freigabe.");
+  if (decision !== "APPROVE" && decision !== "REJECT") return lfail("Ungültige Entscheidung");
   adminNote = adminNote?.trim().slice(0, 191) || undefined;
   // Bedingt auf PENDING: bei gleichzeitiger Entscheidung gewinnt nur eine.
   const data = decision === "APPROVE"
     ? { status: "CONFIRMED", confirmedAt: new Date(), adminNote: adminNote ?? b.adminNote }
     : { status: "REJECTED", paymentStatus: ["UNPAID", "PENDING", "FAILED"].includes(b.paymentStatus) ? "NOT_REQUIRED" : b.paymentStatus, adminNote: adminNote ?? b.adminNote };
   const res = await db.booking.updateMany({ where: { id: bookingId, tenantId: ctx.tenant.id, status: "PENDING" }, data });
-  if (res.count === 0) return fail("Buchung wartet nicht auf Freigabe.");
+  if (res.count === 0) return lfail("Buchung wartet nicht auf Freigabe.");
   if (decision === "APPROVE" && b.paymentMethod === "INVOICE") await ensureInvoiceForBooking(bookingId);
   void notifyBooking(bookingId, decision === "APPROVE" ? "confirmed" : "rejected", ctx.user).catch(() => undefined);
   revalidatePath("/bookings");
   revalidatePath("/admin/bookings");
-  return ok(undefined, decision === "APPROVE" ? "Buchung freigegeben." : "Buchung abgelehnt.");
+  return lok(undefined, decision === "APPROVE" ? "Buchung freigegeben." : "Buchung abgelehnt.");
 }
 
 export async function markBookingPaidAction(bookingId: string, paid: boolean): Promise<ActionResult> {
   const ctx = await requireBookingsAdmin();
   const b = await db.booking.findUnique({ where: { id: bookingId } });
-  if (!b || b.tenantId !== ctx.tenant.id) return fail("Nicht gefunden");
-  if (!["PENDING", "CONFIRMED"].includes(b.status)) return fail("Die Buchung ist storniert oder abgelehnt.");
+  if (!b || b.tenantId !== ctx.tenant.id) return lfail("Nicht gefunden");
+  if (!["PENDING", "CONFIRMED"].includes(b.status)) return lfail("Die Buchung ist storniert oder abgelehnt.");
   const now = new Date();
   await db.$transaction([
     db.booking.update({ where: { id: bookingId }, data: { paymentStatus: paid ? "PAID" : "UNPAID", paidAt: paid ? now : null } }),
@@ -462,19 +463,19 @@ export async function markBookingPaidAction(bookingId: string, paid: boolean): P
   ]);
   revalidatePath("/bookings");
   revalidatePath("/admin/bookings");
-  return ok();
+  return lok();
 }
 
 export async function markBookingRefundedAction(bookingId: string): Promise<ActionResult> {
   const ctx = await requireBookingsAdmin();
   const b = await db.booking.findUnique({ where: { id: bookingId } });
-  if (!b || b.tenantId !== ctx.tenant.id) return fail("Nicht gefunden");
+  if (!b || b.tenantId !== ctx.tenant.id) return lfail("Nicht gefunden");
   await db.booking.update({ where: { id: bookingId }, data: { paymentStatus: "REFUNDED", ...(b.paymentStatus !== "REFUNDED" || !b.refundedAt ? { refundedAt: b.refundedAt ?? new Date() } : {}) } });
   if (b.paymentStatus !== "REFUNDED") {
     await recordAccountingEvent({ tenantId: ctx.tenant.id, kind: "refund", entity: "Booking", entityId: bookingId, actorId: ctx.user.id, actorName: ctx.user.name });
   }
   revalidatePath("/admin/bookings");
-  return ok();
+  return lok();
 }
 
 // ---------------------------------------------------------------------------
@@ -498,7 +499,7 @@ const adminBookingSchema = z.object({
  */
 export async function adminCreateBookingAction(_prev: ActionResult | null, formData: FormData): Promise<ActionResult> {
   const ctx = await requireBookingsAdmin();
-  if (!ctx.hasModule("bookings")) return fail("Das Modul Reservationen ist nicht aktiv.");
+  if (!ctx.hasModule("bookings")) return lfail("Das Modul Reservationen ist nicht aktiv.");
   const parsed = adminBookingSchema.safeParse({
     userId: formData.get("userId"),
     resourceId: formData.get("resourceId"),
@@ -509,24 +510,27 @@ export async function adminCreateBookingAction(_prev: ActionResult | null, formD
     payment: formData.get("payment") || "INVOICE",
     note: formData.get("note") || undefined,
   });
-  if (!parsed.success) return fail("Bitte Mitglied, Ressource, Datum, Zeit, Dauer und Anzahl Personen wählen.");
+  if (!parsed.success) return lfail("Bitte Mitglied, Ressource, Datum, Zeit, Dauer und Anzahl Personen wählen.");
   const { userId, resourceId, date, time, durationMinutes, persons, payment, note } = parsed.data;
 
   const membership = await db.membership.findFirst({ where: { userId, tenantId: ctx.tenant.id, status: accessStatusWhere(), user: { deletedAt: null } }, select: { id: true } });
-  if (!membership) return fail("Mitglied nicht gefunden oder ausgetreten.");
+  if (!membership) return lfail("Mitglied nicht gefunden oder ausgetreten.");
   const [settings, resource] = await Promise.all([getBookingSettings(ctx.tenant.id), getResource(ctx.tenant.id, resourceId)]);
-  if (!resource) return fail("Ressource nicht gefunden.");
+  if (!resource) return lfail("Ressource nicht gefunden.");
   const option = (resource.durationOptions ?? settings.durationOptions).find((o) => o.minutes === durationMinutes);
-  if (!option) return fail("Diese Dauer ist für die Ressource nicht eingerichtet.");
+  if (!option) return lfail("Diese Dauer ist für die Ressource nicht eingerichtet.");
   const maxPersons = maxPersonsFor(resource, settings);
-  if (persons > maxPersons) return fail(personsLimitError(maxPersons));
+  if (persons > maxPersons) return lfail(personsLimitError(maxPersons));
   const plan = planRequest(option, resource, settings, persons);
 
   await expireUnpaidOnlineBookings(ctx.tenant.id);
   const slots = await getSlotsForDay(ctx.tenant.id, resource, settings, date, durationMinutes, { bypassLimits: true, requestedUnits: plan.units });
   const slot = slots.find((s) => s.time === time);
-  if (!slot) return fail("Diese Zeit liegt ausserhalb der Öffnungszeiten.");
-  if (!slot.available) return fail(`Dieser Termin ist nicht verfügbar (${slot.reason}).`);
+  if (!slot) return lfail("Diese Zeit liegt ausserhalb der Öffnungszeiten.");
+  if (!slot.available) {
+    const t = getT(await getRequestLocale());
+    return fail(t("bookings.err.slotUnavailable", { reason: slotReasonLabel(slot.reason, t) }));
+  }
 
   // Standbetrieb: ausserhalb der bewilligten Schiesszeiten darf die Verwaltung reservieren, mit Vermerk.
   let windowNote: string | null = null;
@@ -577,7 +581,7 @@ export async function adminCreateBookingAction(_prev: ActionResult | null, formD
     confirmedAt: now,
     paidAt,
   });
-  if (!booking) return fail(SLOT_TAKEN);
+  if (!booking) return lfail(SLOT_TAKEN);
   if (paymentMethod === "INVOICE") await ensureInvoiceForBooking(booking.id);
   void notifyBooking(booking.id, "created", ctx.user).catch(() => undefined);
 

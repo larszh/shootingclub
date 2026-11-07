@@ -6,8 +6,11 @@ import { getAnnouncement, requireEventsPermission } from "@/modules/events/queri
 import { AnnouncementForm } from "@/modules/events/ui/announcement-form";
 import { writingAvailability } from "@/modules/ai/content/service";
 import { ContentTranslations } from "@/modules/ai/content/ui/content-translations";
+import { getRequestLocale, getT } from "@/lib/i18n";
 
-export const metadata: Metadata = { title: "Mitteilung bearbeiten" };
+export async function generateMetadata(): Promise<Metadata> {
+  return { title: getT(await getRequestLocale())("misc.events.annEdit") };
+}
 
 export default async function EditAnnouncementPage({ params }: { params: Promise<{ id: string }> }) {
   const ctx = await requireEventsPermission("announcements.manage");
@@ -16,10 +19,11 @@ export default async function EditAnnouncementPage({ params }: { params: Promise
   if (!a) notFound();
   // expiresAt liegt am Tagesanfang nach dem letzten sichtbaren Tag
   const writing = await writingAvailability(ctx, "announcement");
+  const t = getT(await getRequestLocale());
   const expiresOn = a.expiresAt ? addDays(zurichParts(a.expiresAt).dateStr, -1) : "";
   return (
     <div>
-      <PageHeader title="Mitteilung bearbeiten" back={{ href: "/admin/events/announcements", label: "Mitteilungen" }} />
+      <PageHeader title={t("misc.events.annEdit")} back={{ href: "/admin/events/announcements", label: t("misc.events.announcements") }} />
       <AnnouncementForm initial={{ id: a.id, title: a.title, body: a.body, pinned: a.pinned, expiresOn }} minDate={todayZurich()} writing={writing} />
       <div className="mt-6">
         <ContentTranslations ctx={ctx} type="announcement" id={a.id} />

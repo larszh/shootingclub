@@ -78,11 +78,12 @@ async function saveKeyFor(ref: AiScopeRef, apiKey: unknown, actor: { id: string;
 async function testKeyFor(ref: AiScopeRef, apiKey: unknown, actor: { id: string; name: string }, tenantId: string | null, t: ReturnType<typeof aiT>): Promise<ActionResult> {
   const key = asString(apiKey).trim();
   const res = key ? await testKey(key) : await testStoredKey(ref);
-  const hint = key ? `…${key.slice(-4)}` : "stored";
+  const stored = key ? null : await (ref.scope === "platform" ? getPlatformAiSettings() : getTenantAiSettings(ref.tenantId));
+  const hint = key ? `…${key.slice(-4)}` : stored?.keyHint ? `…${stored.keyHint}` : null;
   await audit({
     tenantId, actorId: actor.id, actorName: actor.name, action: "ai.key.test",
     entity: ref.scope === "platform" ? "PlatformAiSettings" : "TenantAiSettings", entityId: tenantId ?? "global",
-    detail: `${key ? "entered" : "stored"} ${hint} ${res.ok ? "ok" : res.code}`,
+    detail: [key ? "entered" : "stored", hint, res.ok ? "ok" : res.code].filter(Boolean).join(" "),
   });
   if (res.ok) return ok(undefined, t("aiSet.key.testOk"));
   return fail(testMessage(t, res.code));

@@ -243,7 +243,9 @@ export async function streamText(opts: AiStreamOptions): Promise<ReadableStream<
       } catch (err) {
         const e = toAiError(err);
         if (e.code !== "aborted") console.error(`[ai] ${opts.feature}: ${e.code}`);
-        await logAiUsage({ ...logBase(opts, p.userId), model: p.model, usage: ZERO_USAGE, ok: false, errorCode: e.code });
+        // Abbruch/Fehler: bereits verrechnete Token (Eingabe, Cache, bisherige Ausgabe) trotzdem zählen.
+        const partial = stream.currentMessage;
+        await logAiUsage({ ...logBase(opts, p.userId), model: partial?.model || p.model, usage: partialUsage(partial?.usage, text), ok: false, errorCode: e.code });
         push(AI_STREAM_ERROR_MARK + e.code);
       } finally {
         if (!closed) {
@@ -261,6 +263,15 @@ export async function streamText(opts: AiStreamOptions): Promise<ReadableStream<
       stream.abort();
     },
   });
+}
+
+/**
+ * Verbrauch eines abgebrochenen Streams: Stand aus message_start/message_delta. Die Ausgabe-Token
+ * meldet die API erst am Ende, daher mindestens grob aus dem bereits gestreamten Text schätzen.
+ */
+function partialUsage(u: Parameters<typeof usageFrom>[0], text: string): AiTokenUsage {
+  const usage = u ? usageFrom(u) : { ...ZERO_USAGE };
+  return { ...usage, outputTokens: Math.max(usage.outputTokens, Math.ceil(text.length / 4)) };
 }
 
 /** Response für einen Route-Handler (kein Puffern durch nginx, kein Caching). */

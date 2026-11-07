@@ -4,7 +4,7 @@ import fr from "./fr";
 import itDict from "./it";
 import en from "./en";
 import { afterEach } from "vitest";
-import { allDictionaryKeys, baseText, formatDate, formatMoneyLocale, getOverrides, getT, interpolate, lookup, mergeDicts, normalizeLocale, pickExtra, setOverrides } from "./core";
+import { allDictionaryKeys, baseText, formatDate, formatMoneyLocale, formatNumberL, getOverrides, getT, interpolate, lookup, mergeDicts, normalizeLocale, pickExtra, setOverrides } from "./core";
 
 describe("i18n core", () => {
   it("normalisiert Sprachen", () => {
@@ -100,5 +100,19 @@ describe("i18n core", () => {
       expect(keys).toContain("invoice.title");
       expect([...keys].sort()).toEqual(keys);
     });
+  });
+});
+
+describe("formatNumberL (gleiche Ausgabe auf Server und Client)", () => {
+  it("setzt das Tausendertrennzeichen unabhängig von der ICU-Version", () => {
+    expect(formatNumberL(3000, "de")).toBe("3’000");
+    expect(formatNumberL(185185, "en")).toBe("185’185");
+    expect(formatNumberL(3000, "fr")).toBe("3\u202F000");
+    expect(formatNumberL(1.5, "de", { minimumFractionDigits: 2 })).toBe("1.50");
+  });
+
+  it("Beträge mit Währung verwenden dieselben Trennzeichen", () => {
+    expect(formatMoneyLocale(630000, "de")).toBe("CHF\u00A06’300.00");
+    expect(formatMoneyLocale(630000, "en")).not.toContain("'");
   });
 });

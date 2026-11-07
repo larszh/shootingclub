@@ -26,8 +26,17 @@ export function sanitizeInternalHref(raw: string): string | null {
   const path = href.split(/[?#]/)[0]!;
   if (path.split("/").some((seg) => seg === ".." || seg === ".")) return null;
   if (path === "/api" || path.startsWith("/api/")) return null;
-  // Prozent-Kodierung, die zu Schrägstrichen/Backslashes/Steuerzeichen dekodiert, ablehnen.
-  if (/%(?:2f|5c|0|1|7f)/i.test(path)) return null;
+  // Prozent-Kodierung, die zu Punkten (Browser lesen «%2e%2e» als «..»), Schrägstrichen,
+  // Backslashes oder Steuerzeichen dekodiert, ablehnen.
+  if (/%(?:2e|2f|5c|0|1|7f)/i.test(path)) return null;
+  // Zur Sicherheit so auflösen wie der Browser: das Ziel muss derselbe Pfad bleiben und keine API-Route sein.
+  try {
+    const resolved = new URL(href, "http://app.invalid").pathname;
+    if (resolved === "/api" || resolved.startsWith("/api/")) return null;
+    if (resolved !== path) return null;
+  } catch {
+    return null;
+  }
   return href;
 }
 

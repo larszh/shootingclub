@@ -8,6 +8,8 @@
  * Platzhalter {name} usw. sind in allen drei Sprachen identisch.
  * Englisch (Welle E) steht weiter unten in der eigenen Tabelle `en` mit denselben Schlüsseln und Platzhaltern.
  */
+import seriesRows from "./bookings/series";
+
 type Row = readonly [de: string, fr: string, it: string];
 
 export function frenchSpacing(s: string): string {
@@ -702,6 +704,14 @@ const en: Record<string, string> = {
   "bookings.join.err.decided": "This request has already been decided.",
   "bookings.join.withdraw.done": "Request withdrawn.",
 };
+
+// Teil-Wörterbuch mit Englisch im selben Tupel (Serienbuchungen).
+for (const [key, [d, f, i, e]] of Object.entries(seriesRows)) {
+  de[key] = d;
+  fr[key] = frenchSpacing(f);
+  it[key] = i;
+  en[key] = e;
+}
 
 const dict: { de: Record<string, string>; fr: Record<string, string>; it: Record<string, string>; en: Record<string, string> } = { de, fr, it, en };
 export default dict;

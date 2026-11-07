@@ -51,7 +51,7 @@ export default async function SuperAiPage({ searchParams }: { searchParams: Prom
         <StatCard label={t("aiSet.stat.usage")} value={fmtInt(usedTokens, locale)} icon={<Gauge className="h-4 w-4" />} hint={pct != null ? `${pct} %` : undefined} tone={pct != null && pct >= 90 ? "warn" : "neutral"} />
         <StatCard
           label={t("aiSet.stat.budget")}
-          value={settings.monthlyTokenLimit ? `CHF ${fmtChf(chfForTokens(settings.monthlyTokenLimit, settings.model), locale)}` : t("aiSet.budget.none")}
+          value={settings.monthlyTokenLimit ? `${t("aiSet.usage.chf")} ${fmtChf(chfForTokens(settings.monthlyTokenLimit, settings.model), locale)}` : t("aiSet.budget.none")}
           hint={settings.monthlyTokenLimit ? t("aiSet.usage.limitOf", { used: fmtInt(usedTokens, locale), limit: fmtInt(settings.monthlyTokenLimit, locale) }) : undefined}
           icon={<Wallet className="h-4 w-4" />}
         />
@@ -87,7 +87,7 @@ export default async function SuperAiPage({ searchParams }: { searchParams: Prom
       />
 
       <h3 className="mb-2 mt-5 text-sm font-medium text-ink-2">{t("aiSet.usage.byMonth")}</h3>
-      <UsageTableCard table={byMonth} firstColumn={t("aiSet.usage.month")} labels={monthLabels} locale={locale} />
+      <UsageTableCard table={byMonth} firstColumn={t("aiSet.usage.month")} labels={monthLabels} locale={locale} emptyText={t("aiSet.usage.monthsEmpty")} />
       <p className="mt-2 text-xs text-ink-3">{t("aiSet.usage.estimateNote")}</p>
 
       <SectionTitle>{t("aiSet.audit.section")}</SectionTitle>

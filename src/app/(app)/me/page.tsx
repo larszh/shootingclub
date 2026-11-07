@@ -3,7 +3,7 @@ import Link from "next/link";
 import { Bell, BookUser, CalendarDays, ChevronRight, CreditCard, FileUp, FolderOpen, History, Home, KeyRound, LogOut, Mail, Megaphone, MessageCircle, Package, Server, Settings, Shield, ShieldCheck, Target, Users, BarChart3, Wallet, BadgeCheck, Trophy, Tv, DoorOpen, HandHelping, GraduationCap, Award, Boxes, Clock, Coffee, FileInput, BookOpenCheck, Code2, Handshake, Landmark, UserPlus, Bot, FileText, Languages, LifeBuoy } from "lucide-react";
 import { getAppContext } from "@/lib/tenant";
 import { db } from "@/lib/db";
-import { logoutAction } from "@/modules/core/auth-actions";
+import { LogoutForm } from "@/components/logout-form";
 import { Badge, Card, SectionTitle } from "@/components/ui";
 import { Avatar, tenantLogoUrl } from "@/components/avatar";
 import { TenantLogo } from "@/components/logo";
@@ -252,11 +252,11 @@ export default async function MePage() {
         <p className="mt-2.5 text-sm text-ink-3">{t("shell.me.noClub")}</p>
       )}
 
-      <form action={logoutAction} className="mt-8">
+      <LogoutForm className="mt-8">
         <button type="submit" className="press w-full h-11 rounded-control border border-line text-ink-2 inline-flex items-center justify-center gap-2 hover:bg-surface-2">
           <LogOut className="h-4 w-4" /> {t("shell.me.logout")}
         </button>
-      </form>
+      </LogoutForm>
       <p className="text-center text-xs text-ink-3 mt-6">{t("shell.me.version", { version: "0.2" })}</p>
     </div>
   );

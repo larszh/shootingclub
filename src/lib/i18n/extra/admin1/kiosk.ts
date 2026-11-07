@@ -4,6 +4,7 @@ import type { Rows } from "./row";
 const rows: Rows = {
   // Verwaltung: Reiter und Seiten
   "adm1.kiosk.manage": ["Schützenstube verwalten", "Gérer la buvette", "Gestire la buvette", "Manage the clubhouse bar"],
+  "adm1.kiosk.metaTitle": ["{area}: {tab}", "{area} : {tab}", "{area}: {tab}", "{area}: {tab}"],
   "adm1.kiosk.tab.billing": ["Abrechnung", "Décompte", "Conteggio", "Billing"],
   "adm1.kiosk.tab.entries": ["Einträge", "Écritures", "Voci", "Entries"],
   "adm1.kiosk.tab.cash": ["Kasse", "Caisse", "Cassa", "Cash"],
@@ -18,7 +19,7 @@ const rows: Rows = {
   "adm1.kiosk.blockerBilling": ["Bitte zuerst das Modul «Mitgliederbeiträge» aktivieren: die Rechnungen erscheinen dort und unter «Zahlungen».", "Merci d’activer d’abord le module «Cotisations des membres» : les factures y apparaissent ainsi que sous «Paiements».", "Attivare prima il modulo «Quote dei soci»: le fatture appaiono lì e in «Pagamenti».", "Please activate the “Membership fees” module first: the invoices appear there and under “Payments”."],
   "adm1.kiosk.blockerProfile": ["Bitte zuerst das Rechnungsprofil (Zahlungsempfänger und IBAN) ausfüllen.", "Merci de compléter d’abord le profil de facturation (bénéficiaire et IBAN).", "Compilare prima il profilo di fatturazione (beneficiario e IBAN).", "Please complete the billing profile (payee and IBAN) first."],
   "adm1.kiosk.openTotal": ["Offen total", "Total ouvert", "Totale aperto", "Open total"],
-  "adm1.kiosk.membersOpen": ["Mitglieder mit Offenem", "Membres avec montants ouverts", "Soci con importi aperti", "Members with open items"],
+  "adm1.kiosk.membersOpen": ["Mitglieder mit Offenem", "Membres débiteurs", "Soci con importi aperti", "Members owing"],
   "adm1.kiosk.cashToday": ["Bar heute", "Comptant aujourd’hui", "Contanti oggi", "Cash today"],
   "adm1.kiosk.cashTodayShort": ["Heute", "Aujourd’hui", "Oggi", "Today"],
   "adm1.kiosk.inPeriod": ["Im Zeitraum offen", "Ouvert dans la période", "Aperto nel periodo", "Open in period"],

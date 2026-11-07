@@ -87,6 +87,7 @@ export default async function QualificationsPage({ searchParams }: { searchParam
       <SectionTitle>{t("adm2.courses.q.holders")}</SectionTitle>
       <LinkTabs
         className="mb-3"
+        locale={locale}
         active={show}
         items={[
           { value: "all", label: t("adm2.common.all"), href: "/courses/qualifications", count: current.length },

@@ -10,6 +10,7 @@ import type { TFunction, Locale } from "@/lib/i18n/core";
 import { liveFormOptions, listLiveBoards, nowDate, requireLiveAdmin } from "@/modules/live/admin";
 import { isExpired } from "@/modules/live/logic";
 import { LiveBoardForm } from "@/modules/live/ui/board-form";
+import { localizedProgramName } from "@/modules/scores/preset-i18n";
 
 export async function generateMetadata(): Promise<Metadata> {
   return { title: getT(await getRequestLocale())("adm2.live.title") };
@@ -35,7 +36,7 @@ export default async function LiveBoardsPage() {
         <h2 className="mb-1 font-semibold">{t("adm2.live.new")}</h2>
         <p className="mb-4 text-sm text-ink-3">{t("adm2.live.newText")}</p>
         <LiveBoardForm
-          programs={options.programs}
+          programs={options.programs.map((p) => ({ ...p, name: localizedProgramName(p.name, locale) }))}
           events={events}
           values={{ title: t("adm2.live.title"), programId: "", eventId: "", date: today, showDecimals: false, expiresAt: `${today}T23:59` }}
         />
@@ -71,7 +72,7 @@ function BoardList({ boards, now, t, locale }: { boards: Awaited<ReturnType<type
                 {expired ? <Badge tone="outline">{t("adm2.live.expired")}</Badge> : <Badge tone="ok">{t("adm2.live.activeBadge")}</Badge>}
               </div>
               <div className="truncate text-xs text-ink-3">
-                {[b.day ? dayKeyLabel(b.day, locale) : t("adm2.live.today"), b.programName ?? t("adm2.live.allPrograms"), b.eventTitle].filter(Boolean).join(" · ")}
+                {[b.day ? dayKeyLabel(b.day, locale) : t("adm2.live.today"), (b.programName ? localizedProgramName(b.programName, locale) : t("adm2.live.allPrograms")), b.eventTitle].filter(Boolean).join(" · ")}
               </div>
               {b.expiresAt ? <div className="text-xs text-ink-3">{t("adm2.live.until", { date: formatDateTime(b.expiresAt, locale) })}</div> : null}
             </div>

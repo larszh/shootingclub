@@ -36,17 +36,20 @@ export function WeaponCategorySelect({ participantId, value, options, name, clas
     });
   }
 
+  // Breite über den Wrapper: Select bringt immer w-full mit, und cn() merged keine Tailwind-Klassen.
   return (
-    <Select
-      value={current}
-      disabled={pending}
-      onChange={(e) => onChange(e.target.value)}
-      aria-label={t("misc.weapon.selectFor", { name })}
-      className={className ?? "h-11 w-32 shrink-0"}
-    >
-      <option value="">{t("misc.weapon.none")}</option>
-      {list.map((w) => <option key={w} value={w}>{w}</option>)}
-    </Select>
+    <div className={className ?? "w-32 shrink-0"}>
+      <Select
+        value={current}
+        disabled={pending}
+        onChange={(e) => onChange(e.target.value)}
+        aria-label={t("misc.weapon.selectFor", { name })}
+        className="h-11"
+      >
+        <option value="">{t("misc.weapon.none")}</option>
+        {list.map((w) => <option key={w} value={w}>{w}</option>)}
+      </Select>
+    </div>
   );
 }
 

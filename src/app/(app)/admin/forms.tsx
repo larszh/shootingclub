@@ -263,7 +263,7 @@ export function BrandingForm({ locale, tenantName, logoUrl, brandColor, brandCol
               {BRAND_PRESETS.map((p) => {
                 const active = c1 === p.hex;
                 return (
-                  <button key={p.hex} type="button" role="radio" aria-checked={active} aria-label={p.name} title={p.name} onClick={() => setColor(p.hex)}
+                  <button key={p.hex} type="button" role="radio" aria-checked={active} aria-label={t(`misc.brand.color.${p.hex.slice(1)}`)} title={t(`misc.brand.color.${p.hex.slice(1)}`)} onClick={() => setColor(p.hex)}
                     className={cn("press relative aspect-square w-full min-h-11 rounded-full border-2 transition-transform", active ? "border-ink scale-105" : "border-transparent")}
                     style={{ background: p.hex }}>
                     {active ? <Check className="absolute inset-0 m-auto h-4 w-4" style={{ color: contrastReport(p.hex)?.textColor }} /> : null}

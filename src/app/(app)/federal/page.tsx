@@ -34,6 +34,7 @@ import { formatDate, getRequestLocale, getT, type Locale, type TFunction } from 
 import { dayKeyLabel } from "@/lib/i18n/extra/admin2/msg";
 import { officialKindText, tCount } from "@/modules/scores/ui/labels";
 import { StartFederalMatchForm } from "@/modules/federal/ui/start-match-form";
+import { localizedProgramName } from "@/modules/scores/preset-i18n";
 
 export async function generateMetadata(): Promise<Metadata> {
   return { title: getT(await getRequestLocale())("shooting.federal.title") };
@@ -52,13 +53,14 @@ function PassBadge({ passed, t }: { passed: boolean | null; t: TFunction }) {
   return <Badge tone="outline">{t("shooting.federal.pass.none")}</Badge>;
 }
 
-function ResultItem({ r, showName, t }: { r: OfficialResultRow; showName: boolean; t: TFunction }) {
+function ResultItem({ r, showName, t, locale }: { r: OfficialResultRow; showName: boolean; t: TFunction; locale: Locale }) {
+  const program = localizedProgramName(r.program, locale);
   return (
     <Link href={`/scores/matches/${r.matchId}`} className="press flex items-center gap-3 px-4 py-3 hover:bg-surface-2/60">
       <div className="min-w-0 flex-1">
-        <div className="font-medium truncate">{showName ? r.name : r.program}</div>
+        <div className="font-medium truncate">{showName ? r.name : program}</div>
         <div className="text-xs text-ink-3 truncate">
-          {formatSwissDate(r.date)} · {showName ? `${r.program} · ` : ""}{officialKindText(t, r.kind)}{r.attempt ? t("shooting.federal.attempt", { n: r.attempt }) : ""}{r.eventTitle ? ` · ${r.eventTitle}` : ""}
+          {formatSwissDate(r.date)} · {showName ? `${program} · ` : ""}{officialKindText(t, r.kind)}{r.attempt ? t("shooting.federal.attempt", { n: r.attempt }) : ""}{r.eventTitle ? ` · ${r.eventTitle}` : ""}
         </div>
       </div>
       <div className="shrink-0 text-right">
@@ -128,7 +130,7 @@ export default async function FederalPage({ searchParams }: { searchParams: Prom
       </Card>
       {myResults.length ? (
         <Card className="animate-rise mt-3 divide-y divide-line overflow-hidden">
-          {myResults.map((r) => <ResultItem key={r.id} r={r} showName={false} t={t} />)}
+          {myResults.map((r) => <ResultItem key={r.id} r={r} showName={false} t={t} locale={locale} />)}
         </Card>
       ) : null}
     </>
@@ -155,7 +157,7 @@ export default async function FederalPage({ searchParams }: { searchParams: Prom
                 <div className="mt-2 flex flex-wrap gap-2">
                   {e.matches.map((m) => (
                     <LinkButton key={m.id} href={`/scores/matches/${m.id}`} variant="secondary" size="sm" className="h-11">
-                      {t("shooting.federal.confirmedCount", { name: m.programName, official: m.officialCount, total: m.participantCount })}
+                      {t("shooting.federal.confirmedCount", { name: localizedProgramName(m.programName, locale), official: m.officialCount, total: m.participantCount })}
                     </LinkButton>
                   ))}
                 </div>
@@ -260,7 +262,7 @@ export default async function FederalPage({ searchParams }: { searchParams: Prom
           </div>
           <StartFederalMatchForm
             events={openEvents.map((e) => ({ id: e.id, label: `${formatDate(e.startsAt, locale)} · ${e.title}`, yesCount: e.yesCount }))}
-            programs={programs.map((p) => ({ id: p.id, name: p.name, kindLabel: officialKindText(t, p.officialKind), isOp: p.officialKind === "OP" }))}
+            programs={programs.map((p) => ({ id: p.id, name: localizedProgramName(p.name, locale), kindLabel: officialKindText(t, p.officialKind), isOp: p.officialKind === "OP" }))}
             defaultEventId={openEvents.find((e) => swissDay(e.startsAt) >= today)?.id}
           />
         </Card>
@@ -296,7 +298,7 @@ export default async function FederalPage({ searchParams }: { searchParams: Prom
               <span className="w-8 shrink-0 text-center text-sm font-semibold tabular-nums text-ink-3">{r.rank}.</span>
               <span className="min-w-0 flex-1">
                 <span className="block font-medium truncate">{r.name}{r.isGuest ? <span className="ml-1 text-xs text-ink-3">{t("adm2.federal.p.guest")}</span> : null}</span>
-                <span className="block text-xs text-ink-3 truncate">{formatDate(r.date, locale)} · {r.program}</span>
+                <span className="block text-xs text-ink-3 truncate">{formatDate(r.date, locale)} · {localizedProgramName(r.program, locale)}</span>
               </span>
               <span className="shrink-0 text-right">
                 <span className="block font-semibold tabular-nums">{formatScore(r.total, r.decimal)}</span>
@@ -346,7 +348,7 @@ export default async function FederalPage({ searchParams }: { searchParams: Prom
       </form>
       {shown.length ? (
         <Card className="animate-rise divide-y divide-line overflow-hidden">
-          {shown.map((r) => <ResultItem key={r.id} r={r} showName t={t} />)}
+          {shown.map((r) => <ResultItem key={r.id} r={r} showName t={t} locale={locale} />)}
         </Card>
       ) : (
         <EmptyState icon={<BadgeCheck className="h-5 w-5" />} title={t("adm2.federal.p.noOfficial")} text={t("adm2.federal.p.noOfficialText")} />

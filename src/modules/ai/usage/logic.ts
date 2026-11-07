@@ -85,7 +85,19 @@ export function blendedChfPerMillion(model: string): number {
   return r.input * 0.8 + r.output * 0.2;
 }
 
-/** CHF-Budget → Token-Limit (abgerundet). */
+/**
+ * Tokens, die gegen ein Monatslimit zählen («Budget-Tokens»): der Verbrauch so gewichtet, dass
+ * er zur CHF-Umrechnung des Limits passt – also geschätzte Kosten ÷ Mischpreis. Ein Gemisch aus
+ * 80 % Eingabe und 20 % Ausgabe zählt damit 1:1; Cache-Lesen zählt nur ≈ 10 % der Eingabe,
+ * Cache-Schreiben ≈ 125 %. So sperrt ein Budget von «CHF 10» bei ≈ CHF 10 geschätztem Verbrauch.
+ */
+export function budgetTokens(u: TokenCounts, model: string): number {
+  const blended = blendedChfPerMillion(model);
+  if (!(blended > 0)) return sumTokens(u);
+  return Math.round((estimateChf(u, model) / blended) * 1_000_000);
+}
+
+/** CHF-Budget → Token-Limit (abgerundet, in Budget-Tokens, siehe `budgetTokens`). */
 export function tokensForChf(chf: number, model: string): number {
   if (!Number.isFinite(chf) || chf <= 0) return 0;
   return Math.floor((chf / blendedChfPerMillion(model)) * 1_000_000);

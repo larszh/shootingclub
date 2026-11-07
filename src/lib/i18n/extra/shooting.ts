@@ -9,6 +9,8 @@
  * Aufbau: [Deutsch, Französisch, Italienisch] pro Schlüssel.
  * Englisch (Welle E) steht weiter unten in der eigenen Tabelle `en` mit denselben Schlüsseln und Platzhaltern.
  */
+import programFormRows from "./shooting/program-form";
+
 type Row = readonly [de: string, fr: string, it: string];
 
 const ROWS: Record<string, Row> = {
@@ -2017,6 +2019,14 @@ const en: Record<string, string> = {
   "shooting.err.clientIdMissing": "Client ID missing",
   "shooting.err.deleteOfficial": "The pass contains officially confirmed results. Please revoke the confirmations first (range officer).",
 };
+
+// Teil-Wörterbuch mit Englisch im selben Tupel (Programm-Editor).
+for (const [key, [d, f, i, e]] of Object.entries(programFormRows)) {
+  de[key] = d;
+  fr[key] = frTypography(f);
+  it[key] = i;
+  en[key] = e;
+}
 
 const dict: { de: Record<string, string>; fr: Record<string, string>; it: Record<string, string>; en: Record<string, string> } = { de, fr, it, en };
 export default dict;

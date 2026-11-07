@@ -8,7 +8,7 @@ import { getRequestLocale, getT } from "@/lib/i18n";
 
 export async function generateMetadata(): Promise<Metadata> {
   const t = getT(await getRequestLocale());
-  return { title: `${t("adm1.home.kiosk")}: ${t("adm1.kiosk.tab.products")}` };
+  return { title: t("adm1.kiosk.metaTitle", { area: t("adm1.home.kiosk"), tab: t("adm1.kiosk.tab.products") }) };
 }
 
 export default async function KioskProductsPage() {

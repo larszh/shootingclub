@@ -16,7 +16,7 @@ import { KioskInvoiceActions, ReleaseCancelledButton } from "@/modules/kiosk/ui/
 
 export async function generateMetadata(): Promise<Metadata> {
   const t = getT(await getRequestLocale());
-  return { title: `${t("adm1.home.kiosk")}: ${t("adm1.kiosk.tab.billing")}` };
+  return { title: t("adm1.kiosk.metaTitle", { area: t("adm1.home.kiosk"), tab: t("adm1.kiosk.tab.billing") }) };
 }
 
 export default async function AdminKioskPage({ searchParams }: { searchParams: Promise<{ from?: string; to?: string; preset?: string }> }) {

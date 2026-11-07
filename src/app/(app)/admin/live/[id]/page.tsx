@@ -12,6 +12,7 @@ import { getLiveBoard, liveFormOptions, nowDate, requireLiveAdmin } from "@/modu
 import { isExpired } from "@/modules/live/logic";
 import { LiveBoardActions } from "@/modules/live/ui/board-actions";
 import { LiveBoardForm } from "@/modules/live/ui/board-form";
+import { localizedProgramName } from "@/modules/scores/preset-i18n";
 
 export async function generateMetadata(): Promise<Metadata> {
   return { title: getT(await getRequestLocale())("adm2.live.title") };
@@ -69,7 +70,7 @@ export default async function LiveBoardDetailPage({ params }: { params: Promise<
       <SectionTitle>{t("adm2.live.settings")}</SectionTitle>
       <Card className="p-4">
         <LiveBoardForm
-          programs={programs}
+          programs={programs.map((p) => ({ ...p, name: localizedProgramName(p.name, locale) }))}
           events={events}
           values={{
             id: b.id, title: b.title, programId: b.programId ?? "", eventId: b.eventId ?? "", date: b.day ?? zurichParts(b.createdAt).dateStr,

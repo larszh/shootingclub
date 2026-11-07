@@ -9,7 +9,7 @@ import { bookingStats, listTenantBookings } from "@/modules/bookings/queries";
 import { BookingCard } from "@/modules/bookings/ui/booking-card";
 import { DecideButtons } from "@/modules/bookings/ui/booking-actions";
 import { formatTimeRange, todayZurich } from "@/lib/time";
-import { formatDate, getRequestLocale, getT } from "@/lib/i18n";
+import { displayUserName, formatDate, getRequestLocale, getT } from "@/lib/i18n";
 import { formatMoney } from "@/lib/money";
 import Link from "next/link";
 import { personsSuffix } from "@/modules/bookings/pricing";
@@ -48,7 +48,7 @@ export default async function AdminBookingsPage() {
             <Card key={b.id} className="p-4">
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
-                  <Link href={`/bookings/${b.id}`} className="font-medium hover:underline">{b.resource.name} · {b.user?.name}</Link>
+                  <Link href={`/bookings/${b.id}`} className="font-medium hover:underline">{b.resource.name} · {displayUserName(b.user?.name, t)}</Link>
                   {b.viaTenantId ? <div className="mt-0.5"><Badge tone="outline">{t("adm1.bk.partnerBadge", { name: partners[b.viaTenantId] ?? t("adm1.bk.partnerClub") })}</Badge></div> : null}
                   <div className="text-xs text-ink-3">{formatDate(b.startsAt, locale, { weekday: "short" })} · {formatTimeRange(b.startsAt, b.endsAt)}{personsSuffix(b, t) ? ` · ${personsSuffix(b, t)}` : ""} · {b.totalCents ? formatMoney(b.totalCents, b.currency) : t("bookings.free")}</div>
                   {b.note ? <div className="text-xs text-ink-3 italic mt-0.5">«{b.note}»</div> : null}
@@ -63,10 +63,10 @@ export default async function AdminBookingsPage() {
       )}
 
       <SectionTitle>{t("adm1.bk.openInvoices")}</SectionTitle>
-      {openInvoices.length ? <div className="stagger space-y-2.5">{openInvoices.map((b) => <BookingCard key={b.id} b={b} showUser partner={b.viaTenantId ? t("adm1.bk.partnerBadge", { name: partners[b.viaTenantId] ?? t("adm1.bk.partnerClub") }) : null} />)}</div> : <p className="text-sm text-ink-3">{t("adm1.bk.noOpenInvoices")}</p>}
+      {openInvoices.length ? <div className="stagger space-y-2.5">{openInvoices.map((b) => <BookingCard key={b.id} b={b} showUser locale={locale} partner={b.viaTenantId ? t("adm1.bk.partnerBadge", { name: partners[b.viaTenantId] ?? t("adm1.bk.partnerClub") }) : null} />)}</div> : <p className="text-sm text-ink-3">{t("adm1.bk.noOpenInvoices")}</p>}
 
       <SectionTitle action={<Link href="/admin/bookings/calendar" className="inline-flex items-center gap-1 text-xs text-ink-3 hover:text-ink"><CalendarDays className="h-3.5 w-3.5" /> {t("adm1.bk.calendar")}</Link>}>{t("adm1.bk.upcoming")}</SectionTitle>
-      {upcoming.length ? <div className="stagger space-y-2.5">{upcoming.map((b) => <BookingCard key={b.id} b={b} showUser partner={b.viaTenantId ? t("adm1.bk.partnerBadge", { name: partners[b.viaTenantId] ?? t("adm1.bk.partnerClub") }) : null} />)}</div> : <EmptyState title={t("adm1.bk.nothingPlanned")} text={t("adm1.bk.nothingPlannedText")} />}
+      {upcoming.length ? <div className="stagger space-y-2.5">{upcoming.map((b) => <BookingCard key={b.id} b={b} showUser locale={locale} partner={b.viaTenantId ? t("adm1.bk.partnerBadge", { name: partners[b.viaTenantId] ?? t("adm1.bk.partnerClub") }) : null} />)}</div> : <EmptyState title={t("adm1.bk.nothingPlanned")} text={t("adm1.bk.nothingPlannedText")} />}
 
       <SectionTitle>{t("adm1.bk.export")}</SectionTitle>
       <Card className="animate-rise p-4">

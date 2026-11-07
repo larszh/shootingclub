@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { HELP_MAX_ANSWER_CHARS, HELP_MAX_QUESTION_CHARS, HELP_MAX_TURNS, helpRequestSchema, trimHistory, type ChatTurn } from "./history";
+import { chatStorageBase, chatStorageKey, HELP_MAX_ANSWER_CHARS, HELP_MAX_QUESTION_CHARS, HELP_MAX_TURNS, helpRequestSchema, trimHistory, type ChatTurn } from "./history";
 
 const conv = (n: number): ChatTurn[] =>
   Array.from({ length: n }, (_, i) => ({ role: i % 2 === 0 ? "user" : "assistant", content: `m${i}` }) as ChatTurn);
@@ -64,5 +64,24 @@ describe("helpRequestSchema", () => {
     expect(helpRequestSchema.safeParse({ messages: [{ role: "user", content: "Hi" }] }).success).toBe(true);
     expect(helpRequestSchema.safeParse({ messages: [] }).success).toBe(false);
     expect(helpRequestSchema.safeParse({ messages: [{ role: "system", content: "x" }] }).success).toBe(false);
+  });
+});
+
+describe("chatStorageKey", () => {
+  it("is per person and club, with a common base for cleaning up", () => {
+    const a = chatStorageKey("sc-ai-help-chat", "u1", "t1");
+    expect(a).toBe("sc-ai-help-chat:u1:t1");
+    expect(chatStorageKey("sc-ai-help-chat", "u2", "t1")).not.toBe(a);
+    expect(chatStorageKey("sc-ai-help-chat", "u1", "t2")).not.toBe(a);
+    expect(chatStorageKey("sc-ai-support-chat", "u1", null)).toBe("sc-ai-support-chat:u1:-");
+    expect(chatStorageBase(a)).toBe("sc-ai-help-chat");
+    expect(chatStorageBase("sc-ai-help-chat")).toBe("sc-ai-help-chat");
+  });
+});
+
+describe("helpRequestSchema extra keys", () => {
+  it("rejects unknown keys", () => {
+    expect(helpRequestSchema.safeParse({ messages: [{ role: "user", content: "Hi" }], pad: "x" }).success).toBe(false);
+    expect(helpRequestSchema.safeParse({ messages: [{ role: "user", content: "Hi", x: 1 }] }).success).toBe(false);
   });
 });

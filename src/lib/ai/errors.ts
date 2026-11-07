@@ -38,6 +38,14 @@ function retryAfter(err: InstanceType<typeof Anthropic.APIError>): number | null
   return Number.isFinite(n) && n >= 0 ? Math.ceil(n) : null;
 }
 
+/** Fehlertyp des Anbieters (z.B. "overloaded_error"), auch wenn kein HTTP-Status vorhanden ist. */
+function errorType(err: InstanceType<typeof Anthropic.APIError>): string | null {
+  if (typeof err.type === "string" && err.type) return err.type;
+  const body = err.error as { type?: unknown; error?: { type?: unknown } } | undefined;
+  const inner = body?.error?.type ?? body?.type;
+  return typeof inner === "string" && inner !== "error" ? inner : null;
+}
+
 /** Ordnet beliebige Fehler (typisierte SDK-Klassen, spezifischste zuerst) einem AiError zu. */
 export function toAiError(err: unknown): AiError {
   if (err instanceof AiError) return err;
@@ -56,6 +64,12 @@ export function toAiError(err: unknown): AiError {
     if (s === 429) return new AiError("rateLimited", { retryAfterSec: retryAfter(err) });
     if (typeof s === "number" && s >= 500) return new AiError("overloaded");
     if (typeof s === "number" && s >= 400) return new AiError("badRequest");
+    // Fehler-Events mitten im Stream (SSE "error") haben keinen HTTP-Status, nur den Fehlertyp.
+    const t = errorType(err);
+    if (t === "overloaded_error" || t === "api_error") return new AiError("overloaded");
+    if (t === "rate_limit_error") return new AiError("rateLimited", { retryAfterSec: retryAfter(err) });
+    if (t === "authentication_error" || t === "permission_error") return new AiError("invalidKey");
+    if (t === "invalid_request_error" || t === "request_too_large" || t === "not_found_error") return new AiError("badRequest");
     return new AiError("unknown");
   }
   if (err instanceof Error && err.name === "AbortError") return new AiError("aborted");

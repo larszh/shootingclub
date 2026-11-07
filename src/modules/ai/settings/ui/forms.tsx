@@ -7,7 +7,7 @@ import { PasswordInput, Segmented, Switch } from "@/components/ui/controls";
 import { Spinner } from "@/components/ui/form";
 import { confirmDialog, toast } from "@/lib/ui-feedback";
 import type { ActionResult } from "@/lib/action-result";
-import { AI_MODELS, PLATFORM_FEATURES, TENANT_FEATURES, TENANT_FEATURE_MIN_ROLE, type AiModel, type MemberAccess } from "@/lib/ai/types";
+import { AI_MODELS, PLATFORM_FEATURES, TENANT_FEATURES, TENANT_FEATURE_MIN_ROLE, type AiModel, type MemberAccess, type TenantFeature } from "@/lib/ai/types";
 import {
   removeClubKeyAction, removePlatformKeyAction, saveClubKeyAction, saveClubSettingsAction, savePlatformKeyAction,
   savePlatformSettingsAction, setClubEnabledAction, setPlatformFlagAction, testClubKeyAction, testPlatformKeyAction, withdrawClubConsentAction,
@@ -16,6 +16,19 @@ import { aiT } from "../i18n";
 import { fmtChf, fmtInt } from "../format";
 import { parseBudget } from "../validation";
 import { chfForTokens } from "../../usage/logic";
+
+/**
+ * Wer eine Vereins-Funktion tatsächlich nutzen kann (Hinweis in der Liste). Grundlage ist die
+ * Mindestrolle; wo die Funktion strengere Rechte verlangt, steht das strengere Recht:
+ * Inhalts-Übersetzung braucht das Bearbeitungsrecht des Inhalts.
+ */
+const FEATURE_ACCESS_OVERRIDE: Partial<Record<TenantFeature, string>> = {
+  contentTranslation: "aiSet.minRole.editors",
+};
+
+function featureAccessKey(f: TenantFeature): string {
+  return FEATURE_ACCESS_OVERRIDE[f] ?? `aiSet.minRole.${TENANT_FEATURE_MIN_ROLE[f]}`;
+}
 
 type Scope = "platform" | "tenant";
 
@@ -186,13 +199,13 @@ export function AiSettingsForm({
           <legend className="mb-1 text-sm font-medium text-ink-2">{t("aiSet.settings.features")}</legend>
           <div className="divide-y divide-line">
             {all.map((f) => {
-              const minRole = scope === "tenant" ? TENANT_FEATURE_MIN_ROLE[f as keyof typeof TENANT_FEATURE_MIN_ROLE] : null;
+              const access = scope === "tenant" ? featureAccessKey(f as TenantFeature) : null;
               return (
                 <Switch
                   key={f}
                   className="py-3"
                   label={t(`aiSet.feature.${f}`)}
-                  description={`${t(`aiSet.feature.${f}.hint`)}${minRole ? ` · ${t(`aiSet.minRole.${minRole}`)}` : ""}`}
+                  description={`${t(`aiSet.feature.${f}.hint`)}${access ? ` · ${t(access)}` : ""}`}
                   checked={selected.includes(f)}
                   onChange={(v) => setSelected((cur) => (v ? [...cur.filter((x) => x !== f), f] : cur.filter((x) => x !== f)))}
                 />

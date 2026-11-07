@@ -6,6 +6,7 @@ import { Badge, Card, LinkButton, PageHeader, SectionTitle } from "@/components/
 import { getTarget } from "@/modules/targets/queries";
 import { PRINT_LAYOUTS, subjectCategory, type TargetSubject } from "@/modules/targets/types";
 import { getRequestLocale, getT } from "@/lib/i18n";
+import { localizeTarget } from "@/modules/targets/target-i18n";
 import { targetCategoryText, targetSubjectText, tOr } from "@/modules/scores/ui/labels";
 import { allowedLayouts } from "@/modules/targets/print";
 import { renderTarget } from "@/modules/targets/svg";
@@ -24,6 +25,7 @@ export default async function TargetDetailPage({ params }: { params: Promise<{ i
   if (!t) notFound();
   const locale = await getRequestLocale();
   const tr = getT(locale);
+  const shown = localizeTarget(t, locale);
   const canManageTenant = ctx.can("tenant.targets.manage");
   const canEdit = t.scope === "mine" || (t.scope === "tenant" && !t.ownerUserId && canManageTenant) || (t.scope === "global" && ctx.user.isSuperAdmin);
   const editHref = t.scope === "global" ? `/super/targets/${t.id}/edit` : `/targets/${t.id}/edit`;
@@ -32,7 +34,7 @@ export default async function TargetDetailPage({ params }: { params: Promise<{ i
 
   return (
     <div>
-      <PageHeader title={t.name} subtitle={t.description ?? undefined} back={{ href: "/targets", label: tr("shooting.targets.title") }} action={<TargetFavoriteButton targetId={t.id} favorite={t.favorite} />} />
+      <PageHeader title={shown.name} subtitle={shown.description ?? undefined} back={{ href: "/targets", label: tr("shooting.targets.title") }} action={<TargetFavoriteButton targetId={t.id} favorite={t.favorite} />} />
       <div className="animate-rise flex flex-wrap gap-1.5 mb-4">
         <Badge>{targetSubjectText(tr, t.subject)}</Badge>
         {t.subject !== "UPLOAD" ? <Badge tone="outline">{targetCategoryText(tr, subjectCategory(t.subject))}</Badge> : null}

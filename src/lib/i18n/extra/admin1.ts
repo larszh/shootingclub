@@ -11,12 +11,13 @@ import ammo from "./admin1/ammo";
 import common from "./admin1/common";
 import kiosk from "./admin1/kiosk";
 import bookings from "./admin1/bookings";
+import bookingsUi from "./admin1/bookings-ui";
 import files from "./admin1/files";
 import billing from "./admin1/billing";
 import members from "./admin1/members";
 
 /** Weitere Teil-Wörterbücher unter ./admin1/ (gleicher Aufbau). */
-export const PARTS: Record<string, Record<string, Row>> = { ammo, common, kiosk, bookings, files, billing, members };
+export const PARTS: Record<string, Record<string, Row>> = { ammo, common, kiosk, bookings, bookingsUi, files, billing, members };
 
 /** Französische Typografie: schmale geschützte Leerzeichen bei Guillemets und vor ? ! ;, geschützt vor «:». */
 export function frenchSpacing(s: string): string {

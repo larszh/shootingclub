@@ -6,9 +6,9 @@ import {
 } from "./logic";
 
 const BASE: Record<Locale, Record<string, string>> = {
-  de: { "a.hello": "Hallo {name}", "a.plain": "Speichern", "b.count": "{n} von {total}", "b.same": "OK" },
-  fr: { "a.hello": "Salut {name}", "a.plain": "Enregistrer", "b.same": "OK" },
-  it: { "a.hello": "Ciao {name}" },
+  de: { "a.hello": "Hallo {name}", "a.plain": "Speichern", "b.count": "{n} von {total}", "b.same": "OK", "c.me": " (ich)", "c.tail": "Alle zählen. " },
+  fr: { "a.hello": "Salut {name}", "a.plain": "Enregistrer", "b.same": "OK", "c.me": " (moi)", "c.tail": "Tous comptent. " },
+  it: { "a.hello": "Ciao {name}", "c.me": " (io)" },
   en: {},
 };
 
@@ -56,6 +56,24 @@ describe("planChange", () => {
     expect(planChange(ctx(), "fr", "a.plain", "Enregistrer")).toBeNull();
     expect(planChange(ctx(), "fr", "a.plain", "")).toBeNull();
     expect(planChange(ctx({ fr: { "a.plain": "Sauver" } }), "fr", "a.plain", "Sauver")).toBeNull();
+  });
+  it("keeps the deliberate padding of built-in texts", () => {
+    expect(planChange(ctx(), "it", "c.me", " (io)")).toBeNull();
+    expect(planChange(ctx(), "it", "c.me", "(io)")).toBeNull();
+    expect(planChange(ctx(), "it", "c.me", "(mio)")).toEqual({ key: "c.me", before: " (io)", after: " (mio)", op: "set" });
+    expect(planChange(ctx(), "fr", "c.tail", "Tout compte.")?.after).toBe("Tout compte. ");
+    // Sprache ohne mitgelieferten Text: Rand des deutschen Textes
+    expect(planChange(ctx(), "en", "c.me", "(me)")?.after).toBe(" (me)");
+    // früher ohne Leerzeichen gespeicherte Übersteuerung → zurücksetzen
+    expect(planChange(ctx({ it: { "c.me": "(io)" } }), "it", "c.me", " (io)")?.op).toBe("reset");
+  });
+  it("an unchanged 'all' export round-trips without changes", () => {
+    for (const l of ["de", "fr", "it", "en"] as const) {
+      const entries = Object.entries(BASE[l]).map(([key, value]) => ({ key, value }));
+      const res = validateEntries(ctx(), l, entries, { skipEmpty: true });
+      expect(res.changes).toEqual([]);
+      expect(res.unchanged).toBe(entries.length);
+    }
   });
 });
 
@@ -144,6 +162,11 @@ describe("filterSuggestions", () => {
       { key: "evil.key", reason: "unknown" },
     ]);
     expect(res.missing).toEqual(["b.same"]);
+  });
+  it("keeps the padding of appended texts", () => {
+    const ref = (k: string) => BASE.de[k];
+    const res = filterSuggestions(["c.me"], [{ key: "c.me", text: "(moi)" }], ref, (k) => BASE.fr[k]);
+    expect(res.accepted).toEqual([{ key: "c.me", text: " (moi)" }]);
   });
 });
 

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { columnKind, maskHeader, maskSamples, maskValue } from "./mask";
+import { columnKind, headerRowIsData, maskHeader, maskSamples, maskValue } from "./mask";
 
 describe("columnKind", () => {
   it("recognises name columns in several languages and from scoring systems", () => {
@@ -92,5 +92,51 @@ describe("maskSamples", () => {
     expect(m.headers[1]).toBe("[email]");
     expect(m.rows).toEqual([["1", "", ""]]);
     expect(maskHeader("079 123 45 67")).toBe("[phone]");
+  });
+});
+
+describe("files without a header row", () => {
+  it("treats a members first row without known column names as data", () => {
+    const first = ["Muster", "Hans", "hans@x.ch", "Bahnhofstrasse 1", "8000 Zürich", "01.02.1980", "CH9300762011623852957", "079 123 45 67"];
+    const m = maskSamples(first, [["Probe", "Beat", "", "Weg 2", "3000 Bern", "03.04.1990", "", ""]], "members");
+    expect(m.headers).toEqual(first.map((_, i) => `Spalte ${i + 1}`));
+    expect(m.rows[0]).toEqual(["[text]", "[text]", "[email]", "[address]", "[zip city]", "[date DD.MM.YYYY]", "[iban]", "[phone]"]);
+    expect(m.rows).toHaveLength(2);
+    const all = JSON.stringify(m);
+    for (const secret of ["Muster", "Hans", "Bahnhof", "8000", "Zürich", "1980", "CH93", "079", "Probe", "Beat", "Bern"]) expect(all).not.toContain(secret);
+  });
+
+  it("treats a scores first row with names and numbers as data", () => {
+    const m = maskSamples(["Hans Muster", "Gewehr 300m", "95", "96"], [["Anna Beispiel", "Gewehr 300m", "90", "91"]], "scores");
+    expect(m.headers).toEqual(["Spalte 1", "Spalte 2", "Spalte 3", "Spalte 4"]);
+    expect(m.rows).toEqual([["[name 1]", "Gewehr 300m", "95", "96"], ["[name 2]", "Gewehr 300m", "90", "91"]]);
+  });
+
+  it("keeps real header rows and is stable when masked twice", () => {
+    expect(headerRowIsData(["Vorname", "Nachname", "E-Mail"], "members")).toBe(false);
+    expect(headerRowIsData(["Lizenz", "Tiratore", "Bemerkung"], "scores")).toBe(false);
+    expect(headerRowIsData(["PLZ/Ort", "Strasse", "Natel"], "members")).toBe(false);
+    const once = maskSamples(["Hans", "Muster", "01.01.1980"], [["Anna", "Beispiel", "02.02.1990"]], "members");
+    expect(maskSamples(once.headers, once.rows, "members")).toEqual(once);
+  });
+
+  it("masks dates, IBAN and embedded contact data in column names", () => {
+    expect(maskHeader("01.02.1980")).toBe("[date DD.MM.YYYY]");
+    expect(maskHeader("CH9300762011623852957")).toBe("[iban]");
+    expect(maskHeader("Kontakt 079 123 45 67")).toBe("Kontakt [phone]");
+  });
+});
+
+describe("free text in the results import", () => {
+  it("hides free text and embedded contact data, keeps disciplines and shot values", () => {
+    expect(maskValue("rossi mario", "other", "scores", 1)).toBe("[text]");
+    expect(maskValue("MÜLLER", "other", "scores", 1)).toBe("[text]");
+    expect(maskValue("Hans Muster hat gut geschossen", "other", "scores", 1)).toBe("[text]");
+    expect(maskValue("anruf 079 123 45 67", "other", "scores", 1)).toBe("[text]");
+    expect(maskValue("G300 Tel 079 123 45 67", "other", "scores", 1)).toBe("G300 Tel [phone]");
+    expect(maskValue("Gewehr", "other", "scores", 1)).toBe("Gewehr");
+    expect(maskValue("Feldschiessen", "other", "scores", 1)).toBe("Feldschiessen");
+    expect(maskValue("liegend", "other", "scores", 1)).toBe("liegend");
+    expect(maskValue("10 10 9 10 9", "other", "scores", 1)).toBe("10 10 9 10 9");
   });
 });

@@ -7,7 +7,6 @@ import { Dialog } from "@/components/ui/dialog";
 import { useT } from "@/components/locale";
 import { cn } from "@/lib/utils";
 import { AiChat } from "./chat";
-import { HELP_CHAT_STORAGE_KEY } from "./help-panel";
 
 /** Seiten ohne schwebenden Knopf (eigene Hilfe oder Vollbild-Ansichten). */
 const HIDDEN_PREFIXES = ["/help", "/super/support", "/chat", "/admin/live"];
@@ -16,7 +15,7 @@ const HIDDEN_PREFIXES = ["/help", "/super/support", "/chat", "/admin/live"];
  * Schwebender «Fragen?»-Knopf, öffnet den Hilfe-Assistenten als Panel (mobil von unten).
  * Nur einbinden, wenn der Assistent verfügbar ist – siehe HelpAssistantMount (Server-Komponente).
  */
-export function HelpAssistantButton({ suggestions, className }: { suggestions: string[]; className?: string }) {
+export function HelpAssistantButton({ suggestions, storageKey, className }: { suggestions: string[]; storageKey: string; className?: string }) {
   const t = useT();
   const pathname = usePathname() ?? "";
   const [open, setOpen] = useState(false);
@@ -40,7 +39,8 @@ export function HelpAssistantButton({ suggestions, className }: { suggestions: s
         <Dialog open={open} onClose={() => setOpen(false)} title={t("aihelp.panel.title")} description={t("aihelp.panel.subtitle")} size="lg">
           <AiChat
             endpoint="/api/ai/help"
-            storageKey={HELP_CHAT_STORAGE_KEY}
+            storageKey={storageKey}
+            mode="help"
             intro={t("aihelp.chat.intro")}
             suggestions={suggestions}
             onNavigate={() => setOpen(false)}

@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { createRateLimiter } from "@/lib/ai/rate-limit";
 import { AI_ERROR_CODES, AI_UNAVAILABLE_REASONS } from "@/lib/ai/types";
 import { lookup } from "@/lib/i18n/core";
-import { HELP_RATE, helpFailureKey, helpFailureStatus, hitHelpLimit, setHelpRateLimiters } from "./limits";
+import { HELP_RATE, helpFailureKey, helpFailureStatus, helpStreamErrorKey, hitHelpLimit, setHelpRateLimiters } from "./limits";
 
 afterEach(() => setHelpRateLimiters(null));
 
@@ -58,5 +58,20 @@ describe("helpFailureKey", () => {
     expect(helpFailureStatus({ kind: "unavailable", reason: "noAccess" })).toBe(403);
     expect(helpFailureStatus({ kind: "unavailable", reason: "noKey" })).toBe(409);
     expect(helpFailureStatus({ kind: "error", code: "badRequest" })).toBe(400);
+  });
+});
+
+describe("helpStreamErrorKey", () => {
+  it("gives members the friendly texts for provider errors that arrive in the stream", () => {
+    expect(helpStreamErrorKey("help", "invalidKey")).toBe("aihelp.error.invalidKey");
+    expect(helpStreamErrorKey("help", "overloaded")).toBe("ai.error.overloaded");
+    expect(helpStreamErrorKey("support", "invalidKey")).toBe("ai.error.invalidKey");
+  });
+
+  it("does not blame the person for a provider-side 429", () => {
+    expect(helpStreamErrorKey("help", "rateLimited")).toBe("ai.error.rateLimited");
+    expect(helpStreamErrorKey("support", "rateLimited")).toBe("ai.error.rateLimited");
+    // Das eigene Fragen-Limit (vor dem Stream, JSON) bleibt beim persönlichen Text
+    expect(helpFailureKey("help", { kind: "error", code: "rateLimited" })).toBe("aihelp.error.rateLimited");
   });
 });

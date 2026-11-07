@@ -4,6 +4,7 @@ import { Badge, Card, ProgressBar } from "@/components/ui";
 import { openSlots, type RankingEntry } from "@/modules/championship/ranking";
 import { NO_CATEGORY, formatPoints } from "@/modules/championship/types";
 import { DEFAULT_LOCALE, getT, type Locale } from "@/lib/i18n/core";
+import { localizedProgramName } from "@/modules/scores/preset-i18n";
 
 /** «Mein Stand»: Rang, Total, Kategorie und was noch zählen kann. */
 export function MyStanding({ championshipId, name, entry, categoryRank, totalRanked, compact, locale = DEFAULT_LOCALE }: { championshipId: string; name?: string; entry: RankingEntry | null; categoryRank?: number | null; totalRanked: number; compact?: boolean; locale?: Locale }) {
@@ -38,20 +39,20 @@ export function MyStanding({ championshipId, name, entry, categoryRank, totalRan
         </div>
       </div>
       {entry.missingRequired.length ? (
-        <p className="mt-3 rounded-control bg-warn/10 px-3 py-2 text-sm text-warn">{t("shooting.champ.missing", { list: entry.missingRequired.join(", ") })}</p>
+        <p className="mt-3 rounded-control bg-warn/10 px-3 py-2 text-sm text-warn">{t("shooting.champ.missing", { list: entry.missingRequired.map((n) => localizedProgramName(n, locale)).join(", ") })}</p>
       ) : null}
       {!compact ? (
         <ul className="mt-3 space-y-2.5">
           {slots.map((s) => (
             <li key={s.programId}>
               <div className="flex justify-between gap-2 text-sm">
-                <span className="truncate">{s.name}</span>
+                <span className="truncate">{localizedProgramName(s.name, locale)}</span>
                 <span className="shrink-0 tabular-nums text-ink-3">
                   {s.limit === null ? t("shooting.champ.slotAll", { n: s.counted }) : t("shooting.champ.slotOf", { n: s.counted, limit: s.limit })}
                   {s.weakest !== null ? t("shooting.champ.weakest", { n: formatPoints(s.weakest) }) : ""}
                 </span>
               </div>
-              {s.limit !== null ? <ProgressBar value={s.counted} max={s.limit} label={t("shooting.champ.slotAria", { name: s.name, n: s.counted, limit: s.limit })} size="sm" className="mt-1" /> : null}
+              {s.limit !== null ? <ProgressBar value={s.counted} max={s.limit} label={t("shooting.champ.slotAria", { name: localizedProgramName(s.name, locale), n: s.counted, limit: s.limit })} size="sm" className="mt-1" /> : null}
             </li>
           ))}
         </ul>

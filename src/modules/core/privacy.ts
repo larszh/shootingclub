@@ -296,7 +296,9 @@ export async function buildPersonalExportZip(userId: string): Promise<Uint8Array
     "Standbesuche und betreute Gäste, akzeptierte Standordnungen, Qualifikationen, Kurse (Präsenz, Resultate),",
     "Waffenausleihen, Helfereinsätze und Arbeitsstunden, gemeldete Vorfälle, Standdienste,",
     "deine Konsumationen in der Schützenstube, wiederkehrende Reservationen (Serien),",
-    "offene Beitrittsanfragen (Mitgliedschaft mit Status PENDING) und Rollen in Verbänden.",
+    "offene Beitrittsanfragen (Mitgliedschaft mit Status PENDING), Rollen in Verbänden,",
+    "Anfragen an Claude (nur Funktion, Zeitpunkt und Tokens, ohne Inhalt) und von dir bearbeitete",
+    "Übersetzungen (nur Metadaten).",
     "",
     "Verbände erhalten von Standchef keine Personendaten, nur zusammengefasste Zahlen der Vereine.",
     "Dein Name erscheint in einer Verbandsrangliste nur, wenn dein Verein «Namen teilen» eingeschaltet hat.",
@@ -397,9 +399,11 @@ export async function pseudonymizeUser(userId: string): Promise<{ email: string;
     db.rangeVisit.updateMany({ where: { userId }, data: { note: null } }),
     db.kioskEntry.deleteMany({ where: { userId, billedInvoiceId: null, paidCash: false } }),
     // Claude: Nutzungsprotokoll bleibt für die Abrechnung des Vereins, aber ohne Personenbezug;
-    // persönliche Zwischenspeicher (z.B. Trainingsauswertungen) werden gelöscht.
+    // persönliche Zwischenspeicher (Trainingsauswertungen) werden gelöscht; Vereinsentwürfe
+    // (z.B. Jahresbericht mit Änderungen des Vorstands) bleiben erhalten, nur ohne Personenbezug.
     db.aiUsage.updateMany({ where: { userId }, data: { userId: null } }),
-    db.aiCache.deleteMany({ where: { userId } }),
+    db.aiCache.deleteMany({ where: { userId, feature: "coach" } }),
+    db.aiCache.updateMany({ where: { userId }, data: { userId: null } }),
     db.contentTranslation.updateMany({ where: { updatedById: userId }, data: { updatedById: null } }),
     db.user.update({
       where: { id: userId },

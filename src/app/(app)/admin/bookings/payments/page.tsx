@@ -19,7 +19,8 @@ export default async function PaymentProvidersPage({ searchParams }: { searchPar
   const ctx = await requirePermission("tenant.manage");
   if (!ctx.hasModule("bookings") && !ctx.hasModule("billing")) redirect("/?module=bookings");
   const sp = await searchParams;
-  const t = getT(await getRequestLocale());
+  const locale = await getRequestLocale();
+  const t = getT(locale);
   const kind: KindFilter = KINDS.includes(sp.kind as KindFilter) ? (sp.kind as KindFilter) : "all";
   const payments = await listTenantPayments(ctx.tenant.id, { kind: kind === "all" ? undefined : (kind as TenantPaymentKind), take: 200 });
   const billing = ctx.hasModule("billing");
@@ -49,7 +50,7 @@ export default async function PaymentProvidersPage({ searchParams }: { searchPar
           { value: "FEE", href: "/admin/bookings/payments?kind=FEE", label: t("adm1.bk.invoices") },
         ]}
       />
-      <TenantPaymentsTable rows={payments} />
+      <TenantPaymentsTable rows={payments} locale={locale} />
       {payments.length >= 200 ? <p className="mt-2 text-xs text-ink-3">{t("adm1.bk.latest200")}</p> : null}
     </div>
   );

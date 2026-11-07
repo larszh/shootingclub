@@ -1,4 +1,4 @@
-import type { TFunction } from "@/lib/i18n/core";
+import { formatNumberL, type TFunction } from "@/lib/i18n/core";
 import type { DurationOption } from "./types";
 
 export type PricingSettings = { lastMinuteDiscountPercent: number; lastMinuteWindowHours: number; personPricing?: boolean };
@@ -64,23 +64,31 @@ export function quotePrice(option: DurationOption, startsAt: Date, settings: Pri
 
 /** Kurzform für Preislisten: 1500 → «15.–», 1550 → «15.50». */
 export function formatShortMoney(cents: number) {
-  if (cents % 100 === 0) return `${(cents / 100).toLocaleString("de-CH")}.–`;
+  // Ohne toLocaleString: dessen Trennzeichen hängt von der ICU-Version ab (Hydrierung, React #418).
+  if (cents % 100 === 0) return `${formatNumberL(cents / 100, "de")}.–`;
   return (cents / 100).toFixed(2);
 }
 
 /**
  * Vorschau der Preistabelle einer Dauer, z.B. «1 Pers. 15.–, 2 Pers. 25.–, 3 Pers. 33.–, ab 4 Pers. 40.– pauschal».
  */
-export function priceTablePreview(option: DurationOption, maxPersons: number, personPricing: boolean) {
-  if (!personPricing) return option.priceCents ? `${formatShortMoney(option.priceCents)} pro Buchung` : "gratis";
+export function priceTablePreview(option: DurationOption, maxPersons: number, personPricing: boolean, t?: TFunction) {
+  const m = formatShortMoney;
+  if (!personPricing) {
+    if (!option.priceCents) return t ? t("bookings.free") : "gratis";
+    return t ? t("adm1.bk.preview.perBooking", { price: m(option.priceCents) }) : `${m(option.priceCents)} pro Buchung`;
+  }
   const parts: string[] = [];
   const flatFrom = option.flatFromPersons && option.flatPriceCents !== undefined ? option.flatFromPersons : null;
   const last = flatFrom ? Math.min(maxPersons, flatFrom - 1) : maxPersons;
-  for (let n = 1; n <= last; n++) parts.push(`${n} Pers. ${formatShortMoney(basePriceFor(option, n, true).baseCents)}`);
+  for (let n = 1; n <= last; n++) {
+    const price = m(basePriceFor(option, n, true).baseCents);
+    parts.push(t ? t("adm1.bk.preview.persons", { n, price }) : `${n} Pers. ${price}`);
+  }
   if (flatFrom) {
-    parts.push(flatFrom <= maxPersons
-      ? `ab ${flatFrom} Pers. ${formatShortMoney(option.flatPriceCents!)} pauschal`
-      : `Pauschale ab ${flatFrom} Pers. wird bei max. ${maxPersons} nie erreicht`);
+    const price = m(option.flatPriceCents!);
+    if (flatFrom <= maxPersons) parts.push(t ? t("adm1.bk.preview.flatFrom", { n: flatFrom, price }) : `ab ${flatFrom} Pers. ${price} pauschal`);
+    else parts.push(t ? t("adm1.bk.preview.flatNever", { n: flatFrom, max: maxPersons }) : `Pauschale ab ${flatFrom} Pers. wird bei max. ${maxPersons} nie erreicht`);
   }
   return parts.join(", ");
 }

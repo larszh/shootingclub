@@ -13,6 +13,7 @@ import { profileManagedByTenant } from "@/modules/members/ownership";
 import { getMemberDetail } from "@/modules/members/queries";
 import { dateOnly, displayEmail, isMemberStatus, isMinor, statusTone } from "@/modules/members/types";
 import { AccessCard, DangerZone, MemberForm, RoleCard } from "./member-form";
+import { localizedProgramName } from "@/modules/scores/preset-i18n";
 
 export async function generateMetadata(): Promise<Metadata> {
   return { title: getT(await getRequestLocale())("adm1.common.member") };
@@ -155,7 +156,7 @@ export default async function MemberDetailPage({ params }: { params: Promise<{ i
             {results.map((r) => (
               <Link key={r.id} href={`/scores/matches/${r.match.id}`} className="flex min-h-13 items-center gap-3 px-4 py-2 hover:bg-surface-2">
                 <div className="min-w-0 flex-1">
-                  <div className="truncate font-medium">{r.match.title || r.match.program.name}</div>
+                  <div className="truncate font-medium">{r.match.title || localizedProgramName(r.match.program.name, locale)}</div>
                   <div className="text-xs text-ink-3">{formatDate(r.match.date, locale)}{r.isOfficial ? ` · ${t("adm1.member.official")}` : ""}{r.passed === false ? ` · ${t("adm1.member.notPassed")}` : ""}</div>
                 </div>
                 <span className="text-lg font-semibold tabular-nums">{r.total != null ? Math.round(r.total * 10) / 10 : "–"}</span>

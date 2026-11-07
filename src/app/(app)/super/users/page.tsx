@@ -4,7 +4,7 @@ import type { Prisma } from "@/generated/prisma/client";
 import { requireSuperAdmin } from "@/lib/tenant";
 import { db } from "@/lib/db";
 import { Card, LinkButton, PageHeader } from "@/components/ui";
-import { getRequestLocale, getT } from "@/lib/i18n";
+import { displayUserName, getRequestLocale, getT } from "@/lib/i18n";
 import { userAvatarUrl } from "@/components/avatar";
 import { Pager, SearchForm, pageParam, textParam } from "../../admin/audit/pager";
 import { UserRow } from "./forms";
@@ -48,7 +48,7 @@ export default async function SuperUsersPage({ searchParams }: { searchParams: P
           <UserRow
             key={u.id}
             id={u.id}
-            name={u.name}
+            name={displayUserName(u.name, t)}
             email={u.email}
             isSuperAdmin={u.isSuperAdmin}
             isSelf={u.id === me.id}

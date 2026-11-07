@@ -3,11 +3,11 @@
  * Server-Seiten und Client-Komponenten rufen die Helfer mit `getT(locale)` auf.
  * Wörterbuch: src/lib/i18n/extra/money.ts (Namensraum «money.ammo.»).
  */
-import { INTL_LOCALE, normalizeLocale, type TFunction } from "@/lib/i18n/core";
+import { formatNumberL, type TFunction } from "@/lib/i18n/core";
 
 /** Wie formatRounds() in ./types, in der Sprache der Person («1'000 Schuss», «1 000 cartouches»). */
 export function formatRoundsT(n: number, locale: string | null | undefined, t: TFunction) {
-  const num = new Intl.NumberFormat(INTL_LOCALE[normalizeLocale(locale)]).format(n);
+  const num = formatNumberL(n, locale);
   return t(n === 1 ? "money.ammo.rounds.one" : "money.ammo.rounds.other", { n: num });
 }
 

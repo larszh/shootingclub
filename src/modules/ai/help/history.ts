@@ -51,12 +51,35 @@ export function trimHistory(turns: readonly ChatTurn[], opts?: { maxTurns?: numb
   return out;
 }
 
+/** Basis des Verlauf-Schlüssels der Vereins-Hilfe (gleich für Panel auf /help und schwebenden Knopf). */
+export const HELP_CHAT_STORAGE_KEY = "sc-ai-help-chat";
+/** Basis des Verlauf-Schlüssels im Plattform-Support. */
+export const SUPPORT_CHAT_STORAGE_KEY = "sc-ai-support-chat";
+
+/**
+ * Speicher-Schlüssel des Verlaufs im Browser (sessionStorage), pro Person und Verein: «basis:user:tenant».
+ * So sieht nach Abmelden oder Vereinswechsel im selben Tab niemand den Verlauf der vorherigen
+ * Person, und er geht auch nicht als deren Kontext an Claude. AiChat löscht beim Öffnen alle
+ * anderen Verläufe mit derselben Basis.
+ */
+export function chatStorageKey(base: string, userId: string, tenantId: string | null | undefined): string {
+  return `${base}:${userId}:${tenantId ?? "-"}`;
+}
+
+/** Basis eines Schlüssels aus chatStorageKey (alles vor dem ersten «:»). */
+export function chatStorageBase(key: string): string {
+  const i = key.indexOf(":");
+  return i < 0 ? key : key.slice(0, i);
+}
+
 /** Anfrage an /api/ai/help und /api/ai/help/support. */
-export const helpRequestSchema = z.object({
-  messages: z
-    .array(z.object({ role: z.enum(["user", "assistant"]), content: z.string().max(20_000) }))
-    .min(1)
-    .max(80),
-});
+export const helpRequestSchema = z
+  .object({
+    messages: z
+      .array(z.object({ role: z.enum(["user", "assistant"]), content: z.string().max(20_000) }).strict())
+      .min(1)
+      .max(80),
+  })
+  .strict();
 
 export type HelpRequest = z.infer<typeof helpRequestSchema>;

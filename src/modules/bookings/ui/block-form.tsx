@@ -7,8 +7,10 @@ import { addBlockAction, deleteBlockAction, deleteResourceAction, setResourceAct
 import { Alert, Button, Card, Field, Input, Select } from "@/components/ui";
 import { SubmitButton, submitKeepingValues } from "@/components/ui/form";
 import { toast } from "@/lib/ui-feedback";
+import { useT } from "@/components/locale";
 
 export function BlockForm({ resources, today }: { resources: Array<{ id: string; name: string }>; today: string }) {
+  const t = useT();
   const [state, action, pending] = useActionState(addBlockAction, null);
   const formRef = useRef<HTMLFormElement>(null);
   // Nach erfolgreichem Anlegen auf die Vorgabewerte zurücksetzen; bei Fehlern bleiben die Eingaben stehen.
@@ -18,32 +20,34 @@ export function BlockForm({ resources, today }: { resources: Array<{ id: string;
   return (
     <Card className="animate-rise p-4">
       <form ref={formRef} onSubmit={submitKeepingValues(action)} className="space-y-3">
-        <Field label="Betrifft"><Select name="resourceId" defaultValue=""><option value="">Alle Ressourcen</option>{resources.map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}</Select></Field>
+        <Field label={t("adm1.bk.block.target")}><Select name="resourceId" defaultValue=""><option value="">{t("adm1.bk.block.all")}</option>{resources.map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}</Select></Field>
         <div className="grid grid-cols-2 gap-3">
-          <Field label="Von (Datum)"><Input name="date" type="date" defaultValue={today} required /></Field>
-          <Field label="Von (Zeit)"><Input name="from" type="time" defaultValue="00:00" required /></Field>
-          <Field label="Bis (Datum)" hint="leer = gleicher Tag"><Input name="toDate" type="date" /></Field>
-          <Field label="Bis (Zeit)"><Input name="to" type="time" defaultValue="23:59" required /></Field>
+          <Field label={t("adm1.bk.block.fromDate")}><Input name="date" type="date" defaultValue={today} required /></Field>
+          <Field label={t("adm1.bk.block.fromTime")}><Input name="from" type="time" defaultValue="00:00" required /></Field>
+          <Field label={t("adm1.bk.block.toDate")} hint={t("adm1.bk.block.toDateHint")}><Input name="toDate" type="date" /></Field>
+          <Field label={t("adm1.bk.block.toTime")}><Input name="to" type="time" defaultValue="23:59" required /></Field>
         </div>
-        <Field label="Grund (optional)"><Input name="reason" placeholder="z.B. Vereinsanlass, Unterhalt" /></Field>
+        <Field label={t("adm1.bk.block.reason")}><Input name="reason" placeholder={t("adm1.bk.block.reasonPh")} /></Field>
         {state && !state.ok ? <Alert>{state.error}</Alert> : state?.ok && state.message ? <Alert tone="ok">{state.message}</Alert> : null}
-        <SubmitButton variant="secondary" size="sm" pending={pending}>Sperrzeit anlegen</SubmitButton>
+        <SubmitButton variant="secondary" size="sm" pending={pending}>{t("adm1.bk.block.create")}</SubmitButton>
       </form>
     </Card>
   );
 }
 
 export function DeleteBlockButton({ id }: { id: string }) {
+  const t = useT();
   const [pending, start] = useTransition();
-  return <button type="button" disabled={pending} onClick={() => start(() => deleteBlockAction(id).then(() => undefined))} className="h-11 w-11 shrink-0 rounded-full flex items-center justify-center text-ink-3 hover:text-accent" aria-label="Löschen"><Trash2 className="h-4 w-4" /></button>;
+  return <button type="button" disabled={pending} onClick={() => start(() => deleteBlockAction(id).then(() => undefined))} className="h-11 w-11 shrink-0 rounded-full flex items-center justify-center text-ink-3 hover:text-accent" aria-label={t("adm1.bk.block.delete")}><Trash2 className="h-4 w-4" /></button>;
 }
 
 export function ResourceRowActions({ id, isActive }: { id: string; isActive: boolean }) {
+  const t = useT();
   const [pending, start] = useTransition();
   return (
     <div className="flex items-center gap-1">
-      <Button type="button" size="sm" variant="secondary" disabled={pending} onClick={() => start(() => setResourceActiveAction(id, !isActive).then(() => undefined))}>{isActive ? "Deaktivieren" : "Aktivieren"}</Button>
-      <button type="button" disabled={pending} onClick={async () => { if ((await confirmDialog({ title: "Ressource löschen?", message: "Nur möglich ohne Buchungen.", tone: "danger", confirmLabel: "Löschen" }))) start(async () => { const r = await deleteResourceAction(id); if (!r.ok) toast.error(r.error); }); }} className="h-11 w-11 shrink-0 rounded-full flex items-center justify-center text-ink-3 hover:text-accent" aria-label="Löschen"><Trash2 className="h-4 w-4" /></button>
+      <Button type="button" size="sm" variant="secondary" disabled={pending} onClick={() => start(() => setResourceActiveAction(id, !isActive).then(() => undefined))}>{t(isActive ? "adm1.bk.res.deactivate" : "adm1.bk.res.activate")}</Button>
+      <button type="button" disabled={pending} onClick={async () => { if ((await confirmDialog({ title: t("adm1.bk.res.deleteTitle"), message: t("adm1.bk.res.deleteText"), tone: "danger", confirmLabel: t("adm1.bk.res.delete"), cancelLabel: t("bookings.common.cancel") }))) start(async () => { const r = await deleteResourceAction(id); if (!r.ok) toast.error(r.error); }); }} className="h-11 w-11 shrink-0 rounded-full flex items-center justify-center text-ink-3 hover:text-accent" aria-label={t("adm1.bk.res.delete")}><Trash2 className="h-4 w-4" /></button>
     </div>
   );
 }

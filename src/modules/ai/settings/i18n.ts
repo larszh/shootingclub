@@ -87,6 +87,7 @@ const de: Dict = {
   "aiSet.minRole.MEMBER": "für Mitglieder",
   "aiSet.minRole.TRAINER": "ab Trainer",
   "aiSet.minRole.ADMIN": "nur Admins",
+  "aiSet.minRole.editors": "für alle, die Inhalte bearbeiten dürfen",
 
   "aiSet.access.label": "Wer darf die Mitglieder-Funktionen nutzen?",
   "aiSet.access.ALL": "Alle Mitglieder",
@@ -137,6 +138,7 @@ const de: Dict = {
   "aiSet.usage.chf": "≈ CHF",
   "aiSet.usage.total": "Total",
   "aiSet.usage.empty": "Keine Anfragen in diesem Monat.",
+  "aiSet.usage.monthsEmpty": "Keine Anfragen in den letzten Monaten.",
   "aiSet.usage.byFeature": "Nach Funktion",
   "aiSet.usage.byRole": "Nach Rolle",
   "aiSet.usage.byMonth": "Letzte Monate",
@@ -264,6 +266,7 @@ const fr: Dict = {
   "aiSet.minRole.MEMBER": "pour les membres",
   "aiSet.minRole.TRAINER": "dès moniteur",
   "aiSet.minRole.ADMIN": "admins seulement",
+  "aiSet.minRole.editors": "pour qui peut modifier les contenus",
 
   "aiSet.access.label": "Qui peut utiliser les fonctions pour les membres ?",
   "aiSet.access.ALL": "Tous les membres",
@@ -314,6 +317,7 @@ const fr: Dict = {
   "aiSet.usage.chf": "≈ CHF",
   "aiSet.usage.total": "Total",
   "aiSet.usage.empty": "Aucune requête ce mois-ci.",
+  "aiSet.usage.monthsEmpty": "Aucune requête ces derniers mois.",
   "aiSet.usage.byFeature": "Par fonction",
   "aiSet.usage.byRole": "Par rôle",
   "aiSet.usage.byMonth": "Derniers mois",
@@ -441,6 +445,7 @@ const it: Dict = {
   "aiSet.minRole.MEMBER": "per i soci",
   "aiSet.minRole.TRAINER": "da monitore",
   "aiSet.minRole.ADMIN": "solo admin",
+  "aiSet.minRole.editors": "per chi può modificare i contenuti",
 
   "aiSet.access.label": "Chi può usare le funzioni per i soci?",
   "aiSet.access.ALL": "Tutti i soci",
@@ -491,6 +496,7 @@ const it: Dict = {
   "aiSet.usage.chf": "≈ CHF",
   "aiSet.usage.total": "Totale",
   "aiSet.usage.empty": "Nessuna richiesta in questo mese.",
+  "aiSet.usage.monthsEmpty": "Nessuna richiesta negli ultimi mesi.",
   "aiSet.usage.byFeature": "Per funzione",
   "aiSet.usage.byRole": "Per ruolo",
   "aiSet.usage.byMonth": "Ultimi mesi",
@@ -618,6 +624,7 @@ const en: Dict = {
   "aiSet.minRole.MEMBER": "for members",
   "aiSet.minRole.TRAINER": "trainers and up",
   "aiSet.minRole.ADMIN": "admins only",
+  "aiSet.minRole.editors": "for anyone who can edit content",
 
   "aiSet.access.label": "Who may use the member features?",
   "aiSet.access.ALL": "All members",
@@ -668,6 +675,7 @@ const en: Dict = {
   "aiSet.usage.chf": "≈ CHF",
   "aiSet.usage.total": "Total",
   "aiSet.usage.empty": "No requests this month.",
+  "aiSet.usage.monthsEmpty": "No requests in recent months.",
   "aiSet.usage.byFeature": "By feature",
   "aiSet.usage.byRole": "By role",
   "aiSet.usage.byMonth": "Recent months",

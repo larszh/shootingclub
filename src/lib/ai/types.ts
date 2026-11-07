@@ -47,7 +47,8 @@ export const TENANT_FEATURE_MIN_ROLE: Record<TenantFeature, "MEMBER" | "TRAINER"
   coach: "MEMBER",
   contentTranslation: "MEMBER",
   writing: "TRAINER",
-  reports: "TRAINER",
+  // Alle Auswertungs-Pfade verlangen tenant.manage.
+  reports: "ADMIN",
   importHelper: "ADMIN",
 };
 

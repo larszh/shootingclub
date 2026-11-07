@@ -1,10 +1,10 @@
 /** Zahlenformate für die KI-Einstellungen (client-sicher). */
-import { INTL_LOCALE, normalizeLocale } from "@/lib/i18n/core";
+import { formatNumberL } from "@/lib/i18n/core";
 
 export function fmtInt(n: number, locale: string | null | undefined): string {
-  return new Intl.NumberFormat(INTL_LOCALE[normalizeLocale(locale)], { maximumFractionDigits: 0 }).format(Math.round(n));
+  return formatNumberL(Math.round(n), locale, { maximumFractionDigits: 0 });
 }
 
 export function fmtChf(n: number, locale: string | null | undefined): string {
-  return new Intl.NumberFormat(INTL_LOCALE[normalizeLocale(locale)], { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n);
+  return formatNumberL(n, locale, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }

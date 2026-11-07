@@ -24,6 +24,9 @@ describe("sanitizeInternalHref", () => {
     expect(sanitizeInternalHref("/api")).toBeNull();
     expect(sanitizeInternalHref("/%2f%2fevil.example")).toBeNull();
     expect(sanitizeInternalHref("/%5cevil")).toBeNull();
+    expect(sanitizeInternalHref("/%2e%2e/api/ai/help")).toBeNull();
+    expect(sanitizeInternalHref("/x/%2E%2E/%2e%2e/api/ai/help")).toBeNull();
+    expect(sanitizeInternalHref("/%2e/bookings")).toBeNull();
     expect(sanitizeInternalHref("/" + "a".repeat(250))).toBeNull();
   });
 });

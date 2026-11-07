@@ -21,6 +21,7 @@ import embed from "./admin2/embed";
 import association from "./admin2/association";
 import superAdmin from "./admin2/super";
 import targets from "./admin2/targets";
+import awards from "./admin2/awards";
 
 /** Französische Typografie: schmale geschützte Leerzeichen bei Guillemets und vor ? ! ; :. */
 export function frSpacing(s: string): string {
@@ -32,7 +33,7 @@ export function frSpacing(s: string): string {
 
 export const ROWS: Rows = {
   ...common, ...range, ...federal, ...weapons, ...shifts, ...courses, ...championship,
-  ...qualifications, ...live, ...embed, ...association, ...superAdmin, ...targets,
+  ...qualifications, ...live, ...embed, ...association, ...superAdmin, ...targets, ...awards,
 };
 
 const de: Record<string, string> = {};

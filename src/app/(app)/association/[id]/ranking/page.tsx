@@ -9,6 +9,7 @@ import { listAssociationMembers, listRankingPrograms, loadAssociationRanking, re
 import { parseRankingParams, rankingQuery } from "@/modules/association/stats";
 import { AssociationTabs } from "../tabs";
 import { RankingTable } from "./ranking-table";
+import { localizedProgramName } from "@/modules/scores/preset-i18n";
 
 export async function generateMetadata(): Promise<Metadata> {
   return { title: getT(await getRequestLocale())("adm2.assoc.r.title") };
@@ -39,7 +40,7 @@ export default async function AssociationRankingPage({ params, searchParams }: {
         <form method="get" className="space-y-3">
           <Field label={t("adm2.assoc.r.program")}>
             <Select name="program" defaultValue={p.programId ?? ""}>
-              {programs.map((x) => <option key={x.id} value={x.id}>{x.name}{x.officialKind ? ` (${officialKindText(t, x.officialKind)})` : ""}</option>)}
+              {programs.map((x) => <option key={x.id} value={x.id}>{localizedProgramName(x.name, locale)}{x.officialKind ? ` (${officialKindText(t, x.officialKind)})` : ""}</option>)}
             </Select>
           </Field>
           <div className="grid grid-cols-2 gap-3">
@@ -60,7 +61,7 @@ export default async function AssociationRankingPage({ params, searchParams }: {
         <>
           <div className="mb-3 flex flex-wrap items-center gap-2">
             <div className="flex-1 min-w-0 text-sm text-ink-3">
-              {result.program?.name} · {formatDay(p.from)} – {formatDay(p.to)} · {t("adm2.assoc.r.ranked", { n: result.ranking.ranked.length })}
+              {result.program ? localizedProgramName(result.program.name, locale) : ""} · {formatDay(p.from)} – {formatDay(p.to)} · {t("adm2.assoc.r.ranked", { n: result.ranking.ranked.length })}
             </div>
             <a href={`/association/${ctx.association.id}/export?kind=ranking&${q}`} className="press inline-flex h-11 items-center gap-2 rounded-control border border-line px-3 text-sm font-medium" download>
               <Download className="h-4 w-4" aria-hidden /> CSV

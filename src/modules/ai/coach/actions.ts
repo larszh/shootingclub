@@ -15,11 +15,15 @@ async function setup() {
   return { ctx, locale, t: getT(locale) };
 }
 
-/** KI-Fehler → Meldung in der Sprache des Benutzers (nie rohe Anbieterdaten). */
-function aiFail(t: TFunction, err: unknown): ActionResult<never> {
+/**
+ * KI-Fehler → Meldung in der Sprache des Benutzers (nie rohe Anbieterdaten). Wer die
+ * KI-Einstellungen nicht verwalten kann (Mitglieder), bekommt bei einem ungültigen Schlüssel den
+ * Hinweis, den Vorstand zu informieren, statt des technischen Textes.
+ */
+function aiFail(t: TFunction, err: unknown, ctx: TenantCtx): ActionResult<never> {
   const f = describeAiFailure(err);
   if (f.kind === "error" && f.code === "unknown") console.error("[ai-coach]", err instanceof Error ? err.name : "unknown");
-  const msg = t(f.messageKey);
+  const msg = t(f.kind === "error" && f.code === "invalidKey" && !ctx.can("ai.manage") ? "aihelp.error.invalidKey" : f.messageKey);
   return fail(f.kind === "error" && f.retryAfterSec ? `${msg} ${t("aicoach.retryIn", { s: f.retryAfterSec })}` : msg);
 }
 
@@ -31,7 +35,7 @@ export async function runCoachAction(): Promise<ActionResult<CoachResult>> {
     return ok(await runCoach(ctx, locale));
   } catch (err) {
     if (err instanceof CoachNoData) return fail(t("aicoach.coach.noData"));
-    return aiFail(t, err);
+    return aiFail(t, err, ctx);
   }
 }
 
@@ -72,6 +76,6 @@ export async function suggestImportMappingAction(input: z.input<typeof mappingIn
     if (!res.mapping.some((f) => f !== "ignore")) return fail(t("aicoach.map.nothing"));
     return ok(res);
   } catch (err) {
-    return aiFail(t, err);
+    return aiFail(t, err, ctx);
   }
 }
