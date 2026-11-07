@@ -11,9 +11,9 @@ import { feeInvoiceSourceLabel, feeInvoiceTitle, isStandaloneFeeInvoice } from "
 import { getOnlineFeeProviderKey } from "./payments";
 import { canPayFeeInvoiceOnline, feeInvoicePayPath, sourceAllowsOnlinePayment } from "@/lib/payments/logic";
 import { providerLabel as paymentProviderLabel, providerMethods } from "@/lib/payments/catalog";
-import { partnerInvoiceItem, partnerInvoiceWhere, partnerPaymentItem, toPaymentPayee, type PaymentPayee } from "./partner-items";
+import { bookingInvoiceStatus, normalizeInvoiceStatus, partnerInvoiceItem, partnerInvoiceWhere, partnerPaymentItem, toPaymentPayee, type PaymentPayee } from "./partner-items";
 
-export { partnerInvoiceItem, partnerInvoiceWhere, partnerPaymentItem, toPaymentPayee, type PaymentPayee } from "./partner-items";
+export { bookingInvoiceStatus, partnerInvoiceItem, partnerInvoiceWhere, partnerPaymentItem, toPaymentPayee, type PaymentPayee } from "./partner-items";
 
 /**
  * Zahlungsübersicht über alle Quellen: Mitgliederbeiträge (FeeInvoice), Reservations-Rechnungen
@@ -85,10 +85,6 @@ function groupOf(status: PaymentItem["status"]): PaymentGroup {
   return status === "OPEN" ? "open" : status === "PAID" ? "paid" : "other";
 }
 
-function normalizeInvoiceStatus(s: string): PaymentItem["status"] {
-  return s === "PAID" ? "PAID" : s === "CANCELLED" ? "CANCELLED" : "OPEN";
-}
-
 /** Sortierdatum: offene nach Fälligkeit, sonst nach Zahlung bzw. Ausstellung. */
 function sortKey(i: PaymentItem) {
   return (i.paidAt ?? i.issuedAt ?? i.dueAt ?? new Date(0)).getTime();
@@ -126,6 +122,31 @@ export function anyPaymentModule(ctx: Pick<AppContext, "hasModule">) {
   return s.fee || s.booking || s.ammo;
 }
 
+/**
+ * Hat das Mitglied Posten von Partnervereinen (Buchung über den aktiven Verein auf einer fremden Anlage)?
+ * Diese erscheinen unter «Zahlungen» auch ohne eigenes Zahlungsmodul (z.B. Reservationen inzwischen aus).
+ */
+export async function hasMyPartnerPayments(activeTenantId: string, userId: string) {
+  const [invoices, online] = await Promise.all([
+    db.invoice.count({ where: partnerInvoiceWhere(activeTenantId, userId) }),
+    db.payment.count({ where: partnerPaymentWhere(activeTenantId, userId) }),
+  ]);
+  return invoices + online > 0;
+}
+
+/**
+ * Zeigt «Zahlungen» (Seite, Dashboard-Hinweis, Navigation) etwas an? Ja mit eigenem Zahlungsmodul
+ * oder mit Posten von Partnervereinen. Ohne Modul wird die Datenbank nur dann abgefragt.
+ */
+export async function showMyPayments(ctx: Pick<AppContext, "hasModule"> & { tenant: Pick<ActiveTenant, "id">; user: { id: string } }) {
+  return anyPaymentModule(ctx) || (await hasMyPartnerPayments(ctx.tenant.id, ctx.user.id));
+}
+
+/** Online-Zahlungen von Partner-Buchungen ohne Rechnung (gleiche Bedingung wie listMyPartnerPayments). */
+function partnerPaymentWhere(activeTenantId: string, userId: string) {
+  return { status: { in: ["PAID", "REFUNDED"] as Array<"PAID" | "REFUNDED"> }, bookingId: { not: null }, booking: { userId, viaTenantId: activeTenantId, tenantId: { not: activeTenantId }, invoice: { is: null } } };
+}
+
 /* ------------------------------------------------------------------ Mitglied */
 
 export type MyPayments = {
@@ -161,7 +182,7 @@ export async function listMyPayments(ctx: TenantCtx, now: Date): Promise<MyPayme
     src.booking
       ? db.invoice.findMany({
           where: { tenantId, booking: { userId } },
-          select: { id: true, tenantId: true, number: true, amountCents: true, currency: true, status: true, issuedAt: true, dueAt: true, paidAt: true, reference: true, bookingId: true, booking: { select: { startsAt: true, resource: { select: { name: true } } } } },
+          select: { id: true, tenantId: true, number: true, amountCents: true, currency: true, status: true, issuedAt: true, dueAt: true, paidAt: true, reference: true, bookingId: true, booking: { select: { startsAt: true, paymentStatus: true, resource: { select: { name: true } } } } },
           orderBy: { issuedAt: "desc" },
           take: 200,
         })
@@ -199,7 +220,7 @@ export async function listMyPayments(ctx: TenantCtx, now: Date): Promise<MyPayme
   }
 
   for (const i of invoices) {
-    const status = normalizeInvoiceStatus(i.status);
+    const status = bookingInvoiceStatus(i.status, i.booking.paymentStatus);
     const reference = !qrIban ? null : status === "OPEN" ? await ensureReference("BOOKING", i, qrIban) : i.reference;
     items.push({
       key: `BOOKING:${i.id}`, source: "BOOKING", id: i.id, number: i.number,
@@ -303,13 +324,13 @@ async function listMyPartnerPayments(activeTenantId: string, userId: string, now
       where: partnerInvoiceWhere(activeTenantId, userId),
       select: {
         id: true, tenantId: true, number: true, amountCents: true, currency: true, status: true, issuedAt: true, dueAt: true, paidAt: true, reference: true, bookingId: true,
-        booking: { select: { startsAt: true, resource: { select: { name: true } } } },
+        booking: { select: { startsAt: true, paymentStatus: true, resource: { select: { name: true } } } },
       },
       orderBy: { issuedAt: "desc" },
       take: 200,
     }),
     db.payment.findMany({
-      where: { status: { in: ["PAID", "REFUNDED"] }, bookingId: { not: null }, booking: { userId, viaTenantId: activeTenantId, tenantId: { not: activeTenantId }, invoice: { is: null } } },
+      where: partnerPaymentWhere(activeTenantId, userId),
       select: { id: true, provider: true, status: true, amountCents: true, currency: true, createdAt: true, updatedAt: true, bookingId: true, booking: { select: { tenantId: true, paidAt: true, startsAt: true, resource: { select: { name: true } } } } },
       orderBy: { createdAt: "desc" },
       take: 200,

@@ -232,6 +232,15 @@ describe("reversalDate", () => {
     expect(reversalDate(null, undefined, upd)).toBe(upd);
   });
 
+  it("aus updatedAt nachgetragene Spalte: das frühere Protokoll gilt", () => {
+    const backfilled = new Date("2026-04-05T09:00:00Z");
+    const log = new Date("2026-03-31T09:00:00Z");
+    expect(reversalDate(backfilled, log, backfilled)).toBe(log);
+    // Neuer Beleg: Protokoll kurz nach der Spalte (oder knapp davor wegen Uhren) → Spalte.
+    const col = new Date("2026-03-31T09:00:00Z");
+    expect(reversalDate(col, new Date(col.getTime() - 5_000), backfilled)).toBe(col);
+  });
+
   it("späte Bearbeitung verschiebt das Storno nicht in eine andere Periode", () => {
     const cancelledAt = reversalDate(new Date("2026-03-31T20:00:00Z"), null, new Date("2026-04-15T08:00:00Z"));
     const e = buildJournal([invoice({ status: "CANCELLED", cancelledAt })], A, { from: "2026-04-01", to: "2026-04-30" });

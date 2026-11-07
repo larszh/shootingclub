@@ -10,7 +10,7 @@ import { audit } from "@/lib/audit";
 import { isCalendarDate, PERSONS_LIMIT } from "./types";
 import { cancellableOccurrences, conflictSummary, formatWeekdaysCsv, minutesBetween, partitionOccurrences, validatePattern, weekdaysLabel, type ConflictReason, type SeriesPatternError } from "./series";
 import { planSeries, type SeriesInput } from "./series-queries";
-import { notifyBooking } from "./notify";
+import { notifyBooking, notifySeriesCancelled } from "./notify";
 
 /** Serienbuchungen: Recht «bookings.series» (Trainer und höher) und aktives Modul. */
 async function requireSeriesCtx() {
@@ -158,6 +158,7 @@ export async function cancelSeriesAction(seriesId: string): Promise<ActionResult
     db.booking.updateMany({ where: { id: { in: ids }, status: { in: ["PENDING", "CONFIRMED"] } }, data: { status: "CANCELLED", cancelledAt: now } }),
     db.bookingSeries.update({ where: { id: s.id }, data: { status: "CANCELLED" } }),
   ]);
+  if (s.userId && s.userId !== ctx.user.id && ids.length) void notifySeriesCancelled(s.id, ids.length, ctx.user).catch(() => undefined);
   await audit({ tenantId: ctx.tenant.id, actorId: ctx.user.id, actorName: ctx.user.name, action: "booking.series.cancel", entity: "BookingSeries", entityId: s.id, detail: `${ids.length} künftige Termine storniert` });
   revalidatePath("/bookings");
   revalidatePath("/admin/bookings");

@@ -59,8 +59,9 @@ const fr: Record<string, string> = {
   "notify.topic.system": "Compte et sécurité",
 
   "notify.mail.open": "Ouvrir dans Standchef",
-  "notify.mail.footer": "Tu reçois cet e-mail parce que tu es membre de {club}. Tu peux adapter les notifications dans l'app sous «\u00A0Mehr → Benachrichtigungen & Sprache\u00A0».",
-  "notify.mail.footerNoClub": "Tu peux adapter les notifications dans l'app sous «\u00A0Mehr → Benachrichtigungen & Sprache\u00A0».",
+  "notify.mail.footer": "Tu reçois cet e-mail parce que tu es membre de {club}. Tu peux adapter les notifications dans l'app sous «\u00A0Plus → Notifications & langue\u00A0».",
+  "notify.mail.footerJoinRequest": "Tu reçois cet e-mail en raison de ta demande d'adhésion auprès de {club}.",
+  "notify.mail.footerNoClub": "Tu peux adapter les notifications dans l'app sous «\u00A0Plus → Notifications & langue\u00A0».",
 
   "notify.test.title": "Notification de test",
   "notify.test.body": "Ça marche\u00A0! Voici à quoi ressemblent les notifications de Standchef.",

@@ -398,6 +398,11 @@ function DoneStep({ summary, onRestart }: { summary: ImportSummary; onRestart: (
       {summary.failed ? (
         <Alert>
           {summary.failed} Zeilen konnten nicht übernommen werden (Zeilen {summary.failedLines.slice(0, 20).join(", ")}{summary.failedLines.length > 20 ? " …" : ""}). Bitte prüfen und erneut importieren – bereits übernommene Zeilen werden dann als «bereits erfasst» erkannt.
+          {summary.rowErrors?.length ? (
+            <ul className="mt-1.5 list-disc pl-5">
+              {summary.rowErrors.slice(0, 20).map((e) => <li key={e.line}>Zeile {e.line}: {e.error}</li>)}
+            </ul>
+          ) : null}
         </Alert>
       ) : null}
       <div className="flex flex-wrap gap-2">

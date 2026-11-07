@@ -6,7 +6,7 @@ import { db } from "@/lib/db";
 import { destroySession, getCurrentUser, throttle, verifyPassword } from "@/lib/auth";
 import { fail, type ActionResult } from "@/lib/action-result";
 import { getRequestLocale, getT, type TFunction } from "@/lib/i18n";
-import { auditAccountDeletion, pseudonymizeUser, sendAccountDeletedMail, soleOwnerTenants } from "@/modules/core/privacy";
+import { accountDeletionTenants, auditAccountDeletion, pseudonymizeUser, sendAccountDeletedMail, soleOwnerTenants } from "@/modules/core/privacy";
 
 function schema(t: TFunction) {
   return z.object({
@@ -42,10 +42,11 @@ export async function deleteAccountAction(_prev: ActionResult | null, formData: 
     return fail(t("shell.privacy.msg.soleOwner", { clubs: blockers.map((b) => t("shell.quoted", { text: b.name })).join(", ") }));
   }
 
-  const tenantIds = me.memberships.map((m) => m.tenantId);
+  // Direkt aus der DB (inkl. offener Beitrittsanfragen), bevor pseudonymizeUser sie entfernt.
+  const tenants = await accountDeletionTenants(me.id);
   const before = await pseudonymizeUser(me.id);
   if (!before) return fail(t("shell.privacy.msg.failed"));
-  await auditAccountDeletion(me.id, tenantIds);
+  await auditAccountDeletion(me.id, tenants);
   await sendAccountDeletedMail(before);
   await destroySession().catch(() => undefined);
   redirect("/login?deleted=1");

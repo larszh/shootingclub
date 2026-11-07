@@ -32,8 +32,10 @@ describe("i18n core", () => {
   it("fr-Benachrichtigungen duzen durchgehend, Mail-Fusszeile nennt den echten Menüpfad", () => {
     const notifyFr = Object.entries(fr).filter(([k]) => k.startsWith("notify."));
     expect(notifyFr.filter(([, v]) => /\b(vous|votre|vos)\b/i.test(v)).map(([k]) => k)).toEqual([]);
-    for (const dict of [de, fr, itDict]) {
-      expect(dict["notify.mail.footerNoClub"]).toContain("Benachrichtigungen & Sprache");
+    // Jede Sprache nennt die Menüpunkte so, wie die App sie in dieser Sprache zeigt (extra/shell.ts).
+    for (const [dict, path] of [[de, "Mehr → Benachrichtigungen & Sprache"], [fr, "Plus → Notifications & langue"], [itDict, "Altro → Notifiche e lingua"]] as const) {
+      expect(dict["notify.mail.footerNoClub"]).toContain(path);
+      expect(dict["notify.mail.footer"]).toContain(path);
       expect(dict["notify.mail.footerNoClub"]).not.toMatch(/Mein Konto|Mon compte|Il mio account/);
     }
     // Französische Guillemets mit geschütztem Leerzeichen

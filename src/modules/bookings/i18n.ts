@@ -109,3 +109,14 @@ export function formatTimeRangeL(start: Date, end: Date, locale: string | null |
 export function formatDayLabel(dateStr: string, locale: string | null | undefined) {
   return new Intl.DateTimeFormat(INTL_LOCALE[normalizeLocale(locale)], { weekday: "long", day: "numeric", month: "long", timeZone: "UTC" }).format(new Date(`${dateStr}T12:00:00Z`));
 }
+
+/** Schiesszeiten eines Tages (aus slotsFor) als Satz in der Sprache der Person, z.B. «Bewilligte Schiesszeiten: Samstag 09:00–17:00». */
+export function windowHintLabel(w: { weekday: number; ranges: Array<{ from: string; to: string }> }, locale: string | null | undefined, t: TFunction): string {
+  // 2023-01-01 ist ein Sonntag (weekday 0), passend zu getUTCDay().
+  const day = new Intl.DateTimeFormat(INTL_LOCALE[normalizeLocale(locale)], { weekday: "long", timeZone: "UTC" })
+    .format(new Date(Date.UTC(2023, 0, 1 + w.weekday)));
+  const list = w.ranges.length
+    ? `${day} ${w.ranges.map((r) => `${r.from}–${r.to}`).join(", ")}`
+    : t("bookings.wizard.windowNone", { day });
+  return t("bookings.wizard.windowHint", { list });
+}

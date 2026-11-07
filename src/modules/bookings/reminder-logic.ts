@@ -1,5 +1,7 @@
 /** Regeln für die Erinnerung vor einer Reservation (rein, testbar). */
 
+import { zurichParts } from "@/lib/time";
+
 /** Erinnerung so viele Stunden vor Beginn. */
 export const REMINDER_LEAD_HOURS = 24;
 /** Mindestabstand zwischen Buchung und Beginn, damit eine Erinnerung sinnvoll ist. */
@@ -18,4 +20,13 @@ export function reminderDue(b: { startsAt: Date; createdAt: Date; confirmedAt?: 
   if (ahead <= 0 || ahead > REMINDER_LEAD_HOURS * HOUR) return false;
   const decidedAt = b.confirmedAt && b.confirmedAt > b.createdAt ? b.confirmedAt : b.createdAt;
   return b.startsAt.getTime() - decidedAt.getTime() >= REMINDER_MIN_NOTICE_HOURS * HOUR;
+}
+
+/**
+ * «heute» oder «morgen» für den Erinnerungstitel, nach Kalendertag in Schweizer Zeit. Erinnerungen
+ * gehen auch am Tag selbst raus (kurzfristiger gebucht, oder Beginn nachts/früh morgens – dann
+ * wartet die Erinnerung bis 7 Uhr).
+ */
+export function reminderDay(startsAt: Date, now: Date): "today" | "tomorrow" {
+  return zurichParts(startsAt).dateStr === zurichParts(now).dateStr ? "today" : "tomorrow";
 }

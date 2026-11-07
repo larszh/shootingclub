@@ -3,7 +3,7 @@ import { ShieldCheck } from "lucide-react";
 import { getAppContext } from "@/lib/tenant";
 import { currentSessionHash, SESSION_START_ACTION } from "@/lib/auth";
 import { db } from "@/lib/db";
-import { formatDate, formatDateTime, getRequestLocale, getT } from "@/lib/i18n";
+import { formatDate, formatDateTime, getRequestLocale, getT, type TFunction } from "@/lib/i18n";
 import { Badge, Card, PageHeader, SectionTitle } from "@/components/ui";
 import { countRecoveryCodes } from "@/modules/core/two-factor";
 import { PasswordCard, SessionsCard, TwoFactorCard } from "./forms";
@@ -28,6 +28,17 @@ async function loadSecurity(userId: string) {
     : [];
   const device = new Map(starts.map((r) => [r.entityId, { label: r.detail, ip: r.ip }]));
   return [user, sessions.map((s) => ({ ...s, device: device.get(s.id) ?? null })), current] as const;
+}
+
+/**
+ * Gerätebezeichnung in der Sprache des Mitglieds. Beim Anmelden wird sie deutsch gespeichert
+ * («Safari auf iPhone», «Unbekanntes Gerät», siehe describeUserAgent und auth.ts).
+ */
+function deviceLabel(label: string | null, t: TFunction): string | null {
+  if (!label) return null;
+  if (label === "Unbekanntes Gerät") return t("shell.security.unknownDevice");
+  const m = /^(.+) auf (.+)$/.exec(label);
+  return m ? t("shell.security.deviceOn", { browser: m[1]!, os: m[2]! }) : label;
 }
 
 export default async function SecurityPage() {
@@ -68,7 +79,7 @@ export default async function SecurityPage() {
         sessions={sessions.map((s) => ({
           id: s.id,
           current: s.tokenHash === current,
-          device: s.device?.label ?? null,
+          device: deviceLabel(s.device?.label ?? null, t),
           ip: s.device?.ip ?? null,
           since: formatDateTime(s.createdAt, locale),
           until: formatDate(s.expiresAt, locale),

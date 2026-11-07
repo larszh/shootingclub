@@ -21,7 +21,7 @@ import type { AccountKey, AccountPlan } from "./types";
  *   Schützenstube (optional, `includeKioskCash`, Standard an)
  *
  * Storno- und Erstattungsdatum: aus den Spalten cancelledAt/refundedAt der Belege; ältere Belege ohne
- * Spalte aus dem Protokoll (events.ts), sonst die letzte Änderung (reversalDate).
+ * Spalte (oder mit aus updatedAt nachgetragener Spalte) aus dem Protokoll (events.ts), sonst die letzte Änderung (reversalDate).
  *
  * Gebühren der Zahlungsanbieter werden nicht gebucht: die Anbieter melden sie nicht pro Zahlung.
  * Sie gehören anhand der Abrechnung des Anbieters von Hand auf feesExpenseAccount.
@@ -169,11 +169,18 @@ export function isPaidOnline(invoicePaidAt: Date | null, paymentSettledAt: Date[
   return paymentSettledAt.some((t) => Math.abs(t.getTime() - invoicePaidAt.getTime()) <= ONLINE_SETTLE_WINDOW_MS);
 }
 
+/** Spielraum zwischen Spalte und Protokolleintrag desselben Statuswechsels (Uhren App/Datenbank). */
+export const REVERSAL_LOG_TOLERANCE_MS = 60_000;
+
 /**
  * Datum einer Gegenbuchung (Storno, Rückerstattung): Spalte am Beleg, sonst der protokollierte
  * Statuswechsel (ältere Belege), sonst die letzte Änderung.
+ * Liegt der Protokolleintrag deutlich vor der Spalte, wurde die Spalte nachträglich aus `updatedAt`
+ * nachgetragen (Migration Wave D, ältere Belege mit späterer Bearbeitung): dann gilt das Protokoll.
+ * Beim Statuswechsel wird die Spalte gesetzt und erst danach protokolliert (Protokoll ≥ Spalte).
  */
 export function reversalDate(column: Date | null | undefined, logged: Date | null | undefined, fallback: Date): Date {
+  if (column && logged && logged.getTime() < column.getTime() - REVERSAL_LOG_TOLERANCE_MS) return logged;
   return column ?? logged ?? fallback;
 }
 

@@ -12,6 +12,7 @@ import { nowDate } from "@/modules/billing/dates";
 import { yearRange } from "@/modules/federal/queries";
 import { opStatusByUser } from "@/modules/federal/types";
 import { getChampionship, loadRanking } from "@/modules/championship/queries";
+import { NO_CATEGORY } from "@/modules/championship/types";
 
 type TenantCtx = AppContext & { tenant: ActiveTenant };
 /** Sprache und Übersetzer für die Karten */
@@ -106,7 +107,7 @@ async function championshipCard(ctx: TenantCtx, { t }: L): Promise<ModuleCard | 
   const base = { key: "championship", href: `/championship/${c.id}`, icon: Trophy, title: c.name };
   if (!me) return { ...base, value: t("shell.home.cards.chNone"), hint: t("shell.home.cards.chRanked", { count: ranking.ranked.length }), tone: "neutral" };
   if (me.rank === null) return { ...base, value: t("shell.home.cards.chUnranked"), hint: me.missingRequired.length ? t("shell.home.cards.chMissing", { list: me.missingRequired.join(", ") }) : undefined, tone: "warn" };
-  return { ...base, value: t("shell.home.cards.chRank", { rank: me.rank }), hint: t("shell.home.cards.chOf", { count: ranking.ranked.length, category: me.category }), tone: me.rank <= 3 ? "ok" : "neutral" };
+  return { ...base, value: t("shell.home.cards.chRank", { rank: me.rank }), hint: t("shell.home.cards.chOf", { count: ranking.ranked.length, category: me.category === NO_CATEGORY ? t("shooting.champ.noCategory") : me.category }), tone: me.rank <= 3 ? "ok" : "neutral" };
 }
 
 async function safe(fn: () => Promise<ModuleCard | null>): Promise<ModuleCard | null> {

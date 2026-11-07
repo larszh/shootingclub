@@ -5,7 +5,7 @@ import { formatDateZurich } from "@/lib/time";
 import { formatScore } from "@/lib/utils";
 import { canSeeAll, currentSwissYear, getClubInfo, nowDate, requireFederal } from "@/modules/federal/queries";
 import { fsAwardsOverview } from "@/modules/federal/awards-queries";
-import { awardStatusText } from "@/modules/federal/awards";
+import { AWARD_EXAMPLE_NOTICE, awardStatusText, isExampleLimits } from "@/modules/federal/awards";
 import { parseYear } from "@/modules/federal/types";
 
 export const metadata = { title: "Auszeichnungen Feldschiessen" };
@@ -52,6 +52,7 @@ export default async function FederalAwardsPrintPage({ searchParams }: { searchP
               {s.counts.length ? s.counts.map((c) => `${c.count} × ${c.award}`).join(" · ") : "Keine Auszeichnungen"}
               {s.limits.length ? ` · Limiten: ${s.limits.map((l) => `${l.category} ${l.award} ab ${formatScore(l.minScore, !Number.isInteger(l.minScore))}`).join("; ")}` : " · keine Limiten erfasst"}
             </p>
+            {isExampleLimits(s.limits) ? <p className="mb-2 border border-amber-400 bg-amber-50 px-2 py-1 text-[10px] font-semibold text-amber-900">{AWARD_EXAMPLE_NOTICE}</p> : null}
             <table className="w-full border-collapse text-[10.5px] leading-tight">
               <thead>
                 <tr className="bg-neutral-100 text-left">

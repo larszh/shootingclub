@@ -680,11 +680,11 @@ export function fsAwardExample(maxScore: number | null | undefined): string {
   const at = (share: number) => Math.round(max * share);
   return [
     "# Beispiel, bitte prüfen – Limiten gemäss Ausschreibung eintragen",
-    `Jugend;;20;${at(0.62)};Kranz`,
-    `Jugend;;20;${at(0.58)};Anerkennungskarte`,
-    `Elite;21;59;${at(0.64)};Kranz`,
-    `Elite;21;59;${at(0.6)};Anerkennungskarte`,
-    `Veteranen;60;;${at(0.62)};Kranz`,
-    `Veteranen;60;;${at(0.58)};Anerkennungskarte`,
+    `Jugend;;20;${at(0.62)};Kranz (Beispiel)`,
+    `Jugend;;20;${at(0.58)};Anerkennungskarte (Beispiel)`,
+    `Elite;21;59;${at(0.64)};Kranz (Beispiel)`,
+    `Elite;21;59;${at(0.6)};Anerkennungskarte (Beispiel)`,
+    `Veteranen;60;;${at(0.62)};Kranz (Beispiel)`,
+    `Veteranen;60;;${at(0.58)};Anerkennungskarte (Beispiel)`,
   ].join("\n");
 }

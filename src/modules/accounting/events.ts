@@ -7,8 +7,8 @@ import { audit } from "@/lib/audit";
  *
  * Das Datum steht heute in eigenen Spalten (FeeInvoice/Invoice/AmmoOrder.cancelledAt,
  * Booking.refundedAt), die beim Statuswechsel gesetzt werden. Der Protokolleintrag bleibt als
- * Nachweis (wer, wann) und ist der Rückfall für ältere Belege ohne Spalte; erst danach gilt `updatedAt`
- * (siehe reversalDate in journal.ts).
+ * Nachweis (wer, wann) und ist der Rückfall für ältere Belege ohne Spalte oder mit einer Spalte, die die
+ * Migration aus `updatedAt` nachgetragen hat; erst danach gilt `updatedAt` (siehe reversalDate in journal.ts).
  */
 
 export const ACCOUNTING_EVENT = {

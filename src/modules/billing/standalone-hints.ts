@@ -53,7 +53,7 @@ export function standaloneInvoiceHints(i: StandaloneHintInput): StandaloneHint[]
   }
   if (refunded.length) out.push({ tone: "info", text: `${refunded.length === 1 ? "Eine Online-Zahlung wurde" : `${refunded.length} Online-Zahlungen wurden`} erstattet.` });
   if (i.reopenBlocked || (i.kind === "kiosk" && isKioskReleasedNote(i.paymentNote))) {
-    out.push({ tone: "info", text: "Die Konsumationen wurden freigegeben und neu verrechnet. Diese Rechnung bleibt storniert." });
+    out.push({ tone: "info", text: "Die Konsumationen wurden freigegeben (wieder offen bzw. neu verrechnet). Diese Rechnung bleibt storniert." });
   } else if (i.kind === "kiosk" && i.status === "CANCELLED") {
     out.push({ tone: "info", text: "Die Konsumationen sind noch mit dieser Rechnung verknüpft. Unter «Schützenstube» freigeben, um sie neu zu verrechnen." });
   }

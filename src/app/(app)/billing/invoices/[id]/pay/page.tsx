@@ -10,7 +10,7 @@ import { localizeMethods } from "@/modules/billing/ui/i18n";
 import { providerLabel, providerMethods } from "@/lib/payments/catalog";
 import { canPayFeeInvoiceOnline } from "@/lib/payments/logic";
 import { getOnlineFeeProviderKey } from "@/modules/billing/payments";
-import { feeInvoiceTitle } from "@/modules/billing/fee-title";
+import { localizedFeeInvoiceTitle } from "../../../fee-title-i18n";
 import { PayFeeInvoiceButton } from "./pay-button";
 
 export async function generateMetadata(): Promise<Metadata> {
@@ -26,7 +26,7 @@ export default async function PayFeeInvoicePage({ params }: { params: Promise<{ 
   if (!inv || inv.tenantId !== ctx.tenant.id || inv.userId !== ctx.user.id) notFound();
   if (inv.status === "PAID") redirect(`/billing/invoices/${id}/return`);
   const providerKey = await getOnlineFeeProviderKey(ctx.tenant.id);
-  const title = feeInvoiceTitle(inv, t("money.fee.annualTitle", { year: inv.year }));
+  const title = localizedFeeInvoiceTitle(inv, t);
   const payable = canPayFeeInvoiceOnline(inv, providerKey);
   const back = { href: "/payments", label: t("money.payments.title") };
 

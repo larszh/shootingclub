@@ -34,7 +34,7 @@ export default async function InvoicePage({ params }: { params: Promise<{ id: st
     ? await renderQrBillSvg({ amountCents: inv.amountCents, currency: inv.currency, creditor, debtor, message: `${t("invoice.title")} ${inv.number}`, reference, locale })
     : null;
   return (
-    <PrintShell title={`${t("invoice.title")} ${inv.number}`} subtitle={`A4 · ${inv.status === "PAID" ? "bezahlt" : inv.status === "CANCELLED" ? "storniert" : "offen"}`} action={<PrintButton />}>
+    <PrintShell title={`${t("invoice.title")} ${inv.number}`} subtitle={`A4 · ${inv.status === "PAID" && b.paymentStatus === "REFUNDED" ? "erstattet" : inv.status === "PAID" ? "bezahlt" : inv.status === "CANCELLED" ? "storniert" : "offen"}`} action={<PrintButton />}>
       <InvoiceDocument
         locale={locale}
         number={inv.number} issuedAt={inv.issuedAt} dueAt={inv.dueAt} status={inv.status} currency={inv.currency}

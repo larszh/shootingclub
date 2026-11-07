@@ -8,6 +8,7 @@ import { getBillingProfile } from "@/modules/billing/profile";
 import { ensureReferences } from "@/modules/billing/reference";
 import { FEE_INVOICE_STATUS } from "@/modules/billing/types";
 import { feeInvoiceTitle, isStandaloneFeeInvoice } from "@/modules/billing/fee-title";
+import { localizedFeeInvoiceTitle } from "../fee-title-i18n";
 import { CopyField } from "@/modules/billing/ui/copy-field";
 import { formatMoney } from "@/lib/money";
 import { formatDate, getRequestLocale, getT } from "@/lib/i18n";
@@ -28,7 +29,7 @@ export default async function BillingPage() {
   const locale = await getRequestLocale();
   const t = getT(locale);
   const day = (d: Date) => formatDate(d, locale);
-  const titleOf = (i: (typeof all)[number]) => feeInvoiceTitle(i, t("money.fee.annualTitle", { year: i.year }));
+  const titleOf = (i: (typeof all)[number]) => localizedFeeInvoiceTitle(i, t);
   const statusOf = (s: string) => ({ label: t(`money.status.${s}`), tone: FEE_INVOICE_STATUS[s]?.tone ?? ("neutral" as const) });
   // Offene Rechnungen erhalten bei QR-IBAN ihre Referenz (ältere Rechnungen werden nachgeführt).
   const open = await ensureReferences("FEE", all.filter((i) => i.status === "OPEN"), ctx.tenant.id);

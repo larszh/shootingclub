@@ -140,3 +140,15 @@ describe("buildAwardsCsv", () => {
     expect(line).toBe("'=Test;1990;FS 300;Alle;58;1;Kranz;ja;nein;01.06.2026");
   });
 });
+
+describe("Beispiel-Limiten", () => {
+  it("erkennt die Markierung in Auszeichnung oder Kategorie", async () => {
+    const { AWARD_EXAMPLE_MARK, isExampleLimits } = await import("@/modules/federal/awards");
+    const { DEMO_AWARD_EXAMPLE_MARK } = await import("@/modules/federal/seed");
+    expect(DEMO_AWARD_EXAMPLE_MARK).toBe(AWARD_EXAMPLE_MARK);
+    expect(isExampleLimits([{ category: "Elite (21–59)", award: `Kranz ${AWARD_EXAMPLE_MARK}` }])).toBe(true);
+    expect(isExampleLimits([{ category: "Beispiel", award: "Kranz" }])).toBe(true);
+    expect(isExampleLimits([{ category: "Elite (21–59)", award: "Kranz" }])).toBe(false);
+    expect(isExampleLimits([])).toBe(false);
+  });
+});

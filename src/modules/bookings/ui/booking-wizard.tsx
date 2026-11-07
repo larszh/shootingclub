@@ -8,7 +8,7 @@ import { createGuestBookingAction, fetchGuestSlotsAction } from "@/modules/shari
 import { applyPriceFactorCents } from "@/modules/sharing/logic";
 import { formatDuration, type DurationOption } from "@/modules/bookings/types";
 import { basePriceFor, maxPersonsFor } from "@/modules/bookings/pricing";
-import { discountReasonLabel, formatDayLabel, personsText, placesText, resourceKindLabelT, slotErrorLabel, slotReasonLabel, wholeResourceLabelT } from "@/modules/bookings/i18n";
+import { discountReasonLabel, formatDayLabel, personsText, placesText, resourceKindLabelT, slotErrorLabel, slotReasonLabel, wholeResourceLabelT, windowHintLabel } from "@/modules/bookings/i18n";
 import { getT, type Locale } from "@/lib/i18n/core";
 import { PersonsStepper } from "./persons-stepper";
 import { Alert, Card, Field, Input } from "@/components/ui";
@@ -43,7 +43,11 @@ export type WizardPrefill = { resourceId: string; duration: number; date: string
  */
 export function BookingWizard({ resources, settings, today, prefill, shared, locale = "de" }: { resources: ResourceDto[]; settings: SettingsDto; today: string; prefill?: WizardPrefill | null; shared?: { ownerName: string } | null; locale?: Locale }) {
   const t = useMemo(() => getT(locale), [locale]);
-  const weekdayLabel = (d: string) => formatDayLabel(d, locale);
+  const weekdayLabel = (d: string) => {
+    // Nur den ersten Buchstaben gross schreiben (FR/IT: «Samedi 7 novembre», Monat bleibt klein).
+    const label = formatDayLabel(d, locale);
+    return label.charAt(0).toUpperCase() + label.slice(1);
+  };
   const partnerRate = (percent: number) => t("bookings.partnerRate", { percent });
   const [state, action] = useActionState(shared ? createGuestBookingAction : createBookingAction, null);
   const fetchSlots = shared ? fetchGuestSlotsAction : fetchSlotsAction;
@@ -233,7 +237,7 @@ export function BookingWizard({ resources, settings, today, prefill, shared, loc
           <div className="flex items-center gap-2">
             <button type="button" aria-label={t("bookings.wizard.prevDay")} onClick={() => setDate(shiftDate(date, -1))} disabled={date <= today} className="press h-11 w-11 rounded-full hover:bg-surface-2 disabled:opacity-30 flex items-center justify-center"><ChevronLeft className="h-5 w-5" /></button>
             <div className="flex-1 text-center">
-              <div className="font-semibold capitalize">{weekdayLabel(date)}</div>
+              <div className="font-semibold">{weekdayLabel(date)}</div>
               <input type="date" aria-label={t("bookings.wizard.pickDate")} value={date} min={today} max={maxDate} onChange={(e) => e.target.value && setDate(e.target.value)} className="text-xs text-ink-3 bg-transparent text-center" />
             </div>
             <button type="button" aria-label={t("bookings.wizard.nextDay")} onClick={() => setDate(shiftDate(date, 1))} disabled={date >= maxDate} className="press h-11 w-11 rounded-full hover:bg-surface-2 disabled:opacity-30 flex items-center justify-center"><ChevronRight className="h-5 w-5" /></button>
@@ -267,7 +271,7 @@ export function BookingWizard({ resources, settings, today, prefill, shared, loc
                 : t("bookings.wizard.tooFew", { persons: personsText(persons, t) })}</p> : null}
             {!loading && !slotError && windowInfo?.windowHint ? (
               <p className="mt-2 rounded-control bg-surface-2 px-3 py-2 text-xs text-ink-2">
-                {windowInfo.windowHint}.
+                {windowHintLabel(windowInfo.windowHint, locale, t)}.
                 {windowInfo.windowOverride ? ` ${t("bookings.wizard.windowOverride")}` : windowInfo.outsideWindow ? ` ${t("bookings.wizard.windowOutside")}` : ""}
               </p>
             ) : null}

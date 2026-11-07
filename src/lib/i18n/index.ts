@@ -52,6 +52,21 @@ export async function getRequestLocale(): Promise<Locale> {
   }
 }
 
+/**
+ * Sprache, die ein (noch) nicht angemeldeter Besucher gewählt hat: Cookie «standchef_locale»
+ * (Sprachwahl auf den Anmeldeseiten) → Accept-Language. null, wenn nichts davon gesetzt ist.
+ * Für die Registrierung: neue Konten übernehmen die gewählte Sprache.
+ */
+export async function getVisitorLocale(): Promise<Locale | null> {
+  try {
+    const chosen = (await cookies()).get(LOCALE_COOKIE)?.value;
+    if (isLocale(chosen)) return chosen;
+    return localeFromAcceptLanguage((await headers()).get("accept-language"));
+  } catch {
+    return null;
+  }
+}
+
 /** Sprache eines Vereins für Rechnungen, Mails und Druck. */
 export async function getTenantLocale(tenantId: string | null | undefined): Promise<Locale> {
   if (!tenantId) return DEFAULT_LOCALE;

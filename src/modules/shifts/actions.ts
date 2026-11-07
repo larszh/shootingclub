@@ -6,6 +6,7 @@ import { db } from "@/lib/db";
 import { audit } from "@/lib/audit";
 import { notify } from "@/lib/notify";
 import { fail, ok, type ActionResult } from "@/lib/action-result";
+import { getRequestLocale, getT } from "@/lib/i18n";
 import { requireModule } from "@/lib/tenant";
 import { formatDateZurich, formatTimeRange, zurichParts, zurichToUtc } from "@/lib/time";
 import { formatMoney } from "@/lib/money";
@@ -20,7 +21,10 @@ import { accessStatusWhere } from "@/lib/membership-access";
 import { copySchema, firstIssue, settingsSchema, shiftSchema, workLogSchema } from "./types";
 
 const idSchema = z.string().min(1).max(40);
-const NO_RIGHT = "Dafür fehlt dir die Berechtigung.";
+/** Fehlende Berechtigung, in der Sprache der Person. */
+async function noRight() {
+  return fail(getT(await getRequestLocale())("money.err.noPermission"));
+}
 const str = (fd: FormData, k: string) => (fd.get(k) === null ? "" : String(fd.get(k)));
 
 const revalidate = () => {
@@ -67,7 +71,7 @@ async function activeMemberIds(tenantId: string, userIds: string[]) {
 
 export async function saveShiftAction(_prev: ActionResult<{ id: string }> | null, fd: FormData): Promise<ActionResult<{ id: string }>> {
   const ctx = await manageCtx();
-  if (!ctx) return fail(NO_RIGHT);
+  if (!ctx) return noRight();
   const id = str(fd, "id") || null;
   if (id && !idSchema.safeParse(id).success) return fail("Ungültige Anfrage.");
   const parsed = shiftSchema.safeParse({
@@ -107,7 +111,7 @@ export async function saveShiftAction(_prev: ActionResult<{ id: string }> | null
 
 export async function deleteShiftAction(id: string): Promise<ActionResult> {
   const ctx = await manageCtx();
-  if (!ctx) return fail(NO_RIGHT);
+  if (!ctx) return noRight();
   if (!idSchema.safeParse(id).success) return fail("Ungültige Anfrage.");
   const tenantId = ctx.tenant.id;
   const s = await db.shift.findFirst({ where: { id, tenantId }, select: { title: true, startsAt: true, assignments: { where: { status: "DONE" }, select: { id: true } } } });
@@ -124,7 +128,7 @@ export async function deleteShiftAction(id: string): Promise<ActionResult> {
 /** Vorlage auf mehrere Daten kopieren (gleiche Uhrzeit, Besetzung, Anforderung; ohne Anlass und ohne Einteilungen). */
 export async function copyShiftAction(id: string, input: { from: string; to: string; weekdays: number[]; everyWeeks: number }): Promise<ActionResult<{ count: number }>> {
   const ctx = await manageCtx();
-  if (!ctx) return fail(NO_RIGHT);
+  if (!ctx) return noRight();
   if (!idSchema.safeParse(id).success) return fail("Ungültige Anfrage.");
   const parsed = copySchema.safeParse(input);
   if (!parsed.success) return fail(firstIssue(parsed.error).message);
@@ -158,7 +162,7 @@ export async function copyShiftAction(id: string, input: { from: string; to: str
 
 export async function assignMembersAction(shiftId: string, userIds: string[]): Promise<ActionResult> {
   const ctx = await manageCtx();
-  if (!ctx) return fail(NO_RIGHT);
+  if (!ctx) return noRight();
   if (!idSchema.safeParse(shiftId).success || !z.array(idSchema).min(1).max(200).safeParse(userIds).success) return fail("Bitte mindestens ein Mitglied wählen.");
   const tenantId = ctx.tenant.id;
   const s = await db.shift.findFirst({ where: { id: shiftId, tenantId }, select: { id: true, title: true, startsAt: true, endsAt: true, assignments: { select: { userId: true } } } });
@@ -182,7 +186,7 @@ export async function assignMembersAction(shiftId: string, userIds: string[]): P
 
 export async function removeAssignmentAction(assignmentId: string): Promise<ActionResult> {
   const ctx = await manageCtx();
-  if (!ctx) return fail(NO_RIGHT);
+  if (!ctx) return noRight();
   if (!idSchema.safeParse(assignmentId).success) return fail("Ungültige Anfrage.");
   const tenantId = ctx.tenant.id;
   const a = await db.shiftAssignment.findFirst({ where: { id: assignmentId, shift: { tenantId } }, select: { id: true, status: true, user: { select: { name: true } }, shift: { select: { id: true, title: true } } } });
@@ -198,7 +202,7 @@ const hoursInput = z.number().min(0).max(24).nullable();
 /** Einteilung bestätigen: DONE (mit Stunden), NO_SHOW oder zurück auf ASSIGNED. */
 export async function setAssignmentStatusAction(assignmentId: string, status: string, hours?: number | null): Promise<ActionResult> {
   const ctx = await manageCtx();
-  if (!ctx) return fail(NO_RIGHT);
+  if (!ctx) return noRight();
   if (!idSchema.safeParse(assignmentId).success || !isAssignmentStatus(status)) return fail("Ungültige Anfrage.");
   const h = hoursInput.safeParse(hours ?? null);
   if (!h.success) return fail("Bitte Stunden zwischen 0 und 24 eingeben.");
@@ -219,7 +223,7 @@ export async function setAssignmentStatusAction(assignmentId: string, status: st
 /** Alle noch offenen Einteilungen eines (begonnenen) Einsatzes als erledigt mit Standardstunden bestätigen. */
 export async function confirmAllDoneAction(shiftId: string): Promise<ActionResult> {
   const ctx = await manageCtx();
-  if (!ctx) return fail(NO_RIGHT);
+  if (!ctx) return noRight();
   if (!idSchema.safeParse(shiftId).success) return fail("Ungültige Anfrage.");
   const tenantId = ctx.tenant.id;
   const s = await db.shift.findFirst({ where: { id: shiftId, tenantId }, select: { id: true, title: true, startsAt: true, endsAt: true, hoursCredit: true } });
@@ -309,7 +313,7 @@ export async function deleteMyWorkLogAction(id: string): Promise<ActionResult> {
 /** Verwaltung: Stunden direkt für ein Mitglied erfassen (gilt sofort als bewilligt). */
 export async function addWorkLogForMemberAction(_prev: ActionResult | null, fd: FormData): Promise<ActionResult> {
   const ctx = await manageCtx();
-  if (!ctx) return fail(NO_RIGHT);
+  if (!ctx) return noRight();
   const userId = str(fd, "userId");
   if (!idSchema.safeParse(userId).success) return fail("Bitte ein Mitglied wählen.", { userId: "Bitte ein Mitglied wählen." });
   const parsed = workLogSchema.safeParse({ date: str(fd, "date"), hours: str(fd, "hours"), description: str(fd, "description") });
@@ -329,7 +333,7 @@ export async function addWorkLogForMemberAction(_prev: ActionResult | null, fd: 
 
 export async function approveWorkLogAction(id: string, approve: boolean): Promise<ActionResult> {
   const ctx = await manageCtx();
-  if (!ctx) return fail(NO_RIGHT);
+  if (!ctx) return noRight();
   if (!idSchema.safeParse(id).success) return fail("Ungültige Anfrage.");
   const tenantId = ctx.tenant.id;
   const log = await db.workLog.findFirst({ where: { id, tenantId }, select: { id: true, userId: true, hours: true, date: true, description: true, approvedAt: true, user: { select: { name: true } } } });
@@ -358,7 +362,7 @@ export async function approveWorkLogAction(id: string, approve: boolean): Promis
 
 export async function saveWorkSettingsAction(_prev: ActionResult | null, fd: FormData): Promise<ActionResult> {
   const ctx = await manageCtx();
-  if (!ctx) return fail(NO_RIGHT);
+  if (!ctx) return noRight();
   const parsed = settingsSchema.safeParse({ enabled: fd.get("enabled") === "on", proRata: fd.get("proRata") === "on", requiredHours: str(fd, "requiredHours"), rate: str(fd, "rate"), statuses: fd.getAll("statuses").map(String) });
   if (!parsed.success) {
     const i = firstIssue(parsed.error);
@@ -388,7 +392,7 @@ export async function saveWorkSettingsAction(_prev: ActionResult | null, fd: For
  */
 export async function billErsatzAction(year: number, userIds: string[]): Promise<ActionResult<{ count: number }>> {
   const ctx = await manageCtx();
-  if (!ctx) return fail(NO_RIGHT);
+  if (!ctx) return noRight();
   if (!Number.isInteger(year) || year < 2000 || year > 2100) return fail("Ungültiges Jahr.");
   if (!z.array(idSchema).min(1).max(5000).safeParse(userIds).success) return fail("Keine Mitglieder ausgewählt.");
   if (!ctx.hasModule("billing")) return fail("Bitte zuerst das Modul «Mitgliederbeiträge» aktivieren: die Rechnungen erscheinen dort und unter «Zahlungen».");

@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { db } from "@/lib/db";
+import { accessStatusWhere } from "@/lib/membership-access";
 import { fail, ok, type ActionResult } from "@/lib/action-result";
 import { parseMoneyToCents } from "@/lib/money";
 import { requireAmmo, requireAmmoAdmin } from "./guard";
@@ -250,7 +251,8 @@ export async function counterSaleAction(input: { userId: string; lines: OrderLin
   const note = orderNoteSchema.safeParse(input.note ?? "");
   if (!idSchema.safeParse(input.userId).success || !lines.success) return fail("Ungültige Eingabe.");
   if (!note.success) return fail(note.error.issues[0]?.message ?? "Bemerkung zu lang.");
-  const member = await db.membership.findUnique({ where: { userId_tenantId: { userId: input.userId, tenantId: ctx.tenant.id } }, select: { id: true } });
+  // Nur Mitglieder mit Zugang (keine wartenden Beitritte, keine Ausgetretenen).
+  const member = await db.membership.findFirst({ where: { tenantId: ctx.tenant.id, userId: input.userId, status: accessStatusWhere(), user: { deletedAt: null } }, select: { id: true } });
   if (!member) return fail("Mitglied nicht gefunden.");
   const settings = await db.ammoSettings.findUnique({ where: { tenantId: ctx.tenant.id }, select: { requireIdCheck: true } });
   if ((settings?.requireIdCheck ?? true) && !input.idChecked) return fail("Bitte zuerst die Berechtigung prüfen und bestätigen.");

@@ -144,6 +144,8 @@ const ROWS: Record<string, Row> = {
   "bookings.history.empty": ["Noch keine Reservationen.", "Pas encore de réservations.", "Ancora nessuna prenotazione."],
 
   // Assistent
+  "bookings.wizard.windowHint": ["Bewilligte Schiesszeiten: {list}", "Horaires de tir autorisés : {list}", "Orari di tiro autorizzati: {list}"],
+  "bookings.wizard.windowNone": ["{day}: keine Schiesszeit", "{day} : aucun horaire de tir", "{day}: nessun orario di tiro"],
   "bookings.wizard.stepWhat": ["1 · Was", "1 · Quoi", "1 · Cosa"],
   "bookings.wizard.stepDuration": ["2 · Wie lange", "2 · Durée", "2 · Durata"],
   "bookings.wizard.stepPersons": ["3 · Wie viele Personen", "3 · Combien de personnes", "3 · Quante persone"],
@@ -393,7 +395,14 @@ const ROWS: Record<string, Row> = {
     "Tu as annulé ta réservation « {resource} » du {date}.",
     "Hai annullato la tua prenotazione «{resource}» del {date}.",
   ],
+  "bookings.notify.seriesCancelled.title": ["Serie storniert", "Série annulée", "Serie annullata"],
+  "bookings.notify.seriesCancelled.body": [
+    "{name} hat deine Serienreservation «{resource}» storniert. Betroffene künftige Termine: {count}.",
+    "{name} a annulé ta série de réservations « {resource} ». Dates futures concernées : {count}.",
+    "{name} ha annullato la tua serie di prenotazioni «{resource}». Date future interessate: {count}.",
+  ],
   "bookings.notify.reminder.title": ["Erinnerung: Reservation morgen", "Rappel : réservation demain", "Promemoria: prenotazione domani"],
+  "bookings.notify.reminder.titleToday": ["Erinnerung: Reservation heute", "Rappel : réservation aujourd’hui", "Promemoria: prenotazione oggi"],
   "bookings.notify.reminder.body": ["«{resource}» am {date}.", "« {resource} » le {date}.", "«{resource}» il {date}."],
   "bookings.notify.reminder.email": [
     "Deine Reservation «{resource}» beginnt am {date}.\n\nFalls du verhindert bist, storniere sie bitte rechtzeitig, damit andere den Platz nutzen können.",

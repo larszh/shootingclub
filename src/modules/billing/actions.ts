@@ -307,19 +307,29 @@ export async function setFeeInvoiceStatusAction(id: string, status: "OPEN" | "PA
   const ctx = await requireBillingAdmin();
   if (!["OPEN", "PAID", "CANCELLED"].includes(status)) return fail("Ungültiger Status");
   if (note !== undefined && (typeof note !== "string" || note.length > 500)) return fail("Notiz ist ungültig oder zu lang.");
-  const inv = await db.feeInvoice.findUnique({ where: { id } });
-  if (!inv || inv.tenantId !== ctx.tenant.id) return fail("Nicht gefunden");
-  if (inv.status === status && note === undefined) return ok();
-  const blocked = await kioskReopenBlocked(db, inv, status);
-  if (blocked) return fail(blocked);
-  const paidAt = status === "PAID" ? (inv.status === "PAID" && inv.paidAt ? inv.paidAt : new Date()) : null;
-  // Eine neue Notiz ersetzt die sichtbare Notiz, der interne Mahnzähler bleibt erhalten.
-  const reminders = reminderCount(inv.paymentNote, null);
-  const paymentNote = note !== undefined ? joinNoteLines(reminders && /Gemahnt:/.test(inv.paymentNote ?? "") ? `Gemahnt: ${reminders}×` : null, [note.trim()]) : undefined;
-  // Storno-Datum für die Buchhaltung: beim Wechsel auf storniert setzen, beim Reaktivieren löschen.
-  const cancelledAt = status === "CANCELLED" ? (inv.status === "CANCELLED" && inv.cancelledAt ? inv.cancelledAt : new Date()) : null;
-  await db.feeInvoice.update({ where: { id }, data: { status, paidAt, cancelledAt, ...(paymentNote !== undefined ? { paymentNote } : {}) } });
-  if (inv.status !== "CANCELLED" && status === "CANCELLED") {
+  const found = await db.feeInvoice.findUnique({ where: { id }, select: { tenantId: true } });
+  if (!found || found.tenantId !== ctx.tenant.id) return fail("Nicht gefunden");
+  // Zeile sperren und auf dem gesperrten Stand entscheiden: «Wieder freigeben» (Schützenstube) sperrt
+  // dieselbe Zeile, sonst könnte eine gleichzeitige Freigabe die Reaktivierung durchrutschen lassen.
+  const result = await db.$transaction(async (tx) => {
+    await tx.$queryRaw`SELECT id FROM \`FeeInvoice\` WHERE id = ${id} AND tenantId = ${ctx.tenant.id} FOR UPDATE`;
+    const inv = await tx.feeInvoice.findUnique({ where: { id } });
+    if (!inv || inv.tenantId !== ctx.tenant.id) return { error: "Nicht gefunden" };
+    if (inv.status === status && note === undefined) return { error: null, prev: inv.status, changed: false };
+    const blocked = await kioskReopenBlocked(tx, inv, status);
+    if (blocked) return { error: blocked };
+    const paidAt = status === "PAID" ? (inv.status === "PAID" && inv.paidAt ? inv.paidAt : new Date()) : null;
+    // Eine neue Notiz ersetzt die sichtbare Notiz, der interne Mahnzähler bleibt erhalten.
+    const reminders = reminderCount(inv.paymentNote, null);
+    const paymentNote = note !== undefined ? joinNoteLines(reminders && /Gemahnt:/.test(inv.paymentNote ?? "") ? `Gemahnt: ${reminders}×` : null, [note.trim()]) : undefined;
+    // Storno-Datum für die Buchhaltung: beim Wechsel auf storniert setzen, beim Reaktivieren löschen.
+    const cancelledAt = status === "CANCELLED" ? (inv.status === "CANCELLED" && inv.cancelledAt ? inv.cancelledAt : new Date()) : null;
+    await tx.feeInvoice.update({ where: { id }, data: { status, paidAt, cancelledAt, ...(paymentNote !== undefined ? { paymentNote } : {}) } });
+    return { error: null, prev: inv.status, changed: true };
+  });
+  if (result.error !== null) return fail(result.error);
+  if (!result.changed) return ok();
+  if (result.prev !== "CANCELLED" && status === "CANCELLED") {
     await recordAccountingEvent({ tenantId: ctx.tenant.id, kind: "cancel", entity: "FeeInvoice", entityId: id, actorId: ctx.user.id, actorName: ctx.user.name });
   }
   revalidate();

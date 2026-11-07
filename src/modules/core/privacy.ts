@@ -3,6 +3,7 @@ import { randomBytes } from "node:crypto";
 import { strToU8, zipSync, type Zippable } from "fflate";
 import { db } from "@/lib/db";
 import { audit } from "@/lib/audit";
+import { accessStatusWhere } from "@/lib/membership-access";
 import { hashPassword } from "@/lib/auth";
 import { deleteStoredFile } from "@/lib/storage";
 import { enqueueMail, renderMail } from "@/lib/mail";
@@ -292,13 +293,13 @@ export async function buildPersonalExportZip(userId: string): Promise<Uint8Array
 /** Vereine, in denen der Benutzer einziger Inhaber ist (Löschung dann nicht möglich). */
 export async function soleOwnerTenants(userId: string): Promise<Array<{ id: string; name: string }>> {
   const owned = await db.membership.findMany({
-    where: { userId, role: "OWNER", status: { not: "LEFT" }, tenant: { deletedAt: null } },
+    where: { userId, role: "OWNER", status: accessStatusWhere(), tenant: { deletedAt: null } },
     select: { tenantId: true, tenant: { select: { name: true } } },
   });
   if (!owned.length) return [];
   const others = await db.membership.groupBy({
     by: ["tenantId"],
-    where: { tenantId: { in: owned.map((o) => o.tenantId) }, role: "OWNER", status: { not: "LEFT" }, userId: { not: userId }, user: { deletedAt: null } },
+    where: { tenantId: { in: owned.map((o) => o.tenantId) }, role: "OWNER", status: accessStatusWhere(), userId: { not: userId }, user: { deletedAt: null } },
     _count: { _all: true },
   });
   const covered = new Set(others.map((o) => o.tenantId));
@@ -419,10 +420,25 @@ export async function sendAccountDeletedMail(to: { email: string; name: string; 
 }
 
 /** Audit-Eintrag für eine Kontolöschung (ohne Personendaten). */
-export async function auditAccountDeletion(userId: string, tenantIds: string[]) {
+/**
+ * Vereine, die von einer Kontolöschung betroffen sind – vor pseudonymizeUser lesen, weil dort
+ * offene Beitrittsanfragen (PENDING) gelöscht werden und sonst im Verein spurlos verschwinden.
+ */
+export async function accountDeletionTenants(userId: string): Promise<{ memberTenantIds: string[]; pending: Array<{ tenantId: string; membershipId: string }> }> {
+  const rows = await db.membership.findMany({ where: { userId, status: { not: "LEFT" } }, select: { id: true, tenantId: true, status: true } });
+  return {
+    memberTenantIds: rows.filter((r) => r.status !== "PENDING").map((r) => r.tenantId),
+    pending: rows.filter((r) => r.status === "PENDING").map((r) => ({ tenantId: r.tenantId, membershipId: r.id })),
+  };
+}
+
+export async function auditAccountDeletion(userId: string, tenants: { memberTenantIds: string[]; pending: Array<{ tenantId: string; membershipId: string }> }) {
   await audit({ actorId: userId, actorName: DELETED_USER_NAME, action: "user.delete.self", entity: "User", entityId: userId, detail: "Konto pseudonymisiert" });
-  for (const tenantId of tenantIds) {
+  for (const tenantId of tenants.memberTenantIds) {
     await audit({ tenantId, actorId: userId, actorName: DELETED_USER_NAME, action: "member.delete.self", entity: "User", entityId: userId, detail: "Konto gelöscht, Mitgliedschaft beendet" });
+  }
+  for (const p of tenants.pending) {
+    await audit({ tenantId: p.tenantId, actorId: userId, actorName: DELETED_USER_NAME, action: "member.join.withdraw", entity: "Membership", entityId: p.membershipId, detail: "Beitrittsanfrage durch Kontolöschung zurückgezogen" });
   }
 }
 

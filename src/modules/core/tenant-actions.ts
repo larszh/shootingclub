@@ -13,6 +13,7 @@ import { randomCode, slugify } from "@/lib/utils";
 import { todayZurich } from "@/lib/time";
 import { removeUserFromTenantChats } from "@/modules/chat/service";
 import { audit } from "@/lib/audit";
+import { accessStatusWhere } from "@/lib/membership-access";
 import { LOCALES, LOCALE_LABELS, type Locale } from "@/lib/i18n/locales";
 import { joinAttempt } from "./join-approval";
 import { announceJoinRequest } from "./join-notify";
@@ -108,8 +109,9 @@ export async function updateMemberRoleAction(membershipId: string, role: string)
   if (role === "OWNER" && !ctx.user.isSuperAdmin && ctx.tenant.role !== "OWNER") return fail("Nur Inhaber können Inhaber ernennen.");
   if (m.userId === ctx.user.id && !ctx.user.isSuperAdmin) return fail("Die eigene Rolle kann nur jemand anderes ändern.");
   if (role === "OWNER" && m.status === "LEFT") return fail("Ausgetretene Mitglieder können nicht Inhaber werden.");
+  if (role === "OWNER" && m.status === "PENDING") return fail("Wartende Beitritte können erst nach der Freigabe Inhaber werden.");
   if (m.role === "OWNER" && role !== "OWNER") {
-    const owners = await db.membership.count({ where: { tenantId: ctx.tenant.id, role: "OWNER" } });
+    const owners = await db.membership.count({ where: { tenantId: ctx.tenant.id, role: "OWNER", status: accessStatusWhere(), user: { deletedAt: null } } });
     if (owners <= 1) return fail("Der Verein braucht mindestens einen Inhaber. Zuerst eine andere Person zum Inhaber machen.");
   }
   await db.membership.update({ where: { id: membershipId }, data: { role } });

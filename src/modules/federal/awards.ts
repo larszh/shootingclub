@@ -14,7 +14,15 @@ import { toCsv } from "@/modules/scores/analytics";
 
 export const AWARD_LIMITS_HINT = "Limiten gemäss Ausschreibung eintragen.";
 export const AWARD_EXAMPLE_HINT = "Beispiel, bitte prüfen";
+/** Zusatz in der Auszeichnung von Beispiel-Limiten (z.B. Demo-Daten), damit die Markierung beim Speichern erhalten bleibt. */
+export const AWARD_EXAMPLE_MARK = "(Beispiel)";
+export const AWARD_EXAMPLE_NOTICE = `${AWARD_EXAMPLE_HINT}: Diese Limiten sind Beispielwerte, keine offiziellen Werte. Limiten gemäss Ausschreibung eintragen und speichern.`;
 export const AWARD_FORMAT_HINT = "Eine Zeile pro Limite: Kategorie;Alter von;Alter bis;Limite;Auszeichnung. Alter leer = ohne Grenze. Zeilen mit # werden ignoriert.";
+
+/** true, wenn Limiten als Beispiel markiert sind (Kategorie oder Auszeichnung enthält «Beispiel»). */
+export function isExampleLimits(limits: readonly Pick<AwardLimitLite, "category" | "award">[]): boolean {
+  return limits.some((l) => /beispiel/i.test(l.award) || /beispiel/i.test(l.category));
+}
 
 /** Höchstzahl Limiten pro Programm und Jahr. */
 export const MAX_AWARD_LINES = 60;

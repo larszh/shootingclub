@@ -160,7 +160,7 @@ export default async function EventDetailPage({ params, searchParams }: { params
             </div>
             {e.capacity ? (
               <div className="mt-3">
-                <div className="flex justify-between text-xs text-ink-3"><span>{t("money.events.detail.seatsTaken", { taken: d.seatsTaken, capacity: e.capacity })}</span>{d.isFull ? <span className="font-semibold text-warn">{t("money.events.full")}</span> : null}</div>
+                <div className="flex justify-between text-xs text-ink-3"><span>{tPlural(t, "money.events.detail.seatsTaken", d.seatsTaken, { capacity: e.capacity })}</span>{d.isFull ? <span className="font-semibold text-warn">{t("money.events.full")}</span> : null}</div>
                 <div className="mt-1 h-2 overflow-hidden rounded-full bg-surface-2"><div className={cn("h-full rounded-full", d.isFull ? "bg-warn" : "bg-ok")} style={{ width: `${pct}%` }} /></div>
                 {d.isFull && counts.maybe > 0 ? <p className="mt-1.5 text-xs text-ink-3">{t("money.events.detail.waitlist", { n: counts.maybe })}</p> : null}
               </div>

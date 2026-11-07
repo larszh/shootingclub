@@ -188,6 +188,14 @@ export function mergeWindows(ranges: Array<{ startMinute: number; endMinute: num
 
 export type WindowCheck = { ok: true; restricted: boolean } | { ok: false; reason: string; allowed: string };
 
+/** Schiesszeiten eines Wochentags als Daten (leere `ranges` = keine Schiesszeit); Text baut die Oberfläche je Sprache. */
+export type DayWindows = { weekday: number; ranges: Array<{ from: string; to: string }> };
+
+export function dayWindows(windows: WindowRule[], weekday: number): DayWindows {
+  const ranges = mergeWindows(windows.filter((w) => w.weekday === weekday));
+  return { weekday, ranges: ranges.map((r) => ({ from: formatMinutes(r.startMinute), to: formatMinutes(r.endMinute) })) };
+}
+
 /** Lesbare Liste der Fenster eines Wochentags, z.B. "Mo 09:00–12:00, 14:00–18:00". */
 export function describeDayWindows(windows: WindowRule[], weekday: number) {
   const ranges = mergeWindows(windows.filter((w) => w.weekday === weekday));
@@ -227,13 +235,13 @@ export const OUTSIDE_WINDOW_REASON = "Ausserhalb der Schiesszeiten";
  * Zeiten im Buchungsraster gegen die Schiesszeiten prüfen, damit Mitglieder nur Zeiten sehen, die sie
  * auch buchen können (dieselbe Regel wie beim Buchen, siehe createBookingAction).
  * `block`: Zeiten ausserhalb werden gesperrt (Mitglieder); sonst bleiben sie wählbar (Verwaltung, mit Vermerk).
- * `hint`: lesbare Schiesszeiten des Tages, null wenn keine Fenster gelten.
+ * `windows`: Schiesszeiten des Tages als Daten, null wenn keine Fenster gelten.
  */
 export function applyWindowsToSlots<T extends { startsAt: Date; endsAt: Date; available: boolean; reason?: string }>(
   windows: WindowRule[], resourceId: string, dateStr: string, slots: T[], block: boolean,
-): { slots: T[]; hint: string | null; outside: number } {
+): { slots: T[]; windows: DayWindows | null; outside: number } {
   const relevant = applicableWindows(windows, resourceId);
-  if (!relevant.length) return { slots, hint: null, outside: 0 };
+  if (!relevant.length) return { slots, windows: null, outside: 0 };
   const weekday = new Date(`${dateStr}T12:00:00Z`).getUTCDay();
   let outside = 0;
   const out = slots.map((s) => {
@@ -242,7 +250,7 @@ export function applyWindowsToSlots<T extends { startsAt: Date; endsAt: Date; av
     if (!block || !s.available) return s;
     return { ...s, available: false, reason: OUTSIDE_WINDOW_REASON };
   });
-  return { slots: out, hint: `Bewilligte Schiesszeiten: ${describeDayWindows(relevant, weekday)}`, outside };
+  return { slots: out, windows: dayWindows(relevant, weekday), outside };
 }
 
 // --- Alter -------------------------------------------------------------------------------

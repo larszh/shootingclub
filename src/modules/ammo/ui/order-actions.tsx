@@ -7,6 +7,7 @@ import { ActionButton } from "@/components/ui/action-button";
 import { confirmDialog } from "@/components/ui/dialog";
 import { isNavigationError, toast } from "@/lib/ui-feedback";
 import { approveOrderAction, cancelMyOrderAction, cancelOrderAction, issueOrderAction, savePaymentNoteAction, setPaymentStatusAction } from "@/modules/ammo/actions";
+import { getT, type Locale } from "@/lib/i18n/core";
 
 /** Bestätigung «Berechtigung geprüft» + Ausgabe-Knopf. Für Detailseite und Theke. */
 export function IssueControls({ orderId, requireIdCheck, onDone, size = "lg" }: { orderId: string; requireIdCheck: boolean; onDone?: () => void; size?: "md" | "lg" }) {
@@ -120,10 +121,11 @@ export function PaymentControls({ orderId, paymentStatus, paymentNote }: { order
 }
 
 /** Storno durch das Mitglied (nur vor der Ausgabe). */
-export function MemberCancelButton({ orderId }: { orderId: string }) {
+export function MemberCancelButton({ orderId, locale = "de" }: { orderId: string; locale?: Locale }) {
+  const t = getT(locale);
   return (
-    <ActionButton size="sm" variant="ghost" className="h-11" action={() => cancelMyOrderAction(orderId)} confirm={{ title: "Bestellung stornieren?", tone: "danger", confirmLabel: "Stornieren", cancelLabel: "Behalten" }}>
-      <XCircle className="h-4 w-4" /> Stornieren
+    <ActionButton size="sm" variant="ghost" className="h-11" action={() => cancelMyOrderAction(orderId)} confirm={{ title: t("money.ammo.cancel.title"), tone: "danger", confirmLabel: t("money.ammo.cancel.button"), cancelLabel: t("money.ammo.cancel.keep") }}>
+      <XCircle className="h-4 w-4" /> {t("money.ammo.cancel.button")}
     </ActionButton>
   );
 }

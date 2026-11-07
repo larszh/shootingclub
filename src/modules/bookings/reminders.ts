@@ -3,7 +3,7 @@ import { db } from "@/lib/db";
 import { notify } from "@/lib/notify";
 import { formatDateTime } from "@/lib/i18n/core";
 import { zurichParts } from "@/lib/time";
-import { reminderDue, REMINDER_LEAD_HOURS, REMINDER_HOURS } from "./reminder-logic";
+import { reminderDay, reminderDue, REMINDER_LEAD_HOURS, REMINDER_HOURS } from "./reminder-logic";
 
 const HOUR = 3_600_000;
 
@@ -47,16 +47,17 @@ export async function bookingReminders(now: Date = new Date()): Promise<{ sent: 
     }
     const resource = b.viaTenantId ? `${b.resource.name} (${b.tenant.name})` : b.resource.name;
     const date = formatDateTime(b.startsAt, "de");
+    const today = reminderDay(b.startsAt, now) === "today";
     await notify({
       tenantId: b.viaTenantId ?? b.tenantId,
       userIds: [b.userId],
       topic: "bookings",
-      title: "Erinnerung: Reservation morgen",
+      title: today ? "Erinnerung: Reservation heute" : "Erinnerung: Reservation morgen",
       body: `«${resource}» am ${date}.`,
       url: `/bookings/${b.id}`,
       tag: `booking:${b.id}`,
       i18n: {
-        title: "bookings.notify.reminder.title",
+        title: today ? "bookings.notify.reminder.titleToday" : "bookings.notify.reminder.title",
         body: "bookings.notify.reminder.body",
         emailBody: "bookings.notify.reminder.email",
         vars: { resource, date },

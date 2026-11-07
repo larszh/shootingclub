@@ -6,7 +6,7 @@ import { Alert, Badge, Card, EmptyState, LinkButton, LinkTabs, PageHeader, Secti
 import { formatScore } from "@/lib/utils";
 import { canEditYear, canSeeAll, currentSwissYear, nowDate, requireFederal } from "@/modules/federal/queries";
 import { awardSuggestions, fsAwardsOverview } from "@/modules/federal/awards-queries";
-import { AWARD_EXAMPLE_HINT, AWARD_LIMITS_HINT, awardLimitsToText, type AwardResult } from "@/modules/federal/awards";
+import { AWARD_EXAMPLE_HINT, AWARD_EXAMPLE_NOTICE, AWARD_LIMITS_HINT, awardLimitsToText, isExampleLimits, type AwardResult } from "@/modules/federal/awards";
 import { formatSwissDate, parseYear, yearOptions } from "@/modules/federal/types";
 import { fsAwardExample } from "@/modules/scores/presets";
 import { AwardLimitsForm } from "@/modules/federal/ui/award-limits-form";
@@ -67,6 +67,7 @@ export default async function FederalAwardsPage({ searchParams }: { searchParams
           <section key={program.id} className="mb-6">
             <SectionTitle>{program.name}</SectionTitle>
             <Card className="animate-rise space-y-3 p-4">
+              {isExampleLimits(limits) ? <Alert tone="warn">{AWARD_EXAMPLE_NOTICE}</Alert> : null}
               {limits.length ? (
                 <ul className="divide-y divide-line text-sm">
                   {limits.map((l) => (

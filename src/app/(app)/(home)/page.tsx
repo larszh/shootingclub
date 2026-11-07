@@ -22,8 +22,9 @@ import { db } from "@/lib/db";
 import { getAppContext, type AppContext, type ActiveTenant } from "@/lib/tenant";
 import type { ModuleKey } from "@/lib/modules";
 import { isTenantRole } from "@/lib/permissions";
-import { INTL_LOCALE, formatDate, formatMoneyLocale, getRequestLocale, getT, type Locale, type TFunction } from "@/lib/i18n";
+import { INTL_LOCALE, formatDate, getRequestLocale, getT, type Locale, type TFunction } from "@/lib/i18n";
 import { brandColors, contrastRatio } from "@/lib/brand";
+import { formatMoney } from "@/lib/money";
 import { cn, formatScore, zurichHour } from "@/lib/utils";
 import { Avatar } from "@/components/avatar";
 import {
@@ -40,7 +41,7 @@ import {
 import { listMatches, listPrograms, userStats } from "@/modules/scores/queries";
 import { listMyBookings, partitionBookings } from "@/modules/bookings/queries";
 import { nowDate } from "@/modules/billing/dates";
-import { anyPaymentModule, summarizeMyOpenPayments } from "@/modules/billing/overview";
+import { showMyPayments, summarizeMyOpenPayments } from "@/modules/billing/overview";
 import { AnnouncementsCard, UpcomingEventsCard } from "@/modules/events/ui/dashboard-cards";
 import { listConversations } from "@/modules/chat/queries";
 import { canSeeFolder, loadFolderTree } from "@/modules/files/queries";
@@ -206,7 +207,7 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
   const [scores, nextBookings, invoices, chats, newestFiles] = await Promise.all([
     scoresOn ? loadScores(ctx) : Promise.resolve(null),
     bookingsOn ? listMyBookings(ctx).then((b) => partitionBookings(b).upcoming.slice(0, 2)) : Promise.resolve([]),
-    anyPaymentModule(ctx) ? summarizeMyOpenPayments(ctx, nowDate()) : Promise.resolve(null),
+    showMyPayments(ctx).then((show) => (show ? summarizeMyOpenPayments(ctx, nowDate()) : null)),
     chatOn ? loadUnreadChats(ctx) : Promise.resolve(null),
     filesOn ? loadNewestFiles(ctx) : Promise.resolve([]),
   ]);
@@ -309,7 +310,7 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
             </span>
             <div className="min-w-0 flex-1">
               <div className="font-semibold">
-                {countLabel(t, invoices.count, "shell.home.invoices.openOne", "shell.home.invoices.openMany")} · {invoices.totals.map((x) => formatMoneyLocale(x.cents, locale, x.currency)).join(" · ")}
+                {countLabel(t, invoices.count, "shell.home.invoices.openOne", "shell.home.invoices.openMany")} · {invoices.totals.map((x) => formatMoney(x.cents, x.currency)).join(" · ")}
               </div>
               <div className="text-xs text-ink-3">
                 {invoices.overdue > 0

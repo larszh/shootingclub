@@ -16,8 +16,17 @@ export function toPaymentPayee(profile: BillingProfileView, tenantName: string):
   return { iban: profile.iban, payeeName: profile.payeeName ?? tenantName, qrIban: profile.qrIban };
 }
 
-function normalizeInvoiceStatus(s: string): PaymentItem["status"] {
+export function normalizeInvoiceStatus(s: string): PaymentItem["status"] {
   return s === "PAID" ? "PAID" : s === "CANCELLED" ? "CANCELLED" : "OPEN";
+}
+
+/**
+ * Status einer Reservations-Rechnung für Mitglieder: Eine bezahlte Rechnung bleibt bei der Rückerstattung
+ * PAID (nur die Reservation wird REFUNDED), gilt aber als «Erstattet» und zählt nicht mehr als bezahlt.
+ */
+export function bookingInvoiceStatus(invoiceStatus: string, bookingPaymentStatus?: string | null): PaymentItem["status"] {
+  const status = normalizeInvoiceStatus(invoiceStatus);
+  return status === "PAID" && bookingPaymentStatus === "REFUNDED" ? "REFUNDED" : status;
 }
 
 function groupOf(status: PaymentItem["status"]): PaymentItem["group"] {
@@ -38,12 +47,12 @@ export function partnerInvoiceWhere(activeTenantId: string, userId: string, extr
 
 type PartnerInvoiceRow = {
   id: string; tenantId: string; number: string; amountCents: number; currency: string; status: string; issuedAt: Date; dueAt: Date; paidAt: Date | null;
-  bookingId: string; booking: { startsAt: Date; resource: { name: string } };
+  bookingId: string; booking: { startsAt: Date; paymentStatus?: string | null; resource: { name: string } };
 };
 
 /** Posten einer Partner-Rechnung (rein, testbar). `reference` nur mit QR-IBAN des Eigentümers. */
 export function partnerInvoiceItem(i: PartnerInvoiceRow, issuer: { tenantId: string; name: string }, payee: PaymentPayee, reference: string | null, now: Date): PaymentItem {
-  const status = normalizeInvoiceStatus(i.status);
+  const status = bookingInvoiceStatus(i.status, i.booking.paymentStatus);
   return {
     key: `BOOKING:${i.id}`, source: "BOOKING", id: i.id, number: i.number,
     title: `Reservation ${i.booking.resource.name}`, detail: `Termin ${formatDateZurich(i.booking.startsAt, { weekday: undefined })} · ${issuer.name}`, memberName: null,

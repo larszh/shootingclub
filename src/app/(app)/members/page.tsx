@@ -7,17 +7,21 @@ import { Card, LinkButton, PageHeader } from "@/components/ui";
 import { TenantLogo } from "@/components/logo";
 import { userAvatarUrl } from "@/components/avatar";
 import { TENANT_ROLES } from "@/lib/permissions";
-import { formatDateZurich } from "@/lib/time";
+import { formatDate, getRequestLocale, getT, INTL_LOCALE } from "@/lib/i18n";
 import { displayEmail } from "@/modules/members/types";
 import { MemberDirectory, type DirectoryMember } from "./directory";
 
-export const metadata: Metadata = { title: "Mitglieder" };
+export async function generateMetadata(): Promise<Metadata> {
+  return { title: getT(await getRequestLocale())("shell.members.title") };
+}
 
 const ROLE_ORDER = new Map<string, number>(TENANT_ROLES.map((r, i) => [r, i]));
 
 export default async function MembersDirectoryPage() {
   const ctx = await requireTenant();
   const canViewContacts = ctx.can("members.view");
+  const locale = await getRequestLocale();
+  const t = getT(locale);
   const [tenant, memberships] = await Promise.all([
     db.tenant.findUniqueOrThrow({ where: { id: ctx.tenant.id }, select: { name: true, city: true, canton: true, description: true, website: true } }),
     db.membership.findMany({
@@ -38,10 +42,10 @@ export default async function MembersDirectoryPage() {
       role: m.role,
       status: m.status,
       avatarUrl: userAvatarUrl(m.user),
-      since: formatDateZurich(m.joinedAt ?? m.createdAt, { weekday: undefined, day: undefined, month: "long", year: "numeric" }),
+      since: formatDate(m.joinedAt ?? m.createdAt, locale, { day: undefined, month: "long", year: "numeric" }),
       isSelf: m.user.id === ctx.user.id,
     }))
-    .sort((a, b) => (ROLE_ORDER.get(a.role) ?? 9) - (ROLE_ORDER.get(b.role) ?? 9) || a.name.localeCompare(b.name, "de-CH"));
+    .sort((a, b) => (ROLE_ORDER.get(a.role) ?? 9) - (ROLE_ORDER.get(b.role) ?? 9) || a.name.localeCompare(b.name, INTL_LOCALE[locale]));
 
   const place = [tenant.city, tenant.canton].filter(Boolean).join(" ");
   const websiteLabel = tenant.website?.replace(/^https?:\/\//, "").replace(/\/$/, "");
@@ -49,10 +53,10 @@ export default async function MembersDirectoryPage() {
   return (
     <div>
       <PageHeader
-        title="Mitglieder"
-        subtitle={`${members.length} ${members.length === 1 ? "Mitglied" : "Mitglieder"} in ${tenant.name}`}
-        back={{ href: "/me", label: "Mehr" }}
-        action={canViewContacts ? <LinkButton href="/admin/members" variant="secondary" size="sm"><Settings className="h-4 w-4" /> Verwalten</LinkButton> : undefined}
+        title={t("shell.members.title")}
+        subtitle={t(members.length === 1 ? "shell.members.subtitleOne" : "shell.members.subtitleMany", { count: members.length, club: tenant.name })}
+        back={{ href: "/me", label: t("shell.nav.more") }}
+        action={canViewContacts ? <LinkButton href="/admin/members" variant="secondary" size="sm"><Settings className="h-4 w-4" /> {t("shell.members.manage")}</LinkButton> : undefined}
       />
 
       {tenant.description || tenant.website || ctx.tenant.logoUrl ? (
@@ -71,7 +75,7 @@ export default async function MembersDirectoryPage() {
         </Card>
       ) : null}
 
-      <MemberDirectory members={members} />
+      <MemberDirectory members={members} locale={locale} />
     </div>
   );
 }

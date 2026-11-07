@@ -9,6 +9,7 @@ import { getUnreadChatCount } from "@/modules/chat/queries";
 import { getRequestLocale, getT } from "@/lib/i18n";
 import { db } from "@/lib/db";
 import { hasAssociationArea } from "@/modules/association/queries";
+import { anyPaymentModule, hasMyPartnerPayments } from "@/modules/billing/overview";
 
 /**
  * Browser-Leiste (theme-color): mit Vereinsfarbe die Akzentfarbe, sonst der Seitenhintergrund
@@ -51,6 +52,8 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       : Promise.resolve(null),
     hasAssociationArea(ctx.user).catch(() => false),
   ]);
+  // «Zahlungen» auch ohne eigenes Zahlungsmodul, wenn Rechnungen oder Zahlungen bei Partnervereinen offen sind.
+  const partnerPayments = ctx.tenant && !anyPaymentModule(ctx) ? await hasMyPartnerPayments(ctx.tenant.id, ctx.user.id).catch(() => false) : false;
   return (
     <>
       <BrandTheme brandColor={ctx.tenant?.brandColor} brandColor2={ctx.tenant?.brandColor2} />
@@ -60,6 +63,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         user={{ name: ctx.user.name, email: ctx.user.email, avatarUrl: ctx.user.avatarUrl }}
         chatUnread={chatUnread}
         locale={locale}
+        partnerPayments={partnerPayments}
         admin={{
           settings: ctx.can("tenant.manage"),
           members: ctx.can("members.view"),

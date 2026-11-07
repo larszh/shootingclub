@@ -258,7 +258,7 @@ export function isKioskInvoiceName(categoryName: string) {
 }
 
 export const KIOSK_REOPEN_BLOCKED =
-  "Die Einträge dieser Schützenstube-Rechnung wurden freigegeben und neu verrechnet. Die stornierte Rechnung kann nicht mehr reaktiviert werden.";
+  "Die Einträge dieser Schützenstube-Rechnung wurden freigegeben (wieder offen bzw. neu verrechnet). Die stornierte Rechnung kann nicht mehr reaktiviert werden.";
 
 /**
  * Darf eine stornierte Rechnung wieder geöffnet oder als bezahlt markiert werden? Rein (ohne DB).

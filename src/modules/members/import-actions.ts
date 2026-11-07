@@ -138,7 +138,8 @@ type Analysis = {
 async function analyze(tenantId: string, rows: string[][], mapping: ImportField[]): Promise<Analysis> {
   const mapped = mapRows(rows, mapping, todayZurich());
   const [members, cats] = await Promise.all([
-    db.membership.findMany({ where: { tenantId }, select: { id: true, userId: true, memberNumber: true, user: { select: { name: true, email: true, birthDate: true } } } }),
+    // Offene Beitrittsanfragen (PENDING) sind keine Dubletten: sie werden nicht über den Import aktualisiert.
+    db.membership.findMany({ where: { tenantId, status: { not: "PENDING" } }, select: { id: true, userId: true, memberNumber: true, user: { select: { name: true, email: true, birthDate: true } } } }),
     db.feeCategory.findMany({ where: { tenantId }, select: { id: true, name: true } }),
   ]);
   const index = indexExisting(members.map((m) => ({ membershipId: m.id, userId: m.userId, name: m.user.name, email: m.user.email, birthDate: dateOnly(m.user.birthDate), memberNumber: m.memberNumber })));
@@ -204,7 +205,22 @@ const commitSchema = tableSchema.extend({
  * accountInvites: Zeilen mit bestehendem Konto (anderer Verein) – sie erhalten eine Einladung statt
  * einer direkten Verknüpfung. invited: verschickte Mails (Zugangsmails und Einladungen).
  */
-export type ImportSummary = { created: number; accountInvites: number; updated: number; skipped: number; failed: number; invited: number; failedLines: number[] };
+export type ImportSummary = {
+  created: number; accountInvites: number; updated: number; skipped: number; failed: number; invited: number; failedLines: number[];
+  /** Zeilen, die bewusst nicht übernommen wurden, mit Grund (z.B. offene Beitrittsanfrage). */
+  rowErrors: Array<{ line: number; error: string }>;
+};
+
+const PENDING_ROW_ERROR = "Beitrittsanfrage offen – bitte unter Mitglieder → Anfragen freigeben.";
+
+type Tx = Parameters<Parameters<typeof db.$transaction>[0]>[0];
+
+/** Mitgliedschaft aktualisieren, ausser sie ist eine offene Beitrittsanfrage. false = nicht aktualisiert. */
+async function updateMemberUnlessPending(tx: Tx, id: string, data: ReturnType<typeof memberFields>) {
+  const where = { id, status: { not: "PENDING" } };
+  if (!Object.keys(data).length) return (await tx.membership.count({ where })) > 0;
+  return (await tx.membership.updateMany({ where, data })).count > 0;
+}
 
 function newUserId() {
   // cuid-ähnlich: Buchstabe + Zeitanteil + Zufall (für Platzhalter-E-Mail und ID identisch)
@@ -245,7 +261,7 @@ export async function commitImportAction(input: { rowsJson: string; mapping: str
   const a = await analyze(ctx.tenant.id, rows, mapping);
   const tenantId = ctx.tenant.id;
   const today = toDbDate(todayZurich());
-  const summary: ImportSummary = { created: 0, accountInvites: 0, updated: 0, skipped: 0, failed: 0, invited: 0, failedLines: [] };
+  const summary: ImportSummary = { created: 0, accountInvites: 0, updated: 0, skipped: 0, failed: 0, invited: 0, failedLines: [], rowErrors: [] };
   const toInvite: string[] = [];
   const toInviteAccounts = new Map<string, string>(); // E-Mail → Name aus der Datei
   const createdEmails = new Set<string>();
@@ -258,6 +274,7 @@ export async function commitImportAction(input: { rowsJson: string; mapping: str
   for (let start = 0; start < work.length; start += BATCH) {
     const batch = work.slice(start, start + BATCH);
     const batchStats = { created: 0, updated: 0, skipped: 0 };
+    const batchRowErrors: Array<{ line: number; error: string }> = [];
     const batchInvites: string[] = [];
     try {
       await db.$transaction(async (tx) => {
@@ -270,6 +287,11 @@ export async function commitImportAction(input: { rowsJson: string; mapping: str
           const categoryId = r.category ? a.categories.get(normalizeHeader(r.category)) ?? null : null;
 
           if (dup && decision === "update") {
+            // Zuerst die Mitgliedschaft (nur ohne offene Beitrittsanfrage), dann die Personendaten.
+            if (!(await updateMemberUnlessPending(tx, dup.membershipId, memberFields(r, categoryId)))) {
+              batchRowErrors.push({ line: row.line, error: PENDING_ROW_ERROR });
+              continue;
+            }
             if (ownProfiles.has(dup.userId)) {
               await tx.user.update({ where: { id: dup.userId }, data: userFields(r) });
               // Platzhalter-Adresse durch echte E-Mail ersetzen (nur allein verwaltete Konten ohne Passwort)
@@ -280,7 +302,6 @@ export async function commitImportAction(input: { rowsJson: string; mapping: str
                 }
               }
             }
-            await tx.membership.update({ where: { id: dup.membershipId }, data: memberFields(r, categoryId) });
             batchStats.updated++;
             continue;
           }
@@ -294,8 +315,8 @@ export async function commitImportAction(input: { rowsJson: string; mapping: str
           if (existingUser) {
             const already = existingUser.deletedAt ? null : await tx.membership.findUnique({ where: { userId_tenantId: { userId: existingUser.id, tenantId } }, select: { id: true } });
             if (already) {
-              await tx.membership.update({ where: { id: already.id }, data: memberFields(r, categoryId) });
-              batchStats.updated++;
+              if (await updateMemberUnlessPending(tx, already.id, memberFields(r, categoryId))) batchStats.updated++;
+              else batchRowErrors.push({ line: row.line, error: PENDING_ROW_ERROR });
             } else if (existingUser.deletedAt || (r.status ?? "ACTIVE") === "LEFT") {
               batchStats.skipped++;
             } else {
@@ -330,6 +351,9 @@ export async function commitImportAction(input: { rowsJson: string; mapping: str
       summary.created += batchStats.created;
       summary.updated += batchStats.updated;
       summary.skipped += batchStats.skipped;
+      summary.failed += batchRowErrors.length;
+      summary.failedLines.push(...batchRowErrors.map((e) => e.line));
+      summary.rowErrors.push(...batchRowErrors);
       toInvite.push(...batchInvites);
     } catch (e) {
       console.error("Mitglieder-Import: Block fehlgeschlagen", (e as Error).message);

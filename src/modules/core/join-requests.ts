@@ -50,6 +50,7 @@ async function decide(membershipId: string, decision: Exclude<JoinDecision, "WIT
     title: "Beitritt abgelehnt", body: `${ctx.tenant.name} hat deine Beitrittsanfrage abgelehnt.${note ? ` Grund: ${note}` : ""}`, url: "/onboarding",
     push: true,
     includePending: true, // die Person hat (noch) keinen Zugang, soll die Ablehnung aber erhalten
+    footer: "joinRequest",
     i18n: { title: "bookings.join.notify.rejected.title", body: note ? "bookings.join.notify.rejected.bodyReason" : "bookings.join.notify.rejected.body", vars: { club: ctx.tenant.name, reason: note } },
     dedupeKey: `join-rejected:${m.id}`,
   });

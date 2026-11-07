@@ -1,5 +1,6 @@
 import "server-only";
 import { db } from "@/lib/db";
+import { accessStatusWhere } from "@/lib/membership-access";
 import type { Prisma } from "@/generated/prisma/client";
 import { getAmmoSettings, reservedUnits } from "./service";
 import { invoiceTitle, OPEN_ORDER_STATUSES, type ShopProduct } from "./types";
@@ -84,11 +85,11 @@ export async function getOrder(tenantId: string, id: string) {
   return db.ammoOrder.findFirst({ where: { id, tenantId }, include: orderInclude });
 }
 
-/** Mitglieder des Vereins für die Ausgabe (Suche), mit ihren offenen Bestellungen. */
+/** Mitglieder des Vereins für die Ausgabe (Suche), mit ihren offenen Bestellungen. Ohne wartende Beitritte und Ausgetretene. */
 export async function counterData(tenantId: string) {
   const [members, open] = await Promise.all([
     db.membership.findMany({
-      where: { tenantId },
+      where: { tenantId, status: accessStatusWhere(), user: { deletedAt: null } },
       select: { memberNumber: true, user: { select: { id: true, name: true, email: true, avatarPath: true, updatedAt: true } } },
       orderBy: { user: { name: "asc" } },
     }),

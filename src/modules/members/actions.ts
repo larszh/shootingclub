@@ -452,7 +452,9 @@ export async function inviteMemberAction(_prev: ActionResult<{ url: string }> | 
   const { email, name, role } = parsed.data;
   if (role === "ADMIN" && !ctx.can("tenant.manage")) return fail("Nur Admins können Admins einladen.");
   const existing = await db.membership.findFirst({ where: { tenantId: ctx.tenant.id, user: { email } }, select: { status: true, userId: true, user: { select: { passwordSetAt: true } } } });
-  if (existing && existing.status !== "LEFT") {
+  // Offene Beitrittsanfrage (PENDING): Einladung zulassen, beim Annehmen wird die Anfrage zur aktiven
+  // Mitgliedschaft (siehe acceptInvitationForUser in modules/core/invitations.ts).
+  if (existing && existing.status !== "LEFT" && existing.status !== "PENDING") {
     return fail(existing.user.passwordSetAt
       ? "Diese Person ist bereits Mitglied."
       : "Diese Person ist bereits als Mitglied erfasst, hat aber noch kein Passwort. In der Mitgliederliste «Zugangsmail senden» wählen.", { email: "Bereits Mitglied" });

@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useRef, useState, useTransition } from "react";
+import { useActionState, useMemo, useRef, useState, useTransition } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { AlertCircle, CheckCircle2, ChevronRight, Download, ExternalLink, Eye, Folder, FolderInput, FolderLock, FolderPlus, Home, MoreVertical, Pencil, Search, Settings2, Trash2, Upload, X } from "lucide-react";
@@ -12,9 +12,10 @@ import { Avatar } from "@/components/avatar";
 import type { ActionResult } from "@/lib/action-result";
 import { isNavigationError, isNetworkError, toast } from "@/lib/ui-feedback";
 import { cn } from "@/lib/utils";
+import { getT, type Locale, type TFunction } from "@/lib/i18n/core";
 import { createFolderAction, deleteFileAction, deleteFolderAction, moveFileAction, renameFileAction, updateFolderAction } from "../actions";
 import type { FileRow, FolderRow } from "../queries";
-import { FOLDER_VISIBILITY, formatBytes, MB, previewKind, visibilityLabel } from "../types";
+import { FOLDER_VISIBILITY, formatBytes, MB, previewKind } from "../types";
 import { FileTypeIcon } from "./file-icon";
 
 export type BrowserFile = FileRow & { canEdit: boolean };
@@ -32,12 +33,19 @@ type Props = {
   /** freier Platz im Kontingent, null = unbegrenzt */
   remainingBytes: number | null;
   q: string;
+  locale?: Locale;
 };
 
 const fileUrl = (id: string, download = false) => `/api/documents/${id}${download ? "?download=1" : ""}`;
 const folderHref = (id: string | null) => (id ? `/files?folder=${encodeURIComponent(id)}` : "/files");
 
-function useRun() {
+/** Sichtbarkeit eines Ordners (Mindestrolle) als Text, wie visibilityLabel() in ../types. */
+function visibilityText(role: string, t: TFunction) {
+  const key = role === "OWNER" || role === "TRAINER" || role === "ADMIN" ? role : "MEMBER";
+  return t(`shell.files.visibility.${key}`);
+}
+
+function useRun(t: TFunction) {
   const router = useRouter();
   const [pending, start] = useTransition();
   const run = (fn: () => Promise<ActionResult<unknown>>, onOk?: (r: ActionResult<unknown>) => void) =>
@@ -48,7 +56,7 @@ function useRun() {
           r = await fn();
         } catch (e) {
           if (isNavigationError(e)) throw e;
-          toast.error(isNetworkError(e) ? "Keine Verbindung" : "Das hat nicht geklappt", { description: isNetworkError(e) ? "Bitte nochmals versuchen, sobald du wieder online bist." : "Bitte nochmals versuchen." });
+          toast.error(isNetworkError(e) ? t("shell.files.err.offline") : t("shell.files.err.failed"), { description: isNetworkError(e) ? t("shell.files.err.offlineText") : t("shell.files.err.retry") });
           resolve(false);
           return;
         }
@@ -70,7 +78,7 @@ function useRun() {
 
 type UploadItem = { key: number; name: string; size: number; progress: number; status: "queued" | "uploading" | "done" | "error"; error?: string };
 
-function uploadWithProgress(fd: FormData, onProgress: (pct: number) => void) {
+function uploadWithProgress(fd: FormData, onProgress: (pct: number) => void, t: TFunction) {
   // XMLHttpRequest statt fetch: nur so meldet der Browser den Upload-Fortschritt.
   return new Promise<void>((resolve, reject) => {
     const xhr = new XMLHttpRequest();
@@ -83,16 +91,16 @@ function uploadWithProgress(fd: FormData, onProgress: (pct: number) => void) {
       if (xhr.status >= 200 && xhr.status < 300) resolve();
       else {
         const body = xhr.response as { error?: string } | null;
-        reject(new Error(body?.error ?? `Upload fehlgeschlagen (Status ${xhr.status}).`));
+        reject(new Error(body?.error ?? t("shell.files.upload.failedStatus", { status: xhr.status })));
       }
     };
-    xhr.onerror = () => reject(new Error("Keine Verbindung. Bitte nochmals versuchen."));
-    xhr.onabort = () => reject(new Error("Abgebrochen."));
+    xhr.onerror = () => reject(new Error(t("shell.files.upload.offline")));
+    xhr.onabort = () => reject(new Error(t("shell.files.upload.aborted")));
     xhr.send(fd);
   });
 }
 
-function useUploader({ tenantId, maxFileMb, remainingBytes }: { tenantId: string; maxFileMb: number; remainingBytes: number | null }) {
+function useUploader({ tenantId, maxFileMb, remainingBytes, t }: { tenantId: string; maxFileMb: number; remainingBytes: number | null; t: TFunction }) {
   const router = useRouter();
   const [items, setItems] = useState<UploadItem[]>([]);
   const queue = useRef<Array<{ key: number; file: File; folderId: string | null }>>([]);
@@ -114,20 +122,20 @@ function useUploader({ tenantId, maxFileMb, remainingBytes }: { tenantId: string
       if (job.folderId) fd.append("folderId", job.folderId);
       fd.append("file", job.file, job.file.name);
       try {
-        await uploadWithProgress(fd, (pct) => patch(job.key, { progress: pct }));
+        await uploadWithProgress(fd, (pct) => patch(job.key, { progress: pct }), t);
         patch(job.key, { status: "done", progress: 100 });
         done++;
       } catch (e) {
-        patch(job.key, { status: "error", error: e instanceof Error ? e.message : "Upload fehlgeschlagen." });
+        patch(job.key, { status: "error", error: e instanceof Error ? e.message : t("shell.files.upload.failed") });
         failed++;
       }
     }
     running.current = false;
     if (done) {
       router.refresh();
-      toast.success(done === 1 ? "Datei hochgeladen" : `${done} Dateien hochgeladen`, failed ? { description: `${failed} nicht hochgeladen, Details in der Liste.` } : undefined);
+      toast.success(done === 1 ? t("shell.files.upload.doneOne") : t("shell.files.upload.doneMany", { count: done }), failed ? { description: t("shell.files.upload.partlyFailed", { count: failed }) } : undefined);
     } else if (failed) {
-      toast.error(failed === 1 ? "Datei nicht hochgeladen" : `${failed} Dateien nicht hochgeladen`);
+      toast.error(failed === 1 ? t("shell.files.upload.failedOne") : t("shell.files.upload.failedMany", { count: failed }));
     }
   }
 
@@ -140,9 +148,9 @@ function useUploader({ tenantId, maxFileMb, remainingBytes }: { tenantId: string
     for (const file of list) {
       const key = ++seq.current;
       let error: string | undefined;
-      if (file.size === 0) error = "Leere Datei oder Ordner, wird übersprungen.";
-      else if (file.size > limit) error = `Zu gross (${formatBytes(file.size)}). Höchstens ${maxFileMb} MB.`;
-      else if (budget !== null && file.size > budget) error = "Nicht genug Speicherplatz frei.";
+      if (file.size === 0) error = t("shell.files.upload.empty");
+      else if (file.size > limit) error = t("shell.files.upload.tooBig", { size: formatBytes(file.size), max: maxFileMb });
+      else if (budget !== null && file.size > budget) error = t("shell.files.upload.noSpace");
       if (!error && budget !== null) budget -= file.size;
       next.push({ key, name: file.name, size: file.size, progress: 0, status: error ? "error" : "queued", error });
       if (!error) queue.current.push({ key, file, folderId });
@@ -156,15 +164,15 @@ function useUploader({ tenantId, maxFileMb, remainingBytes }: { tenantId: string
   return { items, add, busy, clear };
 }
 
-function UploadList({ items, onClear, busy }: { items: UploadItem[]; onClear: () => void; busy: boolean }) {
+function UploadList({ items, onClear, busy, t }: { items: UploadItem[]; onClear: () => void; busy: boolean; t: TFunction }) {
   if (!items.length) return null;
   return (
     <Card className="animate-rise mb-4 p-3">
       <div className="mb-2 flex items-center justify-between gap-2">
-        <p className="text-sm font-medium">{busy ? "Wird hochgeladen…" : "Upload abgeschlossen"}</p>
+        <p className="text-sm font-medium">{busy ? t("shell.files.upload.busy") : t("shell.files.upload.finished")}</p>
         {!busy ? (
           <Button type="button" variant="ghost" size="sm" onClick={onClear} className="min-h-11">
-            <X className="h-4 w-4" aria-hidden /> Ausblenden
+            <X className="h-4 w-4" aria-hidden /> {t("shell.files.upload.hide")}
           </Button>
         ) : null}
       </div>
@@ -179,7 +187,7 @@ function UploadList({ items, onClear, busy }: { items: UploadItem[]; onClear: ()
               <span className="shrink-0 text-xs tabular-nums text-ink-3">{i.status === "uploading" ? `${i.progress}%` : formatBytes(i.size)}</span>
             </div>
             {i.status === "uploading" || i.status === "queued" ? (
-              <div className="mt-1 h-1.5 w-full overflow-hidden rounded-full bg-surface-2" role="progressbar" aria-label={`Fortschritt ${i.name}`} aria-valuemin={0} aria-valuemax={100} aria-valuenow={i.progress}>
+              <div className="mt-1 h-1.5 w-full overflow-hidden rounded-full bg-surface-2" role="progressbar" aria-label={t("shell.files.upload.progress", { name: i.name })} aria-valuemin={0} aria-valuemax={100} aria-valuenow={i.progress}>
                 <div className="h-full rounded-full bg-accent transition-[width] duration-200" style={{ width: `${i.progress}%` }} />
               </div>
             ) : null}
@@ -193,7 +201,7 @@ function UploadList({ items, onClear, busy }: { items: UploadItem[]; onClear: ()
 
 /* ----------------------------------------------------------------- Ordner */
 
-function FolderForm({ mode, folder, parentId, parentRole, onDone }: { mode: "create" | "edit"; folder?: { id: string; name: string; minRole: string }; parentId: string | null; parentRole: string | null; onDone: (id: string | null) => void }) {
+function FolderForm({ mode, folder, parentId, parentRole, onDone, t }: { mode: "create" | "edit"; folder?: { id: string; name: string; minRole: string }; parentId: string | null; parentRole: string | null; onDone: (id: string | null) => void; t: TFunction }) {
   const [state, formAction, pending] = useActionState(async (prev: ActionResult<{ id: string }> | null, fd: FormData): Promise<ActionResult<{ id: string }>> => {
     const r = mode === "create" ? await createFolderAction(prev, fd) : ((await updateFolderAction(null, fd)) as ActionResult<{ id: string }>);
     if (r.ok) {
@@ -207,25 +215,26 @@ function FolderForm({ mode, folder, parentId, parentRole, onDone }: { mode: "cre
     <form onSubmit={submitKeepingValues(formAction)} className="space-y-4 pb-2">
       {folder ? <input type="hidden" name="id" value={folder.id} /> : null}
       {mode === "create" && parentId ? <input type="hidden" name="parentId" value={parentId} /> : null}
-      <Field label="Name" error={fe?.name}>
-        <Input name="name" defaultValue={folder?.name ?? ""} maxLength={80} required autoComplete="off" data-autofocus placeholder="z.B. Reglemente" />
+      <Field label={t("shell.files.folder.name")} error={fe?.name}>
+        <Input name="name" defaultValue={folder?.name ?? ""} maxLength={80} required autoComplete="off" data-autofocus placeholder={t("shell.files.folder.namePlaceholder")} />
       </Field>
       <div>
-        <p className="mb-1.5 text-sm font-medium text-ink-2">Wer sieht den Ordner?</p>
-        <Segmented name="minRole" label="Sichtbarkeit" defaultValue={(folder?.minRole ?? "MEMBER") as "MEMBER"} options={FOLDER_VISIBILITY.map((v) => ({ value: v.value, label: v.label }))} />
-        {parentRole && parentRole !== "MEMBER" ? <p className="mt-1.5 text-xs text-ink-3">Der übergeordnete Ordner ist bereits auf «{visibilityLabel(parentRole)}» beschränkt. Die strengere Einstellung gilt.</p> : null}
+        <p className="mb-1.5 text-sm font-medium text-ink-2">{t("shell.files.folder.whoSees")}</p>
+        <Segmented name="minRole" label={t("shell.files.folder.visibility")} defaultValue={(folder?.minRole ?? "MEMBER") as "MEMBER"} options={FOLDER_VISIBILITY.map((v) => ({ value: v.value, label: visibilityText(v.value, t) }))} />
+        {parentRole && parentRole !== "MEMBER" ? <p className="mt-1.5 text-xs text-ink-3">{t("shell.files.folder.parentRestricted", { role: visibilityText(parentRole, t) })}</p> : null}
       </div>
       {state && !state.ok ? <Alert>{state.error}</Alert> : null}
-      <SubmitButton pending={pending} className="w-full">{mode === "create" ? "Ordner anlegen" : "Speichern"}</SubmitButton>
+      <SubmitButton pending={pending} className="w-full">{mode === "create" ? t("shell.files.folder.create") : t("shell.files.folder.save")}</SubmitButton>
     </form>
   );
 }
 
 /* ------------------------------------------------------------------- Main */
 
-export function FileBrowser({ tenantId, current, subfolders, files, moveTargets, canUpload, canManage, maxFileMb, remainingBytes, q }: Props) {
-  const { pending, run, router } = useRun();
-  const uploader = useUploader({ tenantId, maxFileMb, remainingBytes });
+export function FileBrowser({ tenantId, current, subfolders, files, moveTargets, canUpload, canManage, maxFileMb, remainingBytes, q, locale = "de" }: Props) {
+  const t = useMemo(() => getT(locale), [locale]);
+  const { pending, run, router } = useRun(t);
+  const uploader = useUploader({ tenantId, maxFileMb, remainingBytes, t });
   const inputRef = useRef<HTMLInputElement>(null);
   const dragDepth = useRef(0);
   const [dragging, setDragging] = useState(false);
@@ -266,17 +275,17 @@ export function FileBrowser({ tenantId, current, subfolders, files, moveTargets,
 
   async function removeFile(f: BrowserFile) {
     setMenuFor(null);
-    const okd = await confirmDialog({ title: "Datei löschen?", message: `«${f.name}» wird endgültig gelöscht.`, tone: "danger", confirmLabel: "Löschen" });
+    const okd = await confirmDialog({ title: t("shell.files.delete.title"), message: t("shell.files.delete.message", { name: f.name }), tone: "danger", confirmLabel: t("shell.files.action.delete") });
     if (okd) await run(() => deleteFileAction(f.id));
   }
 
   async function removeFolder() {
     if (!current) return;
     const okd = await confirmDialog({
-      title: "Ordner löschen?",
-      message: `«${current.name}» wird mit allen Unterordnern und Dateien endgültig gelöscht.`,
+      title: t("shell.files.deleteFolder.title"),
+      message: t("shell.files.deleteFolder.message", { name: current.name }),
       tone: "danger",
-      confirmLabel: "Ordner löschen",
+      confirmLabel: t("shell.files.deleteFolder.confirm"),
     });
     if (!okd) return;
     await run(
@@ -292,16 +301,16 @@ export function FileBrowser({ tenantId, current, subfolders, files, moveTargets,
       {/* Suche */}
       <form action="/files" method="get" role="search" className="mb-3 flex gap-2">
         <label className="relative min-w-0 flex-1">
-          <span className="sr-only">Dateien suchen</span>
+          <span className="sr-only">{t("shell.files.search.label")}</span>
           <Search className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-ink-3" aria-hidden />
-          <Input name="q" type="search" defaultValue={q} placeholder="Datei suchen…" maxLength={100} className="pl-10" enterKeyHint="search" />
+          <Input name="q" type="search" defaultValue={q} placeholder={t("shell.files.search.placeholder")} maxLength={100} className="pl-10" enterKeyHint="search" />
         </label>
         {searching ? (
-          <Link href={folderHref(null)} className={buttonClasses("secondary", "md")} aria-label="Suche beenden">
+          <Link href={folderHref(null)} className={buttonClasses("secondary", "md")} aria-label={t("shell.files.search.end")}>
             <X className="h-4 w-4" aria-hidden />
           </Link>
         ) : (
-          <Button type="submit" variant="secondary" aria-label="Suchen">
+          <Button type="submit" variant="secondary" aria-label={t("shell.files.search.submit")}>
             <Search className="h-4 w-4" aria-hidden />
           </Button>
         )}
@@ -309,9 +318,9 @@ export function FileBrowser({ tenantId, current, subfolders, files, moveTargets,
 
       {/* Pfad */}
       {!searching ? (
-        <nav aria-label="Ordnerpfad" className="mb-3 -mx-1 flex items-center gap-0.5 overflow-x-auto text-sm [scrollbar-width:none]">
+        <nav aria-label={t("shell.files.path")} className="mb-3 -mx-1 flex items-center gap-0.5 overflow-x-auto text-sm [scrollbar-width:none]">
           <Link href="/files" className={cn("inline-flex min-h-11 shrink-0 items-center gap-1.5 rounded-control px-2", current ? "text-ink-3 hover:text-ink" : "font-semibold")} aria-current={current ? undefined : "page"}>
-            <Home className="h-4 w-4" aria-hidden /> Alle Ordner
+            <Home className="h-4 w-4" aria-hidden /> {t("shell.files.allFolders")}
           </Link>
           {current?.path.map((p, i) => {
             const last = i === current.path.length - 1;
@@ -326,7 +335,7 @@ export function FileBrowser({ tenantId, current, subfolders, files, moveTargets,
           })}
         </nav>
       ) : (
-        <p className="mb-3 text-sm text-ink-3">Suchergebnisse für «{q}» in allen Ordnern</p>
+        <p className="mb-3 text-sm text-ink-3">{t("shell.files.search.results", { q })}</p>
       )}
 
       {/* Werkzeuge */}
@@ -335,7 +344,7 @@ export function FileBrowser({ tenantId, current, subfolders, files, moveTargets,
           {canUpload ? (
             <>
               <Button type="button" onClick={() => inputRef.current?.click()} className="flex-1 sm:flex-none">
-                <Upload className="h-4 w-4" aria-hidden /> Hochladen
+                <Upload className="h-4 w-4" aria-hidden /> {t("shell.files.upload.button")}
               </Button>
               <input
                 ref={inputRef}
@@ -353,12 +362,12 @@ export function FileBrowser({ tenantId, current, subfolders, files, moveTargets,
           ) : null}
           {canManage ? (
             <Button type="button" variant="secondary" onClick={() => setFolderDialog({ mode: "create" })} className="flex-1 sm:flex-none">
-              <FolderPlus className="h-4 w-4" aria-hidden /> Neuer Ordner
+              <FolderPlus className="h-4 w-4" aria-hidden /> {t("shell.files.folder.new")}
             </Button>
           ) : null}
           {canManage && current ? (
-            <Button type="button" variant="secondary" onClick={() => setFolderDialog({ mode: "edit", folder: { id: current.id, name: current.name, minRole: current.minRole } })} aria-label="Ordner bearbeiten">
-              <Settings2 className="h-4 w-4" aria-hidden /> <span className="hidden sm:inline">Ordner bearbeiten</span>
+            <Button type="button" variant="secondary" onClick={() => setFolderDialog({ mode: "edit", folder: { id: current.id, name: current.name, minRole: current.minRole } })} aria-label={t("shell.files.folder.edit")}>
+              <Settings2 className="h-4 w-4" aria-hidden /> <span className="hidden sm:inline">{t("shell.files.folder.edit")}</span>
             </Button>
           ) : null}
         </div>
@@ -366,30 +375,30 @@ export function FileBrowser({ tenantId, current, subfolders, files, moveTargets,
 
       {current && current.effectiveMinRole !== "MEMBER" ? (
         <Alert tone="info" className="mb-4" icon={<FolderLock className="h-4 w-4" />}>
-          Dieser Ordner ist nur für «{visibilityLabel(current.effectiveMinRole)}» sichtbar.
+          {t("shell.files.folder.restricted", { role: visibilityText(current.effectiveMinRole, t) })}
         </Alert>
       ) : null}
 
-      <UploadList items={uploader.items} busy={uploader.busy} onClear={uploader.clear} />
+      <UploadList items={uploader.items} busy={uploader.busy} onClear={uploader.clear} t={t} />
 
       {allowDrop ? (
         <p className="mb-3 text-xs text-ink-3">
-          <span className="hidden md:inline">Tipp: Dateien einfach hierher ziehen. </span>Höchstens {maxFileMb} MB pro Datei.
+          <span className="hidden md:inline">{t("shell.files.dropTip")} </span>{t("shell.files.maxPerFile", { max: maxFileMb })}
         </p>
       ) : null}
 
       {empty ? (
         searching ? (
-          <EmptyState icon={<Search className="h-5 w-5" />} title="Nichts gefunden" text="Versuche es mit einem anderen Suchbegriff." />
+          <EmptyState icon={<Search className="h-5 w-5" />} title={t("shell.files.empty.noHits")} text={t("shell.files.empty.noHitsText")} />
         ) : (
           <EmptyState
             icon={<Folder className="h-5 w-5" />}
-            title={current ? "Dieser Ordner ist leer" : "Noch keine Dateien"}
-            text={canUpload ? "Lade Reglemente, Protokolle oder Formulare hoch, damit alle sie immer dabei haben." : "Sobald der Vorstand Dateien ablegt, findest du sie hier."}
+            title={current ? t("shell.files.empty.folder") : t("shell.files.empty.none")}
+            text={canUpload ? t("shell.files.empty.uploadText") : t("shell.files.empty.memberText")}
             action={
               canUpload ? (
                 <Button type="button" onClick={() => inputRef.current?.click()}>
-                  <Upload className="h-4 w-4" aria-hidden /> Datei hochladen
+                  <Upload className="h-4 w-4" aria-hidden /> {t("shell.files.upload.one")}
                 </Button>
               ) : undefined
             }
@@ -405,11 +414,11 @@ export function FileBrowser({ tenantId, current, subfolders, files, moveTargets,
               <span className="min-w-0 flex-1">
                 <span className="block truncate font-medium">{f.name}</span>
                 <span className="block text-xs text-ink-3">
-                  {f.fileCount === 1 ? "1 Datei" : `${f.fileCount} Dateien`}
-                  {f.folderCount ? ` · ${f.folderCount === 1 ? "1 Ordner" : `${f.folderCount} Ordner`}` : ""}
+                  {f.fileCount === 1 ? t("shell.files.count.fileOne") : t("shell.files.count.fileMany", { count: f.fileCount })}
+                  {f.folderCount ? ` · ${f.folderCount === 1 ? t("shell.files.count.folderOne") : t("shell.files.count.folderMany", { count: f.folderCount })}` : ""}
                 </span>
               </span>
-              {f.minRole !== "MEMBER" ? <Badge tone="warn" className="shrink-0">{visibilityLabel(f.minRole)}</Badge> : null}
+              {f.minRole !== "MEMBER" ? <Badge tone="warn" className="shrink-0">{visibilityText(f.minRole, t)}</Badge> : null}
               <ChevronRight className="h-4 w-4 shrink-0 text-ink-3" aria-hidden />
             </Link>
           ))}
@@ -432,22 +441,22 @@ export function FileBrowser({ tenantId, current, subfolders, files, moveTargets,
                       </>
                     ) : null}
                   </span>
-                  {searching && f.folderPath ? <span className="block truncate text-xs text-ink-3">in {f.folderPath}</span> : null}
+                  {searching && f.folderPath ? <span className="block truncate text-xs text-ink-3">{t("shell.files.inFolder", { path: f.folderPath })}</span> : null}
                 </span>
               </>
             );
             return (
               <div key={f.id} className="flex items-center">
                 {pk ? (
-                  <button type="button" onClick={() => setPreview(f)} className="press flex min-h-16 min-w-0 flex-1 items-center gap-3 py-2.5 pl-4 pr-2 text-left hover:bg-surface-2 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-accent" aria-label={`${f.name} ansehen`}>
+                  <button type="button" onClick={() => setPreview(f)} className="press flex min-h-16 min-w-0 flex-1 items-center gap-3 py-2.5 pl-4 pr-2 text-left hover:bg-surface-2 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-accent" aria-label={t("shell.files.aria.view", { name: f.name })}>
                     {body}
                   </button>
                 ) : (
-                  <a href={fileUrl(f.id, true)} className="press flex min-h-16 min-w-0 flex-1 items-center gap-3 py-2.5 pl-4 pr-2 hover:bg-surface-2 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-accent" aria-label={`${f.name} herunterladen`}>
+                  <a href={fileUrl(f.id, true)} className="press flex min-h-16 min-w-0 flex-1 items-center gap-3 py-2.5 pl-4 pr-2 hover:bg-surface-2 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-accent" aria-label={t("shell.files.aria.download", { name: f.name })}>
                     {body}
                   </a>
                 )}
-                <button type="button" onClick={() => setMenuFor(f)} className="press mr-2 flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-ink-3 hover:bg-surface-2 hover:text-ink focus-visible:outline-2 focus-visible:outline-accent" aria-label={`Aktionen für ${f.name}`}>
+                <button type="button" onClick={() => setMenuFor(f)} className="press mr-2 flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-ink-3 hover:bg-surface-2 hover:text-ink focus-visible:outline-2 focus-visible:outline-accent" aria-label={t("shell.files.aria.actions", { name: f.name })}>
                   <MoreVertical className="h-5 w-5" aria-hidden />
                 </button>
               </div>
@@ -460,24 +469,24 @@ export function FileBrowser({ tenantId, current, subfolders, files, moveTargets,
       {dragging ? (
         <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center rounded-card border-2 border-dashed border-accent bg-accent-soft/80">
           <p className="flex items-center gap-2 rounded-control bg-surface px-4 py-3 font-medium shadow">
-            <Upload className="h-5 w-5 text-accent" aria-hidden /> Loslassen zum Hochladen{current ? ` in «${current.name}»` : ""}
+            <Upload className="h-5 w-5 text-accent" aria-hidden /> {current ? t("shell.files.dropInto", { name: current.name }) : t("shell.files.drop")}
           </p>
         </div>
       ) : null}
 
       {/* Aktionen pro Datei */}
-      <Dialog open={!!menuFor} onClose={() => setMenuFor(null)} title={menuFor?.name ?? "Datei"} description={menuFor ? `${formatBytes(menuFor.sizeBytes)} · ${menuFor.createdLabel}` : undefined} size="sm">
+      <Dialog open={!!menuFor} onClose={() => setMenuFor(null)} title={menuFor?.name ?? t("shell.files.file")} description={menuFor ? `${formatBytes(menuFor.sizeBytes)} · ${menuFor.createdLabel}` : undefined} size="sm">
         {menuFor ? (
           <div className="-mx-2 flex flex-col pb-2">
             {previewKind(menuFor.mimeType, menuFor.name) ? (
-              <MenuButton icon={<Eye className="h-5 w-5" />} onClick={() => { setPreview(menuFor); setMenuFor(null); }}>Ansehen</MenuButton>
+              <MenuButton icon={<Eye className="h-5 w-5" />} onClick={() => { setPreview(menuFor); setMenuFor(null); }}>{t("shell.files.action.view")}</MenuButton>
             ) : null}
-            <MenuLink icon={<Download className="h-5 w-5" />} href={fileUrl(menuFor.id, true)} onClick={() => setMenuFor(null)}>Herunterladen</MenuLink>
+            <MenuLink icon={<Download className="h-5 w-5" />} href={fileUrl(menuFor.id, true)} onClick={() => setMenuFor(null)}>{t("shell.files.action.download")}</MenuLink>
             {menuFor.canEdit ? (
               <>
-                <MenuButton icon={<Pencil className="h-5 w-5" />} onClick={() => { setRenameFor(menuFor); setMenuFor(null); }}>Umbenennen</MenuButton>
-                <MenuButton icon={<FolderInput className="h-5 w-5" />} onClick={() => { setMoveFor(menuFor); setMenuFor(null); }}>Verschieben</MenuButton>
-                <MenuButton icon={<Trash2 className="h-5 w-5" />} danger onClick={() => void removeFile(menuFor)}>Löschen</MenuButton>
+                <MenuButton icon={<Pencil className="h-5 w-5" />} onClick={() => { setRenameFor(menuFor); setMenuFor(null); }}>{t("shell.files.action.rename")}</MenuButton>
+                <MenuButton icon={<FolderInput className="h-5 w-5" />} onClick={() => { setMoveFor(menuFor); setMenuFor(null); }}>{t("shell.files.action.move")}</MenuButton>
+                <MenuButton icon={<Trash2 className="h-5 w-5" />} danger onClick={() => void removeFile(menuFor)}>{t("shell.files.action.delete")}</MenuButton>
               </>
             ) : null}
           </div>
@@ -488,16 +497,16 @@ export function FileBrowser({ tenantId, current, subfolders, files, moveTargets,
       <Dialog
         open={!!preview}
         onClose={() => setPreview(null)}
-        title={preview?.name ?? "Vorschau"}
+        title={preview?.name ?? t("shell.files.preview")}
         size="lg"
         footer={
           preview ? (
             <>
               <a href={fileUrl(preview.id)} target="_blank" rel="noopener" className={buttonClasses("secondary", "lg", "w-full sm:w-auto sm:h-11")}>
-                <ExternalLink className="h-4 w-4" aria-hidden /> In neuem Tab
+                <ExternalLink className="h-4 w-4" aria-hidden /> {t("shell.files.newTab")}
               </a>
               <a href={fileUrl(preview.id, true)} className={buttonClasses("primary", "lg", "w-full sm:w-auto sm:h-11")}>
-                <Download className="h-4 w-4" aria-hidden /> Herunterladen
+                <Download className="h-4 w-4" aria-hidden /> {t("shell.files.action.download")}
               </a>
             </>
           ) : undefined
@@ -514,7 +523,7 @@ export function FileBrowser({ tenantId, current, subfolders, files, moveTargets,
       </Dialog>
 
       {/* Umbenennen */}
-      <Dialog open={!!renameFor} onClose={() => setRenameFor(null)} title="Datei umbenennen" size="sm">
+      <Dialog open={!!renameFor} onClose={() => setRenameFor(null)} title={t("shell.files.rename.title")} size="sm">
         {renameFor ? (
           <form
             key={renameFor.id}
@@ -526,16 +535,16 @@ export function FileBrowser({ tenantId, current, subfolders, files, moveTargets,
               if (okd) setRenameFor(null);
             }}
           >
-            <Field label="Neuer Name">
+            <Field label={t("shell.files.rename.label")}>
               <Input name="name" defaultValue={renameFor.name} maxLength={191} required autoComplete="off" data-autofocus />
             </Field>
-            <SubmitButton pending={pending} className="w-full">Umbenennen</SubmitButton>
+            <SubmitButton pending={pending} className="w-full">{t("shell.files.action.rename")}</SubmitButton>
           </form>
         ) : null}
       </Dialog>
 
       {/* Verschieben */}
-      <Dialog open={!!moveFor} onClose={() => setMoveFor(null)} title="Datei verschieben" description={moveFor ? `«${moveFor.name}»` : undefined} size="sm">
+      <Dialog open={!!moveFor} onClose={() => setMoveFor(null)} title={t("shell.files.move.title")} description={moveFor ? `«${moveFor.name}»` : undefined} size="sm">
         {moveFor ? (
           <form
             key={moveFor.id}
@@ -547,15 +556,15 @@ export function FileBrowser({ tenantId, current, subfolders, files, moveTargets,
               if (okd) setMoveFor(null);
             }}
           >
-            <Field label="Zielordner">
+            <Field label={t("shell.files.move.target")}>
               <Select name="folderId" defaultValue={moveFor.folderId ?? ""}>
-                <option value="">Hauptordner (oberste Ebene)</option>
-                {moveTargets.map((t) => (
-                  <option key={t.id} value={t.id}>{t.label}</option>
+                <option value="">{t("shell.files.move.root")}</option>
+                {moveTargets.map((m) => (
+                  <option key={m.id} value={m.id}>{m.label}</option>
                 ))}
               </Select>
             </Field>
-            <SubmitButton pending={pending} className="w-full">Verschieben</SubmitButton>
+            <SubmitButton pending={pending} className="w-full">{t("shell.files.action.move")}</SubmitButton>
           </form>
         ) : null}
       </Dialog>
@@ -564,8 +573,8 @@ export function FileBrowser({ tenantId, current, subfolders, files, moveTargets,
       <Dialog
         open={!!folderDialog}
         onClose={() => setFolderDialog(null)}
-        title={folderDialog?.mode === "edit" ? "Ordner bearbeiten" : "Neuer Ordner"}
-        description={folderDialog?.mode === "create" && current ? `in «${current.name}»` : undefined}
+        title={folderDialog?.mode === "edit" ? t("shell.files.folder.edit") : t("shell.files.folder.new")}
+        description={folderDialog?.mode === "create" && current ? t("shell.files.folder.inParent", { name: current.name }) : undefined}
         size="sm"
       >
         {folderDialog ? (
@@ -576,6 +585,7 @@ export function FileBrowser({ tenantId, current, subfolders, files, moveTargets,
               folder={folderDialog.mode === "edit" ? folderDialog.folder : undefined}
               parentId={folderDialog.mode === "create" ? folderId : null}
               parentRole={folderDialog.mode === "create" ? current?.effectiveMinRole ?? null : null}
+              t={t}
               onDone={(id) => {
                 setFolderDialog(null);
                 if (id) router.push(folderHref(id));
@@ -585,7 +595,7 @@ export function FileBrowser({ tenantId, current, subfolders, files, moveTargets,
             {folderDialog.mode === "edit" ? (
               <div className="mt-2 border-t border-line pt-3 pb-2">
                 <Button type="button" variant="ghost" className="w-full text-danger" disabled={pending} onClick={() => { setFolderDialog(null); void removeFolder(); }}>
-                  <Trash2 className="h-4 w-4" aria-hidden /> Ordner löschen
+                  <Trash2 className="h-4 w-4" aria-hidden /> {t("shell.files.deleteFolder.confirm")}
                 </Button>
               </div>
             ) : null}

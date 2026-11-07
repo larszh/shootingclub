@@ -57,6 +57,8 @@ describe("Wörterbuch money", () => {
     expect(getT("de")("money.payments.title")).toBe("Zahlungen");
     expect(getT("fr")("money.payments.title")).toBe("Paiements");
     expect(getT("it")("money.payments.title")).toBe("Pagamenti");
-    expect(getT("fr")("money.events.detail.seatsTaken", { taken: 3, capacity: 10 })).toBe("3 places sur 10 occupées");
+    expect(getT("fr")("money.events.detail.seatsTaken.other", { n: 3, capacity: 10 })).toBe("3 places sur 10 occupées");
+    expect(getT("fr")("money.events.detail.seatsTaken.one", { n: 1, capacity: 16 })).toBe("1 place sur 16 occupée");
+    expect(getT("it")("money.events.detail.seatsTaken.one", { n: 1, capacity: 16 })).toBe("1 posto su 16 occupato");
   });
 });

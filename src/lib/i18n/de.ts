@@ -59,6 +59,7 @@ const de: Record<string, string> = {
   // Benachrichtigungen: E-Mail-Rahmen
   "notify.mail.open": "In Standchef öffnen",
   "notify.mail.footer": "Du erhältst diese E-Mail, weil du bei {club} Mitglied bist. Benachrichtigungen kannst du in der App unter «Mehr → Benachrichtigungen & Sprache» anpassen.",
+  "notify.mail.footerJoinRequest": "Du erhältst diese E-Mail wegen deiner Beitrittsanfrage bei {club}.",
   "notify.mail.footerNoClub": "Benachrichtigungen kannst du in der App unter «Mehr → Benachrichtigungen & Sprache» anpassen.",
 
   // Testbenachrichtigung

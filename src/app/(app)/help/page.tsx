@@ -29,6 +29,8 @@ const ENTRY_PERMISSION: Partial<Record<string, Permission>> = {
   "schuetzenstube-theke": "kiosk.sell",
   "schuetzenstube-admin": "kiosk.manage",
   buchhaltung: "accounting.export",
+  serienbuchung: "bookings.series",
+  "feldschiessen-auszeichnungen": "results.verify",
 };
 
 export default async function HelpPage() {

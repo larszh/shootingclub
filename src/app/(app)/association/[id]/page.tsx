@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { Download, Landmark } from "lucide-react";
 import { todayZurich } from "@/lib/time";
+import { plural } from "@/lib/utils";
 import { Alert, Badge, Button, Card, EmptyState, PageHeader, SectionTitle, Select, StatCard } from "@/components/ui";
 import { currentSwissYear } from "@/modules/federal/queries";
 import { formatDay, parseYear, yearOptions } from "@/modules/federal/types";
@@ -36,7 +37,7 @@ export default async function AssociationDashboardPage({ params, searchParams }:
     <div>
       <PageHeader
         title={ctx.association.name}
-        subtitle={`${ctx.association.region ? `${ctx.association.region} · ` : ""}${sum.clubs} aktive Vereine · ${year}`}
+        subtitle={`${ctx.association.region ? `${ctx.association.region} · ` : ""}${plural(sum.clubs, "aktiver Verein", "aktive Vereine")} · ${year}`}
         back={{ href: "/association", label: "Verband" }}
       />
       <AssociationTabs id={ctx.association.id} active="overview" pending={pending} />

@@ -126,6 +126,7 @@ export function AppShell({
   chatUnread = null,
   admin = null,
   locale,
+  partnerPayments = false,
 }: {
   children: React.ReactNode;
   enabledModules: ModuleKey[];
@@ -137,12 +138,18 @@ export function AppShell({
   admin?: ShellAdmin | null;
   /** Sprache der Oberfläche (aus getRequestLocale im Layout) */
   locale: Locale;
+  /** Zahlungen bei Partnervereinen: «Zahlungen» erscheint auch ohne eigenes Zahlungsmodul. */
+  partnerPayments?: boolean;
 }) {
   const t = getT(locale);
   // Für die Offline-Seiten merken, in welcher Sprache die App läuft.
   useEffect(() => rememberLocale(locale), [locale]);
   const pathname = usePathname();
-  const items = NAV.filter((n) => (!n.modules || n.modules.some((m) => enabledModules.includes(m))) && (!n.requires || !!admin?.[n.requires]));
+  const items = NAV.filter(
+    (n) =>
+      (!n.modules || n.modules.some((m) => enabledModules.includes(m)) || (n.href === "/payments" && partnerPayments)) &&
+      (!n.requires || !!admin?.[n.requires]),
+  );
   const matches = (href: string) => (href === "/" ? pathname === "/" : pathname === href || pathname.startsWith(href + "/"));
   // Ein spezifischerer Eintrag (z.B. /scores/import) gewinnt gegenüber dem übergeordneten (/scores).
   const isActive = (href: string) =>

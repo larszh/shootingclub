@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { partnerInvoiceItem, partnerInvoiceWhere, partnerPaymentItem, toPaymentPayee } from "./partner-items";
+import { bookingInvoiceStatus, partnerInvoiceItem, partnerInvoiceWhere, partnerPaymentItem, toPaymentPayee } from "./partner-items";
 
 const now = new Date("2026-11-06T10:00:00Z");
 const issuer = { tenantId: "owner", name: "SV Partnerdorf" };
@@ -28,6 +28,14 @@ describe("Partner-Rechnungen unter «Zahlungen»", () => {
   it("ohne QR-IBAN des Eigentümers keine Referenz", () => {
     const item = partnerInvoiceItem({ ...inv, status: "PAID", paidAt: now }, issuer, { ...payee, qrIban: false }, "210000000003139471430009017", now);
     expect(item).toMatchObject({ reference: null, status: "PAID", group: "paid", overdue: false });
+  });
+
+  it("bezahlte Rechnung einer erstatteten Reservation gilt als erstattet, nicht als bezahlt", () => {
+    const item = partnerInvoiceItem({ ...inv, status: "PAID", paidAt: now, booking: { ...inv.booking, paymentStatus: "REFUNDED" } }, issuer, payee, null, now);
+    expect(item).toMatchObject({ status: "REFUNDED", group: "other" });
+    expect(bookingInvoiceStatus("PAID", "PAID")).toBe("PAID");
+    expect(bookingInvoiceStatus("CANCELLED", "REFUNDED")).toBe("CANCELLED");
+    expect(bookingInvoiceStatus("OPEN", null)).toBe("OPEN");
   });
 
   it("Online-Zahlung einer Partner-Buchung", () => {

@@ -162,12 +162,23 @@ export async function listMyBookings(ctx: TenantCtx) {
   });
 }
 
-export async function listTenantBookings(tenantId: string, opts?: { status?: string; from?: Date; limit?: number }) {
+/**
+ * Buchungen des Vereins. Standard: PENDING nach Eingang (älteste zuerst), sonst neueste Startzeit
+ * zuerst. `order: "asc"` liefert die nächsten Termine zuerst (z.B. «Kommende Buchungen» ab `from`,
+ * sonst schneiden Serien mit vielen Terminen die nächsten weg). `openInvoice` filtert in der
+ * Datenbank auf offene Rechnungen statt auf einem Ausschnitt.
+ */
+export async function listTenantBookings(tenantId: string, opts?: { status?: string; from?: Date; limit?: number; order?: "asc" | "desc"; openInvoice?: boolean }) {
   await expireUnpaidOnlineBookings(tenantId);
   return db.booking.findMany({
-    where: { tenantId, ...(opts?.status ? { status: opts.status } : {}), ...(opts?.from ? { startsAt: { gte: opts.from } } : {}) },
+    where: {
+      tenantId,
+      ...(opts?.status ? { status: opts.status } : {}),
+      ...(opts?.from ? { startsAt: { gte: opts.from } } : {}),
+      ...(opts?.openInvoice ? { invoice: { status: "OPEN" } } : {}),
+    },
     include: bookingInclude,
-    orderBy: opts?.status === "PENDING" ? { createdAt: "asc" } : { startsAt: "desc" },
+    orderBy: opts?.order ? { startsAt: opts.order } : opts?.status === "PENDING" ? { createdAt: "asc" } : { startsAt: "desc" },
     take: opts?.limit ?? 200,
   });
 }

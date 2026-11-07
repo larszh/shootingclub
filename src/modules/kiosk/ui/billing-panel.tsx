@@ -16,7 +16,18 @@ export function KioskBillingPanel({ from, to, label, categoryName, candidates, b
   from: string; to: string; label: string; categoryName: string; candidates: KioskBillingCandidate[]; blocker: string | null; currency: string;
 }) {
   const router = useRouter();
-  const [picked, setPicked] = useState<Set<string>>(() => new Set(candidates.filter((c) => c.billable).map((c) => c.userId)));
+  const billableIds = candidates.filter((c) => c.billable).map((c) => c.userId);
+  const billableKey = [...billableIds].sort().join(",");
+  const [picked, setPicked] = useState<Set<string>>(() => new Set(billableIds));
+  // Nach router.refresh (z.B. «Wieder freigeben») neu verrechenbare Mitglieder vorauswählen;
+  // eine bestehende Auswahl bzw. abgewählte Mitglieder bleiben unverändert.
+  const [seenKey, setSeenKey] = useState(billableKey);
+  if (seenKey !== billableKey) {
+    const seen = new Set(seenKey ? seenKey.split(",") : []);
+    const added = billableIds.filter((id) => !seen.has(id));
+    setSeenKey(billableKey);
+    if (added.length) setPicked((prev) => new Set([...prev, ...added]));
+  }
   const [error, setError] = useState<string | null>(null);
   const [pending, start] = useTransition();
   const chosen = useMemo(() => candidates.filter((c) => c.billable && picked.has(c.userId)), [candidates, picked]);

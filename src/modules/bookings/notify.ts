@@ -87,3 +87,24 @@ export async function notifyBooking(bookingId: string, notice: BookingNotice, ac
     dedupeKey: `booking-${notice}:${b.id}`,
   });
 }
+
+/**
+ * Mitteilung an den Inhaber einer Serie, wenn jemand anderes (Verwaltung) die ganze Serie storniert.
+ * Eine Mitteilung für alle Termine statt einer pro Termin.
+ */
+export async function notifySeriesCancelled(seriesId: string, count: number, actor: { id: string; name: string }) {
+  const s = await db.bookingSeries.findUnique({ where: { id: seriesId }, select: { id: true, tenantId: true, userId: true, resource: { select: { name: true } } } });
+  if (!s?.userId || s.userId === actor.id || count <= 0) return;
+  const resource = s.resource.name;
+  await notify({
+    tenantId: s.tenantId,
+    userIds: [s.userId],
+    topic: "bookings",
+    title: "Serie storniert",
+    body: `${actor.name} hat deine Serienreservation «${resource}» storniert. Betroffene künftige Termine: ${count}.`,
+    url: `/bookings/series/${s.id}`,
+    tag: `booking-series:${s.id}`,
+    i18n: { title: "bookings.notify.seriesCancelled.title", body: "bookings.notify.seriesCancelled.body", vars: { name: actor.name, resource, count: String(count) } },
+    dedupeKey: `booking-series-cancelled:${s.id}`,
+  });
+}

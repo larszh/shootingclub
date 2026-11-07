@@ -25,7 +25,7 @@ import {
 import { fail, ok, type ActionResult } from "@/lib/action-result";
 import { safeNextPath } from "@/lib/utils";
 import { todayZurich } from "@/lib/time";
-import { getTenantLocale } from "@/lib/i18n";
+import { getTenantLocale, getVisitorLocale } from "@/lib/i18n";
 import { setActiveTenantCookie } from "@/lib/tenant";
 import { audit } from "@/lib/audit";
 import { joinStatusFor } from "./join-approval";
@@ -83,11 +83,12 @@ export async function registerAction(_prev: ActionResult | null, formData: FormD
   const inviteToken = String(formData.get("invite") ?? "");
   const inv = inviteToken ? await findInvitation(inviteToken) : null;
   const inviteMatches = !!inv && inv.state === "open" && inv.email === email;
-  // Neue Konten übernehmen die Sprache des Vereins, dem sie beitreten (keine eigene Wahl bei der Registrierung).
+  // Neue Konten übernehmen die auf den Anmeldeseiten gewählte Sprache (Cookie standchef_locale, sonst
+  // Accept-Language), andernfalls die Sprache des Vereins, dem sie beitreten.
   // Eingeladene Personen sind bereits freigegeben (Einladung für denselben Verein).
   if (inviteMatches && inv!.tenantId === tenantId) joinStatus = "ACTIVE";
   const joinTenantId = tenantId ?? (inviteMatches ? inv!.tenantId : null);
-  const locale = joinTenantId ? await getTenantLocale(joinTenantId) : undefined;
+  const locale = (await getVisitorLocale()) ?? (joinTenantId ? await getTenantLocale(joinTenantId) : undefined);
 
   const userCount = await db.user.count();
   const user = await db.user.create({

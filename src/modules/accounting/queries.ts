@@ -144,16 +144,17 @@ export async function loadJournalDocuments(tenantId: string, from: string, to: s
     db.billingProfile.findUnique({ where: { tenantId }, select: { currency: true } }),
   ]);
 
-  // Storno- und Erstattungsdaten stehen in cancelledAt/refundedAt. Nur ältere Belege ohne Spalte lesen
-  // das Datum aus dem Protokoll (siehe events.ts), sonst gilt updatedAt.
+  // Storno- und Erstattungsdaten stehen in cancelledAt/refundedAt. Das Protokoll (siehe events.ts) gilt
+  // für ältere Belege ohne Spalte und für Spalten, die die Migration aus updatedAt nachgetragen hat
+  // (reversalDate erkennt sie); deshalb für alle stornierten bzw. erstatteten Belege laden.
   const refundedBookingIds = [
-    ...bookingInvoices.filter((i) => i.booking.paymentStatus === "REFUNDED" && !i.booking.refundedAt).map((i) => i.booking.id),
-    ...onlineBookingPayments.flatMap((p) => (p.booking?.paymentStatus === "REFUNDED" && !p.booking.refundedAt ? [p.booking.id] : [])),
-    ...cashBookings.filter((b) => b.paymentStatus === "REFUNDED" && !b.refundedAt).map((b) => b.id),
+    ...bookingInvoices.filter((i) => i.booking.paymentStatus === "REFUNDED").map((i) => i.booking.id),
+    ...onlineBookingPayments.flatMap((p) => (p.booking?.paymentStatus === "REFUNDED" ? [p.booking.id] : [])),
+    ...cashBookings.filter((b) => b.paymentStatus === "REFUNDED").map((b) => b.id),
   ];
   const events = await loadAccountingEventDates(tenantId, [
-    { entity: "FeeInvoice", ids: fees.filter((f) => f.status === "CANCELLED" && !f.cancelledAt).map((f) => f.id) },
-    { entity: "AmmoOrder", ids: ammo.filter((o) => (o.paymentStatus === "CANCELLED" || o.status === "CANCELLED") && !o.cancelledAt).map((o) => o.id) },
+    { entity: "FeeInvoice", ids: fees.filter((f) => f.status === "CANCELLED").map((f) => f.id) },
+    { entity: "AmmoOrder", ids: ammo.filter((o) => o.paymentStatus === "CANCELLED" || o.status === "CANCELLED").map((o) => o.id) },
     { entity: "Booking", ids: [...new Set(refundedBookingIds)] },
   ]);
 

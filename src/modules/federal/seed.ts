@@ -123,6 +123,8 @@ export async function seedDemoFederal(db: Db, tenantId: string, userIds: string[
   return { created: true, match: true };
 }
 
+/** Gleicher Wert wie AWARD_EXAMPLE_MARK in awards.ts (hier dupliziert: nur relative Imports ohne Pfad-Alias). */
+export const DEMO_AWARD_EXAMPLE_MARK = "(Beispiel)";
 const FS_PRESET_NAME = "Feldschiessen 300 m (nachempfunden)";
 const DEMO_FS_TITLE = "Feldschiessen 300 m (Demo)";
 
@@ -139,18 +141,27 @@ export async function seedDemoFederalAwards(db: Db, tenantId: string, userIds: s
   const year = now.getUTCFullYear();
 
   let limits = false;
-  const existing = await db.awardLimit.count({ where: { tenantId, programId: program.id, year } });
-  if (!existing) {
-    // Beispiel, bitte prüfen: Platzhalterwerte, Limiten gemäss Ausschreibung eintragen.
-    const rows = [
-      { category: "Jugend (bis 20)", minScore: 56, award: "Kranz" },
-      { category: "Jugend (bis 20)", minScore: 52, award: "Anerkennungskarte" },
-      { category: "Elite (21–59)", minScore: 58, award: "Kranz" },
-      { category: "Elite (21–59)", minScore: 54, award: "Anerkennungskarte" },
-      { category: "Veteranen (ab 60)", minScore: 56, award: "Kranz" },
-      { category: "Veteranen (ab 60)", minScore: 52, award: "Anerkennungskarte" },
-    ];
-    await db.awardLimit.createMany({ data: rows.map((r, sort) => ({ tenantId, programId: program.id, year, sort, ...r })) });
+  // Beispiel, bitte prüfen: Platzhalterwerte, Limiten gemäss Ausschreibung eintragen. Die Markierung
+  // «(Beispiel)» steht in der Auszeichnung, damit sie in Übersicht, Druckliste und CSV sichtbar ist.
+  const plain = [
+    { category: "Jugend (bis 20)", minScore: 56, award: "Kranz" },
+    { category: "Jugend (bis 20)", minScore: 52, award: "Anerkennungskarte" },
+    { category: "Elite (21–59)", minScore: 58, award: "Kranz" },
+    { category: "Elite (21–59)", minScore: 54, award: "Anerkennungskarte" },
+    { category: "Veteranen (ab 60)", minScore: 56, award: "Kranz" },
+    { category: "Veteranen (ab 60)", minScore: 52, award: "Anerkennungskarte" },
+  ];
+  const marked = (award: string) => `${award} ${DEMO_AWARD_EXAMPLE_MARK}`;
+  const existing = await db.awardLimit.findMany({ where: { tenantId, programId: program.id, year }, select: { id: true, category: true, minScore: true, award: true } });
+  if (!existing.length) {
+    await db.awardLimit.createMany({ data: plain.map((r, sort) => ({ tenantId, programId: program.id, year, sort, ...r, award: marked(r.award) })) });
+    limits = true;
+  } else if (
+    existing.length === plain.length &&
+    existing.every((e) => plain.some((p) => p.category === e.category && p.minScore === e.minScore && p.award === e.award))
+  ) {
+    // Ältere Demo-Daten ohne Markierung: unveränderte Beispielwerte nachträglich als Beispiel markieren.
+    for (const e of existing) await db.awardLimit.update({ where: { id: e.id }, data: { award: marked(e.award) } });
     limits = true;
   }
 
@@ -168,9 +179,10 @@ export async function seedDemoFederalAwards(db: Db, tenantId: string, userIds: s
   }
   if (!stages.length) return { limits, match: false };
 
-  // Ende Mai des laufenden Jahres (bzw. vor drei Wochen, falls noch vor Ende Mai), 09:00 Schweizer Zeit
+  // Ende Mai des laufenden Jahres (bzw. vor drei Wochen, falls noch vor Ende Mai), 09:00 Schweizer Zeit.
+  // Nie vor dem 1. Januar: sonst fände die Jahresprüfung oben den Stich nicht (Seed bliebe nicht idempotent).
   const may = new Date(Date.UTC(year, 4, 30, 7, 0));
-  const date = may.getTime() < now.getTime() ? may : new Date(now.getTime() - 21 * 86_400_000);
+  const date = may.getTime() < now.getTime() ? may : new Date(Math.max(from.getTime() + 7 * 3_600_000, now.getTime() - 21 * 86_400_000));
   // Werte pro Schuss: guter Schütze (≈ Kranz), mittlerer (≈ Karte), schwächerer (ohne Auszeichnung)
   const perShot = [4, 3, 2];
   const extra = [1, 0, 1];

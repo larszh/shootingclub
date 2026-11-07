@@ -5,6 +5,7 @@ import { z } from "zod";
 import { db } from "@/lib/db";
 import { audit } from "@/lib/audit";
 import { fail, ok, type ActionResult } from "@/lib/action-result";
+import { getRequestLocale, getT } from "@/lib/i18n";
 import { requireModule } from "@/lib/tenant";
 import { todayZurich, zurichToUtc } from "@/lib/time";
 import { blockReasonOf, cleanBlockReason, dayKeyToDbDate, parseCostToCents, stripBlockReason } from "./logic";
@@ -28,14 +29,17 @@ async function manageCtx() {
   return ctx.can("weapons.manage") ? ctx : null;
 }
 
-const NO_RIGHT = "Dafür fehlt dir die Berechtigung.";
+/** Fehlende Berechtigung, in der Sprache der Person. */
+async function noRight() {
+  return fail(getT(await getRequestLocale())("money.err.noPermission"));
+}
 const str = (fd: FormData, k: string) => (fd.get(k) === null ? "" : String(fd.get(k)));
 
 // --- Waffe erfassen / bearbeiten --------------------------------------------------------------
 
 export async function saveWeaponAction(_prev: ActionResult<{ id: string }> | null, fd: FormData): Promise<ActionResult<{ id: string }>> {
   const ctx = await manageCtx();
-  if (!ctx) return fail(NO_RIGHT);
+  if (!ctx) return noRight();
   const id = str(fd, "id") || null;
   if (id && !idSchema.safeParse(id).success) return fail("Ungültige Anfrage.");
   const parsed = weaponSchema.safeParse({
@@ -81,7 +85,7 @@ export async function saveWeaponAction(_prev: ActionResult<{ id: string }> | nul
 /** Status setzen: AVAILABLE (freigeben), SERVICE, BLOCKED (mit Grund), RETIRED. Ausgeliehene Waffen zuerst zurücknehmen. */
 export async function setWeaponStatusAction(id: string, status: string, reason?: string): Promise<ActionResult> {
   const ctx = await manageCtx();
-  if (!ctx) return fail(NO_RIGHT);
+  if (!ctx) return noRight();
   if (!idSchema.safeParse(id).success || !isWeaponStatus(status) || status === "LOANED") return fail("Ungültige Anfrage.");
   const tenantId = ctx.tenant.id;
   const w = await db.clubWeapon.findFirst({ where: { id, tenantId }, select: { status: true, notes: true, name: true } });
@@ -106,7 +110,7 @@ export async function setWeaponStatusAction(id: string, status: string, reason?:
 
 export async function deleteWeaponAction(id: string): Promise<ActionResult> {
   const ctx = await manageCtx();
-  if (!ctx) return fail(NO_RIGHT);
+  if (!ctx) return noRight();
   if (!idSchema.safeParse(id).success) return fail("Ungültige Anfrage.");
   const tenantId = ctx.tenant.id;
   const w = await db.clubWeapon.findFirst({ where: { id, tenantId }, select: { name: true, _count: { select: { loans: true } } } });
@@ -124,7 +128,7 @@ export async function lendWeaponAction(input: {
   weaponId: string; userId: string | null; borrowerName: string; isMinor: boolean; onSiteOnly: boolean; dueDate: string; reportDays: string; note: string;
 }): Promise<ActionResult<{ id: string }>> {
   const ctx = await loanCtx();
-  if (!ctx) return fail(NO_RIGHT);
+  if (!ctx) return noRight();
   const parsed = loanSchema.safeParse({ ...input, userId: input.userId || null });
   if (!parsed.success) {
     const issue = parsed.error.issues[0];
@@ -144,7 +148,7 @@ export async function lendWeaponAction(input: {
 
 export async function returnLoanAction(loanId: string, shots: number | null): Promise<ActionResult> {
   const ctx = await loanCtx();
-  if (!ctx) return fail(NO_RIGHT);
+  if (!ctx) return noRight();
   const s = shotsSchema.safeParse(shots);
   if (!idSchema.safeParse(loanId).success || !s.success) return fail(s.success ? "Ungültige Anfrage." : (s.error.issues[0]?.message ?? "Ungültige Schusszahl."));
   const r = await returnWeaponLoan(ctx.tenant.id, loanId, s.data);
@@ -156,7 +160,7 @@ export async function returnLoanAction(loanId: string, shots: number | null): Pr
 
 export async function markReportedAction(loanId: string, reported: boolean): Promise<ActionResult> {
   const ctx = reported ? await loanCtx() : await manageCtx();
-  if (!ctx) return fail(NO_RIGHT);
+  if (!ctx) return noRight();
   if (!idSchema.safeParse(loanId).success) return fail("Ungültige Anfrage.");
   const res = await db.weaponLoan.updateMany({
     where: { id: loanId, tenantId: ctx.tenant.id, isMinor: true, ...(reported ? { reportedAt: null } : { reportedAt: { not: null } }) },
@@ -172,7 +176,7 @@ export async function markReportedAction(loanId: string, reported: boolean): Pro
 
 export async function addServiceAction(_prev: ActionResult | null, fd: FormData): Promise<ActionResult> {
   const ctx = await manageCtx();
-  if (!ctx) return fail(NO_RIGHT);
+  if (!ctx) return noRight();
   const parsed = serviceSchema.safeParse({
     weaponId: str(fd, "weaponId"), date: str(fd, "date"), kind: str(fd, "kind") || "SERVICE", note: str(fd, "note"), cost: str(fd, "cost"),
     byName: str(fd, "byName"), release: fd.get("release") === "on", nextServiceAt: str(fd, "nextServiceAt"),
@@ -205,7 +209,7 @@ export async function addServiceAction(_prev: ActionResult | null, fd: FormData)
 
 export async function deleteServiceAction(serviceId: string): Promise<ActionResult> {
   const ctx = await manageCtx();
-  if (!ctx) return fail(NO_RIGHT);
+  if (!ctx) return noRight();
   if (!idSchema.safeParse(serviceId).success) return fail("Ungültige Anfrage.");
   const res = await db.weaponService.deleteMany({ where: { id: serviceId, weapon: { tenantId: ctx.tenant.id } } });
   if (res.count === 0) return fail("Eintrag nicht gefunden.");
@@ -219,7 +223,7 @@ export async function deleteServiceAction(serviceId: string): Promise<ActionResu
 /** Meldefrist bei Minderjährigen und Standard-Wartungsintervall für neue Waffen (nur «weapons.manage»). */
 export async function saveWeaponSettingsAction(_prev: ActionResult | null, fd: FormData): Promise<ActionResult> {
   const ctx = await manageCtx();
-  if (!ctx) return fail(NO_RIGHT);
+  if (!ctx) return noRight();
   const parsed = weaponSettingsSchema.safeParse({ minorReportDays: str(fd, "minorReportDays"), serviceEveryShotsDefault: str(fd, "serviceEveryShotsDefault") });
   if (!parsed.success) {
     const issue = parsed.error.issues[0];

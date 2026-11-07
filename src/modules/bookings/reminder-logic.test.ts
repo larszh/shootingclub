@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { reminderDue } from "./reminder-logic";
+import { reminderDay, reminderDue } from "./reminder-logic";
 import { discountReasonLabel, slotErrorLabel, slotReasonLabel } from "./i18n";
 import { getT } from "@/lib/i18n/core";
 
@@ -33,5 +33,15 @@ describe("Übersetzte Gründe", () => {
     expect(discountReasonLabel("Spontan-Rabatt 20%", getT("de"))).toBe("Spontan-Rabatt 20%");
     expect(discountReasonLabel("Spontan-Rabatt 20%", getT("it"))).toBe("Sconto last minute 20%");
     expect(discountReasonLabel(null, getT("fr"))).toBeNull();
+  });
+});
+
+describe("reminderDay", () => {
+  it("Kalendertag in Schweizer Zeit", () => {
+    // 07.11.2026 09:30 Zürich (UTC+1) → Beginn 14:00 am selben Tag
+    expect(reminderDay(new Date("2026-11-07T13:00:00Z"), new Date("2026-11-07T08:30:00Z"))).toBe("today");
+    expect(reminderDay(new Date("2026-11-08T13:00:00Z"), new Date("2026-11-07T08:30:00Z"))).toBe("tomorrow");
+    // 23:30 UTC am 07.11. ist in Zürich bereits der 08.11.
+    expect(reminderDay(new Date("2026-11-07T23:30:00Z"), new Date("2026-11-07T20:00:00Z"))).toBe("tomorrow");
   });
 });

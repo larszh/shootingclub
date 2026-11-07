@@ -5,12 +5,15 @@ import { getAmmoSettings, listMyOrders, listShopProducts } from "@/modules/ammo/
 import { getBillingProfile } from "@/modules/billing/profile";
 import { AmmoShop } from "@/modules/ammo/ui/shop";
 import { MemberCancelButton } from "@/modules/ammo/ui/order-actions";
-import { formatRounds, LEGAL_HINT, ORDER_STATUS, PAYMENT_STATUS } from "@/modules/ammo/types";
+import { ORDER_STATUS, PAYMENT_STATUS } from "@/modules/ammo/types";
+import { formatRoundsT, orderStatusLabelT, paymentStatusLabelT } from "@/modules/ammo/i18n";
 import { Alert, Badge, Card, EmptyState, LinkButton, PageHeader, SectionTitle } from "@/components/ui";
 import { formatMoney } from "@/lib/money";
-import { formatDateZurich } from "@/lib/time";
+import { formatDate, getRequestLocale, getT } from "@/lib/i18n";
 
-export const metadata: Metadata = { title: "Munition" };
+export async function generateMetadata(): Promise<Metadata> {
+  return { title: getT(await getRequestLocale())("money.ammo.title") };
+}
 
 export default async function AmmoPage() {
   const ctx = await requireAmmo();
@@ -21,26 +24,28 @@ export default async function AmmoPage() {
     getBillingProfile(ctx.tenant.id, ctx.tenant.name),
   ]);
   const canManage = ctx.can("ammo.manage");
+  const locale = await getRequestLocale();
+  const t = getT(locale);
 
   return (
     <div>
       <PageHeader
-        title="Munition"
-        subtitle={`${ctx.tenant.name} · Bezahlung nur auf Rechnung`}
-        action={canManage ? <LinkButton href="/admin/ammo" variant="secondary" size="sm" className="h-11"><Settings className="h-4 w-4" /> Verwalten</LinkButton> : null}
+        title={t("money.ammo.title")}
+        subtitle={t("money.ammo.subtitle", { club: ctx.tenant.name })}
+        action={canManage ? <LinkButton href="/admin/ammo" variant="secondary" size="sm" className="h-11"><Settings className="h-4 w-4" /> {t("money.ammo.manage")}</LinkButton> : null}
       />
 
       {settings.note ? (
-        <Alert tone="info" icon={<Info className="h-4 w-4" />} title="Hinweis des Vereins" className="mb-4 whitespace-pre-line">{settings.note}</Alert>
+        <Alert tone="info" icon={<Info className="h-4 w-4" />} title={t("money.ammo.clubNote")} className="mb-4 whitespace-pre-line">{settings.note}</Alert>
       ) : null}
 
       {products.length ? (
-        <AmmoShop products={products} currency={profile.currency} maxRounds={settings.maxRoundsPerOrder} onSiteOnly={settings.onSiteOnly} approvalRequired={settings.approvalRequired} />
+        <AmmoShop products={products} currency={profile.currency} maxRounds={settings.maxRoundsPerOrder} onSiteOnly={settings.onSiteOnly} approvalRequired={settings.approvalRequired} locale={locale} />
       ) : (
-        <EmptyState icon={<Package className="h-5 w-5" />} title="Zurzeit keine Munition im Angebot" text="Sobald der Verein Produkte erfasst, kannst du hier bestellen." />
+        <EmptyState icon={<Package className="h-5 w-5" />} title={t("money.ammo.empty.title")} text={t("money.ammo.empty.text")} />
       )}
 
-      <SectionTitle>Meine Bestellungen</SectionTitle>
+      <SectionTitle>{t("money.ammo.myOrders")}</SectionTitle>
       {orders.length ? (
         <div className="stagger space-y-2.5">
           {orders.map((o) => {
@@ -52,14 +57,14 @@ export default async function AmmoPage() {
               <Card key={o.id} className="space-y-2 p-4">
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0">
-                    <div className="font-medium">{formatDateZurich(o.createdAt, { weekday: undefined })} · {formatRounds(rounds)}</div>
+                    <div className="font-medium">{formatDate(o.createdAt, locale)} · {formatRoundsT(rounds, locale, t)}</div>
                     <div className="text-xs text-ink-3">{o.items.map((i) => `${i.quantity} × ${i.unitLabel} ${i.productName}`).join(", ")}</div>
                   </div>
                   <div className="shrink-0 text-right">
                     <div className="font-semibold tabular-nums">{formatMoney(o.totalCents, o.currency)}</div>
                     <div className="mt-0.5 flex flex-wrap justify-end gap-1">
-                      <Badge tone={st.tone}>{waiting ? "Wartet auf Freigabe" : st.memberLabel}</Badge>
-                      {pay ? <Badge tone={pay.tone}>{pay.label}</Badge> : null}
+                      <Badge tone={st.tone}>{waiting ? t("money.ammo.waiting") : orderStatusLabelT(o.status in ORDER_STATUS ? o.status : "ORDERED", t)}</Badge>
+                      {pay ? <Badge tone={pay.tone}>{paymentStatusLabelT(o.paymentStatus, t)}</Badge> : null}
                     </div>
                   </div>
                 </div>
@@ -67,22 +72,22 @@ export default async function AmmoPage() {
                   <div className="flex flex-wrap items-center gap-2">
                     {o.invoiceNumber ? (
                       <LinkButton href={`/ammo/${o.id}/invoice`} target="_blank" variant="secondary" size="sm" className="h-11">
-                        <FileText className="h-4 w-4" /> Rechnung {o.invoiceNumber}
+                        <FileText className="h-4 w-4" /> {t("money.ammo.invoice", { number: o.invoiceNumber })}
                       </LinkButton>
                     ) : null}
-                    {o.status === "ORDERED" || o.status === "APPROVED" ? <MemberCancelButton orderId={o.id} /> : null}
+                    {o.status === "ORDERED" || o.status === "APPROVED" ? <MemberCancelButton orderId={o.id} locale={locale} /> : null}
                   </div>
                 ) : null}
-                {o.invoiceNumber && o.paymentStatus === "UNPAID" && o.dueAt ? <p className="text-xs text-ink-3">Zahlbar bis {formatDateZurich(o.dueAt, { weekday: undefined })} – QR-Rechnung öffnen und mit der Banking-App scannen.</p> : null}
+                {o.invoiceNumber && o.paymentStatus === "UNPAID" && o.dueAt ? <p className="text-xs text-ink-3">{t("money.ammo.payBy", { date: formatDate(o.dueAt, locale) })}</p> : null}
               </Card>
             );
           })}
         </div>
       ) : (
-        <p className="text-sm text-ink-3">Noch keine Bestellungen.</p>
+        <p className="text-sm text-ink-3">{t("money.ammo.noOrders")}</p>
       )}
 
-      <p className="mt-6 text-xs text-ink-3">{LEGAL_HINT}</p>
+      <p className="mt-6 text-xs text-ink-3">{t("money.ammo.legal")}</p>
     </div>
   );
 }

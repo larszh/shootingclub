@@ -3,27 +3,30 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { ChevronRight, Landmark } from "lucide-react";
 import { getCurrentUser } from "@/lib/auth";
+import { getRequestLocale, getT } from "@/lib/i18n";
 import { Badge, Card, EmptyState, PageHeader } from "@/components/ui";
-import { ASSOCIATION_ADMIN_ROLE_LABELS } from "@/modules/association/access";
 import { listAccessibleAssociations } from "@/modules/association/queries";
 
-export const metadata: Metadata = { title: "Verband" };
+export async function generateMetadata(): Promise<Metadata> {
+  return { title: getT(await getRequestLocale())("shell.association.title") };
+}
 
 /** Einstieg Verbandsbereich: ein Verband → direkt dorthin, mehrere → Auswahl. Unabhängig vom aktiven Verein. */
 export default async function AssociationIndexPage() {
   const user = await getCurrentUser();
   if (!user) redirect("/login");
   const associations = await listAccessibleAssociations(user);
+  const t = getT(await getRequestLocale());
   if (associations.length === 1 && !user.isSuperAdmin) redirect(`/association/${associations[0]!.id}`);
 
   return (
     <div>
-      <PageHeader title="Verband" subtitle="Auswertungen über die Vereine eines Verbands" back={{ href: "/me", label: "Mehr" }} />
+      <PageHeader title={t("shell.association.title")} subtitle={t("shell.association.subtitle")} back={{ href: "/me", label: t("shell.nav.more") }} />
       {associations.length === 0 ? (
         <EmptyState
           icon={<Landmark className="h-6 w-6" />}
-          title="Kein Verbandszugang"
-          text={user.isSuperAdmin ? "Lege unter Verwaltung → Verbände einen Verband an." : "Den Zugang zum Verbandsbereich vergibt die Plattform-Verwaltung."}
+          title={t("shell.association.noAccess")}
+          text={user.isSuperAdmin ? t("shell.association.noAccessSuper") : t("shell.association.noAccessText")}
         />
       ) : (
         <Card className="animate-rise divide-y divide-line overflow-hidden">
@@ -32,9 +35,9 @@ export default async function AssociationIndexPage() {
               <Landmark className="h-5 w-5 shrink-0 text-ink-2" aria-hidden />
               <div className="min-w-0 flex-1">
                 <div className="font-medium truncate">{a.name}</div>
-                <div className="text-xs text-ink-3">{a.region ? `${a.region} · ` : ""}{a.clubCount} Vereine</div>
+                <div className="text-xs text-ink-3">{a.region ? `${a.region} · ` : ""}{t(a.clubCount === 1 ? "shell.association.clubsOne" : "shell.association.clubsMany", { count: a.clubCount })}</div>
               </div>
-              <Badge tone="outline">{a.access === "SUPER" ? "Super-Admin" : ASSOCIATION_ADMIN_ROLE_LABELS[a.access]}</Badge>
+              <Badge tone="outline">{t(`shell.association.access.${a.access}`)}</Badge>
               <ChevronRight className="h-4 w-4 text-ink-3" aria-hidden />
             </Link>
           ))}

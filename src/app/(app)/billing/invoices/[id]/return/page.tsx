@@ -8,7 +8,7 @@ import { formatMoney } from "@/lib/money";
 import { getRequestLocale, getT } from "@/lib/i18n";
 import { localizeMessage } from "@/modules/billing/ui/i18n";
 import { verifyFeeInvoicePayment } from "@/modules/billing/payments";
-import { feeInvoiceTitle } from "@/modules/billing/fee-title";
+import { localizedFeeInvoiceTitle } from "../../../fee-title-i18n";
 import { PaymentStatusPoller } from "@/lib/payments/ui/status-poller";
 import { PayFeeInvoiceButton } from "../pay/pay-button";
 
@@ -33,7 +33,7 @@ export default async function FeeInvoiceReturnPage({ params, searchParams }: { p
   const failed = r.status === "FAILED" || (!paid && sp.cancelled === "1");
   const pending = !paid && !failed && r.status === "PENDING";
   const none = !paid && !failed && !pending;
-  const title = feeInvoiceTitle(inv, t("money.fee.annualTitle", { year: inv.year }));
+  const title = localizedFeeInvoiceTitle(inv, t);
   const heading = t(refund ? "money.return.h.refund" : paid ? "money.return.h.paid" : failed ? "money.return.h.failed" : pending ? "money.return.h.pending" : "money.return.h.none");
   return (
     <div>

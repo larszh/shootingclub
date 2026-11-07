@@ -34,6 +34,11 @@ export type NotifyInput = {
   };
   /** Abweichender E-Mail-Text (z.B. Chat: ohne Nachrichteninhalt). */
   emailBody?: string;
+  /**
+   * Fusszeile der E-Mail: «member» (Standard, mit Verein), «noClub» (ohne Verein) oder «joinRequest»
+   * (Person ist noch kein Mitglied, z.B. Ablehnung einer Beitrittsanfrage).
+   */
+  footer?: "member" | "noClub" | "joinRequest";
   /** Gruppierung auf dem Gerät, z.B. chat:<conversationId> */
   tag?: string;
   urgency?: "very-low" | "low" | "normal" | "high";
@@ -141,7 +146,12 @@ export async function notify(n: NotifyInput): Promise<void> {
         try {
           const t = getT(r.locale);
           const tx = textsFor(n, r.locale);
-          const footer = tenant ? t("notify.mail.footer", { club: tenant.name }) : t("notify.mail.footerNoClub");
+          const footer =
+            n.footer === "joinRequest"
+              ? t("notify.mail.footerJoinRequest", { club: tenant?.name ?? "" })
+              : n.footer === "noClub" || !tenant
+                ? t("notify.mail.footerNoClub")
+                : t("notify.mail.footer", { club: tenant.name });
           const mail = renderMail({
             locale: r.locale,
             title: tx.title,

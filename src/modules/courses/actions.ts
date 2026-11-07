@@ -6,6 +6,7 @@ import { db } from "@/lib/db";
 import { accessStatusWhere } from "@/lib/membership-access";
 import { audit } from "@/lib/audit";
 import { fail, ok, type ActionResult } from "@/lib/action-result";
+import { getRequestLocale, getT } from "@/lib/i18n";
 import { requireModule } from "@/lib/tenant";
 import { todayZurich, zurichParts, zurichToUtc } from "@/lib/time";
 import { readCsvBytes } from "@/modules/members/import";
@@ -41,7 +42,10 @@ import {
 } from "./types";
 
 const idSchema = z.string().min(1).max(40);
-const NO_RIGHT = "Dafür fehlt dir die Berechtigung.";
+/** Fehlende Berechtigung, in der Sprache der Person. */
+async function noRight() {
+  return fail(getT(await getRequestLocale())("money.err.noPermission"));
+}
 const PROTECTED_KIND = "Sicherheits- und Leiterqualifikationen (z.B. Schützenmeister, Standchef, J+S-Leiter) kann nur ein Admin festlegen und erteilen.";
 const BAD = "Ungültige Anfrage.";
 const str = (fd: FormData, k: string) => (fd.get(k) === null ? "" : String(fd.get(k)));
@@ -112,7 +116,7 @@ async function loadParticipant(tenantId: string, id: string) {
 
 export async function saveCourseAction(_prev: ActionResult<{ id: string }> | null, fd: FormData): Promise<ActionResult<{ id: string }>> {
   const ctx = await manageCtx();
-  if (!ctx) return fail(NO_RIGHT);
+  if (!ctx) return noRight();
   const tenantId = ctx.tenant.id;
   const id = str(fd, "id") || null;
   if (id && !idSchema.safeParse(id).success) return fail(BAD);
@@ -145,7 +149,7 @@ export async function saveCourseAction(_prev: ActionResult<{ id: string }> | nul
 
 export async function setCourseStatusAction(id: string, status: string): Promise<ActionResult> {
   const ctx = await manageCtx();
-  if (!ctx) return fail(NO_RIGHT);
+  if (!ctx) return noRight();
   if (!idSchema.safeParse(id).success || !isCourseStatus(status)) return fail(BAD);
   const res = await db.course.updateMany({ where: { id, tenantId: ctx.tenant.id }, data: { status } });
   if (res.count === 0) return fail("Kurs nicht gefunden.");
@@ -156,7 +160,7 @@ export async function setCourseStatusAction(id: string, status: string): Promise
 
 export async function deleteCourseAction(id: string): Promise<ActionResult> {
   const ctx = await manageCtx();
-  if (!ctx) return fail(NO_RIGHT);
+  if (!ctx) return noRight();
   if (!idSchema.safeParse(id).success) return fail(BAD);
   const tenantId = ctx.tenant.id;
   const c = await db.course.findFirst({ where: { id, tenantId }, select: { name: true, sessions: { select: { eventId: true } } } });
@@ -176,7 +180,7 @@ export async function deleteCourseAction(id: string): Promise<ActionResult> {
 
 export async function saveParticipantAction(_prev: ActionResult<{ id: string }> | null, fd: FormData): Promise<ActionResult<{ id: string }>> {
   const ctx = await manageCtx();
-  if (!ctx) return fail(NO_RIGHT);
+  if (!ctx) return noRight();
   const tenantId = ctx.tenant.id;
   const id = str(fd, "id") || null;
   const courseId = str(fd, "courseId");
@@ -228,7 +232,7 @@ export async function saveParticipantAction(_prev: ActionResult<{ id: string }> 
 
 export async function setParticipantStatusAction(id: string, status: string): Promise<ActionResult> {
   const ctx = await manageCtx();
-  if (!ctx) return fail(NO_RIGHT);
+  if (!ctx) return noRight();
   if (!isParticipantStatus(status)) return fail(BAD);
   const p = await loadParticipant(ctx.tenant.id, id);
   if (!p) return fail("Teilnehmer:in nicht gefunden.");
@@ -242,7 +246,7 @@ export async function setParticipantStatusAction(id: string, status: string): Pr
 /** Kursabschluss bestätigen: nur wenn alle Pflichtprogramme bestanden sind. */
 export async function completeParticipantAction(id: string): Promise<ActionResult> {
   const ctx = await manageCtx();
-  if (!ctx) return fail(NO_RIGHT);
+  if (!ctx) return noRight();
   const p = await loadParticipant(ctx.tenant.id, id);
   if (!p) return fail("Teilnehmer:in nicht gefunden.");
   const required = parseIdCsv(p.course.requiredProgramIds);
@@ -261,7 +265,7 @@ export async function completeParticipantAction(id: string): Promise<ActionResul
 
 export async function deleteParticipantAction(id: string): Promise<ActionResult> {
   const ctx = await manageCtx();
-  if (!ctx) return fail(NO_RIGHT);
+  if (!ctx) return noRight();
   const p = await loadParticipant(ctx.tenant.id, id);
   if (!p) return fail("Teilnehmer:in nicht gefunden.");
   await db.courseParticipant.deleteMany({ where: { id, courseId: p.courseId } });
@@ -275,7 +279,7 @@ export type ImportPreview = { rows: (ImportedParticipant & { duplicate: boolean 
 /** CSV-Import: zuerst Vorschau (mode=preview), danach Übernahme (mode=import) der fehlerfreien, neuen Zeilen. */
 export async function importParticipantsAction(_prev: ActionResult<ImportPreview> | null, fd: FormData): Promise<ActionResult<ImportPreview>> {
   const ctx = await manageCtx();
-  if (!ctx) return fail(NO_RIGHT);
+  if (!ctx) return noRight();
   const tenantId = ctx.tenant.id;
   const courseId = str(fd, "courseId");
   if (!idSchema.safeParse(courseId).success) return fail(BAD);
@@ -319,7 +323,7 @@ export async function importParticipantsAction(_prev: ActionResult<ImportPreview
 
 export async function createSessionAction(_prev: ActionResult<{ id: string }> | null, fd: FormData): Promise<ActionResult<{ id: string }>> {
   const ctx = await manageCtx();
-  if (!ctx) return fail(NO_RIGHT);
+  if (!ctx) return noRight();
   const tenantId = ctx.tenant.id;
   const courseId = str(fd, "courseId");
   if (!idSchema.safeParse(courseId).success) return fail(BAD);
@@ -353,7 +357,7 @@ export async function createSessionAction(_prev: ActionResult<{ id: string }> | 
 
 export async function deleteSessionAction(id: string): Promise<ActionResult> {
   const ctx = await manageCtx();
-  if (!ctx) return fail(NO_RIGHT);
+  if (!ctx) return noRight();
   if (!idSchema.safeParse(id).success) return fail(BAD);
   const tenantId = ctx.tenant.id;
   const s = await db.courseSession.findFirst({ where: { id, course: { tenantId } }, select: { title: true, eventId: true, courseId: true } });
@@ -373,7 +377,7 @@ const attendanceSchema = z.array(z.object({ participantId: idSchema, present: z.
 /** Präsenz einer Lektion speichern (alle übergebenen Teilnehmenden). */
 export async function saveAttendanceAction(sessionId: string, entries: { participantId: string; present: boolean }[]): Promise<ActionResult> {
   const ctx = await manageCtx();
-  if (!ctx) return fail(NO_RIGHT);
+  if (!ctx) return noRight();
   const parsed = attendanceSchema.safeParse(entries);
   if (!idSchema.safeParse(sessionId).success || !parsed.success) return fail(BAD);
   const s = await db.courseSession.findFirst({ where: { id: sessionId, course: { tenantId: ctx.tenant.id } }, select: { id: true, courseId: true, title: true } });
@@ -398,7 +402,7 @@ export async function saveAttendanceAction(sessionId: string, entries: { partici
 
 export async function saveResultAction(input: { participantId: string; programId: string | null; label: string; score: string; passed: boolean; date: string }): Promise<ActionResult> {
   const ctx = await manageCtx();
-  if (!ctx) return fail(NO_RIGHT);
+  if (!ctx) return noRight();
   const parsed = resultSchema.safeParse(input);
   if (!parsed.success) return zodFail(parsed.error);
   const v = parsed.data;
@@ -421,7 +425,7 @@ export async function saveResultAction(input: { participantId: string; programId
 /** Abgeschlossenen Durchgang des Mitglieds als Kursresultat übernehmen. */
 export async function linkMatchResultAction(input: { participantId: string; matchParticipantId: string; passed: boolean }): Promise<ActionResult> {
   const ctx = await manageCtx();
-  if (!ctx) return fail(NO_RIGHT);
+  if (!ctx) return noRight();
   if (!idSchema.safeParse(input.matchParticipantId).success || typeof input.passed !== "boolean") return fail(BAD);
   const p = await loadParticipant(ctx.tenant.id, input.participantId);
   if (!p) return fail("Teilnehmer:in nicht gefunden.");
@@ -445,7 +449,7 @@ export async function linkMatchResultAction(input: { participantId: string; matc
 
 export async function deleteResultAction(id: string): Promise<ActionResult> {
   const ctx = await manageCtx();
-  if (!ctx) return fail(NO_RIGHT);
+  if (!ctx) return noRight();
   if (!idSchema.safeParse(id).success) return fail(BAD);
   const r = await db.courseResult.findFirst({
     where: { id, participant: { course: { tenantId: ctx.tenant.id } } },
@@ -463,7 +467,7 @@ export async function deleteResultAction(id: string): Promise<ActionResult> {
 
 export async function saveRuleAction(_prev: ActionResult<{ id: string }> | null, fd: FormData): Promise<ActionResult<{ id: string }>> {
   const ctx = await qualCtx();
-  if (!ctx) return fail(NO_RIGHT);
+  if (!ctx) return noRight();
   const tenantId = ctx.tenant.id;
   const id = str(fd, "id") || null;
   if (id && !idSchema.safeParse(id).success) return fail(BAD);
@@ -502,7 +506,7 @@ export async function saveRuleAction(_prev: ActionResult<{ id: string }> | null,
 
 export async function deleteRuleAction(id: string): Promise<ActionResult> {
   const ctx = await qualCtx();
-  if (!ctx) return fail(NO_RIGHT);
+  if (!ctx) return noRight();
   if (!idSchema.safeParse(id).success) return fail(BAD);
   const r = await db.qualificationRule.findFirst({ where: { id, tenantId: ctx.tenant.id }, select: { name: true, kind: true } });
   if (!r) return fail("Regel nicht gefunden.");
@@ -551,7 +555,7 @@ export async function grantQualificationAction(ruleId: string, matchParticipantI
 /** Aus einem Qualifikationsschiessen erteilte Qualifikation zurückziehen. */
 export async function revokeQualificationAction(id: string): Promise<ActionResult> {
   const ctx = await requireModule("courses");
-  if (!ctx.can("courses.manage") && !ctx.can("qualifications.manage")) return fail(NO_RIGHT);
+  if (!ctx.can("courses.manage") && !ctx.can("qualifications.manage")) return noRight();
   if (!idSchema.safeParse(id).success) return fail(BAD);
   const q = await db.qualification.findFirst({ where: { id, tenantId: ctx.tenant.id, sourceParticipantId: { not: null } }, select: { label: true, user: { select: { name: true } } } });
   if (!q) return fail("Qualifikation nicht gefunden.");

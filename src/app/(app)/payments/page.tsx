@@ -3,7 +3,7 @@ import Link from "next/link";
 import { CreditCard, Settings, Wallet } from "lucide-react";
 import { requireTenant } from "@/lib/tenant";
 import { Card, EmptyState, LinkButton, LinkTabs, PageHeader, SectionTitle, StatCard } from "@/components/ui";
-import { anyPaymentModule, listMyPayments } from "@/modules/billing/overview";
+import { listMyPayments, showMyPayments } from "@/modules/billing/overview";
 import { nowDate } from "@/modules/billing/dates";
 import { OpenPaymentCard, PaymentRow, formatTotals } from "@/modules/billing/ui/payment-rows";
 import { getRequestLocale, getT } from "@/lib/i18n";
@@ -23,7 +23,7 @@ export default async function PaymentsPage({ searchParams }: { searchParams: Pro
   const locale = await getRequestLocale();
   const t = getT(locale);
 
-  if (!anyPaymentModule(ctx)) {
+  if (!(await showMyPayments(ctx))) {
     return (
       <div>
         <PageHeader title={t("money.payments.title")} subtitle={ctx.tenant.name} />

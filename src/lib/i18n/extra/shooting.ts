@@ -530,6 +530,47 @@ const ROWS: Record<string, Row> = {
   "shooting.emergency.rules": ["Standordnung", "règlement du stand", "regolamento dello stand"],
   "shooting.emergency.clubRules": ["Standordnung des Vereins", "règlement du stand de la société", "regolamento dello stand della società"],
   // ---------------------------------------------------------------------------
+  // Standbetrieb: Übersicht «Heute» und Standordnung (Mitgliederansicht)
+  "shooting.range.nav": ["Standbetrieb", "Exploitation du stand", "Gestione dello stand"],
+  "shooting.range.tab./range": ["Heute", "Aujourd’hui", "Oggi"],
+  "shooting.range.tab./range/log": ["Standbuch", "Registre du stand", "Registro dello stand"],
+  "shooting.range.tab./range/quota": ["Halbtage", "Demi-journées", "Mezze giornate"],
+  "shooting.range.tab./range/incidents": ["Vorfälle", "Incidents", "Incidenti"],
+  "shooting.range.tab./range/rules": ["Standordnung", "Règlement du stand", "Regolamento dello stand"],
+  "shooting.range.today": ["Heute am Stand", "Aujourd’hui au stand", "Oggi allo stand"],
+  "shooting.range.setup": ["Standbetrieb einrichten", "Configurer l’exploitation du stand", "Configura la gestione dello stand"],
+  "shooting.range.denied": ["Dafür fehlt dir die Berechtigung.", "Tu n’as pas l’autorisation nécessaire.", "Non hai l’autorizzazione necessaria."],
+  "shooting.range.checkedInSince": ["seit {time}", "depuis {time}", "dalle {time}"],
+  "shooting.range.closed": ["Stand geschlossen", "Stand fermé", "Stand chiuso"],
+  "shooting.range.closedText": ["Heute ist noch kein Standbuch offen.", "Aucun registre du stand n’est encore ouvert aujourd’hui.", "Oggi non è ancora aperto nessun registro dello stand."],
+  "shooting.range.open": ["Stand offen", "Stand ouvert", "Stand aperto"],
+  "shooting.range.openInfo.one": [
+    "Standdienst: {name} · seit {time} · {n} Person am Stand",
+    "Service du stand : {name} · depuis {time} · {n} personne au stand",
+    "Servizio dello stand: {name} · dalle {time} · {n} persona allo stand",
+  ],
+  "shooting.range.openInfo.other": [
+    "Standdienst: {name} · seit {time} · {n} Personen am Stand",
+    "Service du stand : {name} · depuis {time} · {n} personnes au stand",
+    "Servizio dello stand: {name} · dalle {time} · {n} persone allo stand",
+  ],
+  "shooting.rules.edit": ["Bearbeiten", "Modifier", "Modifica"],
+  "shooting.rules.version": ["Version {n}", "Version {n}", "Versione {n}"],
+  "shooting.rules.validSince": [" · gültig seit {date}", " · en vigueur depuis le {date}", " · in vigore dal {date}"],
+  "shooting.rules.acceptedOn": ["Von dir bestätigt am {date}.", "Confirmé par toi le {date}.", "Confermato da te il {date}."],
+  "shooting.rules.accept": ["Gelesen – ich halte mich daran", "Lu – je m’y conforme", "Letto – lo rispetto"],
+  "shooting.rules.none": ["Noch keine Standordnung", "Pas encore de règlement du stand", "Ancora nessun regolamento dello stand"],
+  "shooting.rules.noneManager": [
+    "Unter «Bearbeiten» eine Standordnung erfassen und veröffentlichen.",
+    "Saisis et publie un règlement du stand sous « Modifier ».",
+    "Registra e pubblica un regolamento dello stand in «Modifica».",
+  ],
+  "shooting.rules.noneMember": [
+    "Der Verein hat noch keine Standordnung veröffentlicht.",
+    "La société n’a pas encore publié de règlement du stand.",
+    "La società non ha ancora pubblicato un regolamento dello stand.",
+  ],
+  // ---------------------------------------------------------------------------
   // Helfereinsätze (Mitgliederansicht)
   "shooting.shifts.title": ["Helfereinsätze", "Engagements de bénévoles", "Turni di volontariato"],
   "shooting.shifts.subtitle": ["Mithelfen am Stand und an Anlässen", "Donner un coup de main au stand et lors des manifestations", "Dare una mano allo stand e agli eventi"],

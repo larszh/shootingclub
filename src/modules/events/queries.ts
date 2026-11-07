@@ -2,6 +2,7 @@ import "server-only";
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { db } from "@/lib/db";
+import { accessStatusWhere } from "@/lib/membership-access";
 import { MODULES } from "@/lib/modules";
 import { requireModule, type AppContext, type ActiveTenant } from "@/lib/tenant";
 import { userAvatarUrl } from "@/components/avatar";
@@ -171,8 +172,8 @@ export async function getEventDetail(ctx: TenantCtx, id: string) {
   const mine = all.find((a) => a.userId === ctx.user.id) ?? null;
   // Mitglieder sehen nur die Zusagen (ohne Bemerkungen); Verwalter sehen alles.
   const visible = isManager ? all : all.filter((a) => a.status === "YES").map((a) => ({ ...a, note: null }));
-  // Mitglieder ohne Antwort (Antworten ehemaliger Mitglieder zählen nicht mit)
-  const noAnswer = isManager ? await db.membership.count({ where: { tenantId: ctx.tenant.id, user: { eventRsvps: { none: { eventId: event.id } } } } }) : 0;
+  // Mitglieder ohne Antwort (ehemalige, gelöschte und wartende Mitglieder zählen nicht mit)
+  const noAnswer = isManager ? await db.membership.count({ where: { tenantId: ctx.tenant.id, status: accessStatusWhere(), user: { deletedAt: null, eventRsvps: { none: { eventId: event.id } } } } }) : 0;
   const seatsTaken = counts.yes + counts.yesGuests;
   return {
     event,

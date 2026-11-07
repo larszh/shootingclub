@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { ChevronRight, Landmark } from "lucide-react";
 import { requireSuperAdmin } from "@/lib/tenant";
+import { plural } from "@/lib/utils";
 import { Badge, Card, EmptyState, PageHeader, SectionTitle } from "@/components/ui";
 import { listAllAssociations } from "@/modules/association/queries";
 import { CreateAssociationForm } from "./forms";
@@ -30,7 +31,7 @@ export default async function SuperAssociationsPage() {
                   {a.deletedAt ? <Badge tone="danger">Gelöscht</Badge> : null}
                 </div>
                 <div className="text-xs text-ink-3 truncate">
-                  {a.region ? `${a.region} · ` : ""}Code <span className="font-mono">{a.code}</span> · {a._count.members} Vereine · {a._count.admins} Zugänge
+                  {a.region ? `${a.region} · ` : ""}Code <span className="font-mono">{a.code}</span> · {plural(a._count.members, "Verein", "Vereine")} · {plural(a._count.admins, "Zugang", "Zugänge")}
                 </div>
               </div>
               <ChevronRight className="h-4 w-4 text-ink-3" aria-hidden />
