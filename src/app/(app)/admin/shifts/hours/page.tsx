@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { Download } from "lucide-react";
 import { Alert, Badge, Card, LinkButton, PageHeader, SectionTitle, StatCard } from "@/components/ui";
-import { getRequestLocale, getT } from "@/lib/i18n";
+import { displayUserName, getRequestLocale, getT } from "@/lib/i18n";
 import { formatDate, formatMoneyLocale } from "@/lib/i18n/core";
 import { todayZurich } from "@/lib/time";
 import { cn } from "@/lib/utils";
@@ -78,11 +78,11 @@ export default async function ShiftHoursPage({ searchParams }: { searchParams: P
             {pending.map((l) => (
               <div key={l.id} className="flex flex-col gap-2 px-4 py-3 sm:flex-row sm:items-center">
                 <div className="min-w-0 flex-1">
-                  <div className="font-medium">{l.user.name} · {formatHours(l.hours)} h</div>
+                  <div className="font-medium">{displayUserName(l.user.name, t)} · {formatHours(l.hours)} h</div>
                   <div className="text-sm text-ink-2">{l.description}</div>
                   <div className="text-xs text-ink-3">{dayFmt(l.date)}</div>
                 </div>
-                <ApproveWorkLogButtons id={l.id} name={l.user.name} />
+                <ApproveWorkLogButtons id={l.id} name={displayUserName(l.user.name, t)} />
               </div>
             ))}
           </Card>
@@ -135,7 +135,7 @@ export default async function ShiftHoursPage({ searchParams }: { searchParams: P
             {approved.map((l) => (
               <div key={l.id} className="flex min-h-12 items-center gap-3 px-4 py-2">
                 <div className="min-w-0 flex-1">
-                  <div className="truncate text-sm"><span className="font-medium">{l.user.name}</span> · {l.description}</div>
+                  <div className="truncate text-sm"><span className="font-medium">{displayUserName(l.user.name, t)}</span> · {l.description}</div>
                   <div className="text-xs text-ink-3">{dayFmt(l.date)}</div>
                 </div>
                 <span className="shrink-0 text-sm tabular-nums">{formatHours(l.hours)} h</span>

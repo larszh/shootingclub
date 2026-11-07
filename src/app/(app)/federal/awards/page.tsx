@@ -13,6 +13,7 @@ import { fsAwardExample } from "@/modules/scores/presets";
 import { AwardLimitsForm } from "@/modules/federal/ui/award-limits-form";
 import { WeaponCategoryPanel } from "@/modules/federal/ui/award-weapon";
 import { awardCategoryLabel } from "@/modules/federal/awards";
+import { localizedProgramName } from "@/modules/scores/preset-i18n";
 
 export async function generateMetadata(): Promise<Metadata> {
   return { title: getT(await getRequestLocale())("adm2.federal.aw.meta") };
@@ -33,7 +34,8 @@ export default async function FederalAwardsPage({ searchParams }: { searchParams
   const ctx = await requireFederal();
   if (!canSeeAll(ctx)) redirect("/federal?denied=1");
   const sp = await searchParams;
-  const t = getT(await getRequestLocale());
+  const locale = await getRequestLocale();
+  const t = getT(locale);
   const thisYear = currentSwissYear(nowDate());
   const year = parseYear(sp.year, thisYear);
   const canEdit = canEditYear(ctx);
@@ -71,7 +73,7 @@ export default async function FederalAwardsPage({ searchParams }: { searchParams
           : { text: fsAwardExample(program.max), label: t("adm2.federal.aw.insertExample") };
         return (
           <section key={program.id} className="mb-6">
-            <SectionTitle>{program.name}</SectionTitle>
+            <SectionTitle>{localizedProgramName(program.name, locale)}</SectionTitle>
             <Card className="animate-rise space-y-3 p-4">
               {isExampleLimits(limits) ? <Alert tone="warn">{t("adm2.federal.aw.exampleNotice")}</Alert> : null}
               {limits.length ? (

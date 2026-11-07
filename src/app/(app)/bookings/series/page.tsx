@@ -6,7 +6,7 @@ import { redirect } from "next/navigation";
 import { Badge, Card, EmptyState, LinkButton, PageHeader } from "@/components/ui";
 import { listSeries } from "@/modules/bookings/series-queries";
 import { weekdaysLabelL } from "@/modules/bookings/i18n";
-import { formatDate, getRequestLocale, getT } from "@/lib/i18n";
+import { displayUserName, formatDate, getRequestLocale, getT } from "@/lib/i18n";
 
 export async function generateMetadata(): Promise<Metadata> {
   return { title: getT(await getRequestLocale())("bookings.series.listTitle") };
@@ -32,7 +32,7 @@ export default async function SeriesListPage() {
               <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-surface-2"><Repeat className="h-4 w-4 text-ink-2" aria-hidden /></span>
               <span className="min-w-0 flex-1">
                 <span className="block font-medium truncate">{s.resource.name} · {weekdaysLabelL(s.weekdays, locale)} {s.startTime}–{s.endTime}</span>
-                <span className="block text-xs text-ink-3 truncate">{day(s.fromDate)} – {day(s.untilDate)}{all && s.user ? ` · ${s.user.name}` : ""}{s.note ? ` · ${s.note}` : ""}</span>
+                <span className="block text-xs text-ink-3 truncate">{day(s.fromDate)} – {day(s.untilDate)}{all && s.user ? ` · ${displayUserName(s.user.name, t)}` : ""}{s.note ? ` · ${s.note}` : ""}</span>
               </span>
               {s.status === "CANCELLED" ? <Badge tone="outline">{t("bookings.status.CANCELLED")}</Badge> : <Badge tone="ok">{t(s.upcoming === 1 ? "bookings.series.dates.one" : "bookings.series.dates.other", { n: s.upcoming })}</Badge>}
               <ChevronRight className="h-4 w-4 text-ink-3 shrink-0" aria-hidden />

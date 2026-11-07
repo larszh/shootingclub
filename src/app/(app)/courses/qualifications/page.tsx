@@ -5,7 +5,7 @@ import { Badge, Card, EmptyState, LinkButton, LinkTabs, PageHeader, SectionTitle
 import { todayZurich } from "@/lib/time";
 import { requireQualificationAccess } from "@/modules/courses/guard";
 import { dbDay } from "@/modules/courses/logic";
-import { getRequestLocale, getT } from "@/lib/i18n";
+import { displayUserName, getRequestLocale, getT } from "@/lib/i18n";
 import type { Locale, TFunction } from "@/lib/i18n/core";
 import { dayKeyLabel } from "@/lib/i18n/extra/admin2/msg";
 import { listHolders, listRules, type HolderItem } from "@/modules/courses/queries";
@@ -114,7 +114,7 @@ function HolderRow({ h, st, daysLeft, t, locale }: { h: HolderItem; st: Qualific
     <div className="flex min-h-16 items-center gap-3 px-4 py-3">
       <div className="min-w-0 flex-1">
         <div className="flex flex-wrap items-center gap-2">
-          <span className="font-medium">{h.user.name}</span>
+          <span className="font-medium">{displayUserName(h.user.name, t)}</span>
           <Badge tone={s.tone}>{st === "expired" || st === "expiring" ? <AlertTriangle className="mr-1 h-3 w-3" /> : null}{s.label}</Badge>
         </div>
         <div className="text-xs text-ink-3">

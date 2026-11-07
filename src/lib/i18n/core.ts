@@ -159,10 +159,25 @@ export function dictionaryKeys(locale: Locale): string[] {
 
 const TZ = "Europe/Zurich";
 
+/**
+ * Intl-Datum in der Sprache der Person. it-CH liefert mit Wochentag Schrägstriche («mar 10/11/2026»),
+ * ohne Wochentag aber Punkte («10.11.2026»); in der Schweiz üblich sind Punkte, darum werden die
+ * Trennzeichen zwischen Tag, Monat und Jahr dort vereinheitlicht.
+ */
+export function formatIntlDate(d: Date, locale: string | null | undefined, opts: Intl.DateTimeFormatOptions): string {
+  const l = normalizeLocale(locale);
+  const fmt = new Intl.DateTimeFormat(INTL_LOCALE[l], opts);
+  if (l !== "it") return fmt.format(d);
+  return fmt.formatToParts(d).map((p) => (p.type === "literal" && p.value === "/" ? "." : p.value)).join("");
+}
+
 export function formatDate(d: Date, locale: string | null | undefined, opts?: Intl.DateTimeFormatOptions): string {
-  return new Intl.DateTimeFormat(INTL_LOCALE[normalizeLocale(locale)], {
-    timeZone: TZ, day: "2-digit", month: "2-digit", year: "numeric", ...opts,
-  }).format(d);
+  return formatIntlDate(d, locale, { timeZone: TZ, day: "2-digit", month: "2-digit", year: "numeric", ...opts });
+}
+
+/** Erster Buchstabe gross («samedi 7 novembre» → «Samedi 7 novembre»), statt CSS `capitalize` (jedes Wort). */
+export function upperFirst(s: string): string {
+  return s ? s.charAt(0).toLocaleUpperCase() + s.slice(1) : s;
 }
 
 export function formatDateTime(d: Date, locale: string | null | undefined): string {

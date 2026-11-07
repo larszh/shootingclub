@@ -1,7 +1,7 @@
 import { notFound, redirect } from "next/navigation";
 import { PrintShell } from "@/components/invoice-document";
 import { PrintButton } from "@/components/print-button";
-import { getRequestLocale, getT } from "@/lib/i18n";
+import { displayUserName, getRequestLocale, getT } from "@/lib/i18n";
 import { dayKeyLabel } from "@/lib/i18n/extra/admin2/msg";
 import { formatDate } from "@/lib/i18n/core";
 import { PrintSheet, printedAt, SignatureLines } from "@/modules/ammo/ui/print-sheet";
@@ -36,7 +36,7 @@ export default async function QualificationCertificatePage({ params }: { params:
   );
 
   return (
-    <PrintShell title={t("adm2.courses.pr.qcert")} subtitle={`${q.user.name} · ${q.label ?? qualificationLabel(q.kind, t)}`} action={<PrintButton />}>
+    <PrintShell title={t("adm2.courses.pr.qcert")} subtitle={`${displayUserName(q.user.name, t)} · ${q.label ?? qualificationLabel(q.kind, t)}`} action={<PrintButton />}>
       <PrintSheet
         tenantName={ctx.tenant.name}
         title={t("adm2.courses.pr.qcert")}

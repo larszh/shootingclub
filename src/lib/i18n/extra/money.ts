@@ -4,6 +4,8 @@
  * Platzhalter in geschweiften Klammern, z.B. {n}, {date}, {name}. Einzahl/Mehrzahl: «.one» / «.other».
  * Französisch: Guillemets mit schmalem geschütztem Leerzeichen; Anrede durchgehend «tu» wie im Deutschen «du».
  */
+import eventFormRows from "./money/event-form";
+
 const de: Record<string, string> = {
   // payments
   "money.source.FEE": "Beiträge & Abgaben",
@@ -1962,6 +1964,15 @@ const en: Record<string, string> = {
   "money.ammo.approvalFirst": "The club approves the order first.",
   "money.ammo.invoiceOnIssue": "You receive the invoice with QR payment part when the ammunition is issued.",
 };
+
+// Teil-Wörterbuch mit allen vier Sprachen im selben Tupel (Anlass- und Mitteilungs-Editor).
+const frSpacing = (v: string) => v.replace(/ :/g, "\u00a0:").replace(/ ([?!;])/g, "\u202f$1").replace(/« /g, "«\u202f").replace(/ »/g, "\u202f»");
+for (const [key, [d, f, i, e]] of Object.entries(eventFormRows)) {
+  de[key] = d;
+  fr[key] = frSpacing(f);
+  it[key] = i;
+  en[key] = e;
+}
 
 const dict: { de: Record<string, string>; fr: Record<string, string>; it: Record<string, string>; en: Record<string, string> } = { de, fr, it, en };
 export default dict;

@@ -9,7 +9,7 @@ import { listCalendarItems, listResources } from "@/modules/bookings/queries";
 import { buildWeek, parseWeekParam, type CalendarCellItem } from "@/modules/bookings/calendar";
 import { addDays, zurichToUtc } from "@/lib/time";
 import { cn } from "@/lib/utils";
-import { formatDate, getRequestLocale, getT, type TFunction } from "@/lib/i18n";
+import { displayUserName, formatDate, getRequestLocale, getT, upperFirst, type TFunction } from "@/lib/i18n";
 
 /** Kurzform der Personen für die enge Kalenderzelle: «3 P.», «5 P. pauschal». */
 function personsShort(it: { persons: number; isFlatRate: boolean }, t: TFunction) {
@@ -20,7 +20,7 @@ function personsShort(it: { persons: number; isFlatRate: boolean }, t: TFunction
 /** Tagesbezeichnung (kurz/lang) aus dem Kalendertag YYYY-MM-DD in der Sprache der Person. */
 function dayLabel(date: string, locale: string, long: boolean) {
   const noon = new Date(`${date}T12:00:00Z`);
-  return formatDate(noon, locale, long ? { weekday: "long", day: "numeric", month: "long", year: undefined } : { weekday: "short", day: "numeric", month: "numeric", year: undefined });
+  return upperFirst(formatDate(noon, locale, long ? { weekday: "long", day: "numeric", month: "long", year: undefined } : { weekday: "short", day: "numeric", month: "numeric", year: undefined }));
 }
 
 export async function generateMetadata() {
@@ -39,7 +39,8 @@ export default async function BookingCalendarPage({ searchParams }: { searchPara
   const shown = resources.filter((r) => r.isActive || used.has(r.id)).map((r) => ({ id: r.id, name: r.name }));
   const partners = await partnerNameMap(items.bookings.map((b) => b.viaTenantId));
   const bookings = items.bookings.map((b) => ({ ...b, partner: b.viaTenantId ? partners[b.viaTenantId] ?? t("adm1.bk.partnerClub") : null }));
-  const week = buildWeek(monday, shown, bookings, items.blocks);
+  // Platzhalter-Namen (gelöschte Konten, Gäste) in der Sprache der Person
+  const week = buildWeek(monday, shown, bookings, items.blocks, (name) => displayUserName(name, t));
   const sunday = addDays(monday, 6);
   const range = `${monday.slice(8, 10)}.${monday.slice(5, 7)}. – ${sunday.slice(8, 10)}.${sunday.slice(5, 7)}.${sunday.slice(0, 4)}`;
 
@@ -73,7 +74,7 @@ export default async function BookingCalendarPage({ searchParams }: { searchPara
                 <tr>
                   <th className="sticky left-0 z-10 bg-surface border-b border-r border-line px-3 py-2 text-left text-xs font-semibold text-ink-3 w-40">{t("adm1.bk.resource")}</th>
                   {week.days.map((d) => (
-                    <th key={d.date} className={cn("border-b border-line px-2 py-2 text-left text-xs font-semibold capitalize", d.isToday ? "text-accent" : "text-ink-3")}>{dayLabel(d.date, locale, false)}{d.isToday ? ` · ${t("adm1.bk.cal.todayLower")}` : ""}</th>
+                    <th key={d.date} className={cn("border-b border-line px-2 py-2 text-left text-xs font-semibold", d.isToday ? "text-accent" : "text-ink-3")}>{dayLabel(d.date, locale, false)}{d.isToday ? ` · ${t("adm1.bk.cal.todayLower")}` : ""}</th>
                   ))}
                 </tr>
               </thead>
@@ -102,7 +103,7 @@ export default async function BookingCalendarPage({ searchParams }: { searchPara
               return (
                 <section key={d.date} className="animate-rise">
                   <div className="flex items-center justify-between mb-1.5">
-                    <h2 className={cn("text-sm font-semibold capitalize", d.isToday ? "text-accent" : "text-ink-2")}>{dayLabel(d.date, locale, true)}{d.isToday ? ` · ${t("adm1.bk.cal.todayLower")}` : ""}</h2>
+                    <h2 className={cn("text-sm font-semibold", d.isToday ? "text-accent" : "text-ink-2")}>{dayLabel(d.date, locale, true)}{d.isToday ? ` · ${t("adm1.bk.cal.todayLower")}` : ""}</h2>
                     <Link href={`/admin/bookings/new?date=${d.date}`} className="press inline-flex h-9 items-center gap-1 rounded-full px-3 text-xs font-medium text-ink-2 hover:bg-surface-2"><Plus className="h-3.5 w-3.5" /> {t("adm1.bk.book")}</Link>
                   </div>
                   {entries.length ? (

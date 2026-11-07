@@ -8,7 +8,7 @@ import { Alert, Button, Card, Field, Input, Select, Textarea } from "@/component
 import { Switch } from "@/components/ui/controls";
 import { SubmitButton, submitKeepingValues } from "@/components/ui/form";
 import { dominantZones, sameZones, ZoneLegend } from "./zone-legend";
-import { draftError, fromDrafts, toDrafts, ZoneEditor, type ZoneDraft } from "./zone-editor";
+import { defaultZoneDrafts, draftError, fromDrafts, toDrafts, ZoneEditor, type ZoneDraft } from "./zone-editor";
 import { useT } from "@/components/locale";
 
 type Props = {
@@ -33,12 +33,13 @@ const emptyStage = (i: number, prev?: FormStage, name = `Serie ${i + 1}`): FormS
 });
 
 /** Programm-Zonen (häufigste Zonenliste) und Serien mit Abweichungen aus gespeicherten Serien. */
-function initialZoneState(initial: Props["initial"], firstName: string): { programZones: ZoneDraft[]; stages: FormStage[] } {
-  if (!initial) return { programZones: toDrafts(DEFAULT_ZONES), stages: [emptyStage(0, undefined, firstName)] };
+function initialZoneState(initial: Props["initial"], firstName: string, defaults: ZoneDraft[]): { programZones: ZoneDraft[]; stages: FormStage[] } {
+  if (!initial) return { programZones: defaults, stages: [emptyStage(0, undefined, firstName)] };
   const isZones = initial.scoringMode === "ZONES";
-  const programZones = (isZones ? dominantZones(initial.stages.map((s) => stageZones(s))) : null) ?? DEFAULT_ZONES;
+  const dominant = isZones ? dominantZones(initial.stages.map((s) => stageZones(s))) : null;
+  const programZones = dominant ?? DEFAULT_ZONES;
   return {
-    programZones: toDrafts(programZones),
+    programZones: dominant ? toDrafts(dominant) : defaults,
     stages: initial.stages.map(({ zones, ...rest }) => {
       const own = isZones && zones && !sameZones(zones, programZones) ? toDrafts(zones) : undefined;
       return own ? { ...rest, ownZones: own } : rest;
@@ -50,7 +51,7 @@ export function ProgramForm({ scope, initial, openMatches = 0 }: Props) {
   const t = useT();
   const stageName = (i: number) => t("shooting.program.form.stageN", { n: i + 1 });
   const [state, action, pending] = useActionState(saveProgramAction, null);
-  const [init] = useState(() => initialZoneState(initial, stageName(0)));
+  const [init] = useState(() => initialZoneState(initial, stageName(0), defaultZoneDrafts(t)));
   const [stages, setStages] = useState<FormStage[]>(init.stages);
   const [programZones, setProgramZones] = useState<ZoneDraft[]>(init.programZones);
   const [scoringMode, setScoringMode] = useState(initial?.scoringMode ?? "RINGS_INT");
@@ -60,12 +61,12 @@ export function ProgramForm({ scope, initial, openMatches = 0 }: Props) {
 
   const isHits = scoringMode === "HITS";
   const isZones = scoringMode === "ZONES";
-  const programZonesError = isZones ? draftError(programZones) : null;
+  const programZonesError = isZones ? draftError(programZones, t) : null;
   const zoneError = (() => {
     if (!isZones) return null;
     if (programZonesError) return `${t("shooting.program.form.programZones")}: ${programZonesError}`;
     for (const [i, st] of stages.entries()) {
-      const err = st.ownZones ? draftError(st.ownZones) : null;
+      const err = st.ownZones ? draftError(st.ownZones, t) : null;
       if (err) return `${st.name || stageName(i)}: ${err}`;
     }
     return null;

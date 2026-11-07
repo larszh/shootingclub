@@ -7,6 +7,7 @@ import { canSeeAll, currentSwissYear, getClubInfo, nowDate, requireFederal } fro
 import { fsAwardsOverview } from "@/modules/federal/awards-queries";
 import { awardCategoryLabel, isExampleLimits, type AwardResult } from "@/modules/federal/awards";
 import { parseYear } from "@/modules/federal/types";
+import { localizedProgramName } from "@/modules/scores/preset-i18n";
 
 export async function generateMetadata() {
   return { title: getT(await getRequestLocale())("adm2.federal.aw.title") };
@@ -58,7 +59,7 @@ export default async function FederalAwardsPrintPage({ searchParams }: { searchP
 
         {sections.map((s) => (
           <section key={s.program.id} className="mb-6">
-            <h2 className="mb-1 text-sm font-semibold">{s.program.name}</h2>
+            <h2 className="mb-1 text-sm font-semibold">{localizedProgramName(s.program.name, locale)}</h2>
             <p className="mb-2 text-[10px] text-neutral-600">
               {s.counts.length ? s.counts.map((c) => `${c.count} × ${c.award}`).join(" · ") : t("adm2.federal.aw.noAwards")}
               {s.limits.length ? ` · ${t("adm2.federal.aw.limits")}: ${s.limits.map((l) => `${l.category}${l.weaponCategory ? ` · ${l.weaponCategory}` : ""} ${l.award} ${t("adm2.federal.aw.from", { score: formatScore(l.minScore, !Number.isInteger(l.minScore)) })}`).join("; ")}` : ` · ${t("adm2.federal.aw.noLimitsShort")}`}

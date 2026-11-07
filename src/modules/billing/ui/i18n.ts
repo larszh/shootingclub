@@ -17,7 +17,7 @@ export function tPlural(t: TFunction, base: string, n: number, vars?: Record<str
 
 /* ------------------------------------------------------------ bekannte Meldungen */
 
-type Pattern = { key: string; re: RegExp; names: string[] };
+type Pattern = { key: string; re: RegExp; names: string[]; literal: number };
 
 let exact: Map<string, string> | null = null;
 let patterns: Pattern[] | null = null;
@@ -44,8 +44,11 @@ function build() {
         src += "(.+?)";
       } else src += escapeRe(p);
     });
-    patterns.push({ key, re: new RegExp(`^${src}$`), names });
+    patterns.push({ key, re: new RegExp(`^${src}$`), names, literal: parts.filter((_, i) => i % 2 === 0).join("").length });
   }
+  // Spezifischste Vorlage zuerst (mehr fester Text), damit z.B. «{price} pro {unit}» nicht
+  // «Höchstens 52 Termine pro Serie.» abfängt
+  patterns.sort((a, b) => b.literal - a.literal);
 }
 
 /** Übersetzt einen bekannten deutschen Text in `locale`; unbekannte Texte kommen unverändert zurück. */

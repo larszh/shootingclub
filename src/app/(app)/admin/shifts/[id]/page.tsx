@@ -3,7 +3,7 @@ import { notFound } from "next/navigation";
 import { AlertTriangle, CalendarPlus, ShieldCheck } from "lucide-react";
 import { Alert, Badge, Card, PageHeader, SectionTitle } from "@/components/ui";
 import { formatTimeRange, zurichParts } from "@/lib/time";
-import { getRequestLocale, getT } from "@/lib/i18n";
+import { displayUserName, getRequestLocale, getT } from "@/lib/i18n";
 import { formatDate } from "@/lib/i18n/core";
 import { requireShiftsAdmin } from "@/modules/shifts/guard";
 import { getShiftView, nowInstant, qualifiedUsers, shiftEventOptions, shiftMemberOptions } from "@/modules/shifts/queries";
@@ -69,12 +69,12 @@ export default async function AdminShiftPage({ params }: { params: Promise<{ id:
             <div key={a.id} className="flex flex-col gap-2 px-4 py-3 sm:flex-row sm:items-center">
               <div className="min-w-0 flex-1">
                 <div className="flex flex-wrap items-center gap-1.5">
-                  <span className="font-medium">{a.user.name}</span>
+                  <span className="font-medium">{displayUserName(a.user.name, t)}</span>
                   <Badge tone={st.tone}>{t(`adm2.shifts.status.${a.status in ASSIGNMENT_LABELS ? a.status : "ASSIGNED"}`)}{a.status === "DONE" ? `, ${formatHours(a.hours ?? s.defaultHours)} h` : ""}</Badge>
                   {s.requiredQualification && s.qualifiedIds.has(a.userId) ? <ShieldCheck className="h-4 w-4 text-ok" aria-label={qualLabel ?? undefined} /> : null}
                 </div>
               </div>
-              <AssignmentActions assignmentId={a.id} name={a.user.name} status={a.status} defaultHours={s.defaultHours} started={started} />
+              <AssignmentActions assignmentId={a.id} name={displayUserName(a.user.name, t)} status={a.status} defaultHours={s.defaultHours} started={started} />
             </div>
           );
         })}

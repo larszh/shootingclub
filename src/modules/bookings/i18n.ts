@@ -3,7 +3,7 @@
  * Server-Seiten und Client-Komponenten rufen die Helfer mit `getT(locale)` auf.
  * Wörterbuch: src/lib/i18n/extra/bookings.ts (Namensraum «bookings.»).
  */
-import { INTL_LOCALE, normalizeLocale, type TFunction } from "@/lib/i18n/core";
+import { formatIntlDate, INTL_LOCALE, normalizeLocale, type TFunction } from "@/lib/i18n/core";
 import { paymentStatusView } from "./types";
 
 const TZ = "Europe/Zurich";
@@ -93,7 +93,7 @@ export function discountReasonLabel(reason: string | null | undefined, t: TFunct
 
 /** Datum in der Sprache, Zeitzone Europe/Zurich. Ohne Optionen «Di., 03.11.2026». */
 export function formatDateL(d: Date, locale: string | null | undefined, opts?: Intl.DateTimeFormatOptions) {
-  return new Intl.DateTimeFormat(INTL_LOCALE[normalizeLocale(locale)], { timeZone: TZ, weekday: "short", day: "2-digit", month: "2-digit", year: "numeric", ...opts }).format(d);
+  return formatIntlDate(d, locale, { timeZone: TZ, weekday: "short", day: "2-digit", month: "2-digit", year: "numeric", ...opts });
 }
 
 export function formatDateTimeL(d: Date, locale: string | null | undefined) {

@@ -7,7 +7,7 @@ import { getSeries } from "@/modules/bookings/series-queries";
 import { cancellableOccurrences } from "@/modules/bookings/series";
 import { bookingStatusView, formatDateL, formatTimeRangeL, weekdaysLabelL } from "@/modules/bookings/i18n";
 import { CancelOccurrenceButton, CancelSeriesButton } from "@/modules/bookings/ui/series-buttons";
-import { formatDate, getRequestLocale, getT, type Locale, type TFunction } from "@/lib/i18n";
+import { displayUserName, formatDate, getRequestLocale, getT, type Locale, type TFunction } from "@/lib/i18n";
 
 export async function generateMetadata(): Promise<Metadata> {
   return { title: getT(await getRequestLocale())("bookings.series.badge") };
@@ -45,7 +45,7 @@ export default async function SeriesDetailPage({ params, searchParams }: { param
         <Row k={t("bookings.series.f.weekdays")} v={weekdaysLabelL(s.weekdays, locale, true)} />
         <Row k={t("bookings.series.time")} v={`${s.startTime}–${s.endTime}`} />
         <Row k={t("bookings.detail.persons")} v={String(s.persons)} />
-        {s.user ? <Row k={t("bookings.series.createdBy")} v={s.user.name} /> : null}
+        {s.user ? <Row k={t("bookings.series.createdBy")} v={displayUserName(s.user.name, t)} /> : null}
         {s.note ? <Row k={t("bookings.detail.note")} v={s.note} /> : null}
       </Card>
 

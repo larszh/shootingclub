@@ -7,7 +7,7 @@ import { fetchAdminSlotsAction, type SlotDto, type SlotsResult } from "@/modules
 import { formatDuration, type DurationOption } from "@/modules/bookings/types";
 import { basePriceFor, maxPersonsFor } from "@/modules/bookings/pricing";
 import { discountReasonLabel, personsText, slotErrorLabel, slotReasonLabel, wholeResourceLabelT, windowHintLabel } from "@/modules/bookings/i18n";
-import { INTL_LOCALE, type Locale, type TFunction } from "@/lib/i18n/core";
+import { INTL_LOCALE, upperFirst, type Locale, type TFunction } from "@/lib/i18n/core";
 import { useLocale, useT } from "@/components/locale";
 import { PersonsStepper } from "./persons-stepper";
 import { Avatar } from "@/components/avatar";
@@ -200,7 +200,7 @@ export function AdminBookingForm({ members, resources, durationOptions, currency
           <div className="flex items-center gap-2">
             <button type="button" onClick={() => update({ date: shiftDate(sel.date, -1) })} className="press h-11 w-11 rounded-full hover:bg-surface-2 flex items-center justify-center" aria-label={t("bookings.wizard.prevDay")}><ChevronLeft className="h-5 w-5" /></button>
             <div className="flex-1 text-center">
-              <div className="font-semibold capitalize">{weekdayLabel(sel.date, locale)}</div>
+              <div className="font-semibold">{upperFirst(weekdayLabel(sel.date, locale))}</div>
               <input type="date" value={sel.date} onChange={(e) => e.target.value && update({ date: e.target.value })} className="min-h-11 text-xs text-ink-3 bg-transparent text-center" aria-label={t("bookings.wizard.pickDate")} />
             </div>
             <button type="button" onClick={() => update({ date: shiftDate(sel.date, 1) })} className="press h-11 w-11 rounded-full hover:bg-surface-2 flex items-center justify-center" aria-label={t("bookings.wizard.nextDay")}><ChevronRight className="h-5 w-5" /></button>

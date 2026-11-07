@@ -9,6 +9,9 @@ import { saveEventAction } from "../actions";
 import { EVENT_KINDS, EVENT_KIND_META, MAX_RECURRENCE, recurrenceDates, type EventKind } from "../types";
 import { KindIcon } from "./bits";
 import { WritingAssistant, type WritingAvailability } from "@/modules/ai/content/ui/writing-assistant";
+import { useLocale, useT } from "@/components/locale";
+import { localizeMessage } from "@/modules/billing/ui/i18n";
+import { kindLabel } from "./i18n";
 
 export type EventFormDefaults = {
   id?: string;
@@ -54,6 +57,8 @@ function Segmented<T extends string>({ name, value, onChange, options }: { name:
 }
 
 export function EventForm({ initial, mode, writing }: { initial: EventFormDefaults; mode: "create" | "edit" | "copy"; /** Schreibhilfe mit Claude (null = ausgeblendet) */ writing?: WritingAvailability | null }) {
+  const t = useT();
+  const locale = useLocale();
   const [state, formAction, isPending] = useActionState(saveEventAction, null);
   const formRef = useRef<HTMLFormElement>(null);
   const [title, setTitle] = useState(initial.title);
@@ -66,7 +71,8 @@ export function EventForm({ initial, mode, writing }: { initial: EventFormDefaul
   const [repeatMode, setRepeatMode] = useState<"COUNT" | "UNTIL">("COUNT");
   const [repeatCount, setRepeatCount] = useState("8");
   const [repeatUntil, setRepeatUntil] = useState("");
-  const fe = state && !state.ok ? (state.fieldErrors ?? {}) : {};
+  // Prüfmeldungen kommen Deutsch vom Server bzw. aus types.ts
+  const fe: Record<string, string> = Object.fromEntries(Object.entries(state && !state.ok ? (state.fieldErrors ?? {}) : {}).map(([k, v]) => [k, localizeMessage(v, locale)]));
   const canRepeat = mode !== "edit";
 
   const preview = canRepeat && repeat !== "NONE" && date
@@ -93,7 +99,7 @@ export function EventForm({ initial, mode, writing }: { initial: EventFormDefaul
             const fd = formRef.current ? new FormData(formRef.current) : null;
             const get = (k: string) => { const v = fd?.get(k); return typeof v === "string" ? v : ""; };
             return {
-              kind: EVENT_KIND_META[kind].label,
+              kind: kindLabel(kind, locale),
               date: date ? fmtDay(date) : "",
               time: allDay ? "" : [get("timeFrom"), get("timeTo")].filter(Boolean).join("–"),
               location: get("location"),
@@ -104,18 +110,18 @@ export function EventForm({ initial, mode, writing }: { initial: EventFormDefaul
       ) : null}
 
       <Card className="animate-rise p-4 space-y-4">
-        <Field label="Titel" error={fe.title}>
-          <Input name="title" value={title} onChange={(e) => setTitle(e.target.value)} required maxLength={120} placeholder="z.B. Training 300 m, Obligatorisch, GV" autoFocus={mode === "create"} />
+        <Field label={t("money.events.form.title")} error={fe.title}>
+          <Input name="title" value={title} onChange={(e) => setTitle(e.target.value)} required maxLength={120} placeholder={t("money.events.form.titlePh")} autoFocus={mode === "create"} />
         </Field>
         <div>
-          <p className="mb-1.5 text-sm font-medium text-ink-2">Art</p>
+          <p className="mb-1.5 text-sm font-medium text-ink-2">{t("money.events.form.kind")}</p>
           <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
             {EVENT_KINDS.map((k) => (
               <button key={k} type="button" aria-pressed={kind === k} onClick={() => setKind(k)}
                 className={cn("press flex h-12 items-center gap-2 rounded-control border px-3 text-sm font-medium",
                   kind === k ? "border-ink bg-ink text-bg" : "border-line bg-surface text-ink-2 hover:bg-surface-2")}>
                 <span className={cn("flex h-6 w-6 items-center justify-center rounded-full", kind === k ? "bg-bg/15" : EVENT_KIND_META[k].chip)}><KindIcon kind={k} className="h-3.5 w-3.5" /></span>
-                <span className="truncate">{EVENT_KIND_META[k].label}</span>
+                <span className="truncate">{kindLabel(k, locale)}</span>
               </button>
             ))}
           </div>
@@ -123,38 +129,38 @@ export function EventForm({ initial, mode, writing }: { initial: EventFormDefaul
       </Card>
 
       <Card className="animate-rise p-4 space-y-4">
-        <Field label={allDay ? "Datum (erster Tag)" : "Datum"} error={fe.date}>
+        <Field label={allDay ? t("money.events.form.dateFirst") : t("money.events.form.date")} error={fe.date}>
           <Input name="date" type="date" value={date} onChange={(e) => setDate(e.target.value)} required />
         </Field>
-        <Toggle name="allDay" checked={allDay} onChange={setAllDay} title="Ganztägig" text="Ohne Uhrzeit, z.B. Schützenfest oder Reise" />
+        <Toggle name="allDay" checked={allDay} onChange={setAllDay} title={t("money.events.form.allDay")} text={t("money.events.form.allDayText")} />
         {allDay ? (
-          <Field label="Letzter Tag (optional)" hint="Nur bei mehrtägigen Anlässen" error={fe.endDate}>
+          <Field label={t("money.events.form.endDate")} hint={t("money.events.form.endDateHint")} error={fe.endDate}>
             <Input name="endDate" type="date" defaultValue={initial.endDate} min={date || undefined} />
           </Field>
         ) : (
           <div className="grid grid-cols-2 gap-3">
-            <Field label="Von" error={fe.timeFrom}><Input name="timeFrom" type="time" defaultValue={initial.timeFrom} required step={300} /></Field>
-            <Field label="Bis (optional)" error={fe.timeTo}><Input name="timeTo" type="time" defaultValue={initial.timeTo} step={300} /></Field>
+            <Field label={t("money.events.form.from")} error={fe.timeFrom}><Input name="timeFrom" type="time" defaultValue={initial.timeFrom} required step={300} /></Field>
+            <Field label={t("money.events.form.to")} error={fe.timeTo}><Input name="timeTo" type="time" defaultValue={initial.timeTo} step={300} /></Field>
           </div>
         )}
-        <Field label="Ort (optional)" error={fe.location}>
-          <Input name="location" defaultValue={initial.location} maxLength={160} placeholder="z.B. Schiessanlage Allmend, 300 m Stand" />
+        <Field label={t("money.events.form.location")} error={fe.location}>
+          <Input name="location" defaultValue={initial.location} maxLength={160} placeholder={t("money.events.form.locationPh")} />
         </Field>
-        <Field label="Beschreibung (optional)" hint="Links werden automatisch klickbar." error={fe.description}>
-          <Textarea name="description" value={description} onChange={(e) => setDescription(e.target.value)} maxLength={5000} className="min-h-28" placeholder="Was erwartet die Teilnehmenden? Was mitnehmen? Wer ist verantwortlich?" />
+        <Field label={t("money.events.form.description")} hint={t("money.events.form.descriptionHint")} error={fe.description}>
+          <Textarea name="description" value={description} onChange={(e) => setDescription(e.target.value)} maxLength={5000} className="min-h-28" placeholder={t("money.events.form.descriptionPh")} />
         </Field>
       </Card>
 
       <Card className="animate-rise p-4 space-y-4">
-        <Toggle name="rsvpEnabled" checked={rsvp} onChange={setRsvp} title="An- und Abmeldung" text="Mitglieder können zusagen, absagen oder «vielleicht» sagen." />
+        <Toggle name="rsvpEnabled" checked={rsvp} onChange={setRsvp} title={t("money.events.form.rsvp")} text={t("money.events.form.rsvpText")} />
         {rsvp ? (
           <>
-            <Field label="Plätze (optional)" hint="Leer lassen für unbeschränkt. Begleitpersonen zählen mit." error={fe.capacity}>
-              <Input name="capacity" type="number" inputMode="numeric" min={1} max={10000} defaultValue={initial.capacity} placeholder="unbeschränkt" />
+            <Field label={t("money.events.form.capacity")} hint={t("money.events.form.capacityHint")} error={fe.capacity}>
+              <Input name="capacity" type="number" inputMode="numeric" min={1} max={10000} defaultValue={initial.capacity} placeholder={t("money.events.form.capacityPh")} />
             </Field>
             <div className="grid grid-cols-2 gap-3">
-              <Field label="Anmelden bis (optional)" error={fe.deadlineDate}><Input name="deadlineDate" type="date" defaultValue={initial.deadlineDate} max={date ? (allDay ? addDays(date, -1) : date) : undefined} /></Field>
-              <Field label="Uhrzeit" error={fe.deadlineTime}><Input name="deadlineTime" type="time" defaultValue={initial.deadlineTime || "23:59"} /></Field>
+              <Field label={t("money.events.form.deadline")} error={fe.deadlineDate}><Input name="deadlineDate" type="date" defaultValue={initial.deadlineDate} max={date ? (allDay ? addDays(date, -1) : date) : undefined} /></Field>
+              <Field label={t("money.events.form.deadlineTime")} error={fe.deadlineTime}><Input name="deadlineTime" type="time" defaultValue={initial.deadlineTime || "23:59"} /></Field>
             </div>
           </>
         ) : null}
@@ -163,37 +169,37 @@ export function EventForm({ initial, mode, writing }: { initial: EventFormDefaul
       {canRepeat ? (
         <Card className="animate-rise p-4 space-y-4">
           <div>
-            <p className="text-[15px] font-medium">Wiederholen</p>
-            <p className="text-xs text-ink-3">Erstellt einzelne Anlässe, die du danach separat ändern oder absagen kannst.</p>
+            <p className="text-[15px] font-medium">{t("money.events.form.repeat")}</p>
+            <p className="text-xs text-ink-3">{t("money.events.form.repeatText")}</p>
           </div>
-          <Segmented name="repeat" value={repeat} onChange={setRepeat} options={[{ value: "NONE", label: "Einmalig" }, { value: "WEEKLY", label: "Wöchentlich" }, { value: "BIWEEKLY", label: "Alle 2 Wochen" }]} />
+          <Segmented name="repeat" value={repeat} onChange={setRepeat} options={(["NONE", "WEEKLY", "BIWEEKLY"] as const).map((v) => ({ value: v, label: t(`money.events.form.repeat.${v}`) }))} />
           {repeat !== "NONE" ? (
             <>
-              <Segmented name="repeatMode" value={repeatMode} onChange={setRepeatMode} options={[{ value: "COUNT", label: "Anzahl Termine" }, { value: "UNTIL", label: "Bis Datum" }]} />
+              <Segmented name="repeatMode" value={repeatMode} onChange={setRepeatMode} options={(["COUNT", "UNTIL"] as const).map((v) => ({ value: v, label: t(`money.events.form.repeatMode.${v}`) }))} />
               {repeatMode === "COUNT" ? (
-                <Field label="Anzahl Termine" hint={`2 bis ${MAX_RECURRENCE}`} error={fe.repeatCount}>
+                <Field label={t("money.events.form.repeatCount")} hint={t("money.events.form.repeatCountHint", { max: MAX_RECURRENCE })} error={fe.repeatCount}>
                   <Input name="repeatCount" type="number" inputMode="numeric" min={2} max={MAX_RECURRENCE} value={repeatCount} onChange={(e) => setRepeatCount(e.target.value)} />
                 </Field>
               ) : (
-                <Field label="Letzter Termin spätestens am" error={fe.repeatUntil}>
+                <Field label={t("money.events.form.repeatUntil")} error={fe.repeatUntil}>
                   <Input name="repeatUntil" type="date" min={date || undefined} value={repeatUntil} onChange={(e) => setRepeatUntil(e.target.value)} />
                 </Field>
               )}
               {preview && Array.isArray(preview) ? (
                 <p className="rounded-control bg-surface-2 px-3 py-2 text-sm text-ink-2">
-                  Es werden <strong>{preview.length} Anlässe</strong> erstellt: {fmtDay(preview[0]!)} bis {fmtDay(preview[preview.length - 1]!)}.
+                  {t("money.events.form.preview", { n: preview.length, from: fmtDay(preview[0]!), to: fmtDay(preview[preview.length - 1]!) })}
                 </p>
               ) : preview && !Array.isArray(preview) ? (
-                <p className="text-sm text-warn">{preview.error}</p>
+                <p className="text-sm text-warn">{localizeMessage(preview.error, locale)}</p>
               ) : null}
             </>
           ) : null}
         </Card>
       ) : null}
 
-      {state && !state.ok ? <Alert>{state.error}</Alert> : null}
+      {state && !state.ok ? <Alert>{localizeMessage(state.error, locale)}</Alert> : null}
       <Button type="submit" size="lg" className="w-full" disabled={isPending}>
-        {isPending ? <><Spinner /> Speichern…</> : mode === "edit" ? "Änderungen speichern" : repeat !== "NONE" && canRepeat ? "Serie erstellen" : "Anlass erstellen"}
+        {isPending ? <><Spinner /> {t("money.events.form.saving")}</> : mode === "edit" ? t("money.events.form.saveChanges") : repeat !== "NONE" && canRepeat ? t("money.events.form.createSeries") : t("money.events.form.create")}
       </Button>
     </form>
   );

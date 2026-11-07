@@ -1,0 +1,88 @@
+/**
+ * «money.events.form.» / «money.events.err.»: Anlass- und Mitteilungs-Editor im Admin-Bereich
+ * (event-form.tsx, announcement-form.tsx) samt Prüfmeldungen aus ../../../../modules/events
+ * (types.ts, actions.ts). Die Meldungen bleiben dort Deutsch; localizeMessage() findet sie über
+ * den deutschen Text. Aufbau pro Schlüssel [de, fr, it, en]; wird in ../money.ts eingebunden.
+ * Französisch mit normalen Leerzeichen erfasst, money.ts setzt die geschützten Leerzeichen.
+ */
+type Row = readonly [de: string, fr: string, it: string, en: string];
+
+const rows: Record<string, Row> = {
+  // ---------------------------------------------------------------- Anlass
+  "money.events.form.title": ["Titel", "Titre", "Titolo", "Title"],
+  "money.events.form.titlePh": ["z.B. Training 300 m, Obligatorisch, GV", "p. ex. entraînement 300 m, tir obligatoire, AG", "p. es. allenamento 300 m, tiro obbligatorio, AG", "e.g. Training 300 m, obligatory shooting, AGM"],
+  "money.events.form.kind": ["Art", "Type", "Tipo", "Type"],
+  "money.events.form.date": ["Datum", "Date", "Data", "Date"],
+  "money.events.form.dateFirst": ["Datum (erster Tag)", "Date (premier jour)", "Data (primo giorno)", "Date (first day)"],
+  "money.events.form.allDay": ["Ganztägig", "Toute la journée", "Tutto il giorno", "All day"],
+  "money.events.form.allDayText": ["Ohne Uhrzeit, z.B. Schützenfest oder Reise", "Sans heure, p. ex. fête de tir ou voyage", "Senza orario, p. es. festa di tiro o gita", "Without a time, e.g. shooting festival or trip"],
+  "money.events.form.endDate": ["Letzter Tag (optional)", "Dernier jour (facultatif)", "Ultimo giorno (facoltativo)", "Last day (optional)"],
+  "money.events.form.endDateHint": ["Nur bei mehrtägigen Anlässen", "Seulement pour les événements sur plusieurs jours", "Solo per eventi di più giorni", "Only for events lasting several days"],
+  "money.events.form.from": ["Von", "De", "Dalle", "From"],
+  "money.events.form.to": ["Bis (optional)", "À (facultatif)", "Alle (facoltativo)", "To (optional)"],
+  "money.events.form.location": ["Ort (optional)", "Lieu (facultatif)", "Luogo (facoltativo)", "Location (optional)"],
+  "money.events.form.locationPh": ["z.B. Schiessanlage Allmend, 300 m Stand", "p. ex. stand de tir Allmend, stand 300 m", "p. es. poligono Allmend, stand 300 m", "e.g. Allmend shooting range, 300 m range"],
+  "money.events.form.description": ["Beschreibung (optional)", "Description (facultatif)", "Descrizione (facoltativa)", "Description (optional)"],
+  "money.events.form.descriptionHint": ["Links werden automatisch klickbar.", "Les liens deviennent automatiquement cliquables.", "I link diventano automaticamente cliccabili.", "Links become clickable automatically."],
+  "money.events.form.descriptionPh": ["Was erwartet die Teilnehmenden? Was mitnehmen? Wer ist verantwortlich?", "Qu’est-ce qui attend les participants ? Que faut-il apporter ? Qui est responsable ?", "Cosa aspetta i partecipanti? Cosa portare? Chi è responsabile?", "What can participants expect? What to bring? Who is in charge?"],
+  "money.events.form.rsvp": ["An- und Abmeldung", "Inscription et désinscription", "Iscrizione e disdetta", "Sign-up and cancellation"],
+  "money.events.form.rsvpText": ["Mitglieder können zusagen, absagen oder «vielleicht» sagen.", "Les membres peuvent accepter, refuser ou répondre « peut-être ».", "I soci possono accettare, rifiutare o rispondere «forse».", "Members can accept, decline or say “maybe”."],
+  "money.events.form.capacity": ["Plätze (optional)", "Places (facultatif)", "Posti (facoltativo)", "Places (optional)"],
+  "money.events.form.capacityHint": ["Leer lassen für unbeschränkt. Begleitpersonen zählen mit.", "Laisser vide pour illimité. Les accompagnants comptent aussi.", "Lasciare vuoto per illimitato. Gli accompagnatori contano.", "Leave empty for unlimited. Guests count too."],
+  "money.events.form.capacityPh": ["unbeschränkt", "illimité", "illimitato", "unlimited"],
+  "money.events.form.deadline": ["Anmelden bis (optional)", "Inscription jusqu’au (facultatif)", "Iscrizione entro il (facoltativo)", "Sign up by (optional)"],
+  "money.events.form.deadlineTime": ["Uhrzeit", "Heure", "Ora", "Time"],
+  "money.events.form.repeat": ["Wiederholen", "Répéter", "Ripeti", "Repeat"],
+  "money.events.form.repeatText": ["Erstellt einzelne Anlässe, die du danach separat ändern oder absagen kannst.", "Crée des événements séparés que tu peux ensuite modifier ou annuler un par un.", "Crea eventi singoli che puoi poi modificare o annullare separatamente.", "Creates separate events that you can then change or cancel individually."],
+  "money.events.form.repeat.NONE": ["Einmalig", "Une fois", "Una volta", "Once"],
+  "money.events.form.repeat.WEEKLY": ["Wöchentlich", "Chaque semaine", "Settimanale", "Weekly"],
+  "money.events.form.repeat.BIWEEKLY": ["Alle 2 Wochen", "Toutes les 2 semaines", "Ogni 2 settimane", "Every 2 weeks"],
+  "money.events.form.repeatMode.COUNT": ["Anzahl Termine", "Nombre de dates", "Numero di date", "Number of dates"],
+  "money.events.form.repeatMode.UNTIL": ["Bis Datum", "Jusqu’à une date", "Fino alla data", "Until date"],
+  "money.events.form.repeatCount": ["Anzahl Termine", "Nombre de dates", "Numero di date", "Number of dates"],
+  "money.events.form.repeatCountHint": ["2 bis {max}", "2 à {max}", "Da 2 a {max}", "2 to {max}"],
+  "money.events.form.repeatUntil": ["Letzter Termin spätestens am", "Dernière date au plus tard le", "Ultima data al più tardi il", "Last date no later than"],
+  "money.events.form.preview": ["Es werden {n} Anlässe erstellt: {from} bis {to}.", "{n} événements seront créés : du {from} au {to}.", "Verranno creati {n} eventi: dal {from} al {to}.", "{n} events will be created: {from} to {to}."],
+  "money.events.form.saving": ["Speichern…", "Enregistrement…", "Salvataggio…", "Saving…"],
+  "money.events.form.saveChanges": ["Änderungen speichern", "Enregistrer les modifications", "Salva le modifiche", "Save changes"],
+  "money.events.form.createSeries": ["Serie erstellen", "Créer la série", "Crea serie", "Create series"],
+  "money.events.form.create": ["Anlass erstellen", "Créer l’événement", "Crea evento", "Create event"],
+  // ---------------------------------------------------------------- Mitteilung
+  "money.events.form.annTitlePh": ["z.B. Neue Öffnungszeiten im Winter", "p. ex. nouveaux horaires d’hiver", "p. es. nuovi orari invernali", "e.g. New opening hours in winter"],
+  "money.events.form.annBody": ["Mitteilung", "Communication", "Comunicazione", "Announcement"],
+  "money.events.form.annBodyHint": ["Zeilenumbrüche bleiben erhalten, Links werden klickbar.", "Les retours à la ligne sont conservés, les liens deviennent cliquables.", "Gli a capo vengono mantenuti, i link diventano cliccabili.", "Line breaks are kept, links become clickable."],
+  "money.events.form.annBodyPh": ["Was sollen alle wissen?", "Que doivent savoir tous les membres ?", "Cosa devono sapere tutti?", "What should everyone know?"],
+  "money.events.form.annPinned": ["Oben anheften", "Épingler en haut", "Fissa in alto", "Pin to top"],
+  "money.events.form.annPinnedText": ["Wichtige Mitteilungen bleiben zuoberst sichtbar.", "Les communications importantes restent visibles tout en haut.", "Le comunicazioni importanti restano visibili in cima.", "Important announcements stay visible at the top."],
+  "money.events.form.annExpires": ["Sichtbar bis (optional)", "Visible jusqu’au (facultatif)", "Visibile fino al (facoltativo)", "Visible until (optional)"],
+  "money.events.form.annExpiresHint": ["Danach wird die Mitteilung automatisch ausgeblendet.", "Ensuite, la communication est masquée automatiquement.", "In seguito la comunicazione viene nascosta automaticamente.", "After that, the announcement is hidden automatically."],
+  "money.events.form.annPublish": ["Mitteilung veröffentlichen", "Publier la communication", "Pubblica comunicazione", "Publish announcement"],
+  // ---------------------------------------------------------------- Prüfmeldungen (Deutsch wie in types.ts / actions.ts)
+  "money.events.err.titleMissing": ["Bitte einen Titel eingeben.", "Merci de saisir un titre.", "Inserisci un titolo.", "Please enter a title."],
+  "money.events.err.titleTooLong": ["Titel ist zu lang.", "Le titre est trop long.", "Il titolo è troppo lungo.", "The title is too long."],
+  "money.events.err.dateMissing": ["Bitte ein Datum wählen.", "Merci de choisir une date.", "Scegli una data.", "Please choose a date."],
+  "money.events.err.invalidTime": ["Ungültige Zeit.", "Heure invalide.", "Ora non valida.", "Invalid time."],
+  "money.events.err.invalidDate": ["Ungültiges Datum.", "Date invalide.", "Data non valida.", "Invalid date."],
+  "money.events.err.locationTooLong": ["Ort ist zu lang.", "Le lieu est trop long.", "Il luogo è troppo lungo.", "The location is too long."],
+  "money.events.err.descriptionTooLong": ["Beschreibung ist zu lang.", "La description est trop longue.", "La descrizione è troppo lunga.", "The description is too long."],
+  "money.events.err.capacityMin": ["Mindestens 1 Platz.", "Au moins 1 place.", "Almeno 1 posto.", "At least 1 place."],
+  "money.events.err.repeatMin": ["Mindestens 2 Termine.", "Au moins 2 dates.", "Almeno 2 date.", "At least 2 dates."],
+  "money.events.err.repeatMax": ["Höchstens {n} Termine.", "{n} dates au maximum.", "Al massimo {n} date.", "At most {n} dates."],
+  "money.events.err.endBeforeStart": ["Das Enddatum liegt vor dem Startdatum.", "La date de fin est avant la date de début.", "La data di fine è prima della data di inizio.", "The end date is before the start date."],
+  "money.events.err.startTimeMissing": ["Bitte eine Startzeit angeben oder «Ganztägig» wählen.", "Merci d’indiquer une heure de début ou de choisir « Toute la journée ».", "Indica un’ora di inizio o scegli «Tutto il giorno».", "Please enter a start time or choose “All day”."],
+  "money.events.err.endAfterStart": ["Die Endzeit muss nach der Startzeit liegen.", "L’heure de fin doit être après l’heure de début.", "L’ora di fine deve essere dopo l’ora di inizio.", "The end time must be after the start time."],
+  "money.events.err.deadlineBeforeStart": ["Die Anmeldefrist muss vor dem Beginn liegen.", "Le délai d’inscription doit être avant le début.", "Il termine d’iscrizione deve essere prima dell’inizio.", "The sign-up deadline must be before the start."],
+  "money.events.err.repeatCountMissing": ["Bitte die Anzahl Termine angeben.", "Merci d’indiquer le nombre de dates.", "Indica il numero di date.", "Please enter the number of dates."],
+  "money.events.err.repeatUntilMissing": ["Bitte ein Enddatum für die Serie angeben.", "Merci d’indiquer une date de fin pour la série.", "Indica una data di fine per la serie.", "Please enter an end date for the series."],
+  "money.events.err.repeatUntilBefore": ["Das Serienende liegt vor dem ersten Termin.", "La fin de la série est avant la première date.", "La fine della serie è prima della prima data.", "The end of the series is before the first date."],
+  "money.events.err.seriesMax": ["Höchstens {n} Termine pro Serie.", "{n} dates par série au maximum.", "Al massimo {n} date per serie.", "At most {n} dates per series."],
+  "money.events.err.check": ["Bitte Eingaben prüfen.", "Merci de vérifier les saisies.", "Controlla i dati inseriti.", "Please check your entries."],
+  "money.events.err.eventNotFound": ["Anlass nicht gefunden.", "Événement introuvable.", "Evento non trovato.", "Event not found."],
+  "money.events.err.bodyMissing": ["Bitte einen Text eingeben.", "Merci de saisir un texte.", "Inserisci un testo.", "Please enter a text."],
+  "money.events.err.bodyTooLong": ["Text ist zu lang.", "Le texte est trop long.", "Il testo è troppo lungo.", "The text is too long."],
+  "money.events.err.expiresPast": ["«Sichtbar bis» darf nicht in der Vergangenheit liegen.", "« Visible jusqu’au » ne peut pas être dans le passé.", "«Visibile fino al» non può essere nel passato.", "“Visible until” cannot be in the past."],
+  "money.events.err.annNotFound": ["Mitteilung nicht gefunden.", "Communication introuvable.", "Comunicazione non trovata.", "Announcement not found."],
+  "money.events.err.annDenied": ["Du darfst keine Mitteilungen verwalten.", "Tu n’as pas le droit de gérer les communications.", "Non puoi gestire le comunicazioni.", "You are not allowed to manage announcements."],
+};
+
+export default rows;
