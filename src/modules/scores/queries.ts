@@ -7,6 +7,7 @@ import { safeJson } from "@/lib/utils";
 import { firedShots, parseStages, programTotals, type Stage } from "./types";
 import { plannedShotsForStages } from "./totals";
 import { backfillMatchTotals, recomputeMatchTotals } from "./sync";
+import { localizeProgram, localizedProgramName, localizedStageName } from "./preset-i18n";
 
 export type ProgramView = {
   id: string;
@@ -57,7 +58,7 @@ function toView(
  * Programme, die im aktiven Tenant sichtbar sind: globale + tenant-eigene.
  * `includeHidden` zeigt auch versteckte (für Admins).
  */
-export async function listPrograms(ctx: AppContext & { tenant: NonNullable<AppContext["tenant"]> }, opts?: { includeHidden?: boolean; includeArchived?: boolean }) {
+export async function listPrograms(ctx: AppContext & { tenant: NonNullable<AppContext["tenant"]> }, opts?: { includeHidden?: boolean; includeArchived?: boolean; /** Anzeige: eingebaute globale Programme in dieser Sprache (nie für Formulare). */ locale?: string }) {
   const [programs, settings, favorites] = await Promise.all([
     db.program.findMany({
       where: {
@@ -71,7 +72,10 @@ export async function listPrograms(ctx: AppContext & { tenant: NonNullable<AppCo
   ]);
   const hiddenSet = new Set(settings.filter((s) => s.hidden).map((s) => s.programId));
   const favSet = new Set(favorites.map((f) => f.programId));
-  const views = programs.map((p) => toView(p, hiddenSet.has(p.id), favSet.has(p.id)));
+  const views = programs.map((p) => {
+    const v = toView(p, hiddenSet.has(p.id), favSet.has(p.id));
+    return v.scope === "global" ? localizeProgram(v, opts?.locale) : v;
+  });
   return opts?.includeHidden ? views : views.filter((v) => !v.hidden);
 }
 
@@ -117,6 +121,8 @@ export type MatchListOptions = {
   to?: Date;
   /** Suche im Namen eines Teilnehmers (Mitglied oder Gast) */
   q?: string;
+  /** Anzeige: Namen eingebauter globaler Programme in dieser Sprache. */
+  locale?: string;
 };
 
 /** Wettkämpfe, die der Benutzer sehen darf (Teilnehmer, Ersteller oder Trainer+). */
@@ -137,7 +143,7 @@ export async function listMatches(ctx: AppContext & { tenant: NonNullable<AppCon
       ...(and.length ? { AND: and } : {}),
     },
     include: {
-      program: { select: { id: true, name: true, discipline: true, scoringMode: true, stagesJson: true } },
+      program: { select: { id: true, name: true, discipline: true, scoringMode: true, stagesJson: true, tenantId: true } },
       participants: { include: { user: { select: { id: true, name: true, avatarPath: true, updatedAt: true } }, results: { select: { total: true } } }, orderBy: { sortOrder: "asc" } },
     },
     // Datum ist nur der Tag – bei gleichem Tag zuerst den zuletzt erfassten Durchgang.
@@ -149,7 +155,7 @@ export async function listMatches(ctx: AppContext & { tenant: NonNullable<AppCon
     title: m.title,
     date: m.date,
     status: m.status,
-    program: { id: m.program.id, name: m.program.name, discipline: m.program.discipline, scoringMode: m.program.scoringMode },
+    program: { id: m.program.id, name: m.program.tenantId ? m.program.name : localizedProgramName(m.program.name, opts?.locale), discipline: m.program.discipline, scoringMode: m.program.scoringMode },
     maxScore: programTotals(parseStages(m.program.stagesJson), m.program.scoringMode).max,
     participants: m.participants.map((p) => ({
       id: p.id,
@@ -162,7 +168,8 @@ export async function listMatches(ctx: AppContext & { tenant: NonNullable<AppCon
   }));
 }
 
-export async function getMatch(ctx: AppContext & { tenant: NonNullable<AppContext["tenant"]> }, id: string) {
+/** `opts.locale`: Anzeige der eingebauten globalen Programme (Name, Seriennamen) in dieser Sprache. */
+export async function getMatch(ctx: AppContext & { tenant: NonNullable<AppContext["tenant"]> }, id: string, opts?: { locale?: string }) {
   const m = await db.match.findUnique({
     where: { id },
     include: {
@@ -177,6 +184,8 @@ export async function getMatch(ctx: AppContext & { tenant: NonNullable<AppContex
   const isCreator = m.createdById === ctx.user.id;
   if (!isParticipant && !isCreator && !ctx.can("match.viewAll")) return null;
   const stages = parseStages(m.program.stagesJson);
+  const isGlobal = !m.program.tenantId;
+  const shownStages = isGlobal && opts?.locale ? stages.map((s) => ({ ...s, name: localizedStageName(s.name, opts.locale) })) : stages;
   return {
     id: m.id,
     clientId: m.clientId,
@@ -192,10 +201,10 @@ export async function getMatch(ctx: AppContext & { tenant: NonNullable<AppContex
     canDelete: isCreator || ctx.can("match.delete"),
     program: {
       id: m.program.id,
-      name: m.program.name,
+      name: isGlobal ? localizedProgramName(m.program.name, opts?.locale) : m.program.name,
       discipline: m.program.discipline,
       scoringMode: m.program.scoringMode,
-      stages,
+      stages: shownStages,
       totals: programTotals(stages, m.program.scoringMode),
       officialKind: m.program.officialKind,
       passMinScore: m.program.passMinScore,
@@ -246,14 +255,14 @@ export async function listTenantMembers(tenantId: string) {
  * Totale (MatchParticipant.total); Schüsse werden nur für offene Durchgänge gelesen, bei
  * abgeschlossenen zählen die geplanten Schüsse der erfassten Serien.
  */
-export async function userStats(ctx: AppContext & { tenant: NonNullable<AppContext["tenant"]> }) {
+export async function userStats(ctx: AppContext & { tenant: NonNullable<AppContext["tenant"]> }, opts?: { locale?: string }) {
   await backfillMatchTotals({ tenantId: ctx.tenant.id, userId: ctx.user.id });
   const parts = await db.matchParticipant.findMany({
     where: { userId: ctx.user.id, match: { tenantId: ctx.tenant.id } },
     select: {
       total: true,
       results: { select: { stageIndex: true } },
-      match: { select: { status: true, program: { select: { id: true, name: true, stagesJson: true, scoringMode: true } } } },
+      match: { select: { status: true, program: { select: { id: true, name: true, stagesJson: true, scoringMode: true, tenantId: true } } } },
     },
     orderBy: [{ match: { date: "desc" } }, { match: { createdAt: "desc" } }],
     take: 200,
@@ -300,7 +309,7 @@ export async function userStats(ctx: AppContext & { tenant: NonNullable<AppConte
       cur.count += 1;
     } else {
       const max = programTotals(stagesOf(p.match.program), p.match.program.scoringMode).max;
-      byProgram.set(key, { name: p.match.program.name, best: total, count: 1, max, last: total, decimal: p.match.program.scoringMode === "RINGS_DECIMAL" });
+      byProgram.set(key, { name: p.match.program.tenantId ? p.match.program.name : localizedProgramName(p.match.program.name, opts?.locale), best: total, count: 1, max, last: total, decimal: p.match.program.scoringMode === "RINGS_DECIMAL" });
     }
   }
   return { matches: parts.length, totalShots, byProgram: [...byProgram.values()] };

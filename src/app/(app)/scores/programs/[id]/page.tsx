@@ -5,6 +5,7 @@ import { Award, LineChart, Pencil, Play } from "lucide-react";
 import { requireModule } from "@/lib/tenant";
 import { Badge, Card, LinkButton, PageHeader, SectionTitle } from "@/components/ui";
 import { getProgram, listMatches } from "@/modules/scores/queries";
+import { localizeProgram } from "@/modules/scores/preset-i18n";
 import { getLeaderboard, getProgramProgress, programUsageCounts } from "@/modules/scores/insights";
 import { formatDistances, maxShotValue, stageZones } from "@/modules/scores/types";
 import { formatDate, getRequestLocale, getT } from "@/lib/i18n";
@@ -26,13 +27,15 @@ export default async function ProgramDetailPage({ params }: { params: Promise<{ 
   const locale = await getRequestLocale();
   const t = getT(locale);
   const { id } = await params;
-  const p = await getProgram(ctx, id);
+  const raw = await getProgram(ctx, id);
+  // Nur Anzeige: eingebaute globale Programme in der Sprache des Benutzers (Bearbeiten nutzt die Rohdaten).
+  const p = raw && raw.scope === "global" ? localizeProgram(raw, locale) : raw;
   if (!p) notFound();
   const canManage = ctx.can("tenant.programs.manage");
   const [matches, board, progress, usage] = await Promise.all([
-    listMatches(ctx, { programId: id, limit: 5 }),
-    getLeaderboard(ctx, id, "year"),
-    getProgramProgress(ctx, id),
+    listMatches(ctx, { programId: id, limit: 5, locale }),
+    getLeaderboard(ctx, id, "year", locale),
+    getProgramProgress(ctx, id, undefined, locale),
     programUsageCounts(ctx.tenant.id),
   ]);
   const used = usage[p.id] ?? 0;

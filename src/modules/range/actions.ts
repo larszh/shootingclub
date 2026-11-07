@@ -634,6 +634,7 @@ export async function deleteQuotaAction(id: string): Promise<ActionResult> {
 
 export async function reportIncidentAction(_prev: ActionResult<{ id: string }> | null, fd: FormData): Promise<ActionResult<{ id: string }>> {
   const ctx = await requireRange();
+  const t = getT(await getRequestLocale());
   const parsed = incidentSchema.safeParse({
     kind: fd.get("kind") ?? "",
     severity: fd.get("severity") ?? "",
@@ -647,16 +648,29 @@ export async function reportIncidentAction(_prev: ActionResult<{ id: string }> |
   });
   if (!parsed.success) {
     const issue = parsed.error.issues[0];
-    return fail(issue?.message ?? "Ungültige Eingabe.", issue ? { [String(issue.path[0])]: issue.message } : undefined);
+    const field = issue ? String(issue.path[0]) : "";
+    const max = issue && issue.code === "too_big" ? Number(issue.maximum) : null;
+    const msg = !issue
+      ? t("shooting.incident.msg.invalid")
+      : max !== null && Number.isFinite(max)
+        ? t("shooting.incident.msg.tooLong", { max })
+        : field === "date"
+          ? t("shooting.incident.msg.dateMissing")
+          : field === "time"
+            ? t("shooting.incident.msg.timeMissing")
+            : field === "description"
+              ? t("shooting.incident.msg.describe")
+              : t("shooting.incident.msg.invalid");
+    return fail(msg, issue ? { [field]: msg } : undefined);
   }
   const i = parsed.data;
   const tenantId = ctx.tenant.id;
   const occurredAt = zurichToUtc(i.date, i.time);
-  if (Number.isNaN(occurredAt.getTime())) return fail("Ungültiges Datum.", { date: "Ungültiges Datum." });
-  if (occurredAt.getTime() > Date.now() + 10 * 60_000) return fail("Der Zeitpunkt liegt in der Zukunft.", { date: "Der Zeitpunkt liegt in der Zukunft." });
+  if (Number.isNaN(occurredAt.getTime())) return fail(t("shooting.incident.msg.badDate"), { date: t("shooting.incident.msg.badDate") });
+  if (occurredAt.getTime() > Date.now() + 10 * 60_000) return fail(t("shooting.incident.msg.future"), { date: t("shooting.incident.msg.future") });
   if (i.clientId) {
     const ex = await db.incident.findUnique({ where: { clientId: i.clientId }, select: { id: true, tenantId: true } });
-    if (ex) return ex.tenantId === tenantId ? ok({ id: ex.id }, "Meldung erfasst.") : fail("Ungültige Anfrage.");
+    if (ex) return ex.tenantId === tenantId ? ok({ id: ex.id }, t("shooting.incident.msg.reported")) : fail(t("shooting.incident.msg.invalidRequest"));
   }
   let incident: { id: string };
   try {
@@ -667,7 +681,7 @@ export async function reportIncidentAction(_prev: ActionResult<{ id: string }> |
   } catch (e) {
     if (isUniqueError(e) && i.clientId) {
       const ex = await db.incident.findUnique({ where: { clientId: i.clientId }, select: { id: true, tenantId: true } });
-      if (ex) return ex.tenantId === tenantId ? ok({ id: ex.id }, "Meldung erfasst.") : fail("Ungültige Anfrage.");
+      if (ex) return ex.tenantId === tenantId ? ok({ id: ex.id }, t("shooting.incident.msg.reported")) : fail(t("shooting.incident.msg.invalidRequest"));
     }
     return handle(e);
   }
@@ -682,7 +696,7 @@ export async function reportIncidentAction(_prev: ActionResult<{ id: string }> |
     });
   }
   revalidate();
-  return ok({ id: incident.id }, "Meldung erfasst. Danke!");
+  return ok({ id: incident.id }, t("shooting.incident.msg.reportedThanks"));
 }
 
 export async function closeIncidentAction(_prev: ActionResult | null, fd: FormData): Promise<ActionResult> {

@@ -20,7 +20,7 @@ export default async function MatchPage({ params }: { params: Promise<{ id: stri
   const locale = await getRequestLocale();
   const t = getT(locale);
   const { id } = await params;
-  const match = await getMatch(ctx, id);
+  const match = await getMatch(ctx, id, { locale });
   if (!match) notFound();
   const finished = match.status === "FINISHED";
   const iParticipated = match.participants.some((p) => p.isMe);

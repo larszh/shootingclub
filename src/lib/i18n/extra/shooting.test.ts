@@ -61,4 +61,30 @@ describe("Wörterbuch shooting", () => {
     expect(getT("de")("shooting.entry.finish")).toBe("Durchgang abschliessen");
     expect(getT("fr")("shooting.shifts.staffing", { filled: 2, capacity: 4 })).toBe("2 sur 4");
   });
+
+  it("Standbetrieb (Übersicht, Vorfälle, Standbuch, Halbtage) ist in allen Sprachen vorhanden, Deutsch unverändert", () => {
+    const required = [
+      "shooting.range.wholeFacility", "shooting.range.openLogs", "shooting.range.newLog", "shooting.range.stale.one", "shooting.range.stale.other",
+      "shooting.range.lastClosed", "shooting.range.memberCheckin", "shooting.range.qrText", "shooting.range.print", "shooting.range.dutyWarning",
+      "shooting.range.responsibility", "shooting.incident.kind.ACCIDENT", "shooting.incident.kind.NEAR_MISS", "shooting.incident.kind.DAMAGE",
+      "shooting.incident.kind.OTHER", "shooting.incident.severity.LOW", "shooting.incident.severity.MEDIUM", "shooting.incident.severity.HIGH",
+      "shooting.incident.status.OPEN", "shooting.incident.status.CLOSED", "shooting.incident.hint", "shooting.incident.new",
+      "shooting.incident.field.description", "shooting.incident.field.locationHint", "shooting.incident.submit", "shooting.incident.msg.reported",
+      "shooting.incident.msg.reportedThanks", "shooting.incident.msg.tooLong", "shooting.log.subtitle", "shooting.log.legend", "shooting.log.flagLetters",
+      "shooting.log.empty.text", "shooting.quota.title", "shooting.quota.footer", "shooting.quota.ofMax", "shooting.quota.col.month",
+    ];
+    for (const d of [shooting.de, shooting.fr, shooting.it]) expect(required.filter((k) => !d[k]?.trim())).toEqual([]);
+    for (const k of ["shooting.range.openLogs", "shooting.incident.hint", "shooting.incident.submit", "shooting.log.legend", "shooting.quota.footer"]) {
+      expect(shooting.fr[k]).not.toBe(shooting.de[k]);
+      expect(shooting.it[k]).not.toBe(shooting.de[k]);
+    }
+    // Deutsch wie vorher fest im Code
+    expect(getT("de")("shooting.range.stale.other", { n: 2 })).toBe("2 Standbücher früherer Tage sind noch offen. Bitte abschliessen:");
+    expect(getT("de")("shooting.incident.hint")).toBe("Bei Unfällen zuerst Notruf, dann Versicherung (z.B. USS) gemäss deren Vorgaben melden.");
+    expect(getT("de")("shooting.log.subtitle", { days: 3, visits: 12 })).toBe("3 Schiesstage · 12 Besuche");
+    expect(getT("fr")("shooting.incident.kind.NEAR_MISS")).toBe("Quasi-accident");
+    expect(getT("it")("shooting.quota.remaining", { n: 4 })).toBe("4 rimanenti");
+    // Kurzbuchstaben der Halbtage: genau drei, durch Leerzeichen getrennt
+    for (const d of [shooting.de, shooting.fr, shooting.it]) expect(d["shooting.log.flagLetters"]!.split(" ")).toHaveLength(3);
+  });
 });

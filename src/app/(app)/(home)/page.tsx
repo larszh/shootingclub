@@ -84,7 +84,7 @@ function timeRange(start: Date, end: Date, locale: Locale) {
  * Zuerst die ids der eigenen offenen Durchgänge (im Verein) holen, dann ab dem ältesten
  * davon laden – so fehlen sie auch in sehr aktiven Vereinen nicht.
  */
-async function loadOpenMine(ctx: TenantCtx) {
+async function loadOpenMine(ctx: TenantCtx, locale: Locale) {
   const mine = await db.match.findMany({
     where: { tenantId: ctx.tenant.id, status: "OPEN", participants: { some: { userId: ctx.user.id } } },
     orderBy: { date: "desc" },
@@ -94,16 +94,16 @@ async function loadOpenMine(ctx: TenantCtx) {
   if (!mine.length) return [];
   const ids = new Set(mine.map((m) => m.id));
   const from = mine[mine.length - 1]!.date;
-  const open = await listMatches(ctx, { status: "OPEN", from, limit: 100 });
+  const open = await listMatches(ctx, { status: "OPEN", from, limit: 100, locale });
   return open.filter((m) => ids.has(m.id));
 }
 
-async function loadScores(ctx: TenantCtx) {
+async function loadScores(ctx: TenantCtx, locale: Locale) {
   const [programs, openMine, recent, stats] = await Promise.all([
-    listPrograms(ctx),
-    loadOpenMine(ctx),
-    listMatches(ctx, { status: "FINISHED", limit: 3 }),
-    userStats(ctx),
+    listPrograms(ctx, { locale }),
+    loadOpenMine(ctx, locale),
+    listMatches(ctx, { status: "FINISHED", limit: 3, locale }),
+    userStats(ctx, { locale }),
   ]);
   return {
     favorites: programs.filter((p) => p.favorite).slice(0, 4),
@@ -205,7 +205,7 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
   const isAdmin = ctx.can("tenant.manage");
 
   const [scores, nextBookings, invoices, chats, newestFiles] = await Promise.all([
-    scoresOn ? loadScores(ctx) : Promise.resolve(null),
+    scoresOn ? loadScores(ctx, locale) : Promise.resolve(null),
     bookingsOn ? listMyBookings(ctx).then((b) => partitionBookings(b).upcoming.slice(0, 2)) : Promise.resolve([]),
     showMyPayments(ctx).then((show) => (show ? summarizeMyOpenPayments(ctx, nowDate()) : null)),
     chatOn ? loadUnreadChats(ctx) : Promise.resolve(null),

@@ -44,8 +44,8 @@ export default async function MatchesPage({ searchParams }: { searchParams: Prom
   };
   const { range, exportQs } = rangeFor(values.period);
   const [matches, programs] = await Promise.all([
-    listMatches(ctx, { limit: 100, programId: values.programId, status: values.status, q: values.q, ...range }),
-    listPrograms(ctx, { includeArchived: true, includeHidden: true }),
+    listMatches(ctx, { limit: 100, programId: values.programId, status: values.status, q: values.q, ...range, locale }),
+    listPrograms(ctx, { includeArchived: true, includeHidden: true, locale }),
   ]);
   const viewAll = ctx.can("match.viewAll");
   const filtered = Boolean(values.q || values.programId || values.status || values.period);

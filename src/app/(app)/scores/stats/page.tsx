@@ -24,9 +24,9 @@ export default async function StatsPage({ searchParams }: { searchParams: Promis
   const locale = await getRequestLocale();
   const t = getT(locale);
   const sp = await searchParams;
-  const stats = await getUserScoreStats(ctx);
+  const stats = await getUserScoreStats(ctx, locale);
   const selectedId = one(sp.programId) && stats.programs.some((p) => p.programId === one(sp.programId)) ? one(sp.programId)! : stats.programs[0]?.programId;
-  const progress = selectedId ? await getProgramProgress(ctx, selectedId) : null;
+  const progress = selectedId ? await getProgramProgress(ctx, selectedId, undefined, locale) : null;
   const maxDistShots = Math.max(1, ...stats.distances.map((d) => d.shots));
 
   return (

@@ -16,7 +16,7 @@ export default async function ProgramsPage() {
   const locale = await getRequestLocale();
   const t = getT(locale);
   const canManage = ctx.can("tenant.programs.manage");
-  const [programs, usage] = await Promise.all([listPrograms(ctx, { includeHidden: canManage }), programUsageCounts(ctx.tenant.id)]);
+  const [programs, usage] = await Promise.all([listPrograms(ctx, { includeHidden: canManage, locale }), programUsageCounts(ctx.tenant.id)]);
 
   return (
     <div>

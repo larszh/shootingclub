@@ -1,4 +1,6 @@
 import { APP_TZ, formatDateZurich, zurichParts } from "../../lib/time";
+import { INTL_LOCALE, normalizeLocale } from "../../lib/i18n/locales";
+import type { TFunction } from "../../lib/i18n/core";
 
 const timeFmt = new Intl.DateTimeFormat("de-CH", { timeZone: APP_TZ, hour: "2-digit", minute: "2-digit" });
 
@@ -18,22 +20,27 @@ export function fmtTimeOn(d: Date, dayKey: string) {
 }
 
 /** @db.Date-Wert als Datum, z.B. "Sa., 07.03.2026". */
-export function fmtDay(d: Date, opts?: Intl.DateTimeFormatOptions) {
-  return formatDateZurich(d, opts);
+export function fmtDay(d: Date, opts?: Intl.DateTimeFormatOptions, locale?: string | null) {
+  if (!locale || normalizeLocale(locale) === "de") return formatDateZurich(d, opts);
+  return new Intl.DateTimeFormat(INTL_LOCALE[normalizeLocale(locale)], { timeZone: APP_TZ, weekday: "short", day: "2-digit", month: "2-digit", year: "numeric", ...opts }).format(d);
 }
 
 /** Titel eines Standbuchs: Anlage oder «Ganze Anlage». */
-export function dayTitle(day: { resource: { name: string } | null }) {
-  return day.resource?.name ?? "Ganze Anlage";
+export function dayTitle(day: { resource: { name: string } | null }, t?: TFunction) {
+  return day.resource?.name ?? (t ? t("shooting.range.wholeFacility") : "Ganze Anlage");
 }
 
-export function flagsLabel(f: { usedAm: boolean; usedPm: boolean; usedEvening: boolean }) {
-  const parts = [f.usedAm && "Vormittag", f.usedPm && "Nachmittag", f.usedEvening && "Abend"].filter(Boolean);
-  return parts.length ? parts.join(", ") : "kein Halbtag";
+/** Benutzte Halbtage als Text; mit `t` übersetzt, sonst Deutsch. */
+export function flagsLabel(f: { usedAm: boolean; usedPm: boolean; usedEvening: boolean }, t?: TFunction) {
+  const l = (key: string, de: string) => (t ? t(`shooting.log.flag.${key}`) : de);
+  const parts = [f.usedAm && l("am", "Vormittag"), f.usedPm && l("pm", "Nachmittag"), f.usedEvening && l("evening", "Abend")].filter(Boolean);
+  return parts.length ? parts.join(", ") : l("none", "kein Halbtag");
 }
 
-export function flagsShort(f: { usedAm: boolean; usedPm: boolean; usedEvening: boolean }) {
-  return `${f.usedAm ? "V" : "·"} ${f.usedPm ? "N" : "·"} ${f.usedEvening ? "A" : "·"}`;
+/** Kurzform «V N A»; mit `t` die Buchstaben der Sprache (Schlüssel «shooting.log.flagLetters»). */
+export function flagsShort(f: { usedAm: boolean; usedPm: boolean; usedEvening: boolean }, t?: TFunction) {
+  const [am = "V", pm = "N", ev = "A"] = t ? t("shooting.log.flagLetters").split(" ") : [];
+  return `${f.usedAm ? am : "·"} ${f.usedPm ? pm : "·"} ${f.usedEvening ? ev : "·"}`;
 }
 
 /** Zeitpunkt der Erstellung für Druckfusszeilen. */

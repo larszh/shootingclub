@@ -15,7 +15,7 @@ export default async function NewMatchPage({ searchParams }: { searchParams: Pro
   const locale = await getRequestLocale();
   const t = getT(locale);
   const { programId, with: withRaw } = await searchParams;
-  const [programs, members] = await Promise.all([listPrograms(ctx), listTenantMembers(ctx.tenant.id)]);
+  const [programs, members] = await Promise.all([listPrograms(ctx, { locale }), listTenantMembers(ctx.tenant.id)]);
   // «Nochmals»: Gegner aus dem letzten Durchgang vorauswählen (nur echte Mitglieder dieses Vereins).
   const initialParticipantIds = (typeof withRaw === "string" ? withRaw : "").split(",").filter((id) => id && id !== ctx.user.id && members.some((m) => m.id === id)).slice(0, 19);
   return (

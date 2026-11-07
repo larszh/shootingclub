@@ -17,9 +17,9 @@ export default async function ScoresPage() {
   const locale = await getRequestLocale();
   const t = getT(locale);
   const [programs, open, recent] = await Promise.all([
-    listPrograms(ctx),
-    listMatches(ctx, { status: "OPEN", limit: 10 }),
-    listMatches(ctx, { status: "FINISHED", limit: 5 }),
+    listPrograms(ctx, { locale }),
+    listMatches(ctx, { status: "OPEN", limit: 10, locale }),
+    listMatches(ctx, { status: "FINISHED", limit: 5, locale }),
   ]);
   const favorites = programs.filter((p) => p.favorite);
   // Resultat-Import schreibt Resultate anderer Mitglieder: nur Trainer und Vorstand

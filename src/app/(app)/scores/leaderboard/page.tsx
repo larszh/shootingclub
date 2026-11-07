@@ -27,7 +27,7 @@ export default async function LeaderboardPage({ searchParams }: { searchParams: 
   const t = getT(locale);
   const sp = await searchParams;
   const period = parsePeriod(one(sp.period));
-  const [programs, usage] = await Promise.all([listPrograms(ctx), programUsageCounts(ctx.tenant.id)]);
+  const [programs, usage] = await Promise.all([listPrograms(ctx, { locale }), programUsageCounts(ctx.tenant.id)]);
 
   // Standard: das im Verein meistgeschossene Programm.
   const byUsage = [...programs].sort((a, b) => (usage[b.id] ?? 0) - (usage[a.id] ?? 0) || a.name.localeCompare(b.name, INTL_LOCALE[locale]));
@@ -42,7 +42,7 @@ export default async function LeaderboardPage({ searchParams }: { searchParams: 
     );
   }
 
-  const board = await getLeaderboard(ctx, programId, period);
+  const board = await getLeaderboard(ctx, programId, period, locale);
   const href = (p: Period) => `/scores/leaderboard?${new URLSearchParams({ programId, period: p }).toString()}`;
   const options = byUsage.map((p) => ({ value: p.id, label: usage[p.id] ? `${p.name} (${usage[p.id]})` : p.name }));
   if (board && !options.some((o) => o.value === board.program.id)) options.unshift({ value: board.program.id, label: board.program.name });
