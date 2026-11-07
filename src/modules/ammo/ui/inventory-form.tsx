@@ -8,6 +8,8 @@ import { Spinner } from "@/components/ui/form";
 import { confirmDialog } from "@/components/ui/dialog";
 import { toast } from "@/lib/ui-feedback";
 import { inventoryAction } from "@/modules/ammo/stock-actions";
+import { useLocale, useT } from "@/components/locale";
+import { roundsT } from "./labels";
 
 export type InventoryProduct = { id: string; name: string; caliber: string; unitLabel: string; roundsPerUnit: number; stockUnits: number | null; fundingLabel: string; isActive: boolean };
 
@@ -18,6 +20,8 @@ export function InventoryForm({ products }: { products: InventoryProduct[] }) {
   const [note, setNote] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [pending, start] = useTransition();
+  const t = useT();
+  const locale = useLocale();
 
   const lines = products
     .filter((p) => /^\d{1,7}$/.test(counted[p.id] ?? ""))
@@ -27,24 +31,24 @@ export function InventoryForm({ products }: { products: InventoryProduct[] }) {
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
-    if (!lines.length) return setError("Bitte mindestens ein Produkt zählen.");
+    if (!lines.length) return setError(t("adm1.ammo.inv.countOne"));
     const okGo = await confirmDialog({
-      title: "Inventur buchen?",
-      message: `${lines.length} ${lines.length === 1 ? "Produkt" : "Produkte"} gezählt, ${diffs} mit Differenz. Der Bestand wird auf die gezählten Mengen gesetzt.`,
-      confirmLabel: "Buchen",
+      title: t("adm1.ammo.inv.confirmTitle"),
+      message: t(lines.length === 1 ? "adm1.ammo.inv.confirmMessage.one" : "adm1.ammo.inv.confirmMessage.other", { n: lines.length, diffs }),
+      confirmLabel: t("adm1.ammo.book"),
     });
     if (!okGo) return;
     start(async () => {
       try {
         const r = await inventoryAction({ lines, note });
         if (!r.ok) return setError(r.error);
-        toast.success(r.message ?? "Inventur gebucht.");
+        toast.success(r.message ?? t("adm1.ammo.inv.booked"));
         setCounted({});
         setNote("");
         router.push(`/admin/ammo/stock/inventory?done=${r.data?.at ?? ""}`);
         router.refresh();
       } catch {
-        setError("Keine Verbindung. Bitte nochmals versuchen.");
+        setError(t("adm1.ammo.noConnection"));
       }
     });
   }
@@ -59,11 +63,11 @@ export function InventoryForm({ products }: { products: InventoryProduct[] }) {
           return (
             <div key={p.id} className="flex items-center gap-3 px-4 py-3">
               <div className="min-w-0 flex-1">
-                <div className="truncate font-medium">{p.name}{!p.isActive ? <span className="text-ink-3"> (ausgeblendet)</span> : null}</div>
-                <div className="text-xs text-ink-3">{p.caliber} · {p.fundingLabel} · Buchbestand {p.stockUnits ?? "–"} {p.unitLabel}</div>
+                <div className="truncate font-medium">{p.name}{!p.isActive ? <span className="text-ink-3"> ({t("adm1.ammo.prod.hidden")})</span> : null}</div>
+                <div className="text-xs text-ink-3">{p.caliber} · {p.fundingLabel} · {t("adm1.ammo.inv.bookStock", { n: p.stockUnits ?? "–", unit: p.unitLabel })}</div>
                 {diff !== null ? (
                   <div className={`text-xs font-medium ${diff === 0 ? "text-ok" : "text-warn"}`}>
-                    {diff === 0 ? "stimmt" : `Differenz ${diff > 0 ? "+" : ""}${diff} ${p.unitLabel} (${diff * p.roundsPerUnit} Schuss)`}
+                    {diff === 0 ? t("adm1.ammo.inv.matches") : t("adm1.ammo.inv.diff", { diff: `${diff > 0 ? "+" : ""}${diff}`, unit: p.unitLabel, rounds: roundsT(diff * p.roundsPerUnit, locale, t) })}
                   </div>
                 ) : null}
               </div>
@@ -71,18 +75,18 @@ export function InventoryForm({ products }: { products: InventoryProduct[] }) {
                 value={raw}
                 onChange={(e) => setCounted((c) => ({ ...c, [p.id]: e.target.value.replace(/\D/g, "").slice(0, 7) }))}
                 inputMode="numeric"
-                placeholder="gezählt"
-                aria-label={`${p.name}: gezählte ${p.unitLabel}`}
+                placeholder={t("adm1.ammo.inv.counted")}
+                aria-label={t("adm1.ammo.inv.countedAria", { name: p.name, unit: p.unitLabel })}
                 className="w-28 text-right text-lg"
               />
             </div>
           );
         })}
       </Card>
-      <Field label="Bemerkung (optional)"><Input value={note} onChange={(e) => setNote(e.target.value)} maxLength={191} placeholder="z.B. Inventur Jahresende, gezählt von …" /></Field>
+      <Field label={t("adm1.ammo.remark")}><Input value={note} onChange={(e) => setNote(e.target.value)} maxLength={191} placeholder={t("adm1.ammo.inv.notePlaceholder")} /></Field>
       {error ? <Alert>{error}</Alert> : null}
       <Button type="submit" disabled={pending || !lines.length} className="w-full sm:w-auto">
-        {pending ? <Spinner /> : <ClipboardCheck className="h-4 w-4" />} Inventur buchen{lines.length ? ` (${lines.length})` : ""}
+        {pending ? <Spinner /> : <ClipboardCheck className="h-4 w-4" />} {t("adm1.ammo.inv.submit")}{lines.length ? ` (${lines.length})` : ""}
       </Button>
     </form>
   );

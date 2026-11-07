@@ -8,6 +8,7 @@ import { Spinner } from "@/components/ui/form";
 import { confirmDialog, isNavigationError, toast } from "@/lib/ui-feedback";
 import { formatMoney } from "@/lib/money";
 import { billKioskAction } from "@/modules/kiosk/actions";
+import { useT } from "@/components/locale";
 
 export type KioskBillingCandidate = { userId: string; name: string; count: number; totalCents: number; billable: boolean; range: string };
 
@@ -15,6 +16,7 @@ export type KioskBillingCandidate = { userId: string; name: string; count: numbe
 export function KioskBillingPanel({ from, to, label, categoryName, candidates, blocker, currency }: {
   from: string; to: string; label: string; categoryName: string; candidates: KioskBillingCandidate[]; blocker: string | null; currency: string;
 }) {
+  const t = useT();
   const router = useRouter();
   const billableIds = candidates.filter((c) => c.billable).map((c) => c.userId);
   const billableKey = [...billableIds].sort().join(",");
@@ -45,33 +47,33 @@ export function KioskBillingPanel({ from, to, label, categoryName, candidates, b
   async function bill() {
     setError(null);
     const okToGo = await confirmDialog({
-      title: `${chosen.length} ${chosen.length === 1 ? "Rechnung" : "Rechnungen"} erstellen?`,
-      message: `«${categoryName}», total ${formatMoney(total, currency)}. Die Mitglieder werden benachrichtigt und sehen die Rechnung unter «Zahlungen». Verrechnete Einträge werden nie ein zweites Mal verrechnet.`,
-      confirmLabel: "Rechnungen erstellen",
+      title: t(chosen.length === 1 ? "adm1.kiosk.billTitle.one" : "adm1.kiosk.billTitle.other", { n: chosen.length }),
+      message: t("adm1.kiosk.billMessage", { name: categoryName, total: formatMoney(total, currency) }),
+      confirmLabel: t("adm1.kiosk.billConfirm"),
     });
     if (!okToGo) return;
     start(async () => {
       try {
         const r = await billKioskAction({ from, to, userIds: chosen.map((c) => c.userId) });
         if (!r.ok) return setError(r.error);
-        toast.success(r.message ?? "Rechnungen erstellt.");
+        toast.success(r.message ?? t("adm1.kiosk.billed"));
         router.refresh();
       } catch (e) {
         if (isNavigationError(e)) throw e;
-        setError("Keine Verbindung. Bitte nochmals versuchen.");
+        setError(t("adm1.common.offline"));
       }
     });
   }
 
   if (!candidates.length) {
-    return <Alert tone="ok">Keine offenen Konsumationen für {label}: alles verrechnet oder bar bezahlt.</Alert>;
+    return <Alert tone="ok">{t("adm1.kiosk.nothingOpen", { period: label })}</Alert>;
   }
 
   return (
     <Card className="animate-rise overflow-hidden">
       <div className="border-b border-line p-4">
-        <h3 className="font-semibold">Vorschau «{categoryName}»</h3>
-        <p className="text-sm text-ink-3">Ausgewählt: {chosen.length} · total {formatMoney(total, currency)}. Abwählen, wer (noch) nicht verrechnet werden soll.</p>
+        <h3 className="font-semibold">{t("adm1.kiosk.previewTitle", { name: categoryName })}</h3>
+        <p className="text-sm text-ink-3">{t("adm1.kiosk.previewText", { n: chosen.length, total: formatMoney(total, currency) })}</p>
       </div>
       <ul className="max-h-[60vh] divide-y divide-line overflow-y-auto">
         {candidates.map((c) => (
@@ -81,9 +83,9 @@ export function KioskBillingPanel({ from, to, label, categoryName, candidates, b
               <span className="min-w-0 flex-1">
                 <span className="flex items-center gap-1.5">
                   <span className="truncate font-medium">{c.name}</span>
-                  {!c.billable ? <Badge tone="outline">Konto gelöscht</Badge> : null}
+                  {!c.billable ? <Badge tone="outline">{t("adm1.kiosk.accountDeleted")}</Badge> : null}
                 </span>
-                <span className="block text-xs text-ink-3">{c.count} {c.count === 1 ? "Eintrag" : "Einträge"} · {c.range}</span>
+                <span className="block text-xs text-ink-3">{t(c.count === 1 ? "adm1.kiosk.entries.one" : "adm1.kiosk.entries.other", { n: c.count })} · {c.range}</span>
               </span>
               <span className="shrink-0 font-medium tabular-nums">{formatMoney(c.totalCents, currency)}</span>
             </label>
@@ -94,7 +96,7 @@ export function KioskBillingPanel({ from, to, label, categoryName, candidates, b
         {blocker ? <Alert tone="warn">{blocker}</Alert> : null}
         {error ? <Alert>{error}</Alert> : null}
         <Button onClick={bill} disabled={pending || !chosen.length || !!blocker} className="w-full sm:w-auto">
-          {pending ? <Spinner /> : <Receipt className="h-4 w-4" />} Konsumationen verrechnen
+          {pending ? <Spinner /> : <Receipt className="h-4 w-4" />} {t("adm1.kiosk.billButton")}
         </Button>
       </div>
     </Card>

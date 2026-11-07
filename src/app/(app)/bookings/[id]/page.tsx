@@ -12,7 +12,7 @@ import { getBillingProfile } from "@/modules/billing/profile";
 import { cancellationInfo, getBooking, getBookingSettings } from "@/modules/bookings/queries";
 import { formatDuration, providerLabel } from "@/modules/bookings/types";
 import { bookingStatusView, discountReasonLabel, formatDateL, formatDateTimeL, formatTimeRangeL, paymentMethodLabel, paymentStatusViewT } from "@/modules/bookings/i18n";
-import { getRequestLocale, getT } from "@/lib/i18n";
+import { displayUserName, getRequestLocale, getT } from "@/lib/i18n";
 import { CancelBookingButton, DecideButtons, PaidToggle, PayNowButton, RefundedButton } from "@/modules/bookings/ui/booking-actions";
 import { formatMoney } from "@/lib/money";
 import { personsSuffix } from "@/modules/bookings/pricing";
@@ -77,7 +77,7 @@ export default async function BookingDetailPage({ params, searchParams }: { para
         </div>
         {isAdmin && partner ? <Row k={t("bookings.detail.partner")} v={<Badge tone="outline">{partner}</Badge>} /> : null}
         {b.isGuest ? <Row k={t("bookings.detail.owner")} v={b.tenant.name} /> : null}
-        <Row k={t("bookings.detail.bookedBy")} v={<span className="inline-flex items-center gap-2">{b.user ? <Avatar name={b.user.name} src={userAvatarUrl(b.user)} size={24} tone="soft" /> : null}{b.user?.name ?? t("bookings.detail.unknown")}</span>} />
+        <Row k={t("bookings.detail.bookedBy")} v={<span className="inline-flex items-center gap-2">{b.user ? <Avatar name={b.user.name} src={userAvatarUrl(b.user)} size={24} tone="soft" /> : null}{displayUserName(b.user?.name, t) ?? t("bookings.detail.unknown")}</span>} />
         {b.persons > 1 || b.isFlatRate ? <Row k={t("bookings.detail.persons")} v={b.isFlatRate ? `${b.persons} · ${t("bookings.wizard.flatPriceShort")}` : String(b.persons)} /> : null}
         <Row k={t("bookings.detail.price")} v={b.totalCents ? <span className="tabular-nums">{b.discountCents > 0 ? <span className="text-ink-3 line-through mr-2">{formatMoney(b.basePriceCents, b.currency)}</span> : null}{formatMoney(b.totalCents, b.currency)}{b.discountReason ? <span className="text-ok text-xs ml-2">{discountReasonLabel(b.discountReason, t)}</span> : null}</span> : t("bookings.free")} />
         {b.totalCents > 0 ? <Row k={t("bookings.detail.payment")} v={<span className="inline-flex items-center gap-2">{paymentMethodLabel(b.paymentMethod, t)} <Badge tone={ps.tone}>{ps.label}</Badge></span>} /> : null}

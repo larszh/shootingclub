@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { FUNDING_TYPES } from "./stock";
+import { formatNumberL } from "@/lib/i18n/core";
 
 /**
  * Munition (Modul «ammo»). Verkauf ausschliesslich auf Rechnung – Zahlungsanbieter wie Stripe oder
@@ -124,7 +125,7 @@ export function groupByCaliber<T extends { caliber: string }>(list: T[]) {
 }
 
 export function formatRounds(n: number) {
-  return `${new Intl.NumberFormat("de-CH").format(n)} Schuss`;
+  return `${formatNumberL(n, "de")} Schuss`;
 }
 
 /** Titel einer Munitionsrechnung (Zahlungszweck, Übersichten). */

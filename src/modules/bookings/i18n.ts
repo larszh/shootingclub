@@ -3,7 +3,7 @@
  * Server-Seiten und Client-Komponenten rufen die Helfer mit `getT(locale)` auf.
  * Wörterbuch: src/lib/i18n/extra/bookings.ts (Namensraum «bookings.»).
  */
-import { INTL_LOCALE, normalizeLocale, type TFunction } from "@/lib/i18n/core";
+import { formatIntlDate, INTL_LOCALE, normalizeLocale, type TFunction } from "@/lib/i18n/core";
 import { paymentStatusView } from "./types";
 
 const TZ = "Europe/Zurich";
@@ -93,7 +93,7 @@ export function discountReasonLabel(reason: string | null | undefined, t: TFunct
 
 /** Datum in der Sprache, Zeitzone Europe/Zurich. Ohne Optionen «Di., 03.11.2026». */
 export function formatDateL(d: Date, locale: string | null | undefined, opts?: Intl.DateTimeFormatOptions) {
-  return new Intl.DateTimeFormat(INTL_LOCALE[normalizeLocale(locale)], { timeZone: TZ, weekday: "short", day: "2-digit", month: "2-digit", year: "numeric", ...opts }).format(d);
+  return formatIntlDate(d, locale, { timeZone: TZ, weekday: "short", day: "2-digit", month: "2-digit", year: "numeric", ...opts });
 }
 
 export function formatDateTimeL(d: Date, locale: string | null | undefined) {
@@ -119,4 +119,57 @@ export function windowHintLabel(w: { weekday: number; ranges: Array<{ from: stri
     ? `${day} ${w.ranges.map((r) => `${r.from}–${r.to}`).join(", ")}`
     : t("bookings.wizard.windowNone", { day });
   return t("bookings.wizard.windowHint", { list });
+}
+
+// ---------------------------------------------------------------------------
+// Serienbuchungen
+
+/** ISO-Wochentage (1 = Mo … 7 = So, CSV oder Liste) als «Di, Do» bzw. «Dienstag, Donnerstag» in der Sprache. */
+export function weekdaysLabelL(days: number[] | string, locale: string | null | undefined, long = false): string {
+  const list = (typeof days === "string" ? days.split(",") : days).map(Number).filter((d) => Number.isInteger(d) && d >= 1 && d <= 7);
+  const fmt = new Intl.DateTimeFormat(INTL_LOCALE[normalizeLocale(locale)], { weekday: long ? "long" : "short", timeZone: "UTC" });
+  // 2023-01-01 war ein Sonntag: ISO 7 → +0, ISO 1 (Montag) → +1.
+  return [...new Set(list)].sort((a, b) => a - b).map((d) => fmt.format(new Date(Date.UTC(2023, 0, 1 + (d % 7))))).join(", ");
+}
+
+const CONFLICT_KEYS = new Set(["past", "closed", "blocked", "full", "window"]);
+export function seriesConflictLabel(reason: string, t: TFunction) {
+  return CONFLICT_KEYS.has(reason) ? t(`bookings.series.conflict.${reason}`) : reason;
+}
+
+/** «12 Termine buchbar, 2 übersprungen (1× Belegt, 1× Gesperrt)» aus den Konfliktgründen der Vorschau. */
+export function seriesSummaryLabel(freeCount: number, conflicts: Array<string | null | undefined>, t: TFunction) {
+  const byReason = new Map<string, number>();
+  for (const c of conflicts) if (c) byReason.set(c, (byReason.get(c) ?? 0) + 1);
+  const head = t(freeCount === 1 ? "bookings.series.bookable.one" : "bookings.series.bookable.other", { n: freeCount });
+  if (!byReason.size) return head;
+  const skipped = [...byReason.values()].reduce((s, n) => s + n, 0);
+  const list = [...byReason].map(([r, n]) => `${n}× ${seriesConflictLabel(r, t)}`).join(", ");
+  return t("bookings.series.skippedSummary", { head, n: skipped, list });
+}
+
+/** Feste Fehlermeldungen der Serien-Aktionen (Deutsch) → Schlüssel; Unbekanntes bleibt unverändert. */
+const SERIES_ERROR_KEY: Record<string, string> = {
+  "Bitte gültige Daten wählen.": "bookings.series.err.invalidDate",
+  "Das Enddatum liegt vor dem Beginn.": "bookings.series.err.untilBeforeFrom",
+  "Eine Serie darf höchstens ein Jahr dauern.": "bookings.series.err.tooLong",
+  "Bitte mindestens einen Wochentag wählen.": "bookings.series.pickWeekday",
+  "Bitte gültige Zeiten wählen.": "bookings.series.err.invalidTime",
+  "Das Ende muss nach dem Beginn liegen.": "bookings.series.err.endBeforeStart",
+  "Zu viele Termine (höchstens 200). Bitte den Zeitraum verkürzen.": "bookings.series.err.tooMany",
+  "Im gewählten Zeitraum liegt kein passender Wochentag.": "bookings.series.err.empty",
+  "Bitte Ressource, Wochentage, Zeitraum und Zeiten angeben.": "bookings.series.err.missing",
+  "Ressource nicht verfügbar.": "bookings.series.err.resource",
+  "Nicht gefunden": "bookings.series.err.notFound",
+  "Die Serie ist bereits storniert.": "bookings.series.err.alreadyCancelled",
+  "Der Termin ist bereits beendet.": "bookings.series.err.ended",
+  "Vergangene Termine können nicht storniert werden.": "bookings.series.err.past",
+};
+
+export function seriesErrorLabel(error: string, t: TFunction) {
+  const key = SERIES_ERROR_KEY[error];
+  if (key) return t(key);
+  const m = /^Höchstens (\d+) Personen? pro Buchung\.$/.exec(error);
+  if (m) return t(m[1] === "1" ? "bookings.err.maxPersonsOne" : "bookings.err.maxPersonsMany", { max: m[1]! });
+  return error;
 }

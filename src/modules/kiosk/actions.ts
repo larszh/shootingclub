@@ -5,7 +5,8 @@ import { z } from "zod";
 import { db } from "@/lib/db";
 import { accessStatusWhere } from "@/lib/membership-access";
 import { audit } from "@/lib/audit";
-import { fail, ok, type ActionResult } from "@/lib/action-result";
+import type { ActionResult } from "@/lib/action-result";
+import { lfail as fail, lok as ok } from "@/lib/i18n/extra/admin1/action-result";
 import { getRequestLocale, getT } from "@/lib/i18n";
 import { requireModule } from "@/lib/tenant";
 import { formatMoney, parseMoneyToCents } from "@/lib/money";
@@ -39,7 +40,7 @@ async function manageCtx() {
   return ctx.can("kiosk.manage") ? ctx : null;
 }
 
-function handle(e: unknown): ActionResult<never> {
+async function handle(e: unknown): Promise<ActionResult<never>> {
   console.error("Schützenstube:", e);
   return fail("Das hat nicht geklappt. Bitte nochmals versuchen.");
 }
@@ -183,7 +184,9 @@ export async function recordEntriesAction(input: EntryInput): Promise<ActionResu
     return handle(e);
   }
   revalidate();
-  return ok({ batchId: v.batchId, totalCents, duplicate: false }, `${formatMoney(totalCents)} ${paidCash ? "bar" : "aufgeschrieben"}: ${who}.`);
+  const t = getT(await getRequestLocale());
+  const whoText = v.userId ? who : v.guestName ? t("adm1.kiosk.guestNamed", { name: v.guestName }) : t("adm1.kiosk.guest");
+  return ok({ batchId: v.batchId, totalCents, duplicate: false }, t(paidCash ? "adm1.kiosk.msg.recordedCash" : "adm1.kiosk.msg.recordedAccount", { total: formatMoney(totalCents), who: whoText }));
 }
 
 /** Letzte Erfassung rückgängig machen (nur eigene, unverrechnete, höchstens 2 Minuten alt). */
@@ -296,7 +299,8 @@ export async function billKioskAction(input: { from: string; to: string; userIds
     revalidatePath("/admin/billing");
     revalidatePath("/admin/payments");
     revalidatePath("/payments");
-    return ok({ count: created.length, totalCents: total }, `${created.length} ${created.length === 1 ? "Rechnung" : "Rechnungen"} erstellt (total ${formatMoney(total)}).`);
+    const t = getT(await getRequestLocale());
+    return ok({ count: created.length, totalCents: total }, t(created.length === 1 ? "adm1.kiosk.msg.invoicesCreated.one" : "adm1.kiosk.msg.invoicesCreated.other", { n: created.length, total: formatMoney(total) }));
   } catch (e) {
     return handle(e);
   }
@@ -342,7 +346,8 @@ export async function releaseCancelledAction(): Promise<ActionResult<{ count: nu
     revalidate();
     revalidatePath("/admin/billing", "layout");
     revalidatePath("/admin/payments");
-    return ok({ count }, `${count} ${count === 1 ? "Eintrag" : "Einträge"} wieder offen.`);
+    const t = getT(await getRequestLocale());
+    return ok({ count }, t(count === 1 ? "adm1.kiosk.msg.reopenedEntries.one" : "adm1.kiosk.msg.reopenedEntries.other", { n: count }));
   } catch (e) {
     return handle(e);
   }

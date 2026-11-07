@@ -1,6 +1,6 @@
 # Standchef
 
-**Die App für Schiessvereine und Schiessanlagen in der Schweiz.** Punkteerfassung, Zielscheiben zum Drucken, Anlässe, Reservationen, Mitgliederbeiträge, Dateiablage, Chat und Munitionsverkauf, Bundesübungen, Standbetrieb, Vereinswaffen, Helfereinsätze, Kurse, Jahresmeisterschaft und Live-Rangliste, Vereinsverwaltung mit Mandanten (Tenants) und Rollen. Modular aufgebaut, mobile-first, ohne Verbandsbindung.
+**Die App für Schiessvereine und Schiessanlagen in der Schweiz.** Punkteerfassung, Zielscheiben zum Drucken, Anlässe, Reservationen, Mitgliederbeiträge, Dateiablage, Chat und Munitionsverkauf, Bundesübungen, Standbetrieb, Vereinswaffen, Helfereinsätze, Kurse, Jahresmeisterschaft und Live-Rangliste, Vereinsverwaltung mit Mandanten (Tenants) und Rollen, optional mit Claude als Assistent. In Deutsch, Französisch, Italienisch und Englisch. Modular aufgebaut, mobile-first, ohne Verbandsbindung.
 
 > Der *Standchef* führt den Betrieb am Schiessstand: einteilen, organisieren, Resultate führen, abrechnen. Genau das macht die App für den Verein. Domain: standchef.ch
 
@@ -269,11 +269,20 @@ Registry in `src/lib/modules.ts`. Jedes Modul ist pro Tenant ein-/ausschaltbar (
 - **Feldschiessen-Auszeichnungen** (`/federal/awards`): Limiten pro Programm und Jahr (`AwardLimit`, «Limiten gemäss Ausschreibung eintragen»), Zuordnung nach Jahrgang, Druckliste und CSV. **Vereinswaffen**: eigener Sperrgrund, Einstellungen unter `/admin/weapons/settings` (Meldefrist Minderjährige, Wartungsintervall). **Arbeitsstunden pro rata** nach Eintritt/Austritt (Schalter in den Einstellungen). SAT-Export mit getrennten Spalten Nachname/Vorname.
 - **Finanzen**: Storno- und Rückerstattungsdatum als Felder (`cancelledAt`, `refundedAt`) für die Buchhaltung, Barverkäufe der Schützenstube als Tagesbuchung (Konten `cashAccount` 1000 / `kioskAccount` 3600, abschaltbar mit `kioskCash=0`), Tab «Einzelrechnungen» (`/admin/billing/invoices`), Haushaltsrechnungen über `FeeInvoiceMember`, Partner-Rechnungen unter «Zahlungen» des Gastvereins, natürliche Sortierung der Mitgliedernummern.
 
+**Englisch, Claude und Übersetzungen (Welle E)**
+- **Englisch** als vierte Sprache (`Locale` = `de|fr|it|en`, Formate über `en-CH`): Wörterbücher, Hilfe/FAQ, Mails, QR-Zahlteil, Programme und Verbandsmitteilungen. Auswählbar im Profil (**Mehr → Benachrichtigungen & Sprache**), auf den Anmeldeseiten und als Vereinssprache unter `/admin`. Admin-, Trainer-, Verbands- und Super-Admin-Seiten sind in FR/IT/EN übersetzt (`src/lib/i18n/extra/admin1*`, `admin2*`).
+- **Übersetzungen anpassen** (`/super/translations`, Super-Admin): jeden Text in jeder Sprache überschreiben (`TranslationOverride`, Scope `global`), Suche, Filter «fehlt/gleich wie Deutsch», Platzhalterprüfung, JSON-Export/-Import, Vorschläge mit Claude (Plattformschlüssel) mit Vorschau vor dem Speichern. Overrides gelten sofort für Server und Browser (`src/lib/i18n/overrides*.ts`).
+- **Claude** (Modul `ai` «KI-Assistent», standardmässig aus; Kern in `src/lib/ai`, SDK `@anthropic-ai/sdk`, Modell `claude-opus-5-5` mit serverseitigem Fallback):
+  - **Plattform** (`/super/ai`): Schalter, «Vereine dürfen Claude nutzen», Plattformschlüssel (für Übersetzungen und den Support-Assistenten `/super/support`), Modell, Monatsbudget, Verbrauch.
+  - **Verein** (`/admin/ai`, Recht `ai.manage`): Datenschutzhinweis mit Zustimmung, **eigener API-Schlüssel des Vereins** (verschlüsselt gespeichert, nur die letzten 4 Zeichen sichtbar, Test ohne Tokenverbrauch), Funktionen mit Mindestrolle, Zugang ALL/STAFF, Monatslimite in Tokens oder CHF, Verbrauch nach Funktion und Rolle.
+  - **Funktionen**: Hilfe-Assistent auf `/help` und als schwebender Knopf «Fragen?» (`POST /api/ai/help`, Streaming), Übersetzung von Anlässen, Mitteilungen und Standordnung mit Prüfung vor dem Veröffentlichen (`ContentTranslation`), Schreibhilfe in den Anlass-/Mitteilungsformularen, «Auswertung mit Claude» auf `/scores/stats`, Jahresbericht `/admin/reports` (nur aggregierte Zahlen), Spaltenzuordnung beim Resultat- und Mitglieder-Import (maskierte Beispielzeilen).
+  - **Kosten** trägt jeder Verein über sein eigenes Anthropic-Konto; Standchef zeigt den Verbrauch (`AiUsage`, ohne Inhalt) und CHF-Schätzungen. Inhalte aus dem Verein gehen immer als markierte Daten an Claude, nie als Anweisung; AHV-Nummern, Passwörter, Bankdaten und Schlüssel werden nie gesendet.
+
 **Betrieb & Nachvollziehbarkeit**
 - **Protokoll** (Audit-Log) für Rollenwechsel, Löschungen, Importe, Exporte und Einstellungen: pro Verein unter `/admin/audit` (mit CSV und Vereinsarchiv als ZIP für Inhaber), für Super-Admins über alle Vereine unter `/super/audit`.
 - **Vereine löschen** mit 30 Tagen Frist und «Wiederherstellen»; danach entfernt ein täglicher Job Daten und Dateien endgültig.
 - **System** (`/super/system`): SMTP-Status, Mail-Warteschlange, fehlgeschlagene Mails erneut senden, Testmail, Job-Übersicht mit «Jetzt ausführen».
-- **Hintergrund-Jobs** (`src/lib/jobs`): Mailversand (30 s), Aufräumen (stündlich), Erinnerungen (stündlich: Schichten, Vereinswaffen, Bundesübungen, Reservationen), Vereinslöschung und Totale nachtragen (täglich). Jeder Job ist über eine DB-Sperre gegen Doppelausführung geschützt; ausgelegt auf eine PM2-Instanz.
+- **Hintergrund-Jobs** (`src/lib/jobs`): Mailversand (30 s), Aufräumen (stündlich), Erinnerungen (stündlich: Schichten, Vereinswaffen, Bundesübungen, Reservationen), Vereinslöschung, Totale nachtragen und abgelaufene KI-Zwischenspeicher entfernen (täglich). Jeder Job ist über eine DB-Sperre gegen Doppelausführung geschützt; ausgelegt auf eine PM2-Instanz.
 - **Healthcheck** `GET /api/health` (`{"ok":true}` / HTTP 503) für Deploy und Monitoring; `scripts/deploy.sh` sichert die Datenbank vor jeder Migration.
 
 ### Offline-Betrieb & App-Installation (PWA)

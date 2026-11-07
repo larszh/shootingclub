@@ -3,18 +3,21 @@ import Link from "next/link";
 import { AlertTriangle, ChevronRight, Download, FileUp, Wallet } from "lucide-react";
 import { requirePermission } from "@/lib/tenant";
 import { Alert, Card, EmptyState, LinkButton, LinkTabs, PageHeader, SectionTitle, StatCard } from "@/components/ui";
-import { anyPaymentModule, listOpenItems, PAYMENT_SOURCE_LABEL, type PaymentSource } from "@/modules/billing/overview";
+import { anyPaymentModule, listOpenItems, type PaymentSource } from "@/modules/billing/overview";
 import { nowDate } from "@/modules/billing/dates";
 import { PaymentRow, SourceIcon, formatTotals } from "@/modules/billing/ui/payment-rows";
-import { cn, plural } from "@/lib/utils";
+import { cn } from "@/lib/utils";
+import { getRequestLocale, getT } from "@/lib/i18n";
 
-export const metadata: Metadata = { title: "Offene Posten" };
+export async function generateMetadata(): Promise<Metadata> {
+  return { title: getT(await getRequestLocale())("adm1.home.payments") };
+}
 
 const SOURCE_ADMIN: Record<PaymentSource, { href: string; label: string }> = {
-  FEE: { href: "/admin/billing", label: "Beiträge verwalten" },
-  BOOKING: { href: "/admin/bookings", label: "Reservationen verwalten" },
-  ONLINE: { href: "/admin/bookings/payments", label: "Zahlungen" },
-  AMMO: { href: "/admin/ammo", label: "Munition verwalten" },
+  FEE: { href: "/admin/billing", label: "adm1.pay.manageFees" },
+  BOOKING: { href: "/admin/bookings", label: "adm1.home.bookings" },
+  ONLINE: { href: "/admin/bookings/payments", label: "adm1.pay.payments" },
+  AMMO: { href: "/admin/ammo", label: "adm1.home.ammo" },
 };
 
 const SOURCE_PARAM = ["all", "FEE", "BOOKING", "AMMO"] as const;
@@ -31,16 +34,19 @@ function query(source: SourceParam, overdue: boolean) {
 export default async function AdminPaymentsPage({ searchParams }: { searchParams: Promise<{ source?: string; overdue?: string }> }) {
   const ctx = await requirePermission("tenant.manage");
   const sp = await searchParams;
+  const locale = await getRequestLocale();
+  const t = getT(locale);
+  const invoices = (n: number) => t(n === 1 ? "money.payments.invoices.one" : "money.payments.invoices.other", { n });
 
   if (!anyPaymentModule(ctx)) {
     return (
       <div>
-        <PageHeader title="Offene Posten" subtitle={ctx.tenant.name} back={{ href: "/admin", label: "Einstellungen" }} />
+        <PageHeader title={t("adm1.home.payments")} subtitle={ctx.tenant.name} back={{ href: "/admin", label: t("adm1.home.title") }} />
         <EmptyState
           icon={<Wallet className="h-5 w-5" />}
-          title="Keine Rechnungsmodule aktiv"
-          text="Schalte Mitgliederbeiträge, Reservationen oder Munition ein, dann erscheinen die offenen Rechnungen hier."
-          action={<LinkButton href="/admin" variant="secondary" size="sm">Module ansehen</LinkButton>}
+          title={t("adm1.pay.noModules")}
+          text={t("adm1.pay.noModulesText")}
+          action={<LinkButton href="/admin" variant="secondary" size="sm">{t("adm1.pay.viewModules")}</LinkButton>}
         />
       </div>
     );
@@ -55,9 +61,9 @@ export default async function AdminPaymentsPage({ searchParams }: { searchParams
   return (
     <div>
       <PageHeader
-        title="Offene Posten"
-        subtitle={`Alle unbezahlten Rechnungen von ${ctx.tenant.name}`}
-        back={{ href: "/admin", label: "Einstellungen" }}
+        title={t("adm1.home.payments")}
+        subtitle={t("adm1.pay.subtitle", { club: ctx.tenant.name })}
+        back={{ href: "/admin", label: t("adm1.home.title") }}
         action={
           <LinkButton href={`/admin/payments/export${query(source, overdueOnly)}`} variant="secondary" size="sm" prefetch={false}>
             <Download className="h-4 w-4" /> CSV
@@ -67,39 +73,39 @@ export default async function AdminPaymentsPage({ searchParams }: { searchParams
 
       <div className="stagger grid grid-cols-2 gap-2.5">
         <StatCard
-          label="Total offen"
+          label={t("adm1.pay.totalOpen")}
           value={<span className="block text-xl break-words">{formatTotals(data.totals)}</span>}
-          hint={plural(data.items.length, "Rechnung", "Rechnungen")}
+          hint={invoices(data.items.length)}
           tone={data.items.length ? "accent" : "neutral"}
           href={`/admin/payments${query("all", false)}`}
         />
         <StatCard
-          label="Davon überfällig"
+          label={t("adm1.pay.ofWhichOverdue")}
           value={<span className="block text-xl break-words">{formatTotals(data.overdueTotals)}</span>}
-          hint={plural(data.overdueCount, "Rechnung", "Rechnungen")}
+          hint={invoices(data.overdueCount)}
           tone={data.overdueCount ? "warn" : "neutral"}
           href={`/admin/payments${query(source, true)}`}
         />
       </div>
 
-      <SectionTitle>Nach Bereich</SectionTitle>
+      <SectionTitle>{t("adm1.pay.bySource")}</SectionTitle>
       <Card className="animate-rise divide-y divide-line overflow-hidden">
         {data.bySource.map((b) => (
           <div key={b.source} className="flex min-h-14 items-center gap-3 px-4 py-3">
             <SourceIcon source={b.source} tone={b.overdue ? "danger" : "neutral"} />
             <div className="min-w-0 flex-1">
               <Link href={`/admin/payments${query(b.source as SourceParam, overdueOnly)}`} className="font-medium hover:underline">
-                {PAYMENT_SOURCE_LABEL[b.source]}
+                {t(`money.source.${b.source}`)}
               </Link>
               <div className="text-xs text-ink-3">
-                {plural(b.count, "offene Rechnung", "offene Rechnungen")}
-                {b.overdue ? <span className="font-medium text-danger"> · {b.overdue} überfällig</span> : null}
+                {t(b.count === 1 ? "adm1.pay.openInvoices.one" : "adm1.pay.openInvoices.other", { n: b.count })}
+                {b.overdue ? <span className="font-medium text-danger"> · {t("adm1.bill.overdueN", { n: b.overdue })}</span> : null}
               </div>
             </div>
             <div className="shrink-0 text-right">
               <div className="font-semibold tabular-nums">{formatTotals(b.totals)}</div>
               <Link href={SOURCE_ADMIN[b.source].href} className="inline-flex min-h-11 items-center gap-0.5 text-xs text-ink-3 hover:text-ink">
-                {SOURCE_ADMIN[b.source].label} <ChevronRight className="h-3.5 w-3.5" aria-hidden />
+                {t(SOURCE_ADMIN[b.source].label)} <ChevronRight className="h-3.5 w-3.5" aria-hidden />
               </Link>
             </div>
           </div>
@@ -111,24 +117,24 @@ export default async function AdminPaymentsPage({ searchParams }: { searchParams
           <Card className="flex items-center gap-3 p-4 transition-colors hover:border-ink/30">
             <FileUp className="h-5 w-5 text-ink-2" aria-hidden />
             <div className="min-w-0 flex-1">
-              <div className="font-medium">Bankauszug importieren</div>
-              <div className="text-xs text-ink-3">camt.053/054 hochladen, Zahlungen werden automatisch zugeordnet.</div>
+              <div className="font-medium">{t("adm1.pay.importTitle")}</div>
+              <div className="text-xs text-ink-3">{t("adm1.pay.importText")}</div>
             </div>
             <ChevronRight className="h-4 w-4 text-ink-3" aria-hidden />
           </Card>
         </Link>
       ) : null}
 
-      <SectionTitle>Rechnungen</SectionTitle>
+      <SectionTitle>{t("money.billing.invoices")}</SectionTitle>
       <LinkTabs
-        label="Nach Bereich filtern"
+        label={t("adm1.pay.filterSource")}
         active={source}
         items={[
-          { value: "all", href: `/admin/payments${query("all", overdueOnly)}`, label: "Alle", count: data.items.filter((i) => !overdueOnly || i.overdue).length },
+          { value: "all", href: `/admin/payments${query("all", overdueOnly)}`, label: t("adm1.common.all"), count: data.items.filter((i) => !overdueOnly || i.overdue).length },
           ...data.bySource.map((b) => ({
             value: b.source,
             href: `/admin/payments${query(b.source as SourceParam, overdueOnly)}`,
-            label: PAYMENT_SOURCE_LABEL[b.source],
+            label: t(`money.source.${b.source}`),
             count: overdueOnly ? b.overdue : b.count,
           })),
         ]}
@@ -142,15 +148,15 @@ export default async function AdminPaymentsPage({ searchParams }: { searchParams
             overdueOnly ? "border-danger bg-danger text-white" : "border-line bg-surface text-ink-2 hover:bg-surface-2",
           )}
         >
-          <AlertTriangle className="h-4 w-4" aria-hidden /> Nur überfällige
+          <AlertTriangle className="h-4 w-4" aria-hidden /> {t("adm1.pay.overdueOnly")}
         </Link>
       </div>
 
       {data.overdueCount > 0 && !overdueOnly ? (
         <div className="mt-3">
           <Alert tone="warn">
-            {plural(data.overdueCount, "Rechnung ist", "Rechnungen sind")} überfällig. Mahnungen für Beiträge versendest du unter{" "}
-            <Link href="/admin/billing" className="font-semibold underline underline-offset-2">Mitgliederbeiträge</Link>.
+            {t(data.overdueCount === 1 ? "adm1.pay.overdueAlert.one" : "adm1.pay.overdueAlert.other", { n: data.overdueCount })}{" "}
+            <Link href="/admin/billing" className="font-semibold underline underline-offset-2">{t("adm1.module.billing.name")}</Link>.
           </Alert>
         </div>
       ) : null}
@@ -158,15 +164,15 @@ export default async function AdminPaymentsPage({ searchParams }: { searchParams
       {visible.length ? (
         <Card className="animate-rise mt-3 divide-y divide-line overflow-hidden">
           {visible.map((i) => (
-            <PaymentRow key={i.key} item={i} showMember />
+            <PaymentRow key={i.key} item={i} showMember locale={locale} />
           ))}
         </Card>
       ) : (
         <EmptyState
           className="mt-3"
           icon={<Wallet className="h-5 w-5" />}
-          title={overdueOnly ? "Nichts überfällig" : "Keine offenen Rechnungen"}
-          text={overdueOnly ? "Alle offenen Rechnungen sind noch innerhalb der Zahlungsfrist." : "Alle Rechnungen in diesem Bereich sind bezahlt."}
+          title={t(overdueOnly ? "adm1.pay.emptyOverdue" : "adm1.pay.empty")}
+          text={t(overdueOnly ? "adm1.pay.emptyOverdueText" : "adm1.pay.emptyText")}
         />
       )}
     </div>

@@ -55,8 +55,11 @@ function clippedRange(start: Date, end: Date, dayStart: Date, dayEnd: Date) {
   return formatTimeRange(s, e);
 }
 
-/** Wochenraster: Zeilen = Ressourcen, Spalten = Tage (Mo–So). */
-export function buildWeek(monday: string, resources: Array<{ id: string; name: string }>, bookings: CalendarBooking[], blocks: CalendarBlock[]) {
+/**
+ * Wochenraster: Zeilen = Ressourcen, Spalten = Tage (Mo–So). `displayName` bereitet den
+ * gespeicherten Namen für die Anzeige auf (z.B. Platzhalter «Gelöschtes Mitglied» / «Gast» übersetzen).
+ */
+export function buildWeek(monday: string, resources: Array<{ id: string; name: string }>, bookings: CalendarBooking[], blocks: CalendarBlock[], displayName: (name: string) => string = (n) => n) {
   const today = todayZurich();
   const days: CalendarDay[] = Array.from({ length: 7 }, (_, i) => {
     const date = addDays(monday, i);
@@ -71,7 +74,7 @@ export function buildWeek(monday: string, resources: Array<{ id: string; name: s
       const items: CalendarCellItem[] = [];
       for (const b of bookings) {
         if (b.resourceId !== r.id || !overlaps(b.startsAt, b.endsAt, start, end)) continue;
-        items.push({ type: "booking", id: b.id, time: clippedRange(b.startsAt, b.endsAt, start, end), name: b.user?.name ?? "Gast", status: b.status, unpaid: b.totalCents > 0 && !["PAID", "NOT_REQUIRED", "REFUNDED"].includes(b.paymentStatus), user: b.user, note: b.note, persons: b.persons ?? 1, isFlatRate: !!b.isFlatRate, partner: b.partner ?? null, series: !!b.seriesId, sort: b.startsAt.getTime() });
+        items.push({ type: "booking", id: b.id, time: clippedRange(b.startsAt, b.endsAt, start, end), name: displayName(b.user?.name ?? "Gast"), status: b.status, unpaid: b.totalCents > 0 && !["PAID", "NOT_REQUIRED", "REFUNDED"].includes(b.paymentStatus), user: b.user, note: b.note, persons: b.persons ?? 1, isFlatRate: !!b.isFlatRate, partner: b.partner ?? null, series: !!b.seriesId, sort: b.startsAt.getTime() });
       }
       for (const bl of blocks) {
         if ((bl.resourceId && bl.resourceId !== r.id) || !overlaps(bl.startsAt, bl.endsAt, start, end)) continue;

@@ -131,6 +131,14 @@ export async function settlePayment(paymentId: string, reported: { amountCents?:
 
   if (!result.settled) return "ALREADY_PAID";
   if (result.lateBooking) console.warn(`Zahlung ${p.id} für stornierte Buchung ${p.booking?.id} eingegangen.`);
+  // Bestätigung an das Mitglied (nur beim ersten Verbuchen, siehe bedingtes Update oben).
+  // Dynamischer Import: payment-flow importiert dieses Modul selbst.
+  if (p.booking && !result.lateBooking) {
+    const bookingId = p.booking.id;
+    void import("@/modules/bookings/payment-flow")
+      .then((m) => m.notifyBookingPaid(bookingId))
+      .catch((e) => console.error("Zahlungsbestätigung Reservation fehlgeschlagen:", (e as Error).message));
+  }
 
   if (p.feeInvoice && result.fee) {
     const inv = p.feeInvoice;

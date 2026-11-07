@@ -2,12 +2,14 @@ import Link from "next/link";
 import { Button, Input } from "@/components/ui";
 import { cn } from "@/lib/utils";
 import type { PeriodPreset } from "@/modules/kiosk/logic";
+import { getRequestLocale, getT } from "@/lib/i18n";
 
 /**
  * Zeitraum wählen: Vorschläge als Pillen und eigener Zeitraum (GET-Formular, funktioniert ohne JS).
  * `extra` sind weitere Suchparameter, die erhalten bleiben (z.B. Filter der Einträge).
  */
-export function PeriodPicker({ basePath, presets, current, extra = {} }: { basePath: string; presets: PeriodPreset[]; current: PeriodPreset; extra?: Record<string, string> }) {
+export async function PeriodPicker({ basePath, presets, current, extra = {} }: { basePath: string; presets: PeriodPreset[]; current: PeriodPreset; extra?: Record<string, string> }) {
+  const t = getT(await getRequestLocale());
   const href = (p: PeriodPreset) => `${basePath}?${new URLSearchParams({ ...extra, from: p.from, to: p.to }).toString()}`;
   return (
     <div className="mb-4 space-y-3">
@@ -25,14 +27,14 @@ export function PeriodPicker({ basePath, presets, current, extra = {} }: { baseP
       <form method="get" action={basePath} className="flex flex-wrap items-end gap-2">
         {Object.entries(extra).map(([k, v]) => <input key={k} type="hidden" name={k} value={v} />)}
         <label className="min-w-36 flex-1">
-          <span className="mb-1 block text-xs font-medium text-ink-3">Von</span>
+          <span className="mb-1 block text-xs font-medium text-ink-3">{t("adm1.acc.from")}</span>
           <Input type="date" name="from" defaultValue={current.from} required />
         </label>
         <label className="min-w-36 flex-1">
-          <span className="mb-1 block text-xs font-medium text-ink-3">Bis</span>
+          <span className="mb-1 block text-xs font-medium text-ink-3">{t("adm1.acc.to")}</span>
           <Input type="date" name="to" defaultValue={current.to} required />
         </label>
-        <Button type="submit" variant="secondary">Anzeigen</Button>
+        <Button type="submit" variant="secondary">{t("adm1.acc.show")}</Button>
       </form>
     </div>
   );

@@ -22,6 +22,7 @@ export function LanguageCard({ locale }: { locale: Locale }) {
     <Card className="animate-rise p-4 space-y-3">
       <Segmented<Locale>
         label={t("shell.notifications.language")}
+        className="max-[400px]:grid-cols-2!"
         value={value}
         onChange={(v) => {
           const prev = value;

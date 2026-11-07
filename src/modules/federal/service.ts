@@ -2,9 +2,12 @@ import "server-only";
 import { db } from "@/lib/db";
 import { audit } from "@/lib/audit";
 import { notify, tenantUserIdsWithRole } from "@/lib/notify";
-import { addDays, formatDateZurich, zurichParts, zurichToUtc } from "@/lib/time";
+import { addDays, zurichParts, zurichToUtc } from "@/lib/time";
+import { getT, INTL_LOCALE } from "@/lib/i18n/core";
+import { getTenantLocale } from "@/lib/i18n";
+import { dayKeyLabel } from "@/lib/i18n/extra/admin2/msg";
 import { listShootingDaysFromVisits } from "@/modules/range/queries";
-import { DEADLINE_FIELDS, dbDateToDay, dueDeadlineReminders, formatDay, mergeShootingDays, swissDay, type DeadlineKey, type ShootingDay } from "./types";
+import { DEADLINE_FIELDS, dbDateToDay, dueDeadlineReminders, mergeShootingDays, swissDay, type DeadlineKey, type ShootingDay } from "./types";
 
 // ---------------------------------------------------------------------------
 // Schiesstage (Vertrag für andere Module)
@@ -94,14 +97,17 @@ export async function runFederalReminders(now: Date = new Date()): Promise<{ dea
           if (await alreadySent(tenantId, key)) continue;
           const admins = await tenantUserIdsWithRole(tenantId, ["OWNER", "ADMIN"]);
           if (admins.length) {
-            const when = d.daysLeft === 0 ? "heute" : d.daysLeft === 1 ? "morgen" : `in ${d.daysLeft} Tagen`;
+            const locale = await getTenantLocale(tenantId);
+            const t = getT(locale);
+            const when = d.daysLeft === 0 ? t("adm2.federal.rem.today") : d.daysLeft === 1 ? t("adm2.federal.rem.tomorrow") : t("adm2.federal.rem.inDays", { n: d.daysLeft });
+            const vars = { label: t(`adm2.federal.dl.${d.key}`), year: fy.year, date: dayKeyLabel(d.day, locale), when };
             await notify({
               tenantId,
               userIds: admins,
               topic: "reminders",
-              title: `Bundesübungen: Frist ${when}`,
-              body: `${d.label} ${fy.year}: ${formatDay(d.day)} (${when}). Bitte Stand der Erfassung prüfen.`,
-              emailBody: `${d.label} ${fy.year}: ${formatDay(d.day)} (${when}).\n\nBitte prüfen, ob alles erfasst und gemeldet ist. Die Fristen stammen aus den Einstellungen des Vereins – bitte mit den aktuellen Vorgaben abgleichen.`,
+              title: t("adm2.federal.rem.title", { when }),
+              body: t("adm2.federal.rem.body", vars),
+              emailBody: t("adm2.federal.rem.email", vars),
               url: `/federal?year=${fy.year}`,
               tag: `federal-deadline:${fy.id}:${d.key}`,
               dedupeKey: key,
@@ -131,14 +137,17 @@ export async function runFederalReminders(now: Date = new Date()): Promise<{ dea
             if (await alreadySent(tenantId, key)) continue;
             const userIds = ev.rsvps.map((r) => r.userId).filter((id) => !passedSet.has(id));
             if (userIds.length) {
-              const time = ev.allDay ? "" : `, ${formatDateZurich(ev.startsAt, { weekday: undefined, day: undefined, month: undefined, year: undefined, hour: "2-digit", minute: "2-digit" })} Uhr`;
+              const locale = await getTenantLocale(tenantId);
+              const t = getT(locale);
+              const clock = new Intl.DateTimeFormat(INTL_LOCALE[locale], { timeZone: "Europe/Zurich", hour: "2-digit", minute: "2-digit" }).format(ev.startsAt);
+              const time = ev.allDay ? "" : t("adm2.federal.rem.time", { time: clock });
               await notify({
                 tenantId,
                 userIds,
                 topic: "reminders",
-                title: "Morgen Obligatorisch",
-                body: `${ev.title}${time}${ev.location ? `, ${ev.location}` : ""}: Dienstbüchlein/Schiessbüchlein und Ausweis mitnehmen.`,
-                emailBody: `Morgen findet «${ev.title}» statt${time}${ev.location ? ` (${ev.location})` : ""}.\n\nBitte Dienstbüchlein bzw. Schiessbüchlein und einen amtlichen Ausweis mitnehmen. Details gemäss Angaben des Vereins.`,
+                title: t("adm2.federal.rem.eveTitle"),
+                body: t("adm2.federal.rem.eveBody", { title: ev.title, time, place: ev.location ? `, ${ev.location}` : "" }),
+                emailBody: t("adm2.federal.rem.eveEmail", { title: ev.title, time, place: ev.location ? ` (${ev.location})` : "" }),
                 url: `/events/${ev.id}`,
                 tag: `federal-eve:${ev.id}`,
                 dedupeKey: key,

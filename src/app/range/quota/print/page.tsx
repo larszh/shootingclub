@@ -5,22 +5,27 @@ import { requireRangeAdmin } from "@/modules/range/guard";
 import { quotaOverview } from "@/modules/range/queries";
 import { dayKeyToDbDate, daysForQuota } from "@/modules/range/logic";
 import { fmtDay, printedAtLabel } from "@/modules/range/format";
-import { CHECK_HINT } from "@/modules/range/types";
+import { getRequestLocale, getT } from "@/lib/i18n";
 import { PrintSheet, PrintTable, SignatureLine } from "@/modules/range/ui/print-sheet";
 
-export const metadata = { title: "Jahresbericht Schiesshalbtage" };
+export async function generateMetadata() {
+  const t = getT(await getRequestLocale());
+  return { title: t("adm2.range.quotaPrint.metaTitle") };
+}
 
 const tick = (b: boolean) => (b ? "✓" : "");
 
 /** Jahresbericht der Schiesshalbtage für die Gemeinde, eine Seite pro Kontingent. ?year=YYYY */
 export default async function QuotaPrintPage({ searchParams }: { searchParams: Promise<{ year?: string }> }) {
   const ctx = await requireRangeAdmin();
+  const locale = await getRequestLocale();
+  const t = getT(locale);
   const sp = await searchParams;
   const current = Number(todayZurich().slice(0, 4));
   const year = /^\d{4}$/.test(sp.year ?? "") && Number(sp.year) >= 2000 && Number(sp.year) <= current + 1 ? Number(sp.year) : current;
-  const { rows, days } = await quotaOverview(ctx.tenant.id, year);
+  const { rows, days } = await quotaOverview(ctx.tenant.id, year, t("adm2.common.wholeFacility"));
   return (
-    <PrintShell title={`Jahresbericht Schiesshalbtage ${year}`} subtitle={`${rows.length} ${rows.length === 1 ? "Seite" : "Seiten"} · A4`} action={<PrintButton />}>
+    <PrintShell title={t("adm2.range.quotaPrint.title", { year })} subtitle={`${t(rows.length === 1 ? "adm2.common.pages.one" : "adm2.common.pages.other", { n: rows.length })} · A4`} action={<PrintButton />}>
       {rows.map((r) => {
         const relevant = daysForQuota(days, r.resourceId);
         const details = new Map<string, { duty: Set<string>; visits: number; places: Set<string> }>();
@@ -29,28 +34,28 @@ export default async function QuotaPrintPage({ searchParams }: { searchParams: P
           const cur = details.get(key) ?? { duty: new Set<string>(), visits: 0, places: new Set<string>() };
           if (d.dutyName) cur.duty.add(d.dutyName);
           cur.visits += d._count.visits;
-          cur.places.add(d.resource?.name ?? "Ganze Anlage");
+          cur.places.add(d.resource?.name ?? t("adm2.common.wholeFacility"));
           details.set(key, cur);
         }
         return (
           <PrintSheet
             key={r.key}
             tenantName={ctx.tenant.name}
-            title={`Jahresbericht Schiesshalbtage ${year}`}
+            title={t("adm2.range.quotaPrint.title", { year })}
             subtitle={r.resourceName}
-            footer={<>Erstellt mit Standchef am {printedAtLabel()} aus den abgeschlossenen Standbüchern. {CHECK_HINT}</>}
+            footer={<>{t("adm2.range.quotaPrint.footer", { date: printedAtLabel(locale) })} {t("adm2.common.checkHint")}</>}
           >
             <div className="mb-4 grid grid-cols-3 gap-3">
-              <div><div className="text-[8pt] uppercase text-neutral-500">Bewilligt</div><div className="text-xl font-semibold">{r.max ?? "–"}</div></div>
-              <div><div className="text-[8pt] uppercase text-neutral-500">Benutzt</div><div className="text-xl font-semibold">{r.used}</div></div>
-              <div><div className="text-[8pt] uppercase text-neutral-500">Verbleibend</div><div className="text-xl font-semibold">{r.max !== null ? r.max - r.used : "–"}</div></div>
+              <div><div className="text-[8pt] uppercase text-neutral-500">{t("adm2.range.quotaPrint.approved")}</div><div className="text-xl font-semibold">{r.max ?? "–"}</div></div>
+              <div><div className="text-[8pt] uppercase text-neutral-500">{t("adm2.range.quotaPrint.used")}</div><div className="text-xl font-semibold">{r.used}</div></div>
+              <div><div className="text-[8pt] uppercase text-neutral-500">{t("adm2.range.quotaPrint.remaining")}</div><div className="text-xl font-semibold">{r.max !== null ? r.max - r.used : "–"}</div></div>
             </div>
             <PrintTable
-              head={["Datum", "Vormittag", "Nachmittag", "Abend", "Anlage", "Standdienst", "Besuche"]}
+              head={[t("adm2.common.date"), t("shooting.log.flag.am"), t("shooting.log.flag.pm"), t("shooting.log.flag.evening"), t("adm2.range.quotaPrint.facility"), t("adm2.range.dayPrint.duty"), t("adm2.range.dayPrint.visits")]}
               rows={r.merged.map((d) => {
                 const det = details.get(d.dayKey);
                 return [
-                  fmtDay(dayKeyToDbDate(d.dayKey)),
+                  fmtDay(dayKeyToDbDate(d.dayKey), undefined, locale),
                   tick(d.usedAm), tick(d.usedPm), tick(d.usedEvening),
                   det ? [...det.places].join(", ") : "",
                   det ? [...det.duty].join(", ") : "",
@@ -58,14 +63,14 @@ export default async function QuotaPrintPage({ searchParams }: { searchParams: P
                 ];
               })}
             />
-            {r.merged.length === 0 ? <p className="mt-3 text-neutral-500">Keine Schiesshalbtage erfasst.</p> : null}
+            {r.merged.length === 0 ? <p className="mt-3 text-neutral-500">{t("adm2.range.quotaPrint.none")}</p> : null}
             <div className="mt-4 flex justify-end gap-6 text-[9pt]">
-              <span>Vormittage: <strong>{r.months.reduce((a, m) => a + m.am, 0)}</strong></span>
-              <span>Nachmittage: <strong>{r.months.reduce((a, m) => a + m.pm, 0)}</strong></span>
-              <span>Abende: <strong>{r.months.reduce((a, m) => a + m.evening, 0)}</strong></span>
-              <span>Total: <strong>{r.used}</strong></span>
+              <span>{t("adm2.range.quotaPrint.ams")} <strong>{r.months.reduce((a, m) => a + m.am, 0)}</strong></span>
+              <span>{t("adm2.range.quotaPrint.pms")} <strong>{r.months.reduce((a, m) => a + m.pm, 0)}</strong></span>
+              <span>{t("adm2.range.quotaPrint.evenings")} <strong>{r.months.reduce((a, m) => a + m.evening, 0)}</strong></span>
+              <span>{t("adm2.range.quotaPrint.total")} <strong>{r.used}</strong></span>
             </div>
-            <SignatureLine label="Unterschrift Verein" />
+            <SignatureLine label={t("adm2.range.quotaPrint.signature")} placeLabel={t("adm2.common.placeDate")} />
           </PrintSheet>
         );
       })}

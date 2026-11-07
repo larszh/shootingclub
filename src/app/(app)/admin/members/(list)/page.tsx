@@ -5,17 +5,22 @@ import { requirePermission } from "@/lib/tenant";
 import { db } from "@/lib/db";
 import { LinkButton, PageHeader } from "@/components/ui";
 import { cn } from "@/lib/utils";
+import { getRequestLocale, getT } from "@/lib/i18n";
 import { listMembers, memberFilterOptions } from "@/modules/members/queries";
 import { filtersToQuery, parseMemberFilters } from "@/modules/members/types";
 import { MembersNav } from "../nav";
 import { MemberFilterBar } from "./filters";
 import { MemberList } from "./member-list";
 
-export const metadata: Metadata = { title: "Mitglieder" };
+export async function generateMetadata(): Promise<Metadata> {
+  return { title: getT(await getRequestLocale())("adm1.members.title") };
+}
 
 export default async function MembersAdminPage({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
   const ctx = await requirePermission("members.view");
   const canManage = ctx.can("members.manage");
+  const locale = await getRequestLocale();
+  const t = getT(locale);
   const filters = parseMemberFilters(await searchParams);
   const [list, options, openInvites, householdCount] = await Promise.all([
     listMembers(ctx.tenant.id, filters),
@@ -30,14 +35,15 @@ export default async function MembersAdminPage({ searchParams }: { searchParams:
   return (
     <div>
       <PageHeader
-        title="Mitglieder"
-        subtitle={`${activeCount} ${activeCount === 1 ? "Mitglied" : "Mitglieder"} in ${ctx.tenant.name}`}
-        back={ctx.can("tenant.manage") ? { href: "/admin", label: "Einstellungen" } : { href: "/me", label: "Mehr" }}
-        action={canManage ? <LinkButton href="/admin/members/invitations" size="sm"><UserPlus className="h-4 w-4" /> Einladen</LinkButton> : undefined}
+        title={t("adm1.members.title")}
+        subtitle={t(activeCount === 1 ? "adm1.members.subtitle.one" : "adm1.members.subtitle.other", { n: activeCount, club: ctx.tenant.name })}
+        back={ctx.can("tenant.manage") ? { href: "/admin", label: t("adm1.home.title") } : { href: "/me", label: t("adm1.home.more") }}
+        action={canManage ? <LinkButton href="/admin/members/invitations" size="sm"><UserPlus className="h-4 w-4" /> {t("adm1.home.inviteTile")}</LinkButton> : undefined}
       />
       <MembersNav active="list" canApprove={ctx.can("members.approve")} tenantId={ctx.tenant.id} canManage={canManage} counts={{ invitations: openInvites, households: householdCount }} />
 
       <MemberFilterBar
+        locale={locale}
         filters={filters}
         categories={options.categories.map((c) => ({ id: c.id, name: c.name }))}
         households={options.households}
@@ -45,6 +51,7 @@ export default async function MembersAdminPage({ searchParams }: { searchParams:
       />
 
       <MemberList
+        locale={locale}
         key={query}
         rows={list.items}
         total={list.total}
@@ -54,10 +61,10 @@ export default async function MembersAdminPage({ searchParams }: { searchParams:
       />
 
       {list.pages > 1 ? (
-        <nav className="mt-4 flex items-center justify-between gap-3" aria-label="Seiten">
-          <PageLink href={pageHref(list.page - 1)} disabled={list.page <= 1} label="Vorherige Seite"><ChevronLeft className="h-4 w-4" /> Zurück</PageLink>
-          <span className="text-sm text-ink-3 tabular-nums">Seite {list.page} von {list.pages}</span>
-          <PageLink href={pageHref(list.page + 1)} disabled={list.page >= list.pages} label="Nächste Seite">Weiter <ChevronRight className="h-4 w-4" /></PageLink>
+        <nav className="mt-4 flex items-center justify-between gap-3" aria-label={t("adm1.pager.label")}>
+          <PageLink href={pageHref(list.page - 1)} disabled={list.page <= 1} label={t("adm1.pager.prevLabel")}><ChevronLeft className="h-4 w-4" /> {t("adm1.pager.prev")}</PageLink>
+          <span className="text-sm text-ink-3 tabular-nums">{t("adm1.pager.pageOf", { page: list.page, pages: list.pages })}</span>
+          <PageLink href={pageHref(list.page + 1)} disabled={list.page >= list.pages} label={t("adm1.pager.nextLabel")}>{t("adm1.pager.next")} <ChevronRight className="h-4 w-4" /></PageLink>
         </nav>
       ) : null}
     </div>

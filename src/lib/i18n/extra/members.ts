@@ -39,5 +39,18 @@ const it: Record<string, string> = {
   "members.left.noAccess": "La tua affiliazione a questa società è terminata. Rivolgiti al comitato.",
 };
 
-const dict: { de: Record<string, string>; fr: Record<string, string>; it: Record<string, string> } = { de, fr, it };
+/** English (Switzerland): neutral, British-leaning; “…” where German uses «…». */
+const en: Record<string, string> = {
+  "members.status.ACTIVE": "Active",
+  "members.status.PASSIVE": "Passive",
+  "members.status.HONORARY": "Honorary member",
+  "members.status.JUNIOR": "Junior shooter",
+  "members.status.SUPPORTER": "Supporter",
+  "members.status.LEFT": "Left",
+  "members.household.invoice": "{name} ({count} members)",
+  "members.household.payerNote": "This invoice covers the fees of all members of your household.",
+  "members.left.noAccess": "Your membership of this club has ended. Please contact the committee.",
+};
+
+const dict: { de: Record<string, string>; fr: Record<string, string>; it: Record<string, string>; en: Record<string, string> } = { de, fr, it, en };
 export default dict;

@@ -13,8 +13,8 @@ describe("Wörterbuch shooting", () => {
     expect(keys.filter((k) => !k.startsWith("shooting."))).toEqual([]);
   });
 
-  it("fr und it haben jeden deutschen Schlüssel (und keine zusätzlichen), alle Texte gefüllt", () => {
-    for (const other of [shooting.fr, shooting.it]) {
+  it("fr, it und en haben jeden deutschen Schlüssel (und keine zusätzlichen), alle Texte gefüllt", () => {
+    for (const other of [shooting.fr, shooting.it, shooting.en]) {
       expect(keys.filter((k) => !(k in other))).toEqual([]);
       expect(Object.keys(other).filter((k) => !(k in de))).toEqual([]);
       expect(Object.entries(other).filter(([, v]) => !v.trim()).map(([k]) => k)).toEqual([]);
@@ -26,7 +26,7 @@ describe("Wörterbuch shooting", () => {
     const mismatches: string[] = [];
     for (const k of keys) {
       const want = placeholders(de[k]!);
-      for (const [lang, d] of [["fr", shooting.fr], ["it", shooting.it]] as const) {
+      for (const [lang, d] of [["fr", shooting.fr], ["it", shooting.it], ["en", shooting.en]] as const) {
         if (JSON.stringify(placeholders(d[k] ?? "")) !== JSON.stringify(want)) mismatches.push(`${lang}:${k}`);
       }
     }
@@ -58,6 +58,8 @@ describe("Wörterbuch shooting", () => {
     expect(getT("de")("shooting.shifts.title")).toBe("Helfereinsätze");
     expect(getT("fr")("shooting.champ.myStanding")).toBe("Mon classement");
     expect(getT("it")("shooting.checkin.title")).toBe("Check-in");
+    expect(getT("en")("shooting.officialKind.OP")).toBe("Obligatory programme");
+    expect(getT("en")("shooting.officialKind.FS")).toBe("Field shooting");
     expect(getT("de")("shooting.entry.finish")).toBe("Durchgang abschliessen");
     expect(getT("fr")("shooting.shifts.staffing", { filled: 2, capacity: 4 })).toBe("2 sur 4");
   });
@@ -85,6 +87,6 @@ describe("Wörterbuch shooting", () => {
     expect(getT("fr")("shooting.incident.kind.NEAR_MISS")).toBe("Quasi-accident");
     expect(getT("it")("shooting.quota.remaining", { n: 4 })).toBe("4 rimanenti");
     // Kurzbuchstaben der Halbtage: genau drei, durch Leerzeichen getrennt
-    for (const d of [shooting.de, shooting.fr, shooting.it]) expect(d["shooting.log.flagLetters"]!.split(" ")).toHaveLength(3);
+    for (const d of [shooting.de, shooting.fr, shooting.it, shooting.en]) expect(d["shooting.log.flagLetters"]!.split(" ")).toHaveLength(3);
   });
 });

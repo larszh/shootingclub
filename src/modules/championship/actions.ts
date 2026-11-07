@@ -8,11 +8,13 @@ import { accessStatusWhere } from "@/lib/membership-access";
 import { audit } from "@/lib/audit";
 import { notify } from "@/lib/notify";
 import { fail, ok, type ActionResult } from "@/lib/action-result";
+import { getRequestLocale, getT, getTenantLocale, type TFunction } from "@/lib/i18n";
 import { requireChampionshipAdmin } from "./guard";
 import { dbFromDay, getChampionship, loadRanking } from "./queries";
 import { championshipSchema, parseCategories, type ChampionshipInput } from "./types";
 
 const idSchema = z.string().min(1).max(40);
+const tr = async () => getT(await getRequestLocale());
 
 function revalidate(id?: string) {
   revalidatePath("/championship");
@@ -24,7 +26,7 @@ const text = (fd: FormData, name: string) => {
   return v === "" ? null : v;
 };
 
-function parseForm(fd: FormData): { ok: true; data: ChampionshipInput } | { ok: false; result: ActionResult<never> } {
+function parseForm(fd: FormData, t: TFunction): { ok: true; data: ChampionshipInput } | { ok: false; result: ActionResult<never> } {
   let programs: unknown = [];
   try {
     programs = JSON.parse(String(fd.get("programs") ?? "[]"));
@@ -45,35 +47,37 @@ function parseForm(fd: FormData): { ok: true; data: ChampionshipInput } | { ok: 
   if (!parsed.success) {
     const issue = parsed.error.issues[0];
     const field = issue?.path[0] ? String(issue.path[0]) : "";
-    return { ok: false, result: fail(issue?.message ?? "Ungültige Eingabe", field ? { [field]: issue?.message ?? "" } : undefined) };
+    const m = t(issue?.message ?? "adm2.champ.msg.invalid");
+    return { ok: false, result: fail(m, field ? { [field]: m } : undefined) };
   }
   const d = parsed.data;
-  const cat = parseCategories(d.categoriesText);
+  const cat = parseCategories(d.categoriesText, t);
   if (cat.errors.length) return { ok: false, result: fail(cat.errors[0]!, { categoriesText: cat.errors.join(" ") }) };
   const ids = d.programs.map((p) => p.programId);
-  if (new Set(ids).size !== ids.length) return { ok: false, result: fail("Ein Programm ist doppelt gewählt.", { programs: "Ein Programm ist doppelt gewählt." }) };
+  if (new Set(ids).size !== ids.length) return { ok: false, result: fail(t("adm2.champ.msg.dupProgram"), { programs: t("adm2.champ.msg.dupProgram") }) };
   const startYear = Number(d.startsOn.slice(0, 4));
-  if (Math.abs(startYear - d.year) > 1) return { ok: false, result: fail("Zeitraum passt nicht zum Jahr.", { startsOn: "Zeitraum passt nicht zum Jahr." }) };
+  if (Math.abs(startYear - d.year) > 1) return { ok: false, result: fail(t("adm2.champ.msg.yearMismatch"), { startsOn: t("adm2.champ.msg.yearMismatch") }) };
   return { ok: true, data: d };
 }
 
 /** Anlegen (ohne id) oder Bearbeiten einer Meisterschaft samt Programmen. */
 export async function saveChampionshipAction(_prev: ActionResult<{ id: string }> | null, fd: FormData): Promise<ActionResult<{ id: string }>> {
+  const t = await tr();
   const ctx = await requireChampionshipAdmin();
   const tenantId = ctx.tenant.id;
   const rawId = fd.get("id") ? String(fd.get("id")) : null;
   const id = rawId && idSchema.safeParse(rawId).success ? rawId : null;
-  const p = parseForm(fd);
+  const p = parseForm(fd, t);
   if (!p.ok) return p.result;
   const d = p.data;
 
   // Nur Programme, die im Verein sichtbar sind (global oder eigene)
   const allowed = await db.program.findMany({ where: { id: { in: d.programs.map((x) => x.programId) }, OR: [{ tenantId: null }, { tenantId }] }, select: { id: true } });
-  if (allowed.length !== d.programs.length) return fail("Ein gewähltes Programm gibt es nicht (mehr).", { programs: "Programm nicht gefunden." });
+  if (allowed.length !== d.programs.length) return fail(t("adm2.champ.msg.programGone"), { programs: t("adm2.champ.msg.programNotFound") });
 
   const startsOn = dbFromDay(d.startsOn);
   const endsOn = dbFromDay(d.endsOn);
-  if (!startsOn || !endsOn) return fail("Ungültiges Datum.");
+  if (!startsOn || !endsOn) return fail(t("adm2.champ.msg.invalidDate"));
   const data = {
     name: d.name, year: d.year, startsOn, endsOn, bestOf: d.bestOf, officialOnly: d.officialOnly,
     categoriesText: d.categoriesText, rulesText: d.rulesText,
@@ -101,23 +105,24 @@ export async function saveChampionshipAction(_prev: ActionResult<{ id: string }>
       }
       return cid;
     });
-    if (!savedId) return fail("Meisterschaft nicht gefunden.");
+    if (!savedId) return fail(t("adm2.champ.msg.notFound"));
     await audit({ tenantId, actorId: ctx.user.id, actorName: ctx.user.name, action: id ? "championship.update" : "championship.create", entity: "Championship", entityId: savedId, detail: `${d.name} (${d.year}), ${d.programs.length} Programme` });
     revalidate(savedId);
-    return ok({ id: savedId }, id ? "Gespeichert." : "Meisterschaft angelegt.");
+    return ok({ id: savedId }, id ? t("adm2.common.saved") : t("adm2.champ.msg.created"));
   } catch (e) {
     console.error("Meisterschaft speichern:", e);
-    return fail("Das hat nicht geklappt. Bitte nochmals versuchen.");
+    return fail(t("adm2.common.failed"));
   }
 }
 
 /** Veröffentlichen bzw. zurückziehen. Beim Veröffentlichen erhalten die Rangierten eine Push-Mitteilung. */
 export async function setChampionshipPublishedAction(id: string, published: boolean): Promise<ActionResult> {
+  const t = await tr();
   const ctx = await requireChampionshipAdmin();
-  if (!idSchema.safeParse(id).success) return fail("Ungültige Meisterschaft.");
+  if (!idSchema.safeParse(id).success) return fail(t("adm2.champ.msg.invalidId"));
   const tenantId = ctx.tenant.id;
   const res = await db.championship.updateMany({ where: { id, tenantId }, data: { isPublished: !!published } });
-  if (res.count === 0) return fail("Meisterschaft nicht gefunden.");
+  if (res.count === 0) return fail(t("adm2.champ.msg.notFound"));
   const c = await getChampionship(tenantId, id);
   await audit({ tenantId, actorId: ctx.user.id, actorName: ctx.user.name, action: published ? "championship.publish" : "championship.unpublish", entity: "Championship", entityId: id, detail: c?.name });
   if (published && c) {
@@ -130,9 +135,10 @@ export async function setChampionshipPublishedAction(id: string, published: bool
         : [];
       const userIds = active.map((m) => m.userId);
       if (userIds.length) {
+        const tn = getT(await getTenantLocale(tenantId));
         await notify({
           tenantId, userIds, topic: "announcements", email: false,
-          title: `Rangliste ${c.name}`, body: "Die Rangliste ist veröffentlicht. Schau dir deinen Stand an.",
+          title: tn("adm2.champ.msg.notifyTitle", { name: c.name }), body: tn("adm2.champ.msg.notifyBody"),
           url: `/championship/${id}`, tag: `championship:${id}`,
         });
       }
@@ -141,15 +147,16 @@ export async function setChampionshipPublishedAction(id: string, published: bool
     }
   }
   revalidate(id);
-  return ok(undefined, published ? "Rangliste veröffentlicht." : "Rangliste zurückgezogen.");
+  return ok(undefined, published ? t("adm2.champ.msg.published") : t("adm2.champ.msg.unpublished"));
 }
 
 export async function deleteChampionshipAction(id: string): Promise<ActionResult> {
+  const t = await tr();
   const ctx = await requireChampionshipAdmin();
-  if (!idSchema.safeParse(id).success) return fail("Ungültige Meisterschaft.");
+  if (!idSchema.safeParse(id).success) return fail(t("adm2.champ.msg.invalidId"));
   const tenantId = ctx.tenant.id;
   const c = await db.championship.findFirst({ where: { id, tenantId }, select: { name: true, year: true } });
-  if (!c) return fail("Meisterschaft nicht gefunden.");
+  if (!c) return fail(t("adm2.champ.msg.notFound"));
   await db.championship.deleteMany({ where: { id, tenantId } });
   await audit({ tenantId, actorId: ctx.user.id, actorName: ctx.user.name, action: "championship.delete", entity: "Championship", entityId: id, detail: `${c.name} (${c.year})` });
   revalidate();
@@ -158,11 +165,12 @@ export async function deleteChampionshipAction(id: string): Promise<ActionResult
 
 /** Kopie fürs Folgejahr: gleiche Programme, Kategorien und Regeln, Zeitraum um ein Jahr verschoben, unveröffentlicht. */
 export async function copyChampionshipToNextYearAction(id: string): Promise<ActionResult<{ id: string }>> {
+  const t = await tr();
   const ctx = await requireChampionshipAdmin();
-  if (!idSchema.safeParse(id).success) return fail("Ungültige Meisterschaft.");
+  if (!idSchema.safeParse(id).success) return fail(t("adm2.champ.msg.invalidId"));
   const tenantId = ctx.tenant.id;
   const c = await getChampionship(tenantId, id);
-  if (!c) return fail("Meisterschaft nicht gefunden.");
+  if (!c) return fail(t("adm2.champ.msg.notFound"));
   const shift = (day: string) => {
     const [y, m, d] = day.split("-").map(Number);
     // 29. Februar → 28. Februar
@@ -180,5 +188,5 @@ export async function copyChampionshipToNextYearAction(id: string): Promise<Acti
   });
   await audit({ tenantId, actorId: ctx.user.id, actorName: ctx.user.name, action: "championship.create", entity: "Championship", entityId: created.id, detail: `Kopie von ${c.name} für ${year}` });
   revalidate(created.id);
-  return ok({ id: created.id }, `Meisterschaft ${year} angelegt.`);
+  return ok({ id: created.id }, t("adm2.champ.msg.copied", { year }));
 }

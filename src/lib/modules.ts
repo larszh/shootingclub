@@ -17,7 +17,8 @@ export type ModuleKey =
   | "shifts"
   | "courses"
   | "championship"
-  | "kiosk";
+  | "kiosk"
+  | "ai";
 
 export type ModuleDefinition = {
   key: ModuleKey;
@@ -147,6 +148,14 @@ export const MODULES: ModuleDefinition[] = [
     name: "Schützenstube",
     description: "Konsumationen in der Schützenstube aufschreiben und gesammelt mit QR-Rechnung verrechnen.",
     href: "/kiosk",
+    status: "ready",
+    defaultEnabled: false,
+  },
+  {
+    key: "ai",
+    name: "KI-Assistent",
+    description: "Hilfe-Chat, Übersetzungen, Schreibhilfe, Trainingstipps und Auswertungen mit Claude – mit eigenem API-Schlüssel des Vereins, ein- und ausschaltbar.",
+    href: "/ai",
     status: "ready",
     defaultEnabled: false,
   },

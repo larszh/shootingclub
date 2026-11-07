@@ -13,8 +13,8 @@ describe("Wörterbuch money", () => {
     expect(keys.filter((k) => !k.startsWith("money."))).toEqual([]);
   });
 
-  it("fr und it haben jeden deutschen Schlüssel (und keine zusätzlichen)", () => {
-    for (const other of [money.fr, money.it]) {
+  it("fr, it und en haben jeden deutschen Schlüssel (und keine zusätzlichen)", () => {
+    for (const other of [money.fr, money.it, money.en]) {
       expect(keys.filter((k) => !(k in other))).toEqual([]);
       expect(Object.keys(other).filter((k) => !(k in de))).toEqual([]);
       expect(Object.entries(other).filter(([, v]) => !v.trim()).map(([k]) => k)).toEqual([]);
@@ -25,7 +25,7 @@ describe("Wörterbuch money", () => {
     const mismatches: string[] = [];
     for (const k of keys) {
       const want = placeholders(de[k]!);
-      for (const [lang, d] of [["fr", money.fr], ["it", money.it]] as const) {
+      for (const [lang, d] of [["fr", money.fr], ["it", money.it], ["en", money.en]] as const) {
         if (JSON.stringify(placeholders(d[k] ?? "")) !== JSON.stringify(want)) mismatches.push(`${lang}:${k}`);
       }
     }
@@ -57,6 +57,7 @@ describe("Wörterbuch money", () => {
     expect(getT("de")("money.payments.title")).toBe("Zahlungen");
     expect(getT("fr")("money.payments.title")).toBe("Paiements");
     expect(getT("it")("money.payments.title")).toBe("Pagamenti");
+    expect(getT("en")("money.payments.title")).toBe("Payments");
     expect(getT("fr")("money.events.detail.seatsTaken.other", { n: 3, capacity: 10 })).toBe("3 places sur 10 occupées");
     expect(getT("fr")("money.events.detail.seatsTaken.one", { n: 1, capacity: 16 })).toBe("1 place sur 16 occupée");
     expect(getT("it")("money.events.detail.seatsTaken.one", { n: 1, capacity: 16 })).toBe("1 posto su 16 occupato");

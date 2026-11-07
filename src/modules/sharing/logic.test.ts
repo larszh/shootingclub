@@ -166,3 +166,18 @@ describe("Abzeichen", () => {
     expect(partnerBadge({ viaTenantId: null }, {})).toBeNull();
   });
 });
+
+describe("Texte in anderen Sprachen", () => {
+  it("nimmt einen Übersetzer entgegen, Deutsch bleibt Standard", async () => {
+    const { getT } = await import("@/lib/i18n/core");
+    const { checkGuestShare: check, guestMayCancel, ownerBadge: owner, partnerBadge: partner, partnerRateLabel } = await import("./logic");
+    const en = getT("en");
+    expect(partnerRateLabel(120)).toBe("Partnertarif 120 %");
+    expect(partnerRateLabel(120, en)).toBe("Partner rate 120 %");
+    expect(check({ guestRole: null, guestTenantId: "g", resourceId: "r", resource: null, owner: null, share: null }, getT("fr"))).toEqual({ ok: false, error: "Cette installation n’est pas partagée avec ta société." });
+    const now = new Date("2026-06-01T08:00:00Z");
+    expect(guestMayCancel({ status: "CONFIRMED", startsAt: new Date("2026-06-01T10:00:00Z") }, 24, now, getT("it"))).toEqual({ ok: false, error: "Annullamento possibile solo fino a 24 ore prima dell’inizio." });
+    expect(owner({ tenantId: "o", tenant: { name: "SV Ost" } }, "g", en)).toBe("Facility of SV Ost");
+    expect(partner({ viaTenantId: "x" }, {}, en)).toBe("Partner: Partner club");
+  });
+});

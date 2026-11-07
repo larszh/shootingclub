@@ -4,7 +4,7 @@ import { useMemo, useState } from "react";
 import { LayoutGrid, Search, Square, Star, X } from "lucide-react";
 import type { TargetView } from "@/modules/targets/queries";
 import { TARGET_CATEGORIES, subjectCategory, type TargetCategory } from "@/modules/targets/types";
-import { useT } from "@/components/locale";
+import { useLocale, useT } from "@/components/locale";
 import { targetCategoryText, targetSubjectText } from "@/modules/scores/ui/labels";
 import { Input, Select } from "@/components/ui";
 import { TargetCard } from "./target-card";
@@ -26,6 +26,7 @@ function categoryOf(t: TargetView): TargetCategory {
 
 export function TargetGallery({ targets, initial }: { targets: TargetView[]; initial?: Partial<GalleryFilters> }) {
   const t = useT();
+  const locale = useLocale();
   const [cat, setCatState] = useState<TargetCategory | "all">(initial?.cat ?? "all");
   const [q, setQState] = useState(initial?.q ?? "");
   const [scope, setScopeState] = useState<Scope>(initial?.scope ?? "all");
@@ -123,7 +124,7 @@ export function TargetGallery({ targets, initial }: { targets: TargetView[]; ini
       </div>
 
       <div className={cn("stagger grid gap-3", large ? "grid-cols-2 md:grid-cols-2 md:gap-5" : "grid-cols-2 sm:grid-cols-3")}>
-        {list.map((x) => <TargetCard key={x.id} target={x} href={`/targets/${x.id}`} tr={t} />)}
+        {list.map((x) => <TargetCard key={x.id} target={x} href={`/targets/${x.id}`} tr={t} locale={locale} />)}
       </div>
       {list.length === 0 ? (
         <div className="text-center py-10">

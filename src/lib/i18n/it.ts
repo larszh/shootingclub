@@ -3,6 +3,7 @@ const it: Record<string, string> = {
   "locale.de": "Tedesco",
   "locale.fr": "Francese",
   "locale.it": "Italiano",
+  "locale.en": "Inglese",
 
   "invoice.title": "Fattura",
   "invoice.number": "N. {number}",

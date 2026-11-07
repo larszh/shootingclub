@@ -6,6 +6,7 @@ import { createMessage, messageSelect, toMessageDTO } from "@/modules/chat/servi
 import { clientIdSchema, messageBodySchema } from "@/modules/chat/types";
 import { deleteTenantFile, fileErrorMessage, FileServiceError, readUploadForm, saveTenantFile } from "@/modules/files/service";
 import { loadStorageSettings } from "@/lib/file-storage";
+import { getRequestLocale, getT, normalizeLocale } from "@/lib/i18n";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -16,12 +17,14 @@ export const runtime = "nodejs";
  * Idempotent: gleiche clientId → bestehende Nachricht, die Datei wird nicht nochmals gespeichert.
  */
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
-  if (!sameOrigin(req)) return json({ error: "Ungültige Herkunft" }, 403);
+  if (!sameOrigin(req)) return json({ error: getT(await getRequestLocale())("misc.chat.badOrigin") }, 403);
   const user = await getCurrentUser();
-  if (!user) return json({ error: "Nicht angemeldet" }, 401);
+  if (!user) return json({ error: getT(await getRequestLocale())("misc.chat.notSignedIn") }, 401);
+  const locale = normalizeLocale(user.locale);
+  const t = getT(locale);
   const { id } = await params;
   const access = await apiConversationAccess(user, id);
-  if (!access) return json({ error: "Diese Unterhaltung ist nicht mehr verfügbar." }, 404);
+  if (!access) return json({ error: t("misc.chat.conversationGone") }, 404);
 
   // Begrenzt lesen: bricht ab, sobald mehr als die erlaubte Dateigrösse ankommt
   // (auch ohne Content-Length, z.B. bei chunked Uploads).
@@ -30,19 +33,19 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   try {
     form = await readUploadForm(req, settings.maxFileMb);
   } catch (e) {
-    return json({ error: fileErrorMessage(e) }, e instanceof FileServiceError ? e.status : 400);
+    return json({ error: fileErrorMessage(e, locale) }, e instanceof FileServiceError ? e.status : 400);
   }
   const clientId = clientIdSchema.safeParse(String(form.get("clientId") ?? ""));
-  if (!clientId.success) return json({ error: "Ungültige Nachrichten-ID." }, 400);
+  if (!clientId.success) return json({ error: t("misc.chat.invalidClientId") }, 400);
   const body = messageBodySchema.safeParse(String(form.get("body") ?? ""));
-  if (!body.success) return json({ error: body.error.issues[0]?.message ?? "Ungültige Nachricht" }, 400);
+  if (!body.success) return json({ error: (locale === "de" ? body.error.issues[0]?.message : undefined) ?? t("misc.chat.invalidMessage") }, 400);
   const file = form.get("file");
-  if (!(file instanceof File) || file.size === 0) return json({ error: "Bitte eine Datei wählen." }, 400);
+  if (!(file instanceof File) || file.size === 0) return json({ error: t("misc.chat.chooseFile") }, 400);
 
   // Schon gesendet (z.B. Wiederholung nach Verbindungsabbruch)?
   const existing = await db.chatMessage.findUnique({ where: { clientId: clientId.data }, select: messageSelect });
   if (existing) {
-    if (existing.senderId !== user.id || existing.conversationId !== access.conversation.id) return json({ error: "Ungültige Nachrichten-ID." }, 409);
+    if (existing.senderId !== user.id || existing.conversationId !== access.conversation.id) return json({ error: t("misc.chat.invalidClientId") }, 409);
     return json({ message: toMessageDTO(existing) });
   }
 
@@ -51,14 +54,14 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     stored = await saveTenantFile({
       tenantId: access.conversation.tenantId,
       userId: user.id,
-      name: file.name || "Anhang",
+      name: file.name || t("misc.chat.attachment"),
       mimeType: file.type,
       data: Buffer.from(await file.arrayBuffer()),
       context: "CHAT",
     });
   } catch (e) {
     const status = typeof (e as { status?: unknown })?.status === "number" ? (e as { status: number }).status : 400;
-    return json({ error: fileErrorMessage(e) }, status);
+    return json({ error: fileErrorMessage(e, locale) }, status);
   }
 
   const res = await createMessage({ userId: user.id, access, clientId: clientId.data, body: body.data, fileId: stored.id });

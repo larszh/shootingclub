@@ -6,6 +6,7 @@ import { Badge, Card, LinkButton, PageHeader, SectionTitle } from "@/components/
 import { getTarget } from "@/modules/targets/queries";
 import { PRINT_LAYOUTS, subjectCategory, type TargetSubject } from "@/modules/targets/types";
 import { getRequestLocale, getT } from "@/lib/i18n";
+import { localizeTarget } from "@/modules/targets/target-i18n";
 import { targetCategoryText, targetSubjectText, tOr } from "@/modules/scores/ui/labels";
 import { allowedLayouts } from "@/modules/targets/print";
 import { renderTarget } from "@/modules/targets/svg";
@@ -22,16 +23,18 @@ export default async function TargetDetailPage({ params }: { params: Promise<{ i
   const { id } = await params;
   const t = await getTarget(ctx, id);
   if (!t) notFound();
-  const tr = getT(await getRequestLocale());
+  const locale = await getRequestLocale();
+  const tr = getT(locale);
+  const shown = localizeTarget(t, locale);
   const canManageTenant = ctx.can("tenant.targets.manage");
   const canEdit = t.scope === "mine" || (t.scope === "tenant" && !t.ownerUserId && canManageTenant) || (t.scope === "global" && ctx.user.isSuperAdmin);
   const editHref = t.scope === "global" ? `/super/targets/${t.id}/edit` : `/targets/${t.id}/edit`;
   const layouts = allowedLayouts(t.paperSizes, t.subject === "UPLOAD" && t.mimeType === "application/pdf");
-  const note = t.subject === "UPLOAD" ? null : renderTarget(t.subject as TargetSubject, t.paperSizes[0] ?? "A4", t.params).note;
+  const note = t.subject === "UPLOAD" ? null : renderTarget(t.subject as TargetSubject, t.paperSizes[0] ?? "A4", t.params, locale).note;
 
   return (
     <div>
-      <PageHeader title={t.name} subtitle={t.description ?? undefined} back={{ href: "/targets", label: tr("shooting.targets.title") }} action={<TargetFavoriteButton targetId={t.id} favorite={t.favorite} />} />
+      <PageHeader title={shown.name} subtitle={shown.description ?? undefined} back={{ href: "/targets", label: tr("shooting.targets.title") }} action={<TargetFavoriteButton targetId={t.id} favorite={t.favorite} />} />
       <div className="animate-rise flex flex-wrap gap-1.5 mb-4">
         <Badge>{targetSubjectText(tr, t.subject)}</Badge>
         {t.subject !== "UPLOAD" ? <Badge tone="outline">{targetCategoryText(tr, subjectCategory(t.subject))}</Badge> : null}
@@ -43,7 +46,7 @@ export default async function TargetDetailPage({ params }: { params: Promise<{ i
       <div className="grid gap-4 md:grid-cols-[1fr_280px]">
         <Card className="animate-rise overflow-hidden bg-white">
           <div className="aspect-[210/297] max-h-[70vh] mx-auto">
-            <TargetPreview target={t} size={t.paperSizes[0]} className="h-full w-full" />
+            <TargetPreview target={t} size={t.paperSizes[0]} className="h-full w-full" locale={locale} />
           </div>
         </Card>
         <div className="space-y-4">

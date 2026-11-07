@@ -46,7 +46,7 @@ export async function collectPersonalData(userId: string) {
   const [
     user, memberships, participations, bookings, feeInvoices, ammoOrders, rsvps, messages, files, prefs, pushCount, sessionCount,
     rangeVisits, guestsHosted, rulesAcceptances, qualifications, courseParticipations, weaponLoans, shiftAssignments, workLogs, incidentsReported, rangeDuties,
-    kioskEntries, bookingSeries, associationRoles,
+    kioskEntries, bookingSeries, associationRoles, aiUsage, contentTranslations,
   ] = await Promise.all([
     db.user.findUnique({
       where: { id: userId },
@@ -176,6 +176,19 @@ export async function collectPersonalData(userId: string) {
       select: { role: true, createdAt: true, association: { select: { name: true, region: true, deletedAt: true } } },
       orderBy: { createdAt: "desc" },
     }),
+    // Welle E: Anfragen an Claude (nur Protokoll ohne Inhalt) und selbst bearbeitete Übersetzungen (nur Metadaten)
+    db.aiUsage.findMany({
+      where: { userId },
+      select: { scope: true, feature: true, model: true, inputTokens: true, outputTokens: true, cacheReadTokens: true, cacheWriteTokens: true, ok: true, errorCode: true, createdAt: true, tenant: { select: { name: true } } },
+      orderBy: { createdAt: "desc" },
+      take: 50_000,
+    }),
+    db.contentTranslation.findMany({
+      where: { updatedById: userId },
+      select: { entityType: true, entityId: true, field: true, locale: true, status: true, createdAt: true, updatedAt: true, tenant: { select: { name: true } } },
+      orderBy: { updatedAt: "desc" },
+      take: 50_000,
+    }),
   ]);
   if (!user) return null;
   const kioskInvoiceIds = [...new Set(kioskEntries.map((k) => k.billedInvoiceId).filter((id): id is string => !!id))];
@@ -258,6 +271,13 @@ export async function collectPersonalData(userId: string) {
     // Verbände sehen nur zusammengefasste Zahlen der Vereine; Namen nur, wenn ein Verein «Namen teilen»
     // eingeschaltet hat (berechnet beim Anzeigen, nichts davon wird beim Verband gespeichert).
     associationRoles: associationRoles.map((a) => ({ association: a.association.name, region: a.association.region, role: a.role, since: iso(a.createdAt), dissolved: !!a.association.deletedAt })),
+    // Claude: protokolliert werden nur Funktion, Zeitpunkt und Tokens, nie der Inhalt der Anfrage.
+    aiRequests: aiUsage.map((u) => ({
+      club: u.tenant?.name ?? null, platform: u.scope === "PLATFORM", feature: u.feature, model: u.model, at: iso(u.createdAt),
+      tokens: { input: u.inputTokens, output: u.outputTokens, cacheRead: u.cacheReadTokens, cacheWrite: u.cacheWriteTokens, total: u.inputTokens + u.outputTokens + u.cacheReadTokens + u.cacheWriteTokens },
+      ok: u.ok, errorCode: u.errorCode,
+    })),
+    contentTranslationsEdited: contentTranslations.map((c) => ({ club: c.tenant.name, type: c.entityType, entityId: c.entityId, field: c.field, locale: c.locale, status: c.status, createdAt: iso(c.createdAt), updatedAt: iso(c.updatedAt) })),
   };
 }
 
@@ -276,7 +296,9 @@ export async function buildPersonalExportZip(userId: string): Promise<Uint8Array
     "Standbesuche und betreute Gäste, akzeptierte Standordnungen, Qualifikationen, Kurse (Präsenz, Resultate),",
     "Waffenausleihen, Helfereinsätze und Arbeitsstunden, gemeldete Vorfälle, Standdienste,",
     "deine Konsumationen in der Schützenstube, wiederkehrende Reservationen (Serien),",
-    "offene Beitrittsanfragen (Mitgliedschaft mit Status PENDING) und Rollen in Verbänden.",
+    "offene Beitrittsanfragen (Mitgliedschaft mit Status PENDING), Rollen in Verbänden,",
+    "Anfragen an Claude (nur Funktion, Zeitpunkt und Tokens, ohne Inhalt) und von dir bearbeitete",
+    "Übersetzungen (nur Metadaten).",
     "",
     "Verbände erhalten von Standchef keine Personendaten, nur zusammengefasste Zahlen der Vereine.",
     "Dein Name erscheint in einer Verbandsrangliste nur, wenn dein Verein «Namen teilen» eingeschaltet hat.",
@@ -376,6 +398,13 @@ export async function pseudonymizeUser(userId: string): Promise<{ email: string;
     db.qualification.updateMany({ where: { userId }, data: { number: null, note: null } }),
     db.rangeVisit.updateMany({ where: { userId }, data: { note: null } }),
     db.kioskEntry.deleteMany({ where: { userId, billedInvoiceId: null, paidCash: false } }),
+    // Claude: Nutzungsprotokoll bleibt für die Abrechnung des Vereins, aber ohne Personenbezug;
+    // persönliche Zwischenspeicher (Trainingsauswertungen) werden gelöscht; Vereinsentwürfe
+    // (z.B. Jahresbericht mit Änderungen des Vorstands) bleiben erhalten, nur ohne Personenbezug.
+    db.aiUsage.updateMany({ where: { userId }, data: { userId: null } }),
+    db.aiCache.deleteMany({ where: { userId, feature: "coach" } }),
+    db.aiCache.updateMany({ where: { userId }, data: { userId: null } }),
+    db.contentTranslation.updateMany({ where: { updatedById: userId }, data: { updatedById: null } }),
     db.user.update({
       where: { id: userId },
       data: {
@@ -454,6 +483,7 @@ export async function buildTenantArchiveFiles(tenantId: string): Promise<Record<
   const [
     tenant, members, participants, events, bookings, feeInvoices, ammoOrders, files,
     rangeVisits, rangeDays, qualifications, courseParticipants, weaponLoans, shiftAssignments, workLogs, incidents, kioskEntries,
+    aiSettings, aiUsage,
   ] = await Promise.all([
     db.tenant.findUnique({ where: { id: tenantId }, select: { name: true, slug: true, city: true, canton: true, createdAt: true } }),
     db.membership.findMany({
@@ -542,8 +572,21 @@ export async function buildTenantArchiveFiles(tenantId: string): Promise<Record<
       orderBy: { createdAt: "desc" },
       take: 100_000,
     }),
+    // Claude-Einstellungen ohne Schlüssel (apiKeyEnc/keyHint werden nie gelesen) und Verbrauch nach Monat/Funktion
+    db.tenantAiSettings.findUnique({
+      where: { tenantId },
+      select: { enabled: true, model: true, features: true, memberAccess: true, monthlyTokenLimit: true, consentAt: true, updatedAt: true, apiKeyEnc: false },
+    }),
+    db.aiUsage.findMany({
+      where: { tenantId },
+      select: { feature: true, inputTokens: true, outputTokens: true, cacheReadTokens: true, cacheWriteTokens: true, ok: true, createdAt: true },
+      orderBy: { createdAt: "asc" },
+      take: 200_000,
+    }),
   ]);
   if (!tenant) return {};
+  // Schlüssel nur als ja/nein (eigene Abfrage, damit der verschlüsselte Wert nie in den Export gelangt).
+  const aiHasKey = (await db.tenantAiSettings.count({ where: { tenantId, apiKeyEnc: { not: null } } })) > 0;
   // KioskEntry hat keine Relation zu User/FeeInvoice: Namen und Rechnungsnummern nachschlagen.
   const kioskUserIds = [...new Set(kioskEntries.map((k) => k.userId).filter((id): id is string => !!id))];
   const kioskInvoiceIds = [...new Set(kioskEntries.map((k) => k.billedInvoiceId).filter((id): id is string => !!id))];
@@ -644,6 +687,29 @@ export async function buildTenantArchiveFiles(tenantId: string): Promise<Record<
       k.paidCash ? "bar" : k.billedInvoiceId ? "verrechnet" : "offen", k.billedInvoiceId ? (kioskInvoiceNumber.get(k.billedInvoiceId) ?? "") : "",
     ]),
   ]);
+  out["claude-einstellungen.csv"] = toCsv([
+    ["Eingeschaltet", "Schlüssel hinterlegt", "Modell", "Funktionen", "Zugang Mitglieder", "Monatslimite (Tokens)", "Zustimmung am", "Geändert"],
+    ...(aiSettings
+      ? [[yn(aiSettings.enabled), yn(aiHasKey), aiSettings.model, aiSettings.features, aiSettings.memberAccess, aiSettings.monthlyTokenLimit, dt(aiSettings.consentAt), dt(aiSettings.updatedAt)]]
+      : []),
+  ]);
+  const aiMonths = new Map<string, { month: string; feature: string; requests: number; failed: number; input: number; output: number; cacheRead: number; cacheWrite: number }>();
+  for (const u of aiUsage) {
+    const month = u.createdAt.toISOString().slice(0, 7);
+    const k = `${month}|${u.feature}`;
+    const row = aiMonths.get(k) ?? { month, feature: u.feature, requests: 0, failed: 0, input: 0, output: 0, cacheRead: 0, cacheWrite: 0 };
+    row.requests++;
+    if (!u.ok) row.failed++;
+    row.input += u.inputTokens;
+    row.output += u.outputTokens;
+    row.cacheRead += u.cacheReadTokens;
+    row.cacheWrite += u.cacheWriteTokens;
+    aiMonths.set(k, row);
+  }
+  out["claude-verbrauch.csv"] = toCsv([
+    ["Monat (UTC)", "Funktion", "Anfragen", "Davon fehlgeschlagen", "Input-Tokens", "Output-Tokens", "Cache gelesen", "Cache geschrieben", "Total Tokens"],
+    ...[...aiMonths.values()].map((m) => [m.month, m.feature, m.requests, m.failed, m.input, m.output, m.cacheRead, m.cacheWrite, m.input + m.output + m.cacheRead + m.cacheWrite]),
+  ]);
   out["LIESMICH.txt"] = [
     `Vereinsarchiv ${tenant.name} (${tenant.slug})`,
     `Erstellt: ${new Date().toISOString()}`,
@@ -651,6 +717,7 @@ export async function buildTenantArchiveFiles(tenantId: string): Promise<Record<
     "CSV-Dateien mit Semikolon und UTF-8 (öffnen direkt in Excel/Numbers/LibreOffice).",
     "Zeitangaben in UTC. Beträge in Franken.",
     "Die Dateien der Dateiablage selbst sind nicht enthalten, nur deren Liste (dateien.csv).",
+    "Claude: Einstellungen ohne API-Schlüssel (claude-einstellungen.csv) und Verbrauch pro Monat (claude-verbrauch.csv).",
     "",
     "Enthält Personendaten: bitte sicher aufbewahren und nicht weitergeben.",
   ].join("\r\n");

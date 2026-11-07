@@ -10,10 +10,13 @@ import { matchesStandaloneFilter, parseStandaloneFilter, type StandaloneStatusFi
 import { StandaloneInvoiceList } from "@/modules/billing/ui/standalone-invoice-list";
 import { formatMoney } from "@/lib/money";
 import { cn } from "@/lib/utils";
+import { getRequestLocale, getT } from "@/lib/i18n";
 
-export const metadata: Metadata = { title: "Einzelrechnungen" };
+export async function generateMetadata(): Promise<Metadata> {
+  return { title: getT(await getRequestLocale())("adm1.bill.tab.invoices") };
+}
 
-const FILTERS: Array<[StandaloneStatusFilter, string]> = [["all", "Alle"], ["open", "Offen"], ["paid", "Bezahlt"], ["cancelled", "Storniert"], ["attention", "Zu prüfen"]];
+const FILTERS: StandaloneStatusFilter[] = ["all", "open", "paid", "cancelled", "attention"];
 
 /**
  * Einzelrechnungen ohne Jahreslauf (Schützenstube, Ersatzabgabe): stornieren, als bezahlt markieren,
@@ -21,6 +24,7 @@ const FILTERS: Array<[StandaloneStatusFilter, string]> = [["all", "Alle"], ["ope
  */
 export default async function StandaloneInvoicesPage({ searchParams }: { searchParams: Promise<{ year?: string; f?: string }> }) {
   const ctx = await requireBillingAdmin();
+  const t = getT(await getRequestLocale());
   const sp = await searchParams;
   const rawYear = Number(sp.year);
   const year = Number.isInteger(rawYear) && rawYear >= 2000 && rawYear <= 2100 ? rawYear : currentYear();
@@ -36,19 +40,19 @@ export default async function StandaloneInvoicesPage({ searchParams }: { searchP
 
   return (
     <div>
-      <PageHeader title="Einzelrechnungen" subtitle="Schützenstube, Ersatzabgabe und weitere Rechnungen ohne Jahreslauf" back={{ href: "/admin/billing", label: "Mitgliederbeiträge" }}
+      <PageHeader title={t("adm1.bill.tab.invoices")} subtitle={t("adm1.bill.standaloneSubtitle")} back={{ href: "/admin/billing", label: t("adm1.module.billing.name") }}
         action={<YearSelect year={year} years={years} />} />
       <AdminBillingTabs />
 
       <div className="stagger mb-4 grid grid-cols-2 gap-2.5">
-        <StatCard label="Offen" value={formatMoney(open.reduce((s, i) => s + i.amountCents, 0), currency)} hint={`${open.length} ${open.length === 1 ? "Rechnung" : "Rechnungen"}`} tone={open.length ? "warn" : "neutral"} />
-        <StatCard label="Bezahlt" value={formatMoney(paid.reduce((s, i) => s + i.amountCents, 0), currency)} hint={`${paid.length} ${paid.length === 1 ? "Rechnung" : "Rechnungen"}`} />
+        <StatCard label={t("money.status.OPEN")} value={formatMoney(open.reduce((s, i) => s + i.amountCents, 0), currency)} hint={t(open.length === 1 ? "money.payments.invoices.one" : "money.payments.invoices.other", { n: open.length })} tone={open.length ? "warn" : "neutral"} />
+        <StatCard label={t("money.status.PAID")} value={formatMoney(paid.reduce((s, i) => s + i.amountCents, 0), currency)} hint={t(paid.length === 1 ? "money.payments.invoices.one" : "money.payments.invoices.other", { n: paid.length })} />
       </div>
 
       <div className="animate-fade -mx-4 mb-2 flex gap-1.5 overflow-x-auto px-4 pb-2 [scrollbar-width:none]">
-        {FILTERS.map(([f, label]) => (
+        {FILTERS.map((f) => (
           <Link key={f} href={href(f)} className={cn("press flex h-11 shrink-0 items-center rounded-full border px-3.5 text-sm font-medium", filter === f ? "border-ink bg-ink text-bg" : "border-line bg-surface text-ink-2")}>
-            {label} ({count(f)})
+            {t(`adm1.bill.filter.${f}`)} ({count(f)})
           </Link>
         ))}
       </div>
@@ -57,14 +61,14 @@ export default async function StandaloneInvoicesPage({ searchParams }: { searchP
         <EmptyState
           className="mt-6"
           icon={<FileText className="h-5 w-5" />}
-          title={`Keine Einzelrechnungen ${year}`}
-          text="Einzelrechnungen entstehen bei der Abrechnung der Schützenstube und der Ersatzabgabe für Arbeitsstunden."
+          title={t("adm1.bill.standaloneEmpty", { year })}
+          text={t("adm1.bill.standaloneEmptyText")}
         />
       ) : (
         <StandaloneInvoiceList key={`${year}-${filter}`} invoices={list} />
       )}
       <p className="mt-3 text-xs text-ink-3">
-        Rückerstattungen erfolgen von Hand: per Banküberweisung oder im Backoffice des Zahlungsanbieters. Eine stornierte Schützenstube-Rechnung, deren Konsumationen freigegeben wurden, lässt sich nicht mehr reaktivieren, damit nichts doppelt verrechnet wird.
+        {t("adm1.bill.refundNote")}
       </p>
     </div>
   );

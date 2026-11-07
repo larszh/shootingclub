@@ -1,9 +1,9 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { Bell, BookUser, CalendarDays, ChevronRight, CreditCard, FileUp, FolderOpen, History, Home, KeyRound, LogOut, Mail, Megaphone, MessageCircle, Package, Server, Settings, Shield, ShieldCheck, Target, Users, BarChart3, Wallet, BadgeCheck, Trophy, Tv, DoorOpen, HandHelping, GraduationCap, Award, Boxes, Clock, Coffee, FileInput, BookOpenCheck, Code2, Handshake, Landmark, UserPlus } from "lucide-react";
+import { Bell, BookUser, CalendarDays, ChevronRight, CreditCard, FileUp, FolderOpen, History, Home, KeyRound, LogOut, Mail, Megaphone, MessageCircle, Package, Server, Settings, Shield, ShieldCheck, Target, Users, BarChart3, Wallet, BadgeCheck, Trophy, Tv, DoorOpen, HandHelping, GraduationCap, Award, Boxes, Clock, Coffee, FileInput, BookOpenCheck, Code2, Handshake, Landmark, UserPlus, Bot, FileText, Languages, LifeBuoy } from "lucide-react";
 import { getAppContext } from "@/lib/tenant";
 import { db } from "@/lib/db";
-import { logoutAction } from "@/modules/core/auth-actions";
+import { LogoutForm } from "@/components/logout-form";
 import { Badge, Card, SectionTitle } from "@/components/ui";
 import { Avatar, tenantLogoUrl } from "@/components/avatar";
 import { TenantLogo } from "@/components/logo";
@@ -59,6 +59,7 @@ export default async function MePage() {
   const adminStock = ctx.hasModule("ammo") && canManageAmmo;
   // Welle D: Beitrittsanfragen, Verband
   const canApprove = can("members.approve");
+  const canAiManage = can("ai.manage");
   const [pendingRequests, associationArea] = await Promise.all([
     canApprove && ctx.tenant ? db.membership.count({ where: { tenantId: ctx.tenant.id, status: "PENDING", user: { deletedAt: null } } }) : Promise.resolve(0),
     hasAssociationArea(ctx.user),
@@ -139,7 +140,7 @@ export default async function MePage() {
               </Card>
             </>
           ) : null}
-          {canManage || canManageAmmo || canViewMembers || canAudit || canApprove || adminRange || adminShifts || adminQuali || adminAccounting || adminKiosk ? (
+          {canManage || canAiManage || canManageAmmo || canViewMembers || canAudit || canApprove || adminRange || adminShifts || adminQuali || adminAccounting || adminKiosk ? (
             <>
               <SectionTitle>{t("shell.nav.group.admin")}</SectionTitle>
               <Card className="animate-rise divide-y divide-line overflow-hidden">
@@ -161,6 +162,8 @@ export default async function MePage() {
                 {adminPartners ? <Row href="/admin/bookings/partners" icon={<Handshake className="h-4 w-4" />} label={t("shell.me.row.adminPartners")} hint={t("shell.me.hint.adminPartners")} /> : null}
                 {adminKiosk ? <Row href="/admin/kiosk" icon={<Coffee className="h-4 w-4" />} label={t("shell.me.row.adminKiosk")} hint={t("shell.me.hint.adminKiosk")} /> : null}
                 {adminAccounting ? <Row href="/admin/accounting" icon={<BookOpenCheck className="h-4 w-4" />} label={t("shell.me.row.adminAccounting")} hint={t("shell.me.hint.adminAccounting")} /> : null}
+                {canAiManage ? <Row href="/admin/ai" icon={<Bot className="h-4 w-4" />} label={t("misc.nav.adminAi")} hint={t("misc.nav.adminAiHint")} /> : null}
+                {canManage ? <Row href="/admin/reports" icon={<FileText className="h-4 w-4" />} label={t("misc.nav.adminReports")} hint={t("misc.nav.adminReportsHint")} /> : null}
                 {canManage ? <Row href="/admin/embed" icon={<Code2 className="h-4 w-4" />} label={t("shell.me.row.adminEmbed")} hint={t("shell.me.hint.adminEmbed")} /> : null}
                 {canManage ? <Row href="/admin/association" icon={<Landmark className="h-4 w-4" />} label={t("shell.me.row.adminAssociation")} hint={t("shell.me.hint.adminAssociation")} /> : null}
                 {canAudit ? <Row href="/admin/audit" icon={<History className="h-4 w-4" />} label={t("shell.me.row.adminAudit")} /> : null}
@@ -186,6 +189,9 @@ export default async function MePage() {
             <Row href="/super" icon={<Shield className="h-4 w-4" />} label={t("shell.me.row.super")} />
             <Row href="/super/associations" icon={<Landmark className="h-4 w-4" />} label={t("shell.me.row.superAssociations")} />
             <Row href="/association" icon={<Landmark className="h-4 w-4" />} label={t("shell.me.row.associationArea")} hint={t("shell.me.hint.associationArea")} />
+            <Row href="/super/translations" icon={<Languages className="h-4 w-4" />} label={t("misc.nav.superTranslations")} />
+            <Row href="/super/ai" icon={<Bot className="h-4 w-4" />} label={t("misc.nav.superAi")} />
+            <Row href="/super/support" icon={<LifeBuoy className="h-4 w-4" />} label={t("misc.nav.superSupport")} />
             <Row href="/super/system" icon={<Server className="h-4 w-4" />} label={t("shell.me.row.system")} />
           </Card>
         </>
@@ -246,11 +252,11 @@ export default async function MePage() {
         <p className="mt-2.5 text-sm text-ink-3">{t("shell.me.noClub")}</p>
       )}
 
-      <form action={logoutAction} className="mt-8">
+      <LogoutForm className="mt-8">
         <button type="submit" className="press w-full h-11 rounded-control border border-line text-ink-2 inline-flex items-center justify-center gap-2 hover:bg-surface-2">
           <LogOut className="h-4 w-4" /> {t("shell.me.logout")}
         </button>
-      </form>
+      </LogoutForm>
       <p className="text-center text-xs text-ink-3 mt-6">{t("shell.me.version", { version: "0.2" })}</p>
     </div>
   );

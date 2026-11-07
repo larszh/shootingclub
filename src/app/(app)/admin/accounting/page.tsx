@@ -3,40 +3,59 @@ import { BookOpenCheck, Download, Info } from "lucide-react";
 import { requirePermission } from "@/lib/tenant";
 import { todayZurich } from "@/lib/time";
 import { formatMoney } from "@/lib/money";
-import { plural } from "@/lib/utils";
+import { formatDate, getRequestLocale, getT, type TFunction } from "@/lib/i18n";
 import { Alert, Button, buttonClasses, Card, EmptyState, Field, Input, LinkTabs, PageHeader, SectionTitle, Select, StatCard } from "@/components/ui";
 import { getAccountingJournal } from "@/modules/accounting/queries";
-import { ENTRY_TYPE_LABEL, KIND_LABEL, type AccountSummary } from "@/modules/accounting/journal";
-import { formatDateCh, includeKioskCashParam, MONTH_NAMES, resolvePeriod, type PeriodKind, type PeriodParams } from "@/modules/accounting/period";
-import { EXPORT_FORMATS } from "@/modules/accounting/types";
+import type { AccountSummary } from "@/modules/accounting/journal";
+import { includeKioskCashParam, resolvePeriod, type Period, type PeriodKind, type PeriodParams } from "@/modules/accounting/period";
+import { ACCOUNT_FIELDS, EXPORT_FORMATS } from "@/modules/accounting/types";
 import { AccountingSettingsForm } from "@/modules/accounting/ui/settings-form";
 
-export const metadata: Metadata = { title: "Buchhaltung" };
+export async function generateMetadata(): Promise<Metadata> {
+  return { title: getT(await getRequestLocale())("adm1.home.accounting") };
+}
 
 const PREVIEW_LIMIT = 200;
 
-const PERIOD_TABS: Array<{ value: PeriodKind; label: string }> = [
-  { value: "year", label: "Jahr" },
-  { value: "quarter", label: "Quartal" },
-  { value: "month", label: "Monat" },
-  { value: "custom", label: "Frei" },
-];
+/** Deutsche Kontobezeichnung (aus der Saldoliste) → Feldschlüssel für die Übersetzung. */
+const ACCOUNT_KEY_BY_LABEL = new Map(ACCOUNT_FIELDS.map((f) => [f.label, f.key]));
+
+const PERIOD_TABS: PeriodKind[] = ["year", "quarter", "month", "custom"];
+
+/** «YYYY-MM-DD» in der Anzeigesprache. */
+function isoDay(s: string, locale: string) {
+  return formatDate(new Date(`${s}T12:00:00Z`), locale);
+}
+
+function monthName(month: number, locale: string) {
+  return formatDate(new Date(Date.UTC(2000, month - 1, 15, 12)), locale, { day: undefined, year: undefined, month: "long" });
+}
+
+/** Bezeichnung der Periode (die gespeicherte deutsche Bezeichnung dient nur dem Protokoll). */
+function periodLabel(t: TFunction, p: Period, locale: string) {
+  if (p.kind === "quarter") return t("adm1.acc.periodQuarter", { q: p.quarter, year: p.year });
+  if (p.kind === "month") return `${monthName(p.month, locale)} ${p.year}`;
+  if (p.kind === "custom") return `${isoDay(p.from, locale)} – ${isoDay(p.to, locale)}`;
+  return t("adm1.acc.periodYear", { year: p.year });
+}
 
 function periodHref(kind: PeriodKind, year: number, extra: Record<string, string> = {}) {
   const p = new URLSearchParams({ period: kind, year: String(year), ...extra });
   return `/admin/accounting?${p.toString()}`;
 }
 
-function balanceText(s: AccountSummary) {
-  if (s.balanceCents === 0) return { text: formatMoney(0, s.currency), side: "ausgeglichen" };
+function balanceText(t: TFunction, s: AccountSummary) {
+  if (s.balanceCents === 0) return { text: formatMoney(0, s.currency), side: t("adm1.acc.balanced") };
   return s.balanceCents > 0
-    ? { text: formatMoney(s.balanceCents, s.currency), side: "Sollsaldo" }
-    : { text: formatMoney(-s.balanceCents, s.currency), side: "Habensaldo" };
+    ? { text: formatMoney(s.balanceCents, s.currency), side: t("adm1.acc.debitBalance") }
+    : { text: formatMoney(-s.balanceCents, s.currency), side: t("adm1.acc.creditBalance") };
 }
 
 export default async function AccountingPage({ searchParams }: { searchParams: Promise<PeriodParams> }) {
   const ctx = await requirePermission("accounting.export");
   const sp = await searchParams;
+  const locale = await getRequestLocale();
+  const t = getT(locale);
   const today = todayZurich();
   const period = resolvePeriod(sp, today);
   const includeKioskCash = includeKioskCashParam(sp.kioskCash);
@@ -48,86 +67,87 @@ export default async function AccountingPage({ searchParams }: { searchParams: P
   const preview = entries.slice(0, PREVIEW_LIMIT);
   const invalidCustom = period.kind === "custom" && (sp.from || sp.to) && (period.from !== sp.from || period.to !== sp.to);
   const periodEnded = period.to < today;
+  const label = periodLabel(t, period, locale);
 
   return (
     <div>
-      <PageHeader title="Buchhaltung" subtitle="Buchungen für Banana, bexio oder Excel exportieren" back={{ href: "/admin", label: "Einstellungen" }} />
+      <PageHeader title={t("adm1.home.accounting")} subtitle={t("adm1.acc.subtitle")} back={{ href: "/admin", label: t("adm1.home.title") }} />
 
-      <SectionTitle>Periode</SectionTitle>
+      <SectionTitle>{t("adm1.acc.period")}</SectionTitle>
       <LinkTabs
-        label="Periode wählen"
+        label={t("adm1.acc.choosePeriod")}
         active={period.kind}
-        items={PERIOD_TABS.map((t) => ({
-          value: t.value,
-          label: t.label,
-          href: t.value === "custom" ? periodHref("custom", period.year, { from: period.from, to: period.to }) : periodHref(t.value, period.year, t.value === "quarter" ? { q: String(period.quarter) } : t.value === "month" ? { m: String(period.month) } : {}),
+        items={PERIOD_TABS.map((kind) => ({
+          value: kind,
+          label: t(`adm1.acc.tab.${kind}`),
+          href: kind === "custom" ? periodHref("custom", period.year, { from: period.from, to: period.to }) : periodHref(kind, period.year, kind === "quarter" ? { q: String(period.quarter) } : kind === "month" ? { m: String(period.month) } : {}),
         }))}
       />
       <Card className="animate-rise mt-3 p-4">
         <form method="get" action="/admin/accounting" className="flex flex-wrap items-end gap-3">
           <input type="hidden" name="period" value={period.kind} />
           {period.kind !== "custom" ? (
-            <Field label="Jahr" className="w-28">
+            <Field label={t("adm1.common.year")} className="w-28">
               <Select name="year" defaultValue={String(period.year)}>
                 {years.map((y) => <option key={y} value={y}>{y}</option>)}
               </Select>
             </Field>
           ) : null}
           {period.kind === "quarter" ? (
-            <Field label="Quartal" className="w-36">
+            <Field label={t("adm1.acc.tab.quarter")} className="w-36">
               <Select name="q" defaultValue={String(period.quarter)}>
-                {[1, 2, 3, 4].map((q) => <option key={q} value={q}>{q}. Quartal</option>)}
+                {[1, 2, 3, 4].map((q) => <option key={q} value={q}>{t("adm1.acc.quarterN", { q })}</option>)}
               </Select>
             </Field>
           ) : null}
           {period.kind === "month" ? (
-            <Field label="Monat" className="w-40">
+            <Field label={t("adm1.acc.tab.month")} className="w-40">
               <Select name="m" defaultValue={String(period.month)}>
-                {MONTH_NAMES.map((n, i) => <option key={n} value={i + 1}>{n}</option>)}
+                {Array.from({ length: 12 }, (_, i) => <option key={i} value={i + 1}>{monthName(i + 1, locale)}</option>)}
               </Select>
             </Field>
           ) : null}
           {period.kind === "custom" ? (
             <>
-              <Field label="Von" className="min-w-40 flex-1"><Input type="date" name="from" defaultValue={period.from} required /></Field>
-              <Field label="Bis" className="min-w-40 flex-1"><Input type="date" name="to" defaultValue={period.to} required /></Field>
+              <Field label={t("adm1.acc.from")} className="min-w-40 flex-1"><Input type="date" name="from" defaultValue={period.from} required /></Field>
+              <Field label={t("adm1.acc.to")} className="min-w-40 flex-1"><Input type="date" name="to" defaultValue={period.to} required /></Field>
             </>
           ) : null}
-          <Field label="Barverkäufe Schützenstube" className="min-w-48">
+          <Field label={t("adm1.acc.kioskCash")} className="min-w-48">
             <Select name="kioskCash" defaultValue={includeKioskCash ? "1" : "0"}>
-              <option value="1">buchen (Kasse / Ertrag)</option>
-              <option value="0">weglassen</option>
+              <option value="1">{t("adm1.acc.kioskCashBook")}</option>
+              <option value="0">{t("adm1.acc.kioskCashSkip")}</option>
             </Select>
           </Field>
-          <Button type="submit" variant="secondary">Anzeigen</Button>
+          <Button type="submit" variant="secondary">{t("adm1.acc.show")}</Button>
         </form>
         <p className="mt-3 text-sm text-ink-2">
-          <span className="font-medium text-ink">{period.label}</span> · {formatDateCh(period.from)} bis {formatDateCh(period.to)}
+          <span className="font-medium text-ink">{label}</span> · {t("adm1.acc.range", { from: isoDay(period.from, locale), to: isoDay(period.to, locale) })}
         </p>
-        {invalidCustom ? <Alert tone="warn" className="mt-3">Der gewählte Zeitraum war ungültig (Bis vor Von oder länger als drei Jahre). Angezeigt wird der Standardzeitraum.</Alert> : null}
+        {invalidCustom ? <Alert tone="warn" className="mt-3">{t("adm1.acc.invalidRange")}</Alert> : null}
       </Card>
 
       <div className="stagger mt-3 grid grid-cols-2 gap-2.5">
-        <StatCard label="Buchungen" value={entries.length} hint={period.label} />
+        <StatCard label={t("adm1.acc.entries")} value={entries.length} hint={label} />
         <StatCard
-          label="Kontrollsumme"
-          value={<span className="block text-xl break-words">{totals.length ? totals.map((t) => formatMoney(t.cents, t.currency)).join(" · ") : formatMoney(0)}</span>}
-          hint="Summe aller Buchungsbeträge"
+          label={t("adm1.acc.checksum")}
+          value={<span className="block text-xl break-words">{totals.length ? totals.map((x) => formatMoney(x.cents, x.currency)).join(" · ") : formatMoney(0)}</span>}
+          hint={t("adm1.acc.checksumHint")}
         />
       </div>
 
-      <SectionTitle>Export</SectionTitle>
+      <SectionTitle>{t("adm1.acc.export")}</SectionTitle>
       {!periodEnded ? (
         <Alert tone="info" className="mb-2.5" icon={<Info className="h-4 w-4" />}>
-          Die Periode ist noch nicht abgeschlossen. Exportiert am besten erst nach Periodenende, damit später erfasste Zahlungen nicht fehlen.
+          {t("adm1.acc.notEnded")}
         </Alert>
       ) : null}
       <Card className="animate-rise divide-y divide-line overflow-hidden">
         {EXPORT_FORMATS.map((f) => (
           <div key={f.key} className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center">
             <div className="min-w-0 flex-1">
-              <div className="font-medium">{f.label}</div>
-              <p className="mt-0.5 text-xs text-ink-3">{f.hint}</p>
+              <div className="font-medium">{t(`adm1.acc.format.${f.key}.label`)}</div>
+              <p className="mt-0.5 text-xs text-ink-3">{t(`adm1.acc.format.${f.key}.hint`)}</p>
             </div>
             {/* Einfacher Link statt next/link: der Router würde die Export-Route zuerst als RSC abrufen (doppelter Export im Protokoll). */}
             <a href={exportQuery(f.key)} download className={buttonClasses("secondary", "md", "shrink-0")}>
@@ -137,28 +157,28 @@ export default async function AccountingPage({ searchParams }: { searchParams: P
         ))}
       </Card>
       <p className="mt-2 text-xs text-ink-3">
-        Das Journal zeigt den aktuellen Stand der Rechnungen. Wird eine Zahlung nachträglich zurückgesetzt oder storniert, ändert sich auch eine bereits exportierte Periode. Jeder Export wird im Protokoll festgehalten.
+        {t("adm1.acc.journalNote")}
       </p>
 
       {entries.length === 0 ? (
         <EmptyState
           className="mt-6"
           icon={<BookOpenCheck className="h-5 w-5" />}
-          title="Keine Buchungen in dieser Periode"
-          text="Buchungen entstehen aus Beitrags-, Reservations- und Munitionsrechnungen sowie Online- und Barzahlungen von Reservationen. Wählt eine andere Periode."
+          title={t("adm1.acc.emptyTitle")}
+          text={t("adm1.acc.emptyText")}
         />
       ) : (
         <>
-          <SectionTitle>Saldo pro Konto</SectionTitle>
+          <SectionTitle>{t("adm1.acc.balancePerAccount")}</SectionTitle>
           <Card className="animate-rise divide-y divide-line overflow-hidden">
             {summary.map((s) => {
-              const b = balanceText(s);
+              const b = balanceText(t, s);
               return (
                 <div key={`${s.account}-${s.currency}`} className="flex min-h-14 items-center gap-3 px-4 py-3">
                   <span className="w-14 shrink-0 font-mono text-sm font-semibold">{s.account}</span>
                   <div className="min-w-0 flex-1">
-                    <div className="truncate text-sm font-medium">{s.names.length ? s.names.join(" / ") : "Konto nicht im Kontenplan"}</div>
-                    <div className="text-xs text-ink-3 tabular-nums">Soll {formatMoney(s.debitCents, s.currency)} · Haben {formatMoney(s.creditCents, s.currency)}</div>
+                    <div className="truncate text-sm font-medium">{s.names.length ? s.names.map((n) => (ACCOUNT_KEY_BY_LABEL.has(n) ? t(`adm1.acc.field.${ACCOUNT_KEY_BY_LABEL.get(n)}.label`) : n)).join(" / ") : t("adm1.acc.notInPlan")}</div>
+                    <div className="text-xs text-ink-3 tabular-nums">{t("adm1.acc.debit")} {formatMoney(s.debitCents, s.currency)} · {t("adm1.acc.credit")} {formatMoney(s.creditCents, s.currency)}</div>
                   </div>
                   <div className="shrink-0 text-right">
                     <div className="font-semibold tabular-nums">{b.text}</div>
@@ -169,51 +189,51 @@ export default async function AccountingPage({ searchParams }: { searchParams: P
             })}
           </Card>
 
-          <SectionTitle>Journal</SectionTitle>
+          <SectionTitle>{t("adm1.acc.journal")}</SectionTitle>
           <Card className="animate-rise divide-y divide-line overflow-hidden">
             <div className="hidden grid-cols-[88px_110px_1fr_60px_60px_110px] gap-3 bg-surface-2 px-4 py-2 text-xs font-semibold text-ink-3 md:grid">
-              <span>Datum</span><span>Beleg</span><span>Text</span><span>Soll</span><span>Haben</span><span className="text-right">Betrag</span>
+              <span>{t("adm1.common.date")}</span><span>{t("adm1.acc.doc")}</span><span>{t("adm1.acc.text")}</span><span>{t("adm1.acc.debit")}</span><span>{t("adm1.acc.credit")}</span><span className="text-right">{t("adm1.common.amount")}</span>
             </div>
             {preview.map((e, i) => (
               <div key={`${e.docId}-${e.type}-${i}`} className="grid grid-cols-[1fr_auto] gap-x-3 gap-y-0.5 px-4 py-3 text-sm md:grid-cols-[88px_110px_1fr_60px_60px_110px] md:items-center">
-                <span className="text-xs text-ink-3 tabular-nums md:text-sm md:text-ink-2">{formatDateCh(e.date)} <span className="md:hidden">· {e.doc}</span></span>
+                <span className="text-xs text-ink-3 tabular-nums md:text-sm md:text-ink-2">{isoDay(e.date, locale)} <span className="md:hidden">· {e.doc}</span></span>
                 <span className="text-right font-semibold tabular-nums md:order-last">{formatMoney(e.amountCents, e.currency)}</span>
                 <span className="hidden truncate font-mono text-xs md:block">{e.doc}</span>
                 <span className="col-span-2 min-w-0 md:col-span-1">
                   <span className="block truncate">{e.text}</span>
-                  <span className="text-xs text-ink-3">{KIND_LABEL[e.kind]} · {ENTRY_TYPE_LABEL[e.type]}</span>
+                  <span className="text-xs text-ink-3">{t(`adm1.acc.kind.${e.kind}`)} · {t(`adm1.acc.type.${e.type}`)}</span>
                 </span>
                 <span className="col-span-2 font-mono text-xs text-ink-2 md:col-span-1 md:text-sm">
-                  <span className="md:hidden">Soll </span>{e.debit}
-                  <span className="md:hidden"> / Haben {e.credit}</span>
+                  <span className="md:hidden">{t("adm1.acc.debit")} </span>{e.debit}
+                  <span className="md:hidden"> / {t("adm1.acc.credit")} {e.credit}</span>
                 </span>
                 <span className="hidden font-mono text-sm text-ink-2 md:block">{e.credit}</span>
               </div>
             ))}
           </Card>
           {entries.length > PREVIEW_LIMIT ? (
-            <p className="mt-2 text-xs text-ink-3">Vorschau mit den ersten {PREVIEW_LIMIT} von {plural(entries.length, "Buchung", "Buchungen")}. Der Export enthält alle.</p>
+            <p className="mt-2 text-xs text-ink-3">{t("adm1.acc.previewLimit", { limit: PREVIEW_LIMIT, n: entries.length })}</p>
           ) : null}
         </>
       )}
 
-      <SectionTitle>Kontenplan</SectionTitle>
+      <SectionTitle>{t("adm1.acc.plan")}</SectionTitle>
       <AccountingSettingsForm accounts={accounts} />
       <Card className="animate-rise mt-2.5 space-y-2 p-4 text-sm">
-        <div className="flex items-center gap-2 font-semibold"><Info className="h-4 w-4 text-ink-2" aria-hidden /> So wird gebucht</div>
+        <div className="flex items-center gap-2 font-semibold"><Info className="h-4 w-4 text-ink-2" aria-hidden /> {t("adm1.acc.howTitle")}</div>
         <ul className="list-disc space-y-1 pl-5 text-ink-2">
-          <li>Rechnung ausgestellt: Soll Debitoren ({accounts.receivableAccount}) / Haben Ertrag (Beiträge {accounts.feeAccount}, Ersatzabgabe {accounts.workFeeAccount}, Reservationen {accounts.bookingAccount}, Munition {accounts.ammoAccount}).</li>
-          <li>Rechnung bezahlt (auch online): Soll Bank ({accounts.bankAccount}) / Haben Debitoren am Zahlungsdatum.</li>
-          <li>Rechnung storniert: Gegenbuchung Soll Ertrag / Haben Debitoren.</li>
-          <li>Doppelt bezahlt (Bank und online): beide Zahlungen werden gebucht, das Guthaben steht auf Debitoren, bis ihr es zurückzahlt.</li>
-          <li>Rückerstattung (Reservation als «Erstattet» markiert): Soll Ertrag / Haben Bank am Tag der Markierung; bei stornierter Rechnung Soll Debitoren / Haben Bank.</li>
-          <li>Reservation direkt online bezahlt (ohne Rechnung): Soll Bank / Haben Reservationen.</li>
-          <li>Reservation bar vor Ort bezahlt (ohne Rechnung): Soll Kasse ({accounts.cashAccount}) / Haben Reservationen ({accounts.bookingAccount}) am Zahlungsdatum; erstattet: Gegenbuchung.</li>
-          <li>Rechnungen der Schützenstube: Soll Debitoren / Haben Ertrag Schützenstube ({accounts.kioskAccount}).</li>
-          <li>Barverkäufe der Schützenstube (optional): pro Tag eine Buchung Soll Kasse ({accounts.cashAccount}) / Haben Ertrag Schützenstube ({accounts.kioskAccount}), Beleg «KASSE-JJJJMMTT».</li>
-          <li>Storno- und Erstattungsdatum: der Tag des Statuswechsels, auch wenn der Beleg später bearbeitet wird.</li>
-          <li>Gebühren der Zahlungsanbieter melden die Anbieter nicht pro Zahlung: anhand ihrer Abrechnung von Hand buchen (Soll Zahlungsgebühren {accounts.feesExpenseAccount} / Haben Bank {accounts.bankAccount}).</li>
-          <li>Munition ist nie online bezahlbar, nur per Rechnung.</li>
+          <li>{t("adm1.acc.how.issue", { receivable: accounts.receivableAccount, fee: accounts.feeAccount, workFee: accounts.workFeeAccount, booking: accounts.bookingAccount, ammo: accounts.ammoAccount })}</li>
+          <li>{t("adm1.acc.how.paid", { bank: accounts.bankAccount })}</li>
+          <li>{t("adm1.acc.how.cancelled")}</li>
+          <li>{t("adm1.acc.how.double")}</li>
+          <li>{t("adm1.acc.how.refund")}</li>
+          <li>{t("adm1.acc.how.bookingOnline")}</li>
+          <li>{t("adm1.acc.how.bookingCash", { cash: accounts.cashAccount, booking: accounts.bookingAccount })}</li>
+          <li>{t("adm1.acc.how.kiosk", { kiosk: accounts.kioskAccount })}</li>
+          <li>{t("adm1.acc.how.kioskCash", { cash: accounts.cashAccount, kiosk: accounts.kioskAccount })}</li>
+          <li>{t("adm1.acc.how.dates")}</li>
+          <li>{t("adm1.acc.how.fees", { feesExpense: accounts.feesExpenseAccount, bank: accounts.bankAccount })}</li>
+          <li>{t("adm1.acc.how.ammo")}</li>
         </ul>
       </Card>
     </div>

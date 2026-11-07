@@ -54,6 +54,7 @@ const FALLBACK_HINT: Record<string, string> = {
   de: "Falls der Button nicht funktioniert, diesen Link im Browser öffnen:",
   fr: "Si le bouton ne fonctionne pas, ouvrez ce lien dans votre navigateur :",
   it: "Se il pulsante non funziona, apri questo link nel browser:",
+  en: "If the button does not work, open this link in your browser:",
 };
 
 /** Absätze behalten Zeilenumbrüche (\n → <br>). */
@@ -62,7 +63,7 @@ function paragraphHtml(p: string) {
 }
 
 export function renderMail(o: RenderMailInput): { html: string; text: string } {
-  const locale = o.locale === "fr" || o.locale === "it" ? o.locale : "de";
+  const locale = o.locale === "fr" || o.locale === "it" || o.locale === "en" ? o.locale : "de";
   const accent = safeColor(o.accent);
   const onAccent = textOn(accent);
   const brand = o.tenantName ? `${o.tenantName}` : "Standchef";

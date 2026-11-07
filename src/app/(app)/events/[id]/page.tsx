@@ -9,7 +9,9 @@ import { cn } from "@/lib/utils";
 import { Alert, Card, PageHeader, SectionTitle, buttonClasses } from "@/components/ui";
 import { Avatar } from "@/components/avatar";
 import { getEventDetail, type Attendee } from "@/modules/events/queries";
-import { getRequestLocale, getT, type TFunction } from "@/lib/i18n";
+import { getRequestLocale, getT, getTenantLocale, type TFunction } from "@/lib/i18n";
+import { displayContent } from "@/modules/ai/content/service";
+import { TranslatedNote } from "@/modules/ai/content/ui/translated-note";
 import { deadlineLabelL, longDateL, rsvpLabel, whenLabelL } from "@/modules/events/ui/i18n";
 import { tPlural } from "@/modules/billing/ui/i18n";
 import { DateBadge, KindChip, RichText } from "@/modules/events/ui/bits";
@@ -25,7 +27,7 @@ export async function generateMetadata(): Promise<Metadata> {
 }
 
 type Params = Promise<{ id: string }>;
-type SearchParams = Promise<{ saved?: string; created?: string }>;
+type SearchParams = Promise<{ saved?: string; created?: string; original?: string }>;
 
 function AttendeeRow({ a, showNote, t }: { a: Attendee; showNote: boolean; t: TFunction }) {
   return (
@@ -48,11 +50,19 @@ export default async function EventDetailPage({ params, searchParams }: { params
   const d = await getEventDetail(ctx, id);
   if (!d) notFound();
   const { event: e, counts, attendees, isManager } = d;
+  // Übersetzung in der Sprache des Mitglieds (nur wenn vollständig und aktuell), «Original anzeigen» per ?original=1
+  const [shown, sourceLocale] = await Promise.all([
+    displayContent(ctx.tenant.id, "event", [{ id: e.id, sources: { title: e.title, description: e.description } }], locale).then((m) => m.get(e.id)!),
+    getTenantLocale(ctx.tenant.id),
+  ]);
+  const showOriginal = shown.translated && sp.original === "1";
+  const title = shown.translated && !showOriginal ? (shown.fields.title ?? e.title) : e.title;
+  const description = shown.translated && !showOriginal ? shown.fields.description : e.description;
   const yes = attendees.filter((a) => a.status === "YES");
   const maybe = attendees.filter((a) => a.status === "MAYBE");
   const no = attendees.filter((a) => a.status === "NO");
   const when = whenLabelL(e, locale);
-  const shareText = [e.title, `${longDateL(e.startsAt, locale)} · ${when}`, e.location].filter(Boolean).join("\n");
+  const shareText = [title, `${longDateL(e.startsAt, locale)} · ${when}`, e.location].filter(Boolean).join("\n");
   const pct = e.capacity ? Math.min(100, Math.round((d.seatsTaken / e.capacity) * 100)) : 0;
   // Querverweise auf Welle-B-Module (nur wenn aktiv): Obligatorisch → Bundesübungen, Schichten → Helfer.
   const federalLink = e.kind === "OBLIGATORY" && ctx.hasModule("federal");
@@ -70,7 +80,7 @@ export default async function EventDetailPage({ params, searchParams }: { params
 
   return (
     <div>
-      <PageHeader title={e.title} back={{ href: "/events", label: t("money.events.title") }} />
+      <PageHeader title={title} back={{ href: "/events", label: t("money.events.title") }} />
 
       {sp.created ? <div className="mb-4"><Alert tone="ok">{t("money.events.detail.created")}</Alert></div> : sp.saved ? <div className="mb-4"><Alert tone="ok">{t("money.events.detail.saved")}</Alert></div> : null}
 
@@ -96,13 +106,17 @@ export default async function EventDetailPage({ params, searchParams }: { params
             ) : null}
           </div>
         </div>
-        {e.description ? <RichText text={e.description} className="mt-4 border-t border-line pt-4 text-[15px] leading-relaxed text-ink-2" /> : null}
+        {description ? <RichText text={description} className="mt-4 border-t border-line pt-4 text-[15px] leading-relaxed text-ink-2" /> : null}
+        {shown.translated ? (
+          <TranslatedNote locale={locale} sourceLocale={sourceLocale} showingOriginal={showOriginal} reviewed={shown.reviewed}
+            toggleHref={showOriginal ? `/events/${e.id}` : `/events/${e.id}?original=1`} className="mt-3" />
+        ) : null}
         {e.createdBy ? <p className="mt-4 flex items-center gap-1.5 text-xs text-ink-3"><UserRound className="h-3.5 w-3.5" /> {t("money.events.detail.createdBy", { name: e.createdBy.name })}</p> : null}
       </Card>
 
       <div className="mt-3 flex gap-2">
         <a href={`/api/ical/event/${e.id}`} className={buttonClasses("secondary", "md", "flex-1")} download><CalendarPlus className="h-4 w-4" /> {t("money.events.detail.toCalendar")}</a>
-        <ShareButton title={e.title} text={shareText} path={`/events/${e.id}`} locale={locale} />
+        <ShareButton title={title} text={shareText} path={`/events/${e.id}`} locale={locale} />
       </div>
 
       {federalLink || shifts.length || courseSession ? (

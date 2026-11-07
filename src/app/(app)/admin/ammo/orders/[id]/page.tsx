@@ -5,18 +5,24 @@ import { requireAmmoAdmin } from "@/modules/ammo/guard";
 import { getAmmoSettings, getOrder } from "@/modules/ammo/queries";
 import { AdminAmmoTabs } from "@/modules/ammo/ui/admin-tabs";
 import { ApproveButton, CancelOrderButton, IssueControls, PaymentControls } from "@/modules/ammo/ui/order-actions";
-import { formatRounds, ORDER_STATUS, PAYMENT_STATUS } from "@/modules/ammo/types";
+import { ORDER_STATUS, PAYMENT_STATUS } from "@/modules/ammo/types";
+import { adminOrderStatusT, adminPaymentStatusT, roundsT } from "@/modules/ammo/ui/labels";
 import { Avatar, userAvatarUrl } from "@/components/avatar";
 import { Badge, Card, LinkButton, PageHeader, SectionTitle } from "@/components/ui";
 import { formatMoney } from "@/lib/money";
-import { formatDateTimeZurich, formatDateZurich } from "@/lib/time";
+import { formatDate, formatDateTime, getRequestLocale, getT } from "@/lib/i18n";
 import { formatQrReference } from "@/lib/qr-reference";
 
-export const metadata: Metadata = { title: "Munitionsbestellung" };
+export async function generateMetadata(): Promise<Metadata> {
+  return { title: getT(await getRequestLocale())("adm1.ammo.order.metaTitle") };
+}
 
 export default async function AdminAmmoOrderPage({ params }: { params: Promise<{ id: string }> }) {
   const ctx = await requireAmmoAdmin();
   const { id } = await params;
+  const locale = await getRequestLocale();
+  const t = getT(locale);
+  const formatRounds = (n: number) => roundsT(n, locale, t);
   const [order, settings] = await Promise.all([getOrder(ctx.tenant.id, id), getAmmoSettings(ctx.tenant.id)]);
   if (!order) notFound();
   const st = ORDER_STATUS[order.status] ?? ORDER_STATUS.ORDERED!;
@@ -27,31 +33,31 @@ export default async function AdminAmmoOrderPage({ params }: { params: Promise<{
 
   return (
     <div>
-      <PageHeader title={order.invoiceNumber ? `Bestellung ${order.invoiceNumber}` : "Bestellung"} subtitle={`bestellt ${formatDateTimeZurich(order.createdAt)}`} back={{ href: "/admin/ammo", label: "Bestellungen" }} />
+      <PageHeader title={order.invoiceNumber ? t("adm1.ammo.order.titleNumber", { number: order.invoiceNumber }) : t("adm1.ammo.order.title")} subtitle={t("adm1.ammo.order.orderedAt", { date: formatDateTime(order.createdAt, locale) })} back={{ href: "/admin/ammo", label: t("adm1.ammo.tab.orders") }} />
       <AdminAmmoTabs />
 
       <Card className="animate-rise flex items-center gap-3 p-4">
         <Avatar name={order.user?.name ?? "?"} src={order.user ? userAvatarUrl(order.user) : null} size={44} tone="soft" />
         <div className="min-w-0 flex-1">
-          <div className="font-semibold">{order.user?.name ?? "Gelöschtes Konto"}</div>
+          <div className="font-semibold">{order.user?.name ?? t("adm1.ammo.deletedAccount")}</div>
           {order.user ? <div className="truncate text-xs text-ink-3">{order.user.email}</div> : null}
         </div>
         <div className="flex flex-col items-end gap-1">
-          <Badge tone={st.tone}>{st.label}</Badge>
-          {order.invoiceNumber && pay ? <Badge tone={pay.tone}>{pay.label}</Badge> : null}
+          <Badge tone={st.tone}>{adminOrderStatusT(order.status, t)}</Badge>
+          {order.invoiceNumber && pay ? <Badge tone={pay.tone}>{adminPaymentStatusT(order.paymentStatus, t)}</Badge> : null}
         </div>
       </Card>
 
-      <SectionTitle>Positionen</SectionTitle>
+      <SectionTitle>{t("adm1.ammo.order.items")}</SectionTitle>
       <Card className="animate-rise overflow-x-auto">
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b border-line text-left text-xs text-ink-3">
-              <th className="px-4 py-2 font-medium">Kaliber / Produkt</th>
-              <th className="px-2 py-2 text-right font-medium">Menge</th>
-              <th className="px-2 py-2 font-medium">Einheit</th>
-              <th className="px-2 py-2 text-right font-medium">Einzelpreis</th>
-              <th className="px-4 py-2 text-right font-medium">Total</th>
+              <th className="px-4 py-2 font-medium">{t("adm1.ammo.order.caliberProduct")}</th>
+              <th className="px-2 py-2 text-right font-medium">{t("adm1.ammo.qty")}</th>
+              <th className="px-2 py-2 font-medium">{t("adm1.ammo.order.unit")}</th>
+              <th className="px-2 py-2 text-right font-medium">{t("adm1.ammo.order.unitPrice")}</th>
+              <th className="px-4 py-2 text-right font-medium">{t("adm1.common.total")}</th>
             </tr>
           </thead>
           <tbody>
@@ -67,17 +73,17 @@ export default async function AdminAmmoOrderPage({ params }: { params: Promise<{
           </tbody>
           <tfoot>
             <tr>
-              <td className="px-4 py-3 font-semibold" colSpan={4}>Total · {formatRounds(rounds)}</td>
+              <td className="px-4 py-3 font-semibold" colSpan={4}>{t("adm1.common.total")} · {formatRounds(rounds)}</td>
               <td className="px-4 py-3 text-right text-base font-semibold tabular-nums">{formatMoney(order.totalCents, order.currency)}</td>
             </tr>
           </tfoot>
         </table>
       </Card>
-      {order.note ? <p className="mt-2 rounded-control bg-surface-2 px-3 py-2 text-sm">Bemerkung: «{order.note}»</p> : null}
+      {order.note ? <p className="mt-2 rounded-control bg-surface-2 px-3 py-2 text-sm">{t("adm1.ammo.order.remark", { note: order.note })}</p> : null}
 
       {open ? (
         <>
-          <SectionTitle>Ausgabe</SectionTitle>
+          <SectionTitle>{t("adm1.ammo.tab.counter")}</SectionTitle>
           <Card className="space-y-3 p-4">
             {order.status === "ORDERED" && settings.approvalRequired ? <ApproveButton orderId={order.id} /> : null}
             <IssueControls orderId={order.id} requireIdCheck={settings.requireIdCheck} />
@@ -88,24 +94,24 @@ export default async function AdminAmmoOrderPage({ params }: { params: Promise<{
 
       {order.status === "ISSUED" || order.issuedAt ? (
         <>
-          <SectionTitle>Ausgabe</SectionTitle>
+          <SectionTitle>{t("adm1.ammo.tab.counter")}</SectionTitle>
           <Card className="space-y-1 p-4 text-sm">
-            <div>Ausgegeben {order.issuedAt ? formatDateTimeZurich(order.issuedAt) : "–"}{order.issuedBy ? ` durch ${order.issuedBy.name}` : ""}</div>
-            <div className="flex items-center gap-1.5 text-ink-2"><ShieldCheck className="h-4 w-4" aria-hidden /> Berechtigung {order.idChecked ? "geprüft" : "nicht bestätigt"}</div>
+            <div>{t("adm1.ammo.order.issuedAt", { date: order.issuedAt ? formatDateTime(order.issuedAt, locale) : "–" })}{order.issuedBy ? ` ${t("adm1.ammo.order.issuedBy", { name: order.issuedBy.name })}` : ""}</div>
+            <div className="flex items-center gap-1.5 text-ink-2"><ShieldCheck className="h-4 w-4" aria-hidden /> {order.idChecked ? t("adm1.ammo.idChecked") : t("adm1.ammo.order.idNotConfirmed")}</div>
           </Card>
         </>
       ) : null}
 
       {order.invoiceNumber ? (
         <>
-          <SectionTitle action={<a href={`/ammo/${order.id}/invoice`} target="_blank" rel="noreferrer" className="inline-flex min-h-11 items-center text-sm text-ink-2 hover:text-ink">Drucken</a>}>Rechnung</SectionTitle>
+          <SectionTitle action={<a href={`/ammo/${order.id}/invoice`} target="_blank" rel="noreferrer" className="inline-flex min-h-11 items-center text-sm text-ink-2 hover:text-ink">{t("adm1.ammo.order.print")}</a>}>{t("adm1.ammo.set.invoiceTitle")}</SectionTitle>
           <Card className="mb-3 space-y-1 p-4 text-sm">
-            <div className="flex justify-between gap-3"><span className="text-ink-3">Nummer</span><span className="font-medium">{order.invoiceNumber}</span></div>
-            {order.invoiceIssuedAt ? <div className="flex justify-between gap-3"><span className="text-ink-3">Datum</span><span>{formatDateZurich(order.invoiceIssuedAt, { weekday: undefined })}</span></div> : null}
-            {order.dueAt ? <div className="flex justify-between gap-3"><span className="text-ink-3">Fällig</span><span>{formatDateZurich(order.dueAt, { weekday: undefined })}</span></div> : null}
-            {order.reference ? <div className="flex justify-between gap-3"><span className="text-ink-3">QR-Referenz</span><span className="font-mono text-xs">{formatQrReference(order.reference)}</span></div> : null}
-            {order.paidAt ? <div className="flex justify-between gap-3"><span className="text-ink-3">Bezahlt am</span><span>{formatDateZurich(order.paidAt, { weekday: undefined })}</span></div> : null}
-            <LinkButton href={`/ammo/${order.id}/invoice`} target="_blank" variant="secondary" className="mt-2 w-full"><FileText className="h-4 w-4" /> QR-Rechnung öffnen</LinkButton>
+            <div className="flex justify-between gap-3"><span className="text-ink-3">{t("adm1.ammo.order.number")}</span><span className="font-medium">{order.invoiceNumber}</span></div>
+            {order.invoiceIssuedAt ? <div className="flex justify-between gap-3"><span className="text-ink-3">{t("adm1.common.date")}</span><span>{formatDate(order.invoiceIssuedAt, locale)}</span></div> : null}
+            {order.dueAt ? <div className="flex justify-between gap-3"><span className="text-ink-3">{t("adm1.ammo.order.due")}</span><span>{formatDate(order.dueAt, locale)}</span></div> : null}
+            {order.reference ? <div className="flex justify-between gap-3"><span className="text-ink-3">{t("adm1.ammo.order.qrRef")}</span><span className="font-mono text-xs">{formatQrReference(order.reference)}</span></div> : null}
+            {order.paidAt ? <div className="flex justify-between gap-3"><span className="text-ink-3">{t("adm1.ammo.order.paidAt")}</span><span>{formatDate(order.paidAt, locale)}</span></div> : null}
+            <LinkButton href={`/ammo/${order.id}/invoice`} target="_blank" variant="secondary" className="mt-2 w-full"><FileText className="h-4 w-4" /> {t("adm1.ammo.order.openQr")}</LinkButton>
           </Card>
           {order.status === "ISSUED" ? <PaymentControls orderId={order.id} paymentStatus={order.paymentStatus} paymentNote={order.paymentNote} /> : null}
         </>
@@ -113,7 +119,7 @@ export default async function AdminAmmoOrderPage({ params }: { params: Promise<{
 
       {order.status === "ISSUED" ? (
         <>
-          <SectionTitle>Storno</SectionTitle>
+          <SectionTitle>{t("adm1.ammo.order.cancellation")}</SectionTitle>
           <CancelOrderButton orderId={order.id} issued hasStock={hasStock} />
         </>
       ) : null}

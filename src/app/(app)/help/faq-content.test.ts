@@ -9,20 +9,25 @@ const ALL = [...MEMBER_FAQ, ...ADMIN_FAQ];
 describe("Hilfe-Inhalte", () => {
   it("eindeutige ids und passende Zielgruppe", () => {
     expect(new Set(ALL.map((e) => e.id)).size).toBe(ALL.length);
-    expect(ALL.length).toBe(53);
+    expect(ALL.length).toBe(56);
     expect(MEMBER_FAQ.every((e) => e.audience === "member")).toBe(true);
     expect(ADMIN_FAQ.every((e) => e.audience === "admin")).toBe(true);
   });
 
+  it("jeder Eintrag ist auch auf Englisch übersetzt", () => {
+    expect(ALL.filter((e) => !e.en).map((e) => e.id)).toEqual([]);
+    expect(toEntry(MEMBER_FAQ[0]!, "en").q).toBe("How do I join a club?");
+  });
+
   it("jede Sprache hat Frage, Stichworte und dieselbe Antwort-Struktur", () => {
     for (const e of ALL) {
-      const shape = (l: (typeof LOCALES)[number]) => e[l].a.map((b) => ("p" in b ? "p" : "ol" in b ? `ol${b.ol.length}` : `ul${b.ul.length}`)).join(",");
+      const shape = (l: (typeof LOCALES)[number]) => (e[l] ?? e.de).a.map((b) => ("p" in b ? "p" : "ol" in b ? `ol${b.ol.length}` : `ul${b.ul.length}`)).join(",");
       for (const l of LOCALES) {
-        expect(e[l].q.trim(), `${e.id}/${l}`).not.toBe("");
-        expect(e[l].keywords.trim(), `${e.id}/${l}`).not.toBe("");
-        expect(e[l].a.flatMap(blockTexts).every((s) => s.trim().length > 0), `${e.id}/${l}`).toBe(true);
+        expect((e[l] ?? e.de).q.trim(), `${e.id}/${l}`).not.toBe("");
+        expect((e[l] ?? e.de).keywords.trim(), `${e.id}/${l}`).not.toBe("");
+        expect((e[l] ?? e.de).a.flatMap(blockTexts).every((s) => s.trim().length > 0), `${e.id}/${l}`).toBe(true);
         expect(shape(l), `${e.id}/${l}`).toBe(shape("de"));
-        expect(answerLinks(e[l].a), `${e.id}/${l}`).toEqual(answerLinks(e.de.a));
+        expect(answerLinks((e[l] ?? e.de).a), `${e.id}/${l}`).toEqual(answerLinks(e.de.a));
       }
     }
   });
@@ -30,7 +35,7 @@ describe("Hilfe-Inhalte", () => {
   it("Auszeichnung ist vollständig (keine offenen Sternchen oder Klammern)", () => {
     for (const e of ALL) {
       for (const l of LOCALES) {
-        for (const s of e[l].a.flatMap(blockTexts)) {
+        for (const s of (e[l] ?? e.de).a.flatMap(blockTexts)) {
           const plain = plainText(s);
           expect(plain, `${e.id}/${l}`).not.toMatch(/\*\*|\]\(/);
         }

@@ -4,7 +4,8 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { db } from "@/lib/db";
 import { requireModule } from "@/lib/tenant";
-import { fail, ok, type ActionResult } from "@/lib/action-result";
+import type { ActionResult } from "@/lib/action-result";
+import { lfail as fail, lok as ok } from "@/lib/i18n/extra/admin1/action-result";
 import {
   createAdapter,
   DEFAULT_MAX_FILE_MB,

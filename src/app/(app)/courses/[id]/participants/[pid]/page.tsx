@@ -3,10 +3,13 @@ import { notFound } from "next/navigation";
 import { GraduationCap, IdCard, Link2, Trash2, Undo2 } from "lucide-react";
 import { Alert, Badge, Card, LinkButton, PageHeader, SectionTitle } from "@/components/ui";
 import { ActionButton } from "@/components/ui/action-button";
-import { formatDateZurich, todayZurich } from "@/lib/time";
+import { todayZurich } from "@/lib/time";
+import { getRequestLocale, getT } from "@/lib/i18n";
+import { formatDate } from "@/lib/i18n/core";
+import { dayKeyLabel } from "@/lib/i18n/extra/admin2/msg";
 import { completeParticipantAction, deleteParticipantAction, deleteResultAction, setParticipantStatusAction } from "@/modules/courses/actions";
 import { requireCoursesManage } from "@/modules/courses/guard";
-import { ageOn, canComplete, chDate, courseReferenceDay, dbDay, evaluatePass, guardianProblem } from "@/modules/courses/logic";
+import { ageOn, canComplete, courseReferenceDay, dbDay, evaluatePass, guardianProblem } from "@/modules/courses/logic";
 import { candidateMatches, getCourse, memberOptions } from "@/modules/courses/queries";
 import { participantStatusInfo } from "@/modules/courses/types";
 import { CellIcon } from "@/modules/courses/ui/my-course";
@@ -15,10 +18,15 @@ import { ParticipantForm } from "@/modules/courses/ui/participant-form";
 import { LinkMatchList, ManualResultForm, type MatchCandidate } from "@/modules/courses/ui/result-forms";
 import { listAvailableWeapons } from "@/modules/weapons/service";
 
-export const metadata: Metadata = { title: "Teilnehmer:in" };
+export async function generateMetadata(): Promise<Metadata> {
+  return { title: getT(await getRequestLocale())("adm2.courses.pp.title") };
+}
 
 export default async function ParticipantPage({ params }: { params: Promise<{ id: string; pid: string }> }) {
   const ctx = await requireCoursesManage();
+  const locale = await getRequestLocale();
+  const t = getT(locale);
+  const day = (d: Date) => formatDate(d, locale, { weekday: "short" });
   const { id, pid } = await params;
   const course = await getCourse(ctx.tenant.id, id.slice(0, 40));
   if (!course) notFound();
@@ -33,15 +41,15 @@ export default async function ParticipantPage({ params }: { params: Promise<{ id
     weaponsEnabled ? listAvailableWeapons(ctx.tenant.id) : Promise.resolve([]),
     p.userId ? candidateMatches(ctx.tenant.id, p.userId, progIds) : Promise.resolve([]),
   ]);
-  const st = participantStatusInfo(p.status);
+  const st = participantStatusInfo(p.status, t);
   const age = ageOn(p.birthDay, refDay);
-  const gp = guardianProblem({ birthDate: p.birthDay, guardianName: p.guardianName, guardianEmail: p.guardianEmail, guardianPhone: p.guardianPhone }, refDay);
+  const gp = guardianProblem({ birthDate: p.birthDay, guardianName: p.guardianName, guardianEmail: p.guardianEmail, guardianPhone: p.guardianPhone }, refDay, t);
   const linked = new Set(p.results.map((r) => r.matchParticipantId).filter(Boolean));
   const progById = new Map(course.requiredPrograms.map((x) => [x.id, x]));
   const candidateRows: MatchCandidate[] = candidates.map((c) => {
     const prog = progById.get(c.programId);
     const suggested = evaluatePass({ minScore: prog?.passMinScore ?? null, maxZeros: prog?.passMaxZeros ?? null }, c.total, c.zeros) ?? c.passed ?? false;
-    return { id: c.id, programName: prog?.name ?? "Programm", dateLabel: formatDateZurich(c.date), total: c.total, zeros: c.zeros, suggestedPassed: suggested, officialHint: c.isOfficial ? "amtlich" : null, linked: linked.has(c.id) };
+    return { id: c.id, programName: prog?.name ?? t("adm2.courses.pp.program"), dateLabel: day(c.date), total: c.total, zeros: c.zeros, suggestedPassed: suggested, officialHint: c.isOfficial ? t("adm2.courses.pp.official") : null, linked: linked.has(c.id) };
   });
   const otherResults = p.results.filter((r) => !r.programId || !progById.has(r.programId));
   const base = `/courses/${course.id}`;
@@ -50,10 +58,10 @@ export default async function ParticipantPage({ params }: { params: Promise<{ id
   const resultLine = (r: (typeof p.results)[number], label?: string) => (
     <li key={r.id} className="flex items-center gap-2 py-1.5 text-sm">
       <span className="min-w-0 flex-1">
-        {label ? <span className="font-medium">{label} · </span> : null}{chDate(dbDay(r.date))} · {r.score ?? "–"} Punkte · {r.passed ? <span className="text-ok">bestanden</span> : <span className="text-danger">nicht bestanden</span>}
-        {r.matchParticipantId ? <Link2 className="ml-1 inline h-3.5 w-3.5 text-ink-3" aria-label="aus Durchgang" /> : null}
+        {label ? <span className="font-medium">{label} · </span> : null}{t("adm2.courses.pp.resultLine", { date: dayKeyLabel(dbDay(r.date), locale), score: r.score ?? "–" })}{r.passed ? <span className="text-ok">{t("adm2.courses.pp.passed")}</span> : <span className="text-danger">{t("adm2.courses.pp.failed")}</span>}
+        {r.matchParticipantId ? <Link2 className="ml-1 inline h-3.5 w-3.5 text-ink-3" aria-label={t("adm2.courses.pp.fromMatch")} /> : null}
       </span>
-      <ActionButton variant="ghost" size="sm" className="h-11 w-11 px-0" aria-label="Resultat löschen" action={deleteResultAction.bind(null, r.id)} confirm={{ title: "Resultat löschen?", tone: "danger", confirmLabel: "Löschen" }}>
+      <ActionButton variant="ghost" size="sm" className="h-11 w-11 px-0" aria-label={t("adm2.courses.pp.deleteResult")} action={deleteResultAction.bind(null, r.id)} confirm={{ title: t("adm2.courses.pp.deleteResultQ"), tone: "danger", confirmLabel: t("adm2.common.delete") }}>
         <Trash2 className="h-4 w-4" />
       </ActionButton>
     </li>
@@ -61,15 +69,15 @@ export default async function ParticipantPage({ params }: { params: Promise<{ id
 
   return (
     <div className="max-w-2xl">
-      <PageHeader title={`${p.firstName} ${p.lastName}`} subtitle={[course.name, age !== null ? `${age} Jahre` : null, p.userId ? "Mitglied" : "extern"].filter(Boolean).join(" · ")} back={{ href: base, label: "Kurs" }} />
+      <PageHeader title={`${p.firstName} ${p.lastName}`} subtitle={[course.name, age !== null ? t("adm2.courses.pp.years", { n: age }) : null, p.userId ? t("adm2.courses.pp.member") : t("adm2.courses.d.external")].filter(Boolean).join(" · ")} back={{ href: base, label: t("adm2.courses.course") }} />
 
       <div className="mb-4 flex flex-wrap items-center gap-2">
         <Badge tone={st.tone}>{st.label}</Badge>
-        {p.status === "REGISTERED" ? <ActionButton size="sm" variant="secondary" action={setParticipantStatusAction.bind(null, p.id, "ACTIVE")}>Als aktiv markieren</ActionButton> : null}
+        {p.status === "REGISTERED" ? <ActionButton size="sm" variant="secondary" action={setParticipantStatusAction.bind(null, p.id, "ACTIVE")}>{t("adm2.courses.pp.markActive")}</ActionButton> : null}
         {p.status === "COMPLETED" ? (
           <>
-            <LinkButton href={`${base}/certificate?p=${p.id}`} size="sm" variant="secondary" prefetch={false}><IdCard className="h-4 w-4" /> Kursausweis</LinkButton>
-            <ActionButton size="sm" variant="ghost" action={setParticipantStatusAction.bind(null, p.id, "ACTIVE")} confirm={{ title: "Abschluss zurücknehmen?", confirmLabel: "Zurücknehmen" }}><Undo2 className="h-4 w-4" /> Abschluss zurücknehmen</ActionButton>
+            <LinkButton href={`${base}/certificate?p=${p.id}`} size="sm" variant="secondary" prefetch={false}><IdCard className="h-4 w-4" /> {t("adm2.courses.pp.certificate")}</LinkButton>
+            <ActionButton size="sm" variant="ghost" action={setParticipantStatusAction.bind(null, p.id, "ACTIVE")} confirm={{ title: t("adm2.courses.pp.undoQ"), confirmLabel: t("adm2.courses.pp.undoConfirm") }}><Undo2 className="h-4 w-4" /> {t("adm2.courses.pp.undo")}</ActionButton>
           </>
         ) : null}
       </div>
@@ -78,19 +86,19 @@ export default async function ParticipantPage({ params }: { params: Promise<{ id
 
       <Card className="mb-4 space-y-3 p-4">
         <div className="flex items-center justify-between gap-2">
-          <h2 className="font-semibold">Pflichtprogramme</h2>
-          <span className="text-sm text-ink-3">{p.completion.passedCount} von {p.completion.required} bestanden</span>
+          <h2 className="font-semibold">{t("adm2.courses.form.required")}</h2>
+          <span className="text-sm text-ink-3">{t("adm2.courses.pp.passedOf", { n: p.completion.passedCount, total: p.completion.required })}</span>
         </div>
-        {course.requiredPrograms.length === 0 ? <p className="text-sm text-ink-3">Für diesen Kurs sind keine Pflichtprogramme festgelegt.</p> : null}
+        {course.requiredPrograms.length === 0 ? <p className="text-sm text-ink-3">{t("adm2.courses.pp.noRequired")}</p> : null}
         {course.requiredPrograms.map((prog) => {
           const cell = p.completion.cells[prog.id]!;
           const list = p.results.filter((r) => r.programId === prog.id);
           return (
             <div key={prog.id} className="rounded-control border border-line p-3">
               <div className="flex items-center gap-2">
-                <CellIcon state={cell.state} />
+                <CellIcon state={cell.state} t={t} />
                 <span className="flex-1 font-medium">{prog.name}</span>
-                {prog.passMinScore != null ? <span className="text-xs text-ink-3">ab {prog.passMinScore}</span> : null}
+                {prog.passMinScore != null ? <span className="text-xs text-ink-3">{t("adm2.courses.pp.from", { n: prog.passMinScore })}</span> : null}
               </div>
               {list.length ? <ul className="mt-1 divide-y divide-line">{list.map((r) => resultLine(r))}</ul> : null}
             </div>
@@ -102,29 +110,29 @@ export default async function ParticipantPage({ params }: { params: Promise<{ id
             size="lg"
             disabled={!completable}
             action={completeParticipantAction.bind(null, p.id)}
-            confirm={{ title: "Kurs abschliessen?", message: `Bestätigt, dass ${p.firstName} ${p.lastName} den Kurs erfüllt hat. Danach kann der Kursausweis gedruckt werden.`, confirmLabel: "Abschliessen" }}
+            confirm={{ title: t("adm2.courses.pp.completeQ"), message: t("adm2.courses.pp.completeText", { name: `${p.firstName} ${p.lastName}` }), confirmLabel: t("adm2.courses.r.complete") }}
           >
-            <GraduationCap className="h-5 w-5" /> Kurs abschliessen
+            <GraduationCap className="h-5 w-5" /> {t("adm2.courses.pp.complete")}
           </ActionButton>
         ) : null}
-        {!completable && p.status !== "COMPLETED" && p.status !== "DROPPED" ? <p className="text-xs text-ink-3">Möglich, sobald alle Pflichtprogramme bestanden sind.</p> : null}
+        {!completable && p.status !== "COMPLETED" && p.status !== "DROPPED" ? <p className="text-xs text-ink-3">{t("adm2.courses.pp.completeHint")}</p> : null}
       </Card>
 
       {otherResults.length ? (
         <Card className="mb-4 p-4">
-          <h2 className="mb-1 font-semibold">Weitere Resultate</h2>
+          <h2 className="mb-1 font-semibold">{t("adm2.courses.pp.other")}</h2>
           <ul className="divide-y divide-line">{otherResults.map((r) => resultLine(r, r.label))}</ul>
         </Card>
       ) : null}
 
-      <SectionTitle>Resultat erfassen</SectionTitle>
+      <SectionTitle>{t("adm2.courses.pp.addResult")}</SectionTitle>
       <Card className="mb-4 p-4">
         <ManualResultForm participantId={p.id} programs={course.requiredPrograms} today={today} />
       </Card>
 
       {p.userId ? (
         <>
-          <SectionTitle>Aus Durchgang übernehmen</SectionTitle>
+          <SectionTitle>{t("adm2.courses.pp.fromMatchTitle")}</SectionTitle>
           <Card className="mb-4 px-4 py-1">
             <LinkMatchList participantId={p.id} candidates={candidateRows} />
           </Card>
@@ -133,14 +141,14 @@ export default async function ParticipantPage({ params }: { params: Promise<{ id
 
       {course.sessions.length ? (
         <>
-          <SectionTitle>Präsenz ({p.attendance.present}/{p.attendance.total})</SectionTitle>
+          <SectionTitle>{t("adm2.courses.pp.attendance", { n: p.attendance.present, total: p.attendance.total })}</SectionTitle>
           <Card className="mb-4 divide-y divide-line">
             {course.sessions.map((s) => {
               const v = course.attendanceIdx.get(`${s.id}|${p.id}`);
               return (
                 <div key={s.id} className="flex items-center gap-3 px-4 py-2.5 text-sm">
-                  <span className="flex-1">{formatDateZurich(s.startsAt)} · {s.title}</span>
-                  {v === true ? <Badge tone="ok">anwesend</Badge> : v === false ? <Badge tone="outline">abwesend</Badge> : <span className="text-xs text-ink-3">nicht erfasst</span>}
+                  <span className="flex-1">{day(s.startsAt)} · {s.title}</span>
+                  {v === true ? <Badge tone="ok">{t("adm2.courses.pp.present")}</Badge> : v === false ? <Badge tone="outline">{t("adm2.courses.pp.absent")}</Badge> : <span className="text-xs text-ink-3">{t("adm2.courses.pp.notRecorded")}</span>}
                 </div>
               );
             })}
@@ -148,7 +156,7 @@ export default async function ParticipantPage({ params }: { params: Promise<{ id
         </>
       ) : null}
 
-      <SectionTitle>Angaben</SectionTitle>
+      <SectionTitle>{t("adm2.courses.pp.details")}</SectionTitle>
       <ParticipantForm
         courseId={course.id}
         members={members}
@@ -168,12 +176,12 @@ export default async function ParticipantPage({ params }: { params: Promise<{ id
           to={base}
           variant="ghost"
           action={deleteParticipantAction.bind(null, p.id)}
-          confirm={{ title: "Aus dem Kurs entfernen?", message: "Präsenz und Resultate dieser Person im Kurs werden gelöscht. Für einen Kursabbruch besser den Status «Ausgetreten» setzen.", tone: "danger", confirmLabel: "Entfernen" }}
+          confirm={{ title: t("adm2.courses.pp.removeQ"), message: t("adm2.courses.pp.removeText"), tone: "danger", confirmLabel: t("adm2.common.remove") }}
         >
-          <Trash2 className="h-4 w-4" /> Entfernen
+          <Trash2 className="h-4 w-4" /> {t("adm2.common.remove")}
         </NavActionButton>
       </div>
-      <p className="mt-4 text-xs text-ink-3">Erfasst am {formatDateZurich(p.createdAt)}.</p>
+      <p className="mt-4 text-xs text-ink-3">{t("adm2.courses.pp.createdOn", { date: day(p.createdAt) })}</p>
     </div>
   );
 }

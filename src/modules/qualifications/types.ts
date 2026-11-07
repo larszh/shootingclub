@@ -19,9 +19,12 @@ export function isQualificationKind(k: string): k is QualificationKind {
   return (QUALIFICATION_KIND_KEYS as string[]).includes(k);
 }
 
-export function qualificationLabel(kind: string | null | undefined): string {
+/** Bezeichnung der Art; mit `t` in der Sprache der Seite (Schlüssel «shooting.qual.<KIND>»). */
+export function qualificationLabel(kind: string | null | undefined, t?: (key: string) => string): string {
   if (!kind) return "";
-  return QUALIFICATION_KINDS.find((k) => k.key === kind)?.label ?? kind;
+  const de = QUALIFICATION_KINDS.find((k) => k.key === kind)?.label;
+  if (!de) return kind;
+  return t ? t(`shooting.qual.${kind}`) : de;
 }
 
 /** Tage vor Ablauf, ab denen eine Qualifikation als «läuft ab» gilt. */

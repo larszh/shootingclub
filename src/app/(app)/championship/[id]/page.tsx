@@ -11,6 +11,7 @@ import { NO_CATEGORY, formatPoints, formatWeight } from "@/modules/championship/
 import { ChampionshipAdminButtons, PublishToggle } from "@/modules/championship/ui/admin-actions";
 import { MyStanding } from "@/modules/championship/ui/my-standing";
 import { RankingList } from "@/modules/championship/ui/ranking-list";
+import { localizedProgramName } from "@/modules/scores/preset-i18n";
 
 export async function generateMetadata(): Promise<Metadata> {
   return { title: getT(await getRequestLocale())("shooting.champ.ranking") };
@@ -103,7 +104,7 @@ export default async function ChampionshipDetailPage({ params, searchParams }: {
         {c.programs.map((p) => (
           <div key={p.programId} className="flex min-h-12 items-center justify-between gap-3 px-4 py-2.5">
             <div className="min-w-0">
-              <div className="truncate font-medium">{p.name}</div>
+              <div className="truncate font-medium">{localizedProgramName(p.name, locale)}</div>
               <div className="text-xs text-ink-3">{disciplineText(t, p.discipline)}</div>
             </div>
             <div className="flex shrink-0 flex-wrap justify-end gap-1.5">

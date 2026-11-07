@@ -24,9 +24,11 @@ type Props = {
   footer: string;
   initial: { paper: PaperSize; layout: PrintLayoutKey; copies: number };
   auto: boolean;
+  /** Sprache der Beschriftungen im SVG */
+  locale?: string | null;
 };
 
-export function PrintSheet({ target, footer, initial, auto }: Props) {
+export function PrintSheet({ target, footer, initial, auto, locale }: Props) {
   const [paper, setPaper] = useState<PaperSize>(initial.paper);
   const [layout, setLayout] = useState<PrintLayoutKey>(initial.layout);
   const [copies, setCopies] = useState(initial.copies);
@@ -40,9 +42,9 @@ export function PrintSheet({ target, footer, initial, auto }: Props) {
   const svgs = useMemo(() => {
     const out: Partial<Record<PaperSize, string>> = {};
     if (isUpload) return out;
-    for (const p of sheet.pieces) out[p.size] ??= renderTargetSvg(target.subject as TargetSubject, p.size, target.params);
+    for (const p of sheet.pieces) out[p.size] ??= renderTargetSvg(target.subject as TargetSubject, p.size, target.params, locale);
     return out;
-  }, [isUpload, sheet.pieces, target.subject, target.params]);
+  }, [isUpload, sheet.pieces, target.subject, target.params, locale]);
 
   useEffect(() => {
     if (!auto) return;

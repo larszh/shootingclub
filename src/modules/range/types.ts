@@ -62,6 +62,9 @@ export const incidentStatusInfo = (s: string, t?: (key: string) => string) => {
 
 export const DISCIPLINE_SUGGESTIONS = ["Gewehr 300 m", "Pistole 25 m", "Pistole 50 m", "Kleinkaliber 50 m", "Luftgewehr 10 m", "Luftpistole 10 m", "Armbrust"];
 
+/** Vorschläge für die Disziplin in der Sprache der Seite (Schlüssel «adm2.range.disc.<i>»). */
+export const disciplineSuggestions = (t: (key: string) => string) => DISCIPLINE_SUGGESTIONS.map((de, i) => tr(t, `adm2.range.disc.${i}`, de));
+
 export const HALF_DAY_LABELS = { usedAm: "Vormittag", usedPm: "Nachmittag", usedEvening: "Abend" } as const;
 
 // --- Validierung -----------------------------------------------------------------------
@@ -70,7 +73,7 @@ const optText = (max: number) =>
   z
     .string()
     .trim()
-    .max(max, `Höchstens ${max} Zeichen.`)
+    .max(max, "adm2.common.maxCharsShort")
     .optional()
     .transform((v) => (v ? v : null));
 
@@ -78,7 +81,7 @@ export const idSchema = z.string().min(1).max(40);
 export const clientIdSchema = z.string().min(8).max(64).regex(/^[\w-]+$/);
 
 export const guestSchema = z.object({
-  guestName: z.string().trim().min(2, "Name fehlt.").max(191),
+  guestName: z.string().trim().min(2, "adm2.common.nameMissing").max(191),
   guestBirthYear: z.coerce.number().int().min(1900).max(2100).optional(),
   guestPhone: optText(40),
   guestEmail: z
@@ -87,7 +90,7 @@ export const guestSchema = z.object({
     .max(191)
     .optional()
     .transform((v) => (v ? v : null))
-    .refine((v) => v === null || /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v), "Ungültige E-Mail."),
+    .refine((v) => v === null || /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v), "adm2.common.invalidEmail"),
   hostUserId: optText(40),
   guestIdChecked: z.boolean(),
   rulesExplained: z.boolean(),
@@ -103,9 +106,9 @@ export const visitUpdateSchema = z.object({
 });
 
 export const rulesSchema = z.object({
-  title: z.string().trim().min(2, "Titel fehlt.").max(191),
+  title: z.string().trim().min(2, "adm2.common.titleMissing").max(191),
   // Browser senden Textarea-Inhalte mit CRLF; einheitlich mit LF speichern (sonst bleibt der Editor «ungespeichert»).
-  body: z.string().transform(normalizeRulesBody).pipe(z.string().min(10, "Text fehlt.").max(30000, "Text zu lang.")),
+  body: z.string().transform(normalizeRulesBody).pipe(z.string().min(10, "adm2.range.msg.textMissing").max(30000, "adm2.range.msg.textTooLong")),
 });
 
 /** Zeilenenden auf LF vereinheitlichen und trimmen (Server und Editor vergleichen so dasselbe). */
@@ -115,16 +118,16 @@ export function normalizeRulesBody(s: string): string {
 
 export const windowSchema = z.object({
   resourceId: optText(40),
-  weekdays: z.array(z.number().int().min(0).max(6)).min(1, "Mindestens einen Wochentag wählen."),
-  start: z.string().regex(/^\d{1,2}:\d{2}$/, "Zeit im Format HH:MM."),
-  end: z.string().regex(/^\d{1,2}:\d{2}$/, "Zeit im Format HH:MM."),
+  weekdays: z.array(z.number().int().min(0).max(6)).min(1, "adm2.range.msg.weekdayMissing"),
+  start: z.string().regex(/^\d{1,2}:\d{2}$/, "adm2.common.timeFormat"),
+  end: z.string().regex(/^\d{1,2}:\d{2}$/, "adm2.common.timeFormat"),
   note: optText(191),
 });
 
 export const quotaSchema = z.object({
   resourceId: optText(40),
   year: z.coerce.number().int().min(2000).max(2100),
-  maxHalfDays: z.coerce.number().int().min(0, "Ungültige Zahl.").max(1000, "Ungültige Zahl."),
+  maxHalfDays: z.coerce.number().int().min(0, "adm2.common.invalidNumber").max(1000, "adm2.common.invalidNumber"),
   note: optText(191),
 });
 

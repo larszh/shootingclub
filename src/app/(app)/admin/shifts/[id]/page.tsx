@@ -2,23 +2,31 @@ import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { AlertTriangle, CalendarPlus, ShieldCheck } from "lucide-react";
 import { Alert, Badge, Card, PageHeader, SectionTitle } from "@/components/ui";
-import { formatDateZurich, formatTimeRange, zurichParts } from "@/lib/time";
+import { formatTimeRange, zurichParts } from "@/lib/time";
+import { displayUserName, getRequestLocale, getT } from "@/lib/i18n";
+import { formatDate } from "@/lib/i18n/core";
 import { requireShiftsAdmin } from "@/modules/shifts/guard";
 import { getShiftView, nowInstant, qualifiedUsers, shiftEventOptions, shiftMemberOptions } from "@/modules/shifts/queries";
 import { addDayKey, formatHours } from "@/modules/shifts/logic";
 import { ASSIGNMENT_LABELS } from "@/modules/shifts/types";
 import { isValidOn, qualificationLabel } from "@/modules/qualifications/types";
 import { kindMeta } from "@/modules/events/types";
+import { kindLabel } from "@/modules/events/ui/i18n";
 import { AssignButton } from "@/modules/shifts/ui/assign-dialog";
 import { AssignmentActions, ConfirmAllButton } from "@/modules/shifts/ui/assignment-actions";
 import { CopyShiftButton } from "@/modules/shifts/ui/copy-dialog";
 import { DeleteShiftButton } from "@/modules/shifts/ui/admin-buttons";
 import { ShiftForm } from "@/modules/shifts/ui/shift-form";
 
-export const metadata: Metadata = { title: "Einsatz" };
+export async function generateMetadata(): Promise<Metadata> {
+  return { title: getT(await getRequestLocale())("adm2.shifts.detail.metaTitle") };
+}
 
 export default async function AdminShiftPage({ params }: { params: Promise<{ id: string }> }) {
   const ctx = await requireShiftsAdmin();
+  const locale = await getRequestLocale();
+  const t = getT(locale);
+  const day = (d: Date) => formatDate(d, locale, { weekday: "short" });
   const { id } = await params;
   const tenantId = ctx.tenant.id;
   const s = await getShiftView(tenantId, id);
@@ -28,7 +36,7 @@ export default async function AdminShiftPage({ params }: { params: Promise<{ id:
   const assigned = new Set(s.assignments.map((a) => a.userId));
   const candidates = members.filter((m) => !assigned.has(m.userId));
   const quals = s.requiredQualification ? await qualifiedUsers(tenantId, s.requiredQualification, candidates.map((m) => m.userId), [s.day]) : new Map();
-  const qualLabel = s.requiredQualification ? qualificationLabel(s.requiredQualification) : null;
+  const qualLabel = s.requiredQualification ? qualificationLabel(s.requiredQualification, t) : null;
   const started = s.startsAt <= now;
   const openCount = s.assignments.filter((a) => a.status === "ASSIGNED").length;
   const meta = s.event ? kindMeta(s.event.kind) : null;
@@ -37,36 +45,36 @@ export default async function AdminShiftPage({ params }: { params: Promise<{ id:
 
   return (
     <div>
-      <PageHeader title={s.title} subtitle={`${formatDateZurich(s.startsAt)}, ${formatTimeRange(s.startsAt, s.endsAt)} Uhr`} back={{ href: "/admin/shifts", label: "Einsätze" }} />
+      <PageHeader title={s.title} subtitle={t("adm2.shifts.detail.subtitle", { date: day(s.startsAt), time: formatTimeRange(s.startsAt, s.endsAt) })} back={{ href: "/admin/shifts", label: t("adm2.shifts.tab.shifts") }} />
 
       <div className="mb-4 flex flex-wrap gap-2">
-        {s.event ? <Badge className={meta?.chip}>{meta?.label}: {s.event.title}</Badge> : <Badge>Standdienst / eigenständig</Badge>}
-        <Badge tone={s.staffing.understaffed ? "warn" : "ok"}>{s.staffing.filled}/{s.staffing.capacity} Personen</Badge>
-        <Badge>{formatHours(s.defaultHours)} h pro Person</Badge>
+        {s.event ? <Badge className={meta?.chip}>{kindLabel(s.event.kind, locale)}: {s.event.title}</Badge> : <Badge>{t("adm2.shifts.detail.standalone")}</Badge>}
+        <Badge tone={s.staffing.understaffed ? "warn" : "ok"}>{t("adm2.shifts.detail.people", { filled: s.staffing.filled, capacity: s.staffing.capacity })}</Badge>
+        <Badge>{t("adm2.shifts.detail.perPerson", { h: formatHours(s.defaultHours) })}</Badge>
         {qualLabel ? <Badge tone={s.qualificationMissing ? "warn" : "ok"}>{qualLabel}</Badge> : null}
       </div>
-      {s.event?.isCancelled ? <Alert className="mb-4">Der Anlass ist abgesagt. Einsatz löschen oder Eingeteilte informieren.</Alert> : null}
+      {s.event?.isCancelled ? <Alert className="mb-4">{t("adm2.shifts.detail.cancelled")}</Alert> : null}
       {s.qualificationMissing ? (
         <Alert tone="warn" className="mb-4" icon={<AlertTriangle className="h-4 w-4" />}>
-          Niemand der Eingeteilten hat eine gültige Qualifikation «{qualLabel}». Bitte jemanden mit dieser Qualifikation einteilen.
+          {t("adm2.shifts.detail.qualMissing", { qual: qualLabel ?? "" })}
         </Alert>
       ) : null}
 
-      <SectionTitle action={<span className="text-sm text-ink-3">{s.staffing.open ? `${s.staffing.open} frei` : "voll"}</span>}>Eingeteilt</SectionTitle>
+      <SectionTitle action={<span className="text-sm text-ink-3">{s.staffing.open ? t("adm2.shifts.detail.free", { n: s.staffing.open }) : t("adm2.shifts.detail.full")}</span>}>{t("adm2.shifts.detail.assigned")}</SectionTitle>
       <Card className="animate-rise mb-3 divide-y divide-line overflow-hidden">
-        {s.assignments.length === 0 ? <p className="p-4 text-sm text-ink-3">Noch niemand eingeteilt. Mitglieder können sich unter «Helfereinsätze» selbst eintragen.</p> : null}
+        {s.assignments.length === 0 ? <p className="p-4 text-sm text-ink-3">{t("adm2.shifts.detail.nobody")}</p> : null}
         {s.assignments.map((a) => {
           const st = ASSIGNMENT_LABELS[a.status] ?? ASSIGNMENT_LABELS.ASSIGNED!;
           return (
             <div key={a.id} className="flex flex-col gap-2 px-4 py-3 sm:flex-row sm:items-center">
               <div className="min-w-0 flex-1">
                 <div className="flex flex-wrap items-center gap-1.5">
-                  <span className="font-medium">{a.user.name}</span>
-                  <Badge tone={st.tone}>{st.label}{a.status === "DONE" ? `, ${formatHours(a.hours ?? s.defaultHours)} h` : ""}</Badge>
+                  <span className="font-medium">{displayUserName(a.user.name, t)}</span>
+                  <Badge tone={st.tone}>{t(`adm2.shifts.status.${a.status in ASSIGNMENT_LABELS ? a.status : "ASSIGNED"}`)}{a.status === "DONE" ? `, ${formatHours(a.hours ?? s.defaultHours)} h` : ""}</Badge>
                   {s.requiredQualification && s.qualifiedIds.has(a.userId) ? <ShieldCheck className="h-4 w-4 text-ok" aria-label={qualLabel ?? undefined} /> : null}
                 </div>
               </div>
-              <AssignmentActions assignmentId={a.id} name={a.user.name} status={a.status} defaultHours={s.defaultHours} started={started} />
+              <AssignmentActions assignmentId={a.id} name={displayUserName(a.user.name, t)} status={a.status} defaultHours={s.defaultHours} started={started} />
             </div>
           );
         })}
@@ -79,16 +87,16 @@ export default async function AdminShiftPage({ params }: { params: Promise<{ id:
           <CalendarPlus className="h-4 w-4" /> .ics
         </a>
       </div>
-      {!started ? <p className="-mt-4 mb-6 text-xs text-ink-3">Nach Beginn des Einsatzes kannst du hier «erledigt» oder «nicht erschienen» bestätigen.</p> : null}
+      {!started ? <p className="-mt-4 mb-6 text-xs text-ink-3">{t("adm2.shifts.detail.afterStart")}</p> : null}
 
-      <SectionTitle>Vorlage</SectionTitle>
+      <SectionTitle>{t("adm2.shifts.detail.template")}</SectionTitle>
       <div className="mb-6">
         <CopyShiftButton shiftId={s.id} day={s.day} suggestTo={addDayKey(s.day, 8 * 7)} />
       </div>
 
-      <SectionTitle>Bearbeiten</SectionTitle>
+      <SectionTitle>{t("adm2.shifts.detail.edit")}</SectionTitle>
       <ShiftForm
-        events={events.map((e) => ({ id: e.id, title: e.title, kind: e.kind, day: e.day, time: e.time, endTime: e.endTime, label: `${formatDateZurich(e.startsAt)} · ${e.title}` }))}
+        events={events.map((e) => ({ id: e.id, title: e.title, kind: e.kind, day: e.day, time: e.time, endTime: e.endTime, label: `${day(e.startsAt)} · ${e.title}` }))}
         defaultDate={s.day}
         initial={{ id: s.id, title: s.title, eventId: s.eventId, date: start.dateStr, startTime: start.timeStr, endTime: end.timeStr, capacity: s.capacity, requiredQualification: s.requiredQualification, hoursCredit: s.hoursCredit, note: s.note }}
       />

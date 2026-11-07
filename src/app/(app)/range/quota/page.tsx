@@ -4,6 +4,7 @@ import { Printer } from "lucide-react";
 import { Badge, Card, LinkButton, LinkTabs, PageHeader, ProgressBar } from "@/components/ui";
 import { todayZurich } from "@/lib/time";
 import { getRequestLocale, getT, type Locale } from "@/lib/i18n";
+import { INTL_LOCALE } from "@/lib/i18n/locales";
 import { requireRangeDuty } from "@/modules/range/guard";
 import { quotaOverview } from "@/modules/range/queries";
 import { rangeTabs } from "@/modules/range/nav";
@@ -18,7 +19,7 @@ const MONTHS = ["Jan", "Feb", "Mär", "Apr", "Mai", "Jun", "Jul", "Aug", "Sep", 
 /** Kurzer Monatsname (1–12); Deutsch wie bisher, sonst per Intl in der Sprache. */
 function monthLabel(month: number, locale: Locale) {
   if (locale === "de") return MONTHS[month - 1];
-  return new Intl.DateTimeFormat(locale === "fr" ? "fr-CH" : "it-CH", { month: "short", timeZone: "UTC" }).format(new Date(Date.UTC(2000, month - 1, 15)));
+  return new Intl.DateTimeFormat(INTL_LOCALE[locale], { month: "short", timeZone: "UTC" }).format(new Date(Date.UTC(2000, month - 1, 15)));
 }
 
 export default async function RangeQuotaPage({ searchParams }: { searchParams: Promise<{ year?: string }> }) {
@@ -26,10 +27,10 @@ export default async function RangeQuotaPage({ searchParams }: { searchParams: P
   const sp = await searchParams;
   const current = Number(todayZurich().slice(0, 4));
   const year = /^\d{4}$/.test(sp.year ?? "") && Number(sp.year) >= 2000 && Number(sp.year) <= current + 1 ? Number(sp.year) : current;
-  const { rows } = await quotaOverview(ctx.tenant.id, year);
   const isManager = ctx.can("range.manage");
   const locale = await getRequestLocale();
   const t = getT(locale);
+  const { rows } = await quotaOverview(ctx.tenant.id, year, t("adm2.common.wholeFacility"));
 
   return (
     <div className="space-y-4">

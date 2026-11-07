@@ -4,18 +4,22 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
 import { getT, type Locale } from "@/lib/i18n/core";
+import { useLocale } from "@/components/locale";
 
 import type { RangeTab } from "@/modules/range/nav";
 
 /**
  * Navigation innerhalb des Standbetriebs (Pillen, horizontal scrollbar).
  * Mit `locale` werden die Mitglieder-Reiter übersetzt (Schlüssel «shooting.range.tab.<href>»),
- * sonst und für unbekannte Reiter gilt die deutsche Bezeichnung.
+ * sonst und für unbekannte Reiter gilt die deutsche Bezeichnung. Bezeichnungen, die mit «adm2.» beginnen,
+ * sind Schlüssel (Verwaltungsreiter) und werden immer in der Sprache der Seite übersetzt.
  */
 export function RangeTabs({ tabs, label, locale }: { tabs: RangeTab[]; label?: string; locale?: Locale }) {
   const p = usePathname();
-  const t = getT(locale ?? "de");
+  const pageLocale = useLocale();
+  const t = getT(locale ?? pageLocale);
   const tabLabel = (tab: RangeTab) => {
+    if (tab.label.startsWith("adm2.")) return t(tab.label);
     if (!locale) return tab.label;
     const key = `shooting.range.tab.${tab.href}`;
     const v = t(key);

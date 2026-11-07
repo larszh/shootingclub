@@ -4,9 +4,11 @@ import { CalendarDays, CalendarPlus, Plus, Settings } from "lucide-react";
 import { requireModule } from "@/lib/tenant";
 import { cn } from "@/lib/utils";
 import { Alert, EmptyState, LinkButton, PageHeader, SectionTitle } from "@/components/ui";
-import { getBaseUrl, getCalendarTokens, listCurrentAnnouncements, listEvents, tenantFeedPath, userFeedPath, type EventListItem } from "@/modules/events/queries";
+import { eventDescriptions, getBaseUrl, getCalendarTokens, listCurrentAnnouncements, listEvents, tenantFeedPath, userFeedPath, type EventListItem } from "@/modules/events/queries";
 import { EVENT_KINDS, isEventKind, monthKey } from "@/modules/events/types";
-import { getRequestLocale, getT, type Locale } from "@/lib/i18n";
+import { getRequestLocale, getT, getTenantLocale, type Locale } from "@/lib/i18n";
+import { displayContent } from "@/modules/ai/content/service";
+import { TranslationSwitchButton, TranslationToggle } from "@/modules/ai/content/ui/translation-toggle";
 import { kindLabel, monthLabelL } from "@/modules/events/ui/i18n";
 import { EventCard } from "@/modules/events/ui/event-card";
 import { AnnouncementCard } from "@/modules/events/ui/announcement-card";
@@ -44,12 +46,24 @@ export default async function EventsPage({ searchParams }: { searchParams: Searc
   const locale = await getRequestLocale();
   const t = getT(locale);
 
-  const [events, announcements, tokens, base] = await Promise.all([
+  const [rawEvents, announcements, tokens, base, sourceLocale] = await Promise.all([
     listEvents(ctx, { tab, kind }),
     tab === "upcoming" ? listCurrentAnnouncements(ctx.tenant.id, 10) : Promise.resolve([]),
     getCalendarTokens(ctx),
     getBaseUrl(),
+    getTenantLocale(ctx.tenant.id),
   ]);
+  // Titel und Mitteilungen in der Sprache des Mitglieds, wenn aktuell übersetzt (sonst Original).
+  // Titel nur übersetzt, wenn der ganze Anlass (auch die Beschreibung) aktuell übersetzt ist – wie in der Einzelansicht.
+  const descriptions = locale === sourceLocale ? new Map<string, string | null>() : await eventDescriptions(ctx.tenant.id, rawEvents.map((e) => e.id));
+  const [eventTitles, newsShown] = await Promise.all([
+    displayContent(ctx.tenant.id, "event", rawEvents.map((e) => ({ id: e.id, sources: { title: e.title, description: descriptions.get(e.id) ?? null } })), locale),
+    displayContent(ctx.tenant.id, "announcement", announcements.map((a) => ({ id: a.id, sources: { title: a.title, body: a.body } })), locale),
+  ]);
+  const events = rawEvents.map((e) => {
+    const d = eventTitles.get(e.id);
+    return d?.translated && d.fields.title ? { ...e, title: d.fields.title } : e;
+  });
   const groups = groupByMonth(events, locale);
   const href = (t: string, k: string | null) => {
     const q = new URLSearchParams();
@@ -78,7 +92,20 @@ export default async function EventsPage({ searchParams }: { searchParams: Searc
       {announcements.length ? (
         <>
           <SectionTitle action={canAnnounce ? <Link href="/admin/events/announcements/new" className="text-xs text-ink-3 hover:text-ink">{t("money.news.addNew")}</Link> : null}>{t("money.news.title")}</SectionTitle>
-          <div className="stagger mb-6 space-y-2.5">{announcements.map((a) => <AnnouncementCard key={a.id} a={a} locale={locale} />)}</div>
+          <div className="stagger mb-6 space-y-2.5">
+            {announcements.map((a) => {
+              const d = newsShown.get(a.id);
+              if (!d?.translated) return <AnnouncementCard key={a.id} a={a} locale={locale} />;
+              const switchBtn = <TranslationSwitchButton locale={locale} sourceLocale={sourceLocale} reviewed={d.reviewed} />;
+              return (
+                <TranslationToggle
+                  key={a.id}
+                  translated={<AnnouncementCard a={{ ...a, title: d.fields.title ?? a.title, body: d.fields.body ?? a.body }} locale={locale}>{switchBtn}</AnnouncementCard>}
+                  original={<AnnouncementCard a={a} locale={locale}>{switchBtn}</AnnouncementCard>}
+                />
+              );
+            })}
+          </div>
         </>
       ) : null}
 

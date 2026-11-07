@@ -2,24 +2,31 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { Alert, Badge, Card, PageHeader, SectionTitle, StatCard } from "@/components/ui";
 import { formatMoney } from "@/lib/money";
-import { formatDateZurich, todayZurich } from "@/lib/time";
+import { todayZurich } from "@/lib/time";
+import { INTL_LOCALE, formatDate, getRequestLocale, getT } from "@/lib/i18n";
+import { localizePresets, periodText } from "@/modules/kiosk/ui/i18n";
 import { requireKioskAdmin } from "@/modules/kiosk/guard";
 import { billingPreview, kioskInvoices, kioskStats } from "@/modules/kiosk/queries";
-import { invoiceCategoryName, periodLabel, periodPresets, resolvePeriod } from "@/modules/kiosk/logic";
+import { invoiceCategoryName, periodPresets, resolvePeriod } from "@/modules/kiosk/logic";
 import { getBillingProfile } from "@/modules/billing/profile";
 import { FEE_INVOICE_STATUS } from "@/modules/billing/types";
 import { KioskBillingPanel, type KioskBillingCandidate } from "@/modules/kiosk/ui/billing-panel";
 import { PeriodPicker } from "@/modules/kiosk/ui/period-picker";
 import { KioskInvoiceActions, ReleaseCancelledButton } from "@/modules/kiosk/ui/entry-buttons";
 
-export const metadata: Metadata = { title: "Schützenstube: Abrechnung" };
-
-const entries = (n: number) => `${n} ${n === 1 ? "Eintrag" : "Einträge"}`;
-const day = (d: Date | null) => (d ? new Intl.DateTimeFormat("de-CH", { timeZone: "Europe/Zurich", day: "2-digit", month: "2-digit" }).format(d) : "");
+export async function generateMetadata(): Promise<Metadata> {
+  const t = getT(await getRequestLocale());
+  return { title: t("adm1.kiosk.metaTitle", { area: t("adm1.home.kiosk"), tab: t("adm1.kiosk.tab.billing") }) };
+}
 
 export default async function AdminKioskPage({ searchParams }: { searchParams: Promise<{ from?: string; to?: string; preset?: string }> }) {
   const ctx = await requireKioskAdmin();
   const sp = await searchParams;
+  const locale = await getRequestLocale();
+  const t = getT(locale);
+  const entries = (n: number) => t(n === 1 ? "adm1.kiosk.entries.one" : "adm1.kiosk.entries.other", { n });
+  const dayFmt = new Intl.DateTimeFormat(INTL_LOCALE[locale], { timeZone: "Europe/Zurich", day: "2-digit", month: "2-digit" });
+  const day = (d: Date | null) => (d ? dayFmt.format(d) : "");
   const tenantId = ctx.tenant.id;
   const today = todayZurich();
   const period = resolvePeriod(sp, today);
@@ -36,50 +43,51 @@ export default async function AdminKioskPage({ searchParams }: { searchParams: P
     range: r.firstAt && r.lastAt ? (day(r.firstAt) === day(r.lastAt) ? day(r.firstAt) : `${day(r.firstAt)}–${day(r.lastAt)}`) : "",
   }));
   const blocker = !ctx.hasModule("billing")
-    ? "Bitte zuerst das Modul «Mitgliederbeiträge» aktivieren (Einstellungen → Module). Die Rechnungen erscheinen dort und bei den Mitgliedern unter «Zahlungen»."
-    : !profile.payeeName || !profile.iban ? "Bitte zuerst das Rechnungsprofil (Zahlungsempfänger und IBAN) ausfüllen." : null;
+    ? t("adm1.kiosk.blockerBilling")
+    : !profile.payeeName || !profile.iban ? t("adm1.kiosk.blockerProfile") : null;
+  const label = periodText(period, locale);
 
   return (
     <div>
-      <PageHeader title="Schützenstube" subtitle="Konsumationen verrechnen" back={{ href: "/admin", label: "Verwaltung" }} />
+      <PageHeader title={t("adm1.home.kiosk")} subtitle={t("adm1.kiosk.subtitle")} back={{ href: "/admin", label: t("adm1.home.title") }} />
 
       <div className="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
-        <StatCard label="Offen total" value={formatMoney(stats.openCents, profile.currency)} tone={stats.openCents ? "warn" : "neutral"} hint={entries(stats.openCount)} />
-        <StatCard label="Mitglieder mit Offenem" value={stats.openMembers} />
-        <StatCard label="Bar heute" value={formatMoney(stats.cashTodayCents, profile.currency)} hint={entries(stats.cashTodayCount)} href="/admin/kiosk/cash" />
-        <StatCard label="Im Zeitraum" value={formatMoney(preview.totalCents, profile.currency)} hint={periodLabel(period)} />
+        <StatCard label={t("adm1.kiosk.openTotal")} value={formatMoney(stats.openCents, profile.currency)} tone={stats.openCents ? "warn" : "neutral"} hint={entries(stats.openCount)} />
+        <StatCard label={t("adm1.kiosk.membersOpen")} value={stats.openMembers} />
+        <StatCard label={t("adm1.kiosk.cashToday")} value={formatMoney(stats.cashTodayCents, profile.currency)} hint={entries(stats.cashTodayCount)} href="/admin/kiosk/cash" />
+        <StatCard label={t("adm1.kiosk.inPeriod")} value={formatMoney(preview.totalCents, profile.currency)} hint={label} />
       </div>
 
       {stats.releasable ? (
         <Alert tone="info" className="mb-4">
           <div className="flex flex-wrap items-center gap-3">
-            <span className="min-w-0 flex-1">{stats.releasable} {stats.releasable === 1 ? "Eintrag gehört" : "Einträge gehören"} zu stornierten Rechnungen. Wieder freigeben, um sie neu zu verrechnen.</span>
+            <span className="min-w-0 flex-1">{t(stats.releasable === 1 ? "adm1.kiosk.releasable.one" : "adm1.kiosk.releasable.other", { n: stats.releasable })}</span>
             <ReleaseCancelledButton count={stats.releasable} />
           </div>
         </Alert>
       ) : null}
 
-      <SectionTitle>Zeitraum</SectionTitle>
-      <PeriodPicker basePath="/admin/kiosk" presets={periodPresets(today)} current={period} />
+      <SectionTitle>{t("adm1.kiosk.period")}</SectionTitle>
+      <PeriodPicker basePath="/admin/kiosk" presets={localizePresets(t, periodPresets(today))} current={period} />
 
       <p className="mb-3 text-sm text-ink-3">
-        Pro Mitglied eine Rechnung «{invoiceCategoryName(period)}» mit QR-Zahlteil über alle noch nicht verrechneten Konsumationen auf Rechnung im Zeitraum.
-        Bar bezahlte Einträge und Gäste werden nicht verrechnet. Einzelne Einträge korrigieren: unter <Link href={`/admin/kiosk/entries?from=${period.from}&to=${period.to}&status=open`} className="underline">Einträge</Link>.
+        {t("adm1.kiosk.billingExplain", { name: invoiceCategoryName(period) })}{" "}
+        <Link href={`/admin/kiosk/entries?from=${period.from}&to=${period.to}&status=open`} className="underline">{t("adm1.kiosk.tab.entries")}</Link>.
       </p>
-      <KioskBillingPanel key={`${period.from}_${period.to}`} from={period.from} to={period.to} label={periodLabel(period)} categoryName={invoiceCategoryName(period)} candidates={candidates} blocker={blocker} currency={profile.currency} />
+      <KioskBillingPanel key={`${period.from}_${period.to}`} from={period.from} to={period.to} label={label} categoryName={invoiceCategoryName(period)} candidates={candidates} blocker={blocker} currency={profile.currency} />
 
-      <SectionTitle>Rechnungen</SectionTitle>
+      <SectionTitle>{t("money.billing.invoices")}</SectionTitle>
       {invoices.length ? (
         <Card className="animate-rise mb-2 divide-y divide-line overflow-hidden">
           {invoices.map((i) => {
-            const st = FEE_INVOICE_STATUS[i.status] ?? { label: i.status, tone: "neutral" as const };
+            const st = FEE_INVOICE_STATUS[i.status] ? { label: t(`money.status.${i.status}`), tone: FEE_INVOICE_STATUS[i.status]!.tone } : { label: i.status, tone: "neutral" as const };
             return (
               <div key={i.id} className="flex min-h-14 flex-wrap items-center gap-x-3 gap-y-1 px-4 py-2">
                 <div className="min-w-0 flex-1 basis-48">
                   <div className="flex flex-wrap items-center gap-1.5"><span className="font-medium">{i.memberName}</span><Badge tone={st.tone}>{st.label}</Badge></div>
                   <div className="text-xs text-ink-3">
-                    <Link href={`/billing/invoices/${i.id}/print`} prefetch={false} className="underline">Nr. {i.number}</Link> · {i.categoryName} · {formatDateZurich(i.issuedAt, { weekday: undefined })} · {entries(i.entryCount)}
-                    {i.status === "PAID" && i.paidAt ? ` · bezahlt ${formatDateZurich(i.paidAt, { weekday: undefined })}` : ""}
+                    <Link href={`/billing/invoices/${i.id}/print`} prefetch={false} className="underline">{t("adm1.members.numberShort", { nr: i.number })}</Link> · {i.categoryName} · {formatDate(i.issuedAt, locale)} · {entries(i.entryCount)}
+                    {i.status === "PAID" && i.paidAt ? ` · ${t("adm1.inv.paidOn", { date: formatDate(i.paidAt, locale) })}` : ""}
                   </div>
                 </div>
                 <span className="shrink-0 font-medium tabular-nums">{formatMoney(i.amountCents, i.currency)}</span>
@@ -88,11 +96,9 @@ export default async function AdminKioskPage({ searchParams }: { searchParams: P
             );
           })}
         </Card>
-      ) : <p className="mb-2 text-sm text-ink-3">Noch keine Rechnungen der Schützenstube.</p>}
+      ) : <p className="mb-2 text-sm text-ink-3">{t("adm1.kiosk.noInvoices")}</p>}
       <p className="mb-4 text-xs text-ink-3">
-        {canSetStatus
-          ? "Bar oder per Überweisung bezahlte Rechnungen hier als bezahlt markieren. Eine falsche Rechnung stornieren und die Einträge danach wieder freigeben."
-          : "Den Status einer Rechnung (bezahlt, storniert) ändert ein Admin des Vereins."} Angezeigt: alle offenen und die neuesten übrigen.
+        {t(canSetStatus ? "adm1.kiosk.statusHintAdmin" : "adm1.kiosk.statusHintOther")} {t("adm1.kiosk.shownInvoices")}
       </p>
     </div>
   );

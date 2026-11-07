@@ -138,21 +138,26 @@ export type RuleEvaluation = { ok: boolean; reasons: string[] };
 
 const fmtNum = (n: number) => (Number.isInteger(n) ? String(n) : n.toFixed(1));
 
+/** Optionaler Übersetzer; ohne gilt der deutsche Text (`de`, mit {Platzhaltern}). */
+type Tr = (key: string, vars?: Record<string, string | number>) => string;
+const L = (t: Tr | undefined, key: string, de: string, vars?: Record<string, string | number>) =>
+  t ? t(key, vars) : de.replace(/\{(\w+)\}/g, (_, k: string) => String(vars?.[k] ?? `{${k}}`));
+
 /** Erfüllt ein Resultat die Regel (Mindestpunktzahl, max. Nuller)? Mit verständlichen Gründen. */
-export function evaluateRule(rule: RuleLimits, result: { total: number | null; zeros: number | null }): RuleEvaluation {
+export function evaluateRule(rule: RuleLimits, result: { total: number | null; zeros: number | null }, t?: Tr): RuleEvaluation {
   const reasons: string[] = [];
-  if (result.total === null) reasons.push("Kein Total gespeichert.");
-  else if (result.total < rule.passScore) reasons.push(`${fmtNum(result.total)} von mindestens ${fmtNum(rule.passScore)} Punkten.`);
+  if (result.total === null) reasons.push(L(t, "adm2.courses.rule.noTotal", "Kein Total gespeichert."));
+  else if (result.total < rule.passScore) reasons.push(L(t, "adm2.courses.rule.tooLow", "{total} von mindestens {min} Punkten.", { total: fmtNum(result.total), min: fmtNum(rule.passScore) }));
   if (rule.maxZeros !== null) {
-    if (result.zeros === null) reasons.push("Anzahl Nuller unbekannt.");
-    else if (result.zeros > rule.maxZeros) reasons.push(`${result.zeros} Nuller, erlaubt sind höchstens ${rule.maxZeros}.`);
+    if (result.zeros === null) reasons.push(L(t, "adm2.courses.rule.zerosUnknown", "Anzahl Nuller unbekannt."));
+    else if (result.zeros > rule.maxZeros) reasons.push(L(t, "adm2.courses.rule.tooManyZeros", "{n} Nuller, erlaubt sind höchstens {max}.", { n: result.zeros, max: rule.maxZeros }));
   }
   return { ok: reasons.length === 0, reasons };
 }
 
 /** Anforderung einer Regel als Text, z.B. «mindestens 60 Punkte, höchstens 2 Nuller». */
-export function requirementText(rule: RuleLimits): string {
-  return `mindestens ${fmtNum(rule.passScore)} Punkte${rule.maxZeros !== null ? `, höchstens ${rule.maxZeros} Nuller` : ""}`;
+export function requirementText(rule: RuleLimits, t?: Tr): string {
+  return `${L(t, "adm2.courses.rule.req", "mindestens {min} Punkte", { min: fmtNum(rule.passScore) })}${rule.maxZeros !== null ? L(t, "adm2.courses.rule.reqZeros", ", höchstens {max} Nuller", { max: rule.maxZeros }) : ""}`;
 }
 
 const REQ_MARKER = " · Anforderung: ";
@@ -208,6 +213,7 @@ export function ndsAttendanceRows(
   participants: readonly { id: string; firstName: string; lastName: string; birthDay: string | null }[],
   sessions: readonly { id: string; day: string }[],
   attendance: readonly AttendanceLite[],
+  t?: Tr,
 ): string[][] {
   const sorted = [...sessions].sort((a, b) => (a.day < b.day ? -1 : a.day > b.day ? 1 : 0));
   const seen = new Map<string, number>();
@@ -219,7 +225,7 @@ export function ndsAttendanceRows(
   const idx = attendanceIndex(attendance);
   const people = [...participants].sort((a, b) => a.lastName.localeCompare(b.lastName, "de-CH") || a.firstName.localeCompare(b.firstName, "de-CH"));
   const rows = people.map((p) => [p.lastName, p.firstName, chDate(p.birthDay), ...sorted.map((s) => (idx.get(`${s.id}|${p.id}`) ? "1" : "0"))]);
-  return [["Name", "Vorname", "Geburtsdatum", ...heads], ...rows];
+  return [[L(t, "adm2.courses.nds.name", "Name"), L(t, "adm2.courses.nds.firstName", "Vorname"), L(t, "adm2.courses.nds.birth", "Geburtsdatum"), ...heads], ...rows];
 }
 
 // --- Teilnehmer-Import ----------------------------------------------------------------------------------------
@@ -276,7 +282,7 @@ export function mapImportHeaders(headers: readonly string[]): Record<keyof typeo
  * Datenzeilen prüfen. Pflicht: Vor- und Nachname. Unter 18 (am Stichtag) muss die
  * erziehungsberechtigte Person mit E-Mail oder Telefon angegeben sein.
  */
-export function mapImportRows(headers: readonly string[], rows: readonly string[][], refDay: string, today: string): ImportedParticipant[] {
+export function mapImportRows(headers: readonly string[], rows: readonly string[][], refDay: string, today: string, t?: Tr): ImportedParticipant[] {
   const map = mapImportHeaders(headers);
   const get = (r: readonly string[], k: keyof typeof map) => {
     const i = map[k];
@@ -289,26 +295,26 @@ export function mapImportRows(headers: readonly string[], rows: readonly string[
     const warnings: string[] = [];
     const firstName = get(r, "firstName");
     const lastName = get(r, "lastName");
-    if (!firstName) errors.push("Vorname fehlt");
-    if (!lastName) errors.push("Nachname fehlt");
+    if (!firstName) errors.push(L(t, "adm2.courses.imp.firstName", "Vorname fehlt"));
+    if (!lastName) errors.push(L(t, "adm2.courses.imp.lastName", "Nachname fehlt"));
     const rawBirth = get(r, "birthDate");
     let birthDate = rawBirth ? parseSwissDate(rawBirth) : null;
-    if (rawBirth && !birthDate) warnings.push(`Geburtsdatum «${rawBirth}» nicht erkannt`);
+    if (rawBirth && !birthDate) warnings.push(L(t, "adm2.courses.imp.birthUnknown", "Geburtsdatum «{v}» nicht erkannt", { v: rawBirth }));
     if (birthDate && (birthDate > today || birthDate < "1900-01-01")) {
-      warnings.push(`Geburtsdatum ${chDate(birthDate)} unplausibel – leer gelassen`);
+      warnings.push(L(t, "adm2.courses.imp.birthImplausible", "Geburtsdatum {v} unplausibel – leer gelassen", { v: chDate(birthDate) }));
       birthDate = null;
     }
     const email = get(r, "email") || null;
-    if (email && !EMAIL_RE.test(email)) errors.push(`E-Mail «${email}» ungültig`);
+    if (email && !EMAIL_RE.test(email)) errors.push(L(t, "adm2.courses.imp.email", "E-Mail «{v}» ungültig", { v: email }));
     const guardianEmail = get(r, "guardianEmail") || null;
-    if (guardianEmail && !EMAIL_RE.test(guardianEmail)) errors.push(`E-Mail Erziehungsberechtigte «${guardianEmail}» ungültig`);
+    if (guardianEmail && !EMAIL_RE.test(guardianEmail)) errors.push(L(t, "adm2.courses.imp.guardianEmail", "E-Mail Erziehungsberechtigte «{v}» ungültig", { v: guardianEmail }));
     const guardianName = get(r, "guardianName") || null;
     const guardianPhone = get(r, "guardianPhone") || null;
     if (isMinorOn(birthDate, refDay)) {
-      if (!guardianName) errors.push("Minderjährig: Erziehungsberechtigte fehlen");
-      else if (!guardianEmail && !guardianPhone) errors.push("Minderjährig: E-Mail oder Telefon der Erziehungsberechtigten fehlt");
+      if (!guardianName) errors.push(L(t, "adm2.courses.imp.guardianMissing", "Minderjährig: Erziehungsberechtigte fehlen"));
+      else if (!guardianEmail && !guardianPhone) errors.push(L(t, "adm2.courses.imp.guardianContact", "Minderjährig: E-Mail oder Telefon der Erziehungsberechtigten fehlt"));
     }
-    if (!birthDate) warnings.push("Ohne Geburtsdatum kann das Alter nicht geprüft werden");
+    if (!birthDate) warnings.push(L(t, "adm2.courses.imp.noBirth", "Ohne Geburtsdatum kann das Alter nicht geprüft werden"));
     out.push({ line: i + 2, firstName, lastName, birthDate, email, phone: get(r, "phone") || null, guardianName, guardianEmail, guardianPhone, errors, warnings });
   });
   return out;
@@ -328,9 +334,9 @@ export function splitName(name: string): { firstName: string; lastName: string }
 }
 
 /** Prüft die Pflichtangaben für Erziehungsberechtigte bei Minderjährigen. null = in Ordnung. */
-export function guardianProblem(p: { birthDate: string | null; guardianName: string | null; guardianEmail: string | null; guardianPhone: string | null }, refDay: string): string | null {
+export function guardianProblem(p: { birthDate: string | null; guardianName: string | null; guardianEmail: string | null; guardianPhone: string | null }, refDay: string, t?: Tr): string | null {
   if (!isMinorOn(p.birthDate, refDay)) return null;
-  if (!p.guardianName) return "Unter 18: Bitte die erziehungsberechtigte Person angeben.";
-  if (!p.guardianEmail && !p.guardianPhone) return "Unter 18: Bitte E-Mail oder Telefon der erziehungsberechtigten Person angeben.";
+  if (!p.guardianName) return L(t, "adm2.courses.guard.name", "Unter 18: Bitte die erziehungsberechtigte Person angeben.");
+  if (!p.guardianEmail && !p.guardianPhone) return L(t, "adm2.courses.guard.contact", "Unter 18: Bitte E-Mail oder Telefon der erziehungsberechtigten Person angeben.");
   return null;
 }

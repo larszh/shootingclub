@@ -13,13 +13,13 @@ import { cn } from "@/lib/utils";
  * Karte in der Galerie. Die ganze Karte öffnet die Detailansicht; Favorit und
  * Schnelldruck liegen als eigene Buttons darüber (keine verschachtelten Links).
  */
-export function TargetCard({ target, href, tr = getT(DEFAULT_LOCALE) }: { target: TargetView; href: string; tr?: TFunction }) {
+export function TargetCard({ target, href, tr = getT(DEFAULT_LOCALE), locale }: { target: TargetView; href: string; tr?: TFunction; locale?: string | null }) {
   const t = target;
   const isNew = !!subjectMeta(t.subject)?.isNew && t.scope === "global";
   return (
     <Card className={cn("group relative overflow-hidden hover:border-ink/30 transition-colors h-full flex flex-col", t.hidden && "opacity-60")}>
       <div className="relative aspect-[210/297] bg-white border-b border-line">
-        <TargetPreview target={t} size={t.paperSizes.includes("A4") ? "A4" : t.paperSizes[0] ?? "A6"} className="absolute inset-0 h-full w-full" />
+        <TargetPreview target={t} size={t.paperSizes.includes("A4") ? "A4" : t.paperSizes[0] ?? "A6"} className="absolute inset-0 h-full w-full" locale={locale} />
         {isNew ? <span className="absolute top-2 left-2 rounded-full bg-accent px-2 py-0.5 text-[11px] font-semibold text-accent-ink shadow-sm">{tr("shooting.targets.new")}</span> : null}
       </div>
       <div className="p-3 flex-1">

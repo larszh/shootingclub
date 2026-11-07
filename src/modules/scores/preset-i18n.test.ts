@@ -6,10 +6,10 @@ const DISTANCE_ONLY = /^\d+ m$/;
 const SAME_IN_IT = /^(\d+ s – )?Serie( \d+( s)?)?$/;
 
 describe("Übersetzung der eingebauten Programme", () => {
-  it("jede Vorlage hat Name und Beschreibung auf Französisch und Italienisch", () => {
+  it("jede Vorlage hat Name und Beschreibung auf Französisch, Italienisch und Englisch", () => {
     expect(PROGRAM_PRESETS.map((p) => p.name).filter((n) => !PRESET_TRANSLATION_KEYS.includes(n))).toEqual([]);
     for (const p of PROGRAM_PRESETS) {
-      for (const lang of ["fr", "it"] as const) {
+      for (const lang of ["fr", "it", "en"] as const) {
         expect(localizedProgramName(p.name, lang)).not.toBe(p.name);
         if (p.description) expect(localizedProgramDescription(p.name, p.description, lang)).not.toBe(p.description);
       }
@@ -24,12 +24,16 @@ describe("Übersetzung der eingebauten Programme", () => {
         if (localizedStageName(s.name, "fr") === s.name) missing.push(`fr:${s.name}`);
         // «Serie» heisst auf Italienisch gleich
         if (!SAME_IN_IT.test(s.name) && localizedStageName(s.name, "it") === s.name) missing.push(`it:${s.name}`);
+        if (localizedStageName(s.name, "en") === s.name) missing.push(`en:${s.name}`);
       }
     }
     expect(missing).toEqual([]);
     expect(localizedStageName("Serie 3", "fr")).toBe("Série 3");
     expect(localizedStageName("20 s – Serie 1", "it")).toBe("20 s – serie 1");
     expect(localizedStageName("Durchgang 2", "fr")).toBe("Passage 2");
+    expect(localizedStageName("Serie 3", "en")).toBe("Series 3");
+    expect(localizedStageName("20 s – Serie 1", "en")).toBe("20 s – series 1");
+    expect(localizedStageName("Einzelschüsse", "en")).toBe("Single shots");
   });
 
   it("Deutsch und eigene/geänderte Texte bleiben unverändert", () => {
@@ -57,5 +61,8 @@ describe("Übersetzung der eingebauten Programme", () => {
     expect(fr.stages.map((s) => s.name)).toEqual(["Série 1", "Série 2", "Série 3"]);
     expect(fr.scoringMode).toBe(view.scoringMode);
     expect(localizeProgram(view, "de")).toBe(view);
+    const en = localizeProgram(view, "en");
+    expect(en.name).toBe("Crossbow 10 m – 30 shots");
+    expect(en.stages.map((s) => s.name)).toEqual(["Series 1", "Series 2", "Series 3"]);
   });
 });

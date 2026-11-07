@@ -2,9 +2,8 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { Award, BadgeCheck, CalendarClock, Download, FileText, Flag, Printer, ShieldCheck, Trophy, Users } from "lucide-react";
 import { Alert, Badge, Button, Card, EmptyState, Input, LinkButton, LinkTabs, PageHeader, SectionTitle, Select, StatCard } from "@/components/ui";
-import { formatDateZurich } from "@/lib/time";
 import { formatScore } from "@/lib/utils";
-import { OFFICIAL_KINDS, officialKindLabel } from "@/modules/scores/types";
+import { OFFICIAL_KINDS } from "@/modules/scores/types";
 import {
   canEditYear,
   canSeeAll,
@@ -21,9 +20,6 @@ import {
 import {
   DEADLINE_FIELDS,
   daysBetween,
-  FEDERAL_RESPONSIBILITY_HINT,
-  FEDERAL_RULES_HINT,
-  formatDay,
   formatSwissDate,
   opStatusByUser,
   parseYear,
@@ -35,8 +31,10 @@ import {
 import { FederalYearForm } from "@/modules/federal/ui/year-form";
 import { fsAwardsOverview } from "@/modules/federal/awards-queries";
 import { formatDate, getRequestLocale, getT, type Locale, type TFunction } from "@/lib/i18n";
+import { dayKeyLabel } from "@/lib/i18n/extra/admin2/msg";
 import { officialKindText, tCount } from "@/modules/scores/ui/labels";
 import { StartFederalMatchForm } from "@/modules/federal/ui/start-match-form";
+import { localizedProgramName } from "@/modules/scores/preset-i18n";
 
 export async function generateMetadata(): Promise<Metadata> {
   return { title: getT(await getRequestLocale())("shooting.federal.title") };
@@ -55,13 +53,14 @@ function PassBadge({ passed, t }: { passed: boolean | null; t: TFunction }) {
   return <Badge tone="outline">{t("shooting.federal.pass.none")}</Badge>;
 }
 
-function ResultItem({ r, showName, t }: { r: OfficialResultRow; showName: boolean; t: TFunction }) {
+function ResultItem({ r, showName, t, locale }: { r: OfficialResultRow; showName: boolean; t: TFunction; locale: Locale }) {
+  const program = localizedProgramName(r.program, locale);
   return (
     <Link href={`/scores/matches/${r.matchId}`} className="press flex items-center gap-3 px-4 py-3 hover:bg-surface-2/60">
       <div className="min-w-0 flex-1">
-        <div className="font-medium truncate">{showName ? r.name : r.program}</div>
+        <div className="font-medium truncate">{showName ? r.name : program}</div>
         <div className="text-xs text-ink-3 truncate">
-          {formatSwissDate(r.date)} · {showName ? `${r.program} · ` : ""}{officialKindText(t, r.kind)}{r.attempt ? t("shooting.federal.attempt", { n: r.attempt }) : ""}{r.eventTitle ? ` · ${r.eventTitle}` : ""}
+          {formatSwissDate(r.date)} · {showName ? `${program} · ` : ""}{officialKindText(t, r.kind)}{r.attempt ? t("shooting.federal.attempt", { n: r.attempt }) : ""}{r.eventTitle ? ` · ${r.eventTitle}` : ""}
         </div>
       </div>
       <div className="shrink-0 text-right">
@@ -131,7 +130,7 @@ export default async function FederalPage({ searchParams }: { searchParams: Prom
       </Card>
       {myResults.length ? (
         <Card className="animate-rise mt-3 divide-y divide-line overflow-hidden">
-          {myResults.map((r) => <ResultItem key={r.id} r={r} showName={false} t={t} />)}
+          {myResults.map((r) => <ResultItem key={r.id} r={r} showName={false} t={t} locale={locale} />)}
         </Card>
       ) : null}
     </>
@@ -158,7 +157,7 @@ export default async function FederalPage({ searchParams }: { searchParams: Prom
                 <div className="mt-2 flex flex-wrap gap-2">
                   {e.matches.map((m) => (
                     <LinkButton key={m.id} href={`/scores/matches/${m.id}`} variant="secondary" size="sm" className="h-11">
-                      {t("shooting.federal.confirmedCount", { name: m.programName, official: m.officialCount, total: m.participantCount })}
+                      {t("shooting.federal.confirmedCount", { name: localizedProgramName(m.programName, locale), official: m.officialCount, total: m.participantCount })}
                     </LinkButton>
                   ))}
                 </div>
@@ -214,31 +213,31 @@ export default async function FederalPage({ searchParams }: { searchParams: Prom
   return (
     <div>
       {header}
-      {sp.denied ? <Alert tone="warn" className="mb-4">Dafür fehlt dir die Berechtigung (Schützenmeister).</Alert> : null}
-      <LinkTabs items={yearTabs} active={String(year)} label="Jahr wählen" className="mb-4" />
+      {sp.denied ? <Alert tone="warn" className="mb-4">{t("adm2.federal.p.denied")}</Alert> : null}
+      <LinkTabs items={yearTabs} active={String(year)} label={t("shooting.federal.yearAria")} className="mb-4" />
 
       <div className="stagger grid grid-cols-2 gap-3 sm:grid-cols-4">
-        <StatCard label="Bestätigte Resultate" value={summary.confirmed} hint="Obligatorisch" icon={<BadgeCheck className="h-4 w-4" />} />
-        <StatCard label="Bestanden" value={summary.passed} hint={`von ${summary.shooters} Schützen`} tone="accent" icon={<ShieldCheck className="h-4 w-4" />} />
-        <StatCard label="Verblieben" value={summary.failed} hint="nicht bestanden" tone={summary.failed ? "warn" : "neutral"} icon={<Flag className="h-4 w-4" />} />
-        <StatCard label="Feldschiessen" value={fs.length} hint="Teilnahmen" icon={<Trophy className="h-4 w-4" />} />
+        <StatCard label={t("adm2.federal.p.confirmed")} value={summary.confirmed} hint={t("adm2.federal.p.op")} icon={<BadgeCheck className="h-4 w-4" />} />
+        <StatCard label={t("adm2.federal.p.passed")} value={summary.passed} hint={t("adm2.federal.p.ofShooters", { n: summary.shooters })} tone="accent" icon={<ShieldCheck className="h-4 w-4" />} />
+        <StatCard label={t("adm2.federal.p.remained")} value={summary.failed} hint={t("adm2.federal.p.notPassed")} tone={summary.failed ? "warn" : "neutral"} icon={<Flag className="h-4 w-4" />} />
+        <StatCard label={t("adm2.federal.p.fs")} value={fs.length} hint={t("adm2.federal.p.participations")} icon={<Trophy className="h-4 w-4" />} />
       </div>
-      {summary.unknown ? <p className="mt-2 text-xs text-ink-3">{summary.unknown} {summary.unknown === 1 ? "Schütze" : "Schützen"} mit Resultat in einem Programm ohne Bestehensregel – bitte Grenzwerte im Programm eintragen.</p> : null}
+      {summary.unknown ? <p className="mt-2 text-xs text-ink-3">{t(summary.unknown === 1 ? "adm2.federal.p.unknown.one" : "adm2.federal.p.unknown.other", { n: summary.unknown })}</p> : null}
 
       {/* Fristen */}
-      <SectionTitle>Fristen {year}</SectionTitle>
+      <SectionTitle>{t("adm2.federal.p.deadlines", { year })}</SectionTitle>
       <Card className="animate-rise p-4 space-y-3">
         <ul className="space-y-2">
           {deadlineRows.map((d) => (
             <li key={d.key} className="flex items-center justify-between gap-3 text-sm">
-              <span className="text-ink-2">{d.label}</span>
+              <span className="text-ink-2">{t(`adm2.federal.dl.${d.key}`)}</span>
               {d.day ? (
                 <span className="flex items-center gap-2">
-                  <span className="tabular-nums font-medium">{formatDay(d.day)}</span>
-                  {d.left !== null && d.left >= 0 && d.left <= 14 ? <Badge tone={d.left <= 3 ? "danger" : "warn"}>{d.left === 0 ? "heute" : `in ${d.left} T.`}</Badge> : d.left !== null && d.left < 0 ? <Badge tone="outline">vorbei</Badge> : null}
+                  <span className="tabular-nums font-medium">{dayKeyLabel(d.day, locale)}</span>
+                  {d.left !== null && d.left >= 0 && d.left <= 14 ? <Badge tone={d.left <= 3 ? "danger" : "warn"}>{d.left === 0 ? t("adm2.federal.p.today") : t("adm2.federal.p.inDays", { n: d.left })}</Badge> : d.left !== null && d.left < 0 ? <Badge tone="outline">{t("adm2.federal.p.past")}</Badge> : null}
                 </span>
               ) : (
-                <span className="text-ink-3">nicht eingetragen</span>
+                <span className="text-ink-3">{t("adm2.federal.p.notSet")}</span>
               )}
             </li>
           ))}
@@ -246,11 +245,11 @@ export default async function FederalPage({ searchParams }: { searchParams: Prom
         {fy.notes ? <p className="whitespace-pre-line border-t border-line pt-3 text-sm text-ink-2">{fy.notes}</p> : null}
         {canEditYear(ctx) ? (
           <details className="border-t border-line pt-3">
-            <summary className="flex min-h-11 cursor-pointer items-center text-sm font-medium">Fristen und Notizen bearbeiten</summary>
+            <summary className="flex min-h-11 cursor-pointer items-center text-sm font-medium">{t("adm2.federal.p.editDeadlines")}</summary>
             <div className="mt-3"><FederalYearForm year={year} values={fy} /></div>
           </details>
         ) : (
-          <p className="text-xs text-ink-3">{FEDERAL_RULES_HINT}</p>
+          <p className="text-xs text-ink-3">{t("adm2.federal.rulesHint")}</p>
         )}
       </Card>
 
@@ -258,19 +257,19 @@ export default async function FederalPage({ searchParams }: { searchParams: Prom
       {canVerify ? (
         <Card className="animate-rise mt-3 p-4 space-y-3">
           <div>
-            <h2 className="font-semibold">Durchgang für Anlass starten</h2>
-            <p className="text-xs text-ink-3">Erfasse die Resultate eines Schiesstags in einem Durchgang und bestätige sie danach pro Schütze amtlich.</p>
+            <h2 className="font-semibold">{t("adm2.federal.p.startTitle")}</h2>
+            <p className="text-xs text-ink-3">{t("adm2.federal.p.startText")}</p>
           </div>
           <StartFederalMatchForm
-            events={openEvents.map((e) => ({ id: e.id, label: `${formatDateZurich(e.startsAt, { weekday: undefined })} · ${e.title}`, yesCount: e.yesCount }))}
-            programs={programs.map((p) => ({ id: p.id, name: p.name, kindLabel: officialKindLabel(p.officialKind) }))}
+            events={openEvents.map((e) => ({ id: e.id, label: `${formatDate(e.startsAt, locale)} · ${e.title}`, yesCount: e.yesCount }))}
+            programs={programs.map((p) => ({ id: p.id, name: localizedProgramName(p.name, locale), kindLabel: officialKindText(t, p.officialKind), isOp: p.officialKind === "OP" }))}
             defaultEventId={openEvents.find((e) => swissDay(e.startsAt) >= today)?.id}
           />
         </Card>
       ) : null}
 
       {/* Verbliebene */}
-      <SectionTitle>Noch nicht bestanden</SectionTitle>
+      <SectionTitle>{t("adm2.federal.p.notPassedTitle")}</SectionTitle>
       {remaining.length ? (
         <>
           <Card className="animate-rise divide-y divide-line overflow-hidden">
@@ -278,43 +277,43 @@ export default async function FederalPage({ searchParams }: { searchParams: Prom
               <Link key={s.userId} href={`/federal?year=${year}&kind=OP&q=${encodeURIComponent(s.name)}`} className="press flex items-center justify-between gap-3 px-4 py-3 hover:bg-surface-2/60">
                 <span className="min-w-0">
                   <span className="block font-medium truncate">{s.name}</span>
-                  <span className="block text-xs text-ink-3">zuletzt {formatSwissDate(s.lastDate)}</span>
+                  <span className="block text-xs text-ink-3">{t("adm2.federal.p.lastOn", { date: formatDate(s.lastDate, locale) })}</span>
                 </span>
-                <Badge tone="warn">{s.attempts} {s.attempts === 1 ? "Versuch" : "Versuche"}</Badge>
+                <Badge tone="warn">{t(s.attempts === 1 ? "adm2.federal.p.attempts.one" : "adm2.federal.p.attempts.other", { n: s.attempts })}</Badge>
               </Link>
             ))}
           </Card>
-          <p className="mt-2 text-xs text-ink-3">Wer das Obligatorisch nicht besteht, kann es je nach Vorgaben wiederholen bzw. muss einen Nachschiesskurs besuchen – gemäss Vorgaben. Bitte die Betroffenen rechtzeitig informieren.</p>
+          <p className="mt-2 text-xs text-ink-3">{t("adm2.federal.p.retryHint")}</p>
         </>
       ) : (
-        <Card className="animate-rise p-4 text-sm text-ink-3">Niemand verblieben – alle Schützen mit amtlichem Resultat haben bestanden oder es liegt noch kein nicht bestandenes Resultat vor.</Card>
+        <Card className="animate-rise p-4 text-sm text-ink-3">{t("adm2.federal.p.nobodyLeft")}</Card>
       )}
 
       {/* Feldschiessen */}
-      <SectionTitle action={<LinkButton href={`/federal/awards?year=${year}`} variant="secondary" size="sm" className="h-11"><Award className="h-4 w-4" aria-hidden /> Auszeichnungen</LinkButton>}>Feldschiessen {year}</SectionTitle>
+      <SectionTitle action={<LinkButton href={`/federal/awards?year=${year}`} variant="secondary" size="sm" className="h-11"><Award className="h-4 w-4" aria-hidden /> {t("adm2.federal.p.awards")}</LinkButton>}>{t("adm2.federal.p.fsYear", { year })}</SectionTitle>
       {fsRanked.length ? (
         <Card className="animate-rise divide-y divide-line overflow-hidden">
           {fsRanked.map((r) => (
             <Link key={r.id} href={`/scores/matches/${r.matchId}`} className="press flex items-center gap-3 px-4 py-3 hover:bg-surface-2/60">
               <span className="w-8 shrink-0 text-center text-sm font-semibold tabular-nums text-ink-3">{r.rank}.</span>
               <span className="min-w-0 flex-1">
-                <span className="block font-medium truncate">{r.name}{r.isGuest ? <span className="ml-1 text-xs text-ink-3">(Gast)</span> : null}</span>
-                <span className="block text-xs text-ink-3 truncate">{formatSwissDate(r.date)} · {r.program}</span>
+                <span className="block font-medium truncate">{r.name}{r.isGuest ? <span className="ml-1 text-xs text-ink-3">{t("adm2.federal.p.guest")}</span> : null}</span>
+                <span className="block text-xs text-ink-3 truncate">{formatDate(r.date, locale)} · {localizedProgramName(r.program, locale)}</span>
               </span>
               <span className="shrink-0 text-right">
                 <span className="block font-semibold tabular-nums">{formatScore(r.total, r.decimal)}</span>
-                <span className="block text-[11px] text-ink-3 tabular-nums">{r.zeros ?? 0} Nuller</span>
+                <span className="block text-[11px] text-ink-3 tabular-nums">{t("shooting.federal.zeros", { n: r.zeros ?? 0 })}</span>
               </span>
               {(() => {
                 const a = fsAwards.byParticipant.get(r.id);
                 return a?.status === "award" ? <Badge tone="ok" className="shrink-0">{a.award}</Badge> : null;
               })()}
-              {r.isOfficial ? <BadgeCheck className="h-4 w-4 shrink-0 text-accent" aria-label="amtlich bestätigt" /> : <span className="w-4 shrink-0" />}
+              {r.isOfficial ? <BadgeCheck className="h-4 w-4 shrink-0 text-accent" aria-label={t("adm2.federal.p.officialAria")} /> : <span className="w-4 shrink-0" />}
             </Link>
           ))}
         </Card>
       ) : (
-        <EmptyState icon={<Trophy className="h-5 w-5" />} title="Noch keine Feldschiessen-Resultate" text="Durchgänge mit einem Programm der Art «Feldschiessen» erscheinen hier als Rangliste." />
+        <EmptyState icon={<Trophy className="h-5 w-5" />} title={t("adm2.federal.p.noFs")} text={t("adm2.federal.p.noFsText")} />
       )}
 
       {/* Amtliche Resultate */}
@@ -322,44 +321,44 @@ export default async function FederalPage({ searchParams }: { searchParams: Prom
         action={canVerify ? (
           <span className="flex gap-2">
             <LinkButton href={`/api/export/federal?${exportQs}`} variant="secondary" size="sm" className="h-11"><Download className="h-4 w-4" aria-hidden /> CSV</LinkButton>
-            <LinkButton href={`/federal/print?${exportQs}`} target="_blank" variant="secondary" size="sm" className="h-11"><Printer className="h-4 w-4" aria-hidden /> Drucken</LinkButton>
+            <LinkButton href={`/federal/print?${exportQs}`} target="_blank" variant="secondary" size="sm" className="h-11"><Printer className="h-4 w-4" aria-hidden /> {t("adm2.federal.p.print")}</LinkButton>
           </span>
         ) : undefined}
       >
-        Amtliche Resultate
+        {t("adm2.federal.p.official")}
       </SectionTitle>
       <form method="get" className="animate-rise mb-3 grid grid-cols-2 gap-2 sm:grid-cols-5">
         <input type="hidden" name="year" value={year} />
-        <Select name="kind" defaultValue={kindFilter} aria-label="Art" className="h-11">
-          <option value="">Alle Arten</option>
-          {OFFICIAL_KINDS.map((k) => <option key={k.key} value={k.key}>{k.label}</option>)}
+        <Select name="kind" defaultValue={kindFilter} aria-label={t("adm2.federal.p.kind")} className="h-11">
+          <option value="">{t("adm2.federal.p.allKinds")}</option>
+          {OFFICIAL_KINDS.map((k) => <option key={k.key} value={k.key}>{officialKindText(t, k.key)}</option>)}
         </Select>
-        <Select name="status" defaultValue={statusFilter} aria-label="Status" className="h-11">
-          <option value="">Alle</option>
-          <option value="passed">Bestanden</option>
-          <option value="failed">Nicht bestanden</option>
-          <option value="none">Ohne Regel</option>
+        <Select name="status" defaultValue={statusFilter} aria-label={t("adm2.common.status")} className="h-11">
+          <option value="">{t("adm2.common.all")}</option>
+          <option value="passed">{t("adm2.federal.p.passed")}</option>
+          <option value="failed">{t("shooting.federal.status.failed")}</option>
+          <option value="none">{t("adm2.federal.p.none")}</option>
         </Select>
-        <Select name="eventId" defaultValue={eventFilter} aria-label="Anlass" className="h-11">
-          <option value="">Alle Anlässe</option>
-          {events.map((e) => <option key={e.id} value={e.id}>{formatDateZurich(e.startsAt, { weekday: undefined })} · {e.title}</option>)}
+        <Select name="eventId" defaultValue={eventFilter} aria-label={t("adm2.federal.p.event")} className="h-11">
+          <option value="">{t("adm2.federal.p.allEvents")}</option>
+          {events.map((e) => <option key={e.id} value={e.id}>{formatDate(e.startsAt, locale)} · {e.title}</option>)}
         </Select>
-        <Input name="q" defaultValue={q} placeholder="Name suchen" aria-label="Name suchen" className="h-11" />
-        <Button type="submit" variant="secondary" className="col-span-2 h-11 sm:col-span-1">Filtern</Button>
+        <Input name="q" defaultValue={q} placeholder={t("adm2.federal.p.searchName")} aria-label={t("adm2.federal.p.searchName")} className="h-11" />
+        <Button type="submit" variant="secondary" className="col-span-2 h-11 sm:col-span-1">{t("adm2.federal.p.filter")}</Button>
       </form>
       {shown.length ? (
         <Card className="animate-rise divide-y divide-line overflow-hidden">
-          {shown.map((r) => <ResultItem key={r.id} r={r} showName t={t} />)}
+          {shown.map((r) => <ResultItem key={r.id} r={r} showName t={t} locale={locale} />)}
         </Card>
       ) : (
-        <EmptyState icon={<BadgeCheck className="h-5 w-5" />} title="Keine amtlichen Resultate" text="Resultate erscheinen hier, sobald der Schützenmeister sie im Durchgang amtlich bestätigt." />
+        <EmptyState icon={<BadgeCheck className="h-5 w-5" />} title={t("adm2.federal.p.noOfficial")} text={t("adm2.federal.p.noOfficialText")} />
       )}
-      {filtered.length > shown.length ? <p className="mt-2 text-xs text-ink-3">Es werden die ersten {shown.length} von {filtered.length} Resultaten angezeigt. Für alle: CSV-Export.</p> : null}
-      {canVerify ? <p className="mt-2 text-xs text-ink-3">Export für SAT-Admin ohne AHV-Nummer (wird in der App nicht gespeichert). Auf der Druckliste ist eine leere Spalte zum Ergänzen vorgesehen.</p> : null}
+      {filtered.length > shown.length ? <p className="mt-2 text-xs text-ink-3">{t("adm2.federal.p.shownOf", { n: shown.length, total: filtered.length })}</p> : null}
+      {canVerify ? <p className="mt-2 text-xs text-ink-3">{t("adm2.federal.p.satHint")}</p> : null}
 
       {mine}
 
-      <Alert tone="info" className="mt-6">{FEDERAL_RESPONSIBILITY_HINT} Feldschiessen-Auszeichnungen werden mit den vom Verein erfassten Limiten berechnet (Limiten gemäss Ausschreibung eintragen).</Alert>
+      <Alert tone="info" className="mt-6">{t("adm2.federal.responsibility")} {t("adm2.federal.p.fsHint")}</Alert>
     </div>
   );
 }

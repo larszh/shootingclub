@@ -6,16 +6,19 @@ import { Search, SlidersHorizontal, X } from "lucide-react";
 import { Input, Select } from "@/components/ui";
 import { Switch } from "@/components/ui/controls";
 import { Spinner } from "@/components/ui/form";
-import { ROLE_LABELS, TENANT_ROLES } from "@/lib/permissions";
+import { TENANT_ROLES } from "@/lib/permissions";
+import { getT, type Locale } from "@/lib/i18n/core";
 import { cn } from "@/lib/utils";
-import { ACCESS_FILTERS, MEMBER_STATUSES, SORTS, STATUS_LABELS, filtersToQuery, type MemberFilters } from "@/modules/members/types";
+import { ACCESS_FILTERS, MEMBER_STATUSES, SORTS, filtersToQuery, type MemberFilters } from "@/modules/members/types";
 
-export function MemberFilterBar({ filters, categories, households, statusCounts }: {
+export function MemberFilterBar({ locale, filters, categories, households, statusCounts }: {
+  locale: Locale;
   filters: MemberFilters;
   categories: Array<{ id: string; name: string }>;
   households: Array<{ id: string; name: string }>;
   statusCounts: Record<string, number>;
 }) {
+  const t = getT(locale);
   const router = useRouter();
   const [pending, start] = useTransition();
   const [q, setQ] = useState(filters.q);
@@ -47,9 +50,9 @@ export function MemberFilterBar({ filters, categories, households, statusCounts 
       >
         <div className="relative flex-1">
           <Search className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-ink-3" />
-          <Input type="search" value={q} onChange={(e) => onSearch(e.target.value)} placeholder="Name, E-Mail, Nr. oder Lizenz…" className="pl-10 pr-11" aria-label="Mitglieder suchen" />
+          <Input type="search" value={q} onChange={(e) => onSearch(e.target.value)} placeholder={t("adm1.members.searchPlaceholder")} className="pl-10 pr-11" aria-label={t("adm1.members.searchLabel")} />
           {q ? (
-            <button type="button" onClick={() => { setQ(""); go({ q: "" }); }} className="absolute right-0 top-0 flex h-11 w-11 items-center justify-center text-ink-3 hover:text-ink" aria-label="Suche leeren"><X className="h-4 w-4" /></button>
+            <button type="button" onClick={() => { setQ(""); go({ q: "" }); }} className="absolute right-0 top-0 flex h-11 w-11 items-center justify-center text-ink-3 hover:text-ink" aria-label={t("adm1.members.searchClear")}><X className="h-4 w-4" /></button>
           ) : null}
         </div>
         <button
@@ -59,49 +62,49 @@ export function MemberFilterBar({ filters, categories, households, statusCounts 
           className={cn("press relative inline-flex h-11 shrink-0 items-center gap-2 rounded-control border px-3.5 text-sm font-medium", open ? "border-ink bg-surface-2" : "border-line bg-surface hover:bg-surface-2")}
         >
           {pending ? <Spinner /> : <SlidersHorizontal className="h-4 w-4" />}
-          <span className="hidden sm:inline">Filter</span>
+          <span className="hidden sm:inline">{t("adm1.members.filter")}</span>
           {extraCount ? <span className="rounded-full bg-accent px-1.5 text-[11px] text-accent-ink tabular-nums">{extraCount}</span> : null}
         </button>
       </form>
 
-      <div className="-mx-4 flex gap-2 overflow-x-auto px-4 pb-1" role="radiogroup" aria-label="Nach Status filtern">
-        <Chip active={!filters.status} onClick={() => go({ status: "" })}>Aktuelle · {activeTotal}</Chip>
+      <div className="-mx-4 flex gap-2 overflow-x-auto px-4 pb-1" role="radiogroup" aria-label={t("adm1.members.filterStatus")}>
+        <Chip active={!filters.status} onClick={() => go({ status: "" })}>{t("adm1.members.current")} · {activeTotal}</Chip>
         {MEMBER_STATUSES.filter((s) => statusCounts[s]).map((s) => (
-          <Chip key={s} active={filters.status === s} onClick={() => go({ status: filters.status === s ? "" : s })}>{STATUS_LABELS[s]} · {statusCounts[s]}</Chip>
+          <Chip key={s} active={filters.status === s} onClick={() => go({ status: filters.status === s ? "" : s })}>{t(`members.status.${s}`)} · {statusCounts[s]}</Chip>
         ))}
-        {statusCounts.LEFT ? <Chip active={filters.status === "all"} onClick={() => go({ status: filters.status === "all" ? "" : "all" })}>Alle · {allTotal}</Chip> : null}
+        {statusCounts.LEFT ? <Chip active={filters.status === "all"} onClick={() => go({ status: filters.status === "all" ? "" : "all" })}>{t("adm1.common.all")} · {allTotal}</Chip> : null}
       </div>
 
       {open ? (
         <div className="animate-rise grid gap-3 rounded-card border border-line bg-surface p-4 sm:grid-cols-2">
-          <LabeledSelect label="Rolle" value={filters.role} onChange={(v) => go({ role: v })}>
-            <option value="">Alle Rollen</option>
-            {TENANT_ROLES.map((r) => <option key={r} value={r}>{ROLE_LABELS[r]}</option>)}
+          <LabeledSelect label={t("adm1.members.role")} value={filters.role} onChange={(v) => go({ role: v })}>
+            <option value="">{t("adm1.members.allRoles")}</option>
+            {TENANT_ROLES.map((r) => <option key={r} value={r}>{t(`role.${r}`)}</option>)}
           </LabeledSelect>
-          <LabeledSelect label="Beitragskategorie" value={filters.cat} onChange={(v) => go({ cat: v })}>
-            <option value="">Alle Kategorien</option>
-            <option value="none">Ohne Kategorie</option>
+          <LabeledSelect label={t("adm1.members.feeCategory")} value={filters.cat} onChange={(v) => go({ cat: v })}>
+            <option value="">{t("adm1.members.allCategories")}</option>
+            <option value="none">{t("adm1.members.noCategory")}</option>
             {categories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
           </LabeledSelect>
-          <LabeledSelect label="Haushalt" value={filters.hh} onChange={(v) => go({ hh: v })}>
-            <option value="">Alle</option>
-            <option value="any">In einem Haushalt</option>
-            <option value="none">Ohne Haushalt</option>
+          <LabeledSelect label={t("adm1.members.household")} value={filters.hh} onChange={(v) => go({ hh: v })}>
+            <option value="">{t("adm1.common.all")}</option>
+            <option value="any">{t("adm1.members.inHousehold")}</option>
+            <option value="none">{t("adm1.members.noHousehold")}</option>
             {households.map((h) => <option key={h.id} value={h.id}>{h.name}</option>)}
           </LabeledSelect>
-          <LabeledSelect label="Zugang zur App" value={filters.access} onChange={(v) => go({ access: v })}>
-            <option value="">Alle</option>
-            {Object.entries(ACCESS_FILTERS).map(([k, l]) => <option key={k} value={k}>{l}</option>)}
+          <LabeledSelect label={t("adm1.members.appAccess")} value={filters.access} onChange={(v) => go({ access: v })}>
+            <option value="">{t("adm1.common.all")}</option>
+            {Object.keys(ACCESS_FILTERS).map((k) => <option key={k} value={k}>{t(`adm1.members.access.${k}`)}</option>)}
           </LabeledSelect>
-          <LabeledSelect label="Sortierung" value={filters.sort} onChange={(v) => go({ sort: v as MemberFilters["sort"] })}>
-            {Object.entries(SORTS).map(([k, l]) => <option key={k} value={k}>{l}</option>)}
+          <LabeledSelect label={t("adm1.members.sort")} value={filters.sort} onChange={(v) => go({ sort: v as MemberFilters["sort"] })}>
+            {Object.keys(SORTS).map((k) => <option key={k} value={k}>{t(`adm1.members.sort.${k}`)}</option>)}
           </LabeledSelect>
           <div className="flex items-end">
-            <Switch className="w-full rounded-control border border-line px-3.5 py-2" label="Nur Minderjährige" checked={filters.minor} onChange={(v) => go({ minor: v })} />
+            <Switch className="w-full rounded-control border border-line px-3.5 py-2" label={t("adm1.members.minorsOnly")} checked={filters.minor} onChange={(v) => go({ minor: v })} />
           </div>
           {extraCount || filters.status || filters.q ? (
             <button type="button" onClick={() => { setQ(""); start(() => router.push("/admin/members")); }} className="press h-11 rounded-control text-sm font-medium text-ink-2 hover:bg-surface-2 sm:col-span-2">
-              Alle Filter zurücksetzen
+              {t("adm1.members.resetFilters")}
             </button>
           ) : null}
         </div>

@@ -1,53 +1,55 @@
 import type { Metadata } from "next";
+import Link from "next/link";
+import { Sparkles } from "lucide-react";
 import { getAppContext } from "@/lib/tenant";
-import type { Permission } from "@/lib/permissions";
-import { PageHeader } from "@/components/ui";
+import { Alert, PageHeader } from "@/components/ui";
 import { getRequestLocale, getT } from "@/lib/i18n";
+import { aiAvailability } from "@/lib/ai";
+import { HelpAssistantPanel } from "@/components/ai/help-panel";
+import { chatStorageKey, HELP_CHAT_STORAGE_KEY } from "@/modules/ai/help/history";
+import { helpSuggestionKeys } from "@/modules/ai/help/suggestions";
 import { Faq } from "./faq";
-import { toEntry, type FaqSource } from "./faq-types";
-import { MEMBER_FAQ } from "./faq-member";
-import { ADMIN_FAQ } from "./faq-admin";
+import { visibleFaq } from "./faq-access";
 
 export async function generateMetadata(): Promise<Metadata> {
   return { title: getT(await getRequestLocale())("shell.common.help") };
 }
 
-/** Alle Fragen in Anzeige-Reihenfolge (die Ansicht gruppiert nach Zielgruppe). */
-const SOURCES: FaqSource[] = [...MEMBER_FAQ, ...ADMIN_FAQ];
-
-/**
- * Anleitungen für Funktionen, die schon unterhalb der Admin-Rolle erlaubt sind (z.B. Trainer/Schützenmeister).
- * Wer die Berechtigung hat, sieht die Anleitung auch ohne «tenant.manage».
- */
-const ENTRY_PERMISSION: Partial<Record<string, Permission>> = {
-  "amtlich-bestaetigen": "results.verify",
-  standbuch: "range.duty",
-  vereinswaffen: "weapons.loan",
-  "kurse-admin": "courses.manage",
-  "live-rangliste": "match.viewAll",
-  "resultat-import": "match.viewAll",
-  "schuetzenstube-theke": "kiosk.sell",
-  "schuetzenstube-admin": "kiosk.manage",
-  buchhaltung: "accounting.export",
-  serienbuchung: "bookings.series",
-  "feldschiessen-auszeichnungen": "results.verify",
-};
+/** Zustand des Hilfe-Assistenten für diese Person. */
+async function assistantState(ctx: Awaited<ReturnType<typeof getAppContext>>): Promise<"on" | "limit" | "setup" | "off"> {
+  if (!ctx.tenant) return "off";
+  try {
+    const avail = await aiAvailability(ctx, "help");
+    if (avail.ok) return ctx.can("ai.use") ? "on" : "off";
+    if (avail.reason === "limitReached") return "limit";
+    // Admins mit KI-Rechten bekommen einen Hinweis zum Einrichten (ausser die Plattform erlaubt es nicht).
+    if (avail.reason !== "noAccess" && avail.reason !== "clubsNotAllowed" && ctx.can("ai.manage")) return "setup";
+    return "off";
+  } catch {
+    return "off";
+  }
+}
 
 export default async function HelpPage() {
   const ctx = await getAppContext();
   const locale = await getRequestLocale();
   const t = getT(locale);
   const isAdmin = ctx.tenant ? ctx.can("tenant.manage") : ctx.user.isSuperAdmin;
-  const entries = SOURCES.filter((e) => {
-    if (e.audience === "member" || isAdmin) return true;
-    const perm = ENTRY_PERMISSION[e.id];
-    return !!perm && ctx.can(perm);
-  }).map((e) => toEntry(e, locale));
+  const entries = visibleFaq({ isAdmin, can: ctx.can }, locale);
   const showAudienceFilter = entries.some((e) => e.audience === "admin");
+  const assistant = await assistantState(ctx);
 
   return (
     <div>
       <PageHeader title={t("shell.common.help")} subtitle={t("shell.help.subtitle")} back={{ href: "/me", label: t("shell.nav.more") }} />
+      {assistant === "on" ? <HelpAssistantPanel suggestions={helpSuggestionKeys(ctx).map((k) => t(k))} storageKey={chatStorageKey(HELP_CHAT_STORAGE_KEY, ctx.user.id, ctx.tenant?.id)} /> : null}
+      {assistant === "limit" ? <Alert tone="info" className="mb-4">{t("aihelp.unavailable.limitReached")}</Alert> : null}
+      {assistant === "setup" ? (
+        <Alert tone="info" className="mb-4" icon={<Sparkles className="h-4 w-4" aria-hidden />} title={t("aihelp.setup.title")}>
+          {t("aihelp.setup.text")}{" "}
+          <Link href="/admin/ai" className="font-medium underline underline-offset-2">{t("aihelp.setup.link")}</Link>
+        </Alert>
+      ) : null}
       <Faq entries={entries} isAdmin={showAudienceFilter} />
       <p className="mt-8 text-center text-sm text-ink-3">
         {ctx.tenant ? t("shell.help.askAdminOf", { club: ctx.tenant.name }) : t("shell.help.askAdmin")}

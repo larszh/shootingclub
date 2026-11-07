@@ -9,12 +9,14 @@ import { toast } from "@/components/ui/toaster";
 import { isNetworkError } from "@/lib/ui-feedback";
 import { cn } from "@/lib/utils";
 import { saveAttendanceAction } from "@/modules/courses/actions";
+import { useT } from "@/components/locale";
 
 type Person = { id: string; name: string; sub: string | null; present: boolean | null };
 
 /** Präsenz am Handy: grosse Umschalter pro Person, «Alle anwesend», Speichern. */
 export function AttendanceTaker({ sessionId, people, backHref }: { sessionId: string; people: Person[]; backHref: string }) {
   const router = useRouter();
+  const t = useT();
   const [marks, setMarks] = useState<Record<string, boolean | null>>(() => Object.fromEntries(people.map((p) => [p.id, p.present])));
   const [dirty, setDirty] = useState(false);
   const [pending, start] = useTransition();
@@ -40,26 +42,26 @@ export function AttendanceTaker({ sessionId, people, backHref }: { sessionId: st
           toast.error(res.error);
           return;
         }
-        toast.success(res.message ?? "Gespeichert.");
+        toast.success(res.message ?? t("adm2.common.saved"));
         setMarks(Object.fromEntries(entries.map((e) => [e.participantId, e.present])));
         setDirty(false);
         if (thenBack) router.push(backHref);
         else router.refresh();
       } catch (err) {
-        toast.error(isNetworkError(err) ? "Keine Verbindung. Bitte nochmals speichern, sobald du wieder online bist." : "Das hat nicht geklappt. Bitte nochmals versuchen.");
+        toast.error(isNetworkError(err) ? t("adm2.courses.att.saveFailedOffline") : t("adm2.common.failed"));
       }
     });
   }
 
-  if (!people.length) return <p className="text-sm text-ink-3">Noch keine aktiven Teilnehmenden.</p>;
+  if (!people.length) return <p className="text-sm text-ink-3">{t("adm2.courses.att.none")}</p>;
 
   return (
     <div className="pb-24">
       <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
         <div className="text-sm text-ink-2" aria-live="polite">
-          <span className="font-semibold tabular-nums text-ink">{presentCount}</span> von {people.length} anwesend{open ? ` · ${open} offen` : ""}
+          {t("adm2.courses.att.count", { n: presentCount, total: people.length })}{open ? t("adm2.courses.att.open", { n: open }) : ""}
         </div>
-        <Button type="button" variant="secondary" onClick={allPresent}><CheckCheck className="h-4 w-4" /> Alle anwesend</Button>
+        <Button type="button" variant="secondary" onClick={allPresent}><CheckCheck className="h-4 w-4" /> {t("adm2.courses.att.all")}</Button>
       </div>
       <ul className="space-y-2">
         {people.map((p) => {
@@ -70,11 +72,11 @@ export function AttendanceTaker({ sessionId, people, backHref }: { sessionId: st
                 <div className="truncate text-[16px] font-medium">{p.name}</div>
                 {p.sub ? <div className="truncate text-xs text-ink-3">{p.sub}</div> : null}
               </div>
-              <div role="group" aria-label={`Präsenz ${p.name}`} className="flex shrink-0 gap-2">
+              <div role="group" aria-label={t("adm2.courses.att.group", { name: p.name })} className="flex shrink-0 gap-2">
                 <button
                   type="button"
                   aria-pressed={v === true}
-                  aria-label={`${p.name} anwesend`}
+                  aria-label={t("adm2.courses.att.present", { name: p.name })}
                   onClick={() => setMark(p.id, true)}
                   className={cn(
                     "press inline-flex h-14 w-16 items-center justify-center rounded-control border text-sm font-medium transition-colors focus-visible:outline-2 focus-visible:outline-accent",
@@ -86,7 +88,7 @@ export function AttendanceTaker({ sessionId, people, backHref }: { sessionId: st
                 <button
                   type="button"
                   aria-pressed={v === false}
-                  aria-label={`${p.name} abwesend`}
+                  aria-label={t("adm2.courses.att.absent", { name: p.name })}
                   onClick={() => setMark(p.id, false)}
                   className={cn(
                     "press inline-flex h-14 w-16 items-center justify-center rounded-control border text-sm font-medium transition-colors focus-visible:outline-2 focus-visible:outline-accent",
@@ -103,9 +105,9 @@ export function AttendanceTaker({ sessionId, people, backHref }: { sessionId: st
       <div className="fixed inset-x-0 bottom-[calc(4.5rem+env(safe-area-inset-bottom))] z-30 px-4 md:bottom-4 md:left-64 md:px-8">
         <div className="mx-auto flex max-w-xl gap-2 rounded-card border border-line bg-surface/95 p-2 shadow-lg backdrop-blur">
           <Button type="button" className="flex-1" disabled={pending} onClick={() => save(true)} aria-busy={pending || undefined}>
-            {pending ? <Spinner /> : <Save className="h-4 w-4" />} Speichern &amp; zurück
+            {pending ? <Spinner /> : <Save className="h-4 w-4" />} {t("adm2.courses.att.saveBack")}
           </Button>
-          {dirty ? <Button type="button" variant="secondary" disabled={pending} onClick={() => save(false)}>Speichern</Button> : null}
+          {dirty ? <Button type="button" variant="secondary" disabled={pending} onClick={() => save(false)}>{t("adm2.common.save")}</Button> : null}
         </div>
       </div>
     </div>

@@ -4,9 +4,11 @@ import { AlertTriangle, BadgeCheck, ChevronRight, GraduationCap, Plus } from "lu
 import { Alert, Badge, Card, EmptyState, LinkButton, LinkTabs, PageHeader, SectionTitle } from "@/components/ui";
 import { todayZurich } from "@/lib/time";
 import { requireCourses } from "@/modules/courses/guard";
-import { chDate } from "@/modules/courses/logic";
+import { dayKeyLabel } from "@/lib/i18n/extra/admin2/msg";
+import type { Locale, TFunction } from "@/lib/i18n/core";
 import { courseYears, listCourses, myCourseParticipations, type CourseListItem } from "@/modules/courses/queries";
-import { COURSE_KIND, COURSE_KINDS, courseStatusInfo, isCourseKind } from "@/modules/courses/types";
+import { COURSE_KINDS, courseKindShort, courseStatusInfo } from "@/modules/courses/types";
+import { isCourseKind } from "@/modules/courses/types";
 import { MyCourseCard } from "@/modules/courses/ui/my-course";
 import { getRequestLocale, getT } from "@/lib/i18n";
 
@@ -54,34 +56,34 @@ export default async function CoursesPage({ searchParams }: { searchParams: Prom
   return (
     <div>
       <PageHeader
-        title="Kurse"
-        subtitle="Jungschützen, J+S, Ausbildung und Qualifikationsschiessen"
-        action={<LinkButton href="/courses/new" size="md"><Plus className="h-4 w-4" /> Kurs</LinkButton>}
+        title={t("adm2.courses.title")}
+        subtitle={t("adm2.courses.list.subtitle")}
+        action={<LinkButton href="/courses/new" size="md"><Plus className="h-4 w-4" /> {t("adm2.courses.list.add")}</LinkButton>}
       />
-      {sp.denied ? <Alert className="mb-4">Dafür fehlt dir die Berechtigung.</Alert> : null}
+      {sp.denied ? <Alert className="mb-4">{t("adm2.courses.list.denied")}</Alert> : null}
 
       <div className="mb-4 flex flex-wrap gap-2">
-        <LinkButton href="/courses/qualifications" variant="secondary"><BadgeCheck className="h-4 w-4" /> Qualifikationsschiessen</LinkButton>
+        <LinkButton href="/courses/qualifications" variant="secondary"><BadgeCheck className="h-4 w-4" /> {t("adm2.courses.list.qualShooting")}</LinkButton>
       </div>
 
-      <LinkTabs label="Jahr wählen" className="mb-2" active={String(year)} items={years.map((y) => ({ value: String(y), label: String(y), href: qs(y, kind) }))} />
+      <LinkTabs label={t("adm2.courses.list.year")} className="mb-2" active={String(year)} items={years.map((y) => ({ value: String(y), label: String(y), href: qs(y, kind) }))} />
       <LinkTabs
-        label="Kursart wählen"
+        label={t("adm2.courses.list.kind")}
         className="mb-4"
         active={kind ?? "all"}
-        items={[{ value: "all", label: "Alle", href: qs(year) }, ...COURSE_KINDS.map((k) => ({ value: k, label: COURSE_KIND[k].short, href: qs(year, k) }))]}
+        items={[{ value: "all", label: t("adm2.common.all"), href: qs(year) }, ...COURSE_KINDS.map((k) => ({ value: k, label: courseKindShort(k, t), href: qs(year, k) }))]}
       />
 
       {courses.length === 0 ? (
         <EmptyState
           icon={<GraduationCap className="h-5 w-5" />}
-          title={`Keine Kurse ${year}`}
-          text="Lege einen Kurs an, trage Teilnehmende ein und führe Präsenz und Resultate direkt am Stand."
-          action={<LinkButton href="/courses/new"><Plus className="h-4 w-4" /> Kurs erstellen</LinkButton>}
+          title={t("adm2.courses.list.none", { year })}
+          text={t("adm2.courses.list.noneText")}
+          action={<LinkButton href="/courses/new"><Plus className="h-4 w-4" /> {t("adm2.courses.form.create")}</LinkButton>}
         />
       ) : (
         <Card className="animate-rise divide-y divide-line overflow-hidden">
-          {courses.map((c) => <CourseRow key={c.id} c={c} />)}
+          {courses.map((c) => <CourseRow key={c.id} c={c} t={t} locale={locale} />)}
         </Card>
       )}
 
@@ -95,25 +97,25 @@ export default async function CoursesPage({ searchParams }: { searchParams: Prom
   );
 }
 
-function CourseRow({ c }: { c: CourseListItem }) {
-  const st = courseStatusInfo(c.status);
+function CourseRow({ c, t, locale }: { c: CourseListItem; t: TFunction; locale: Locale }) {
+  const st = courseStatusInfo(c.status, t);
   const tooFew = c.minParticipants != null && c.participants < c.minParticipants && c.status !== "CLOSED";
-  const dates = [chDate(c.startsOn), chDate(c.endsOn)].filter(Boolean).join(" – ");
+  const dates = [dayKeyLabel(c.startsOn, locale), dayKeyLabel(c.endsOn, locale)].filter(Boolean).join(" – ");
   return (
     <Link href={`/courses/${c.id}`} className="flex min-h-16 items-center gap-3 px-4 py-3 hover:bg-surface-2">
       <div className="min-w-0 flex-1">
         <div className="flex flex-wrap items-center gap-2">
           <span className="font-medium">{c.name}</span>
-          <Badge tone="accent">{isCourseKind(c.kind) ? COURSE_KIND[c.kind].short : c.kind}</Badge>
+          <Badge tone="accent">{isCourseKind(c.kind) ? courseKindShort(c.kind, t) : c.kind}</Badge>
           <Badge tone={st.tone}>{st.label}</Badge>
-          {tooFew ? <Badge tone="warn"><AlertTriangle className="mr-1 h-3 w-3" /> zu wenige</Badge> : null}
+          {tooFew ? <Badge tone="warn"><AlertTriangle className="mr-1 h-3 w-3" /> {t("adm2.courses.list.tooFew")}</Badge> : null}
         </div>
         <div className="truncate text-xs text-ink-3">
-          {[dates, c.leaderName ? `Leitung: ${c.leaderName}` : null].filter(Boolean).join(" · ") || "Noch ohne Daten"}
+          {[dates, c.leaderName ? t("adm2.courses.d.leader", { name: c.leaderName }) : null].filter(Boolean).join(" · ") || t("adm2.courses.list.noDates")}
         </div>
         <div className="text-xs text-ink-3">
-          {c.participants} Teilnehmende{c.minParticipants != null ? ` (min. ${c.minParticipants})` : ""} · {c.sessions} Lektionen
-          {c.requiredCount ? ` · ${c.requiredCount} Pflichtprogramme` : ""}{c.completed ? ` · ${c.completed} abgeschlossen` : ""}
+          {t("adm2.courses.list.participants", { n: c.participants })}{c.minParticipants != null ? t("adm2.courses.list.minN", { n: c.minParticipants }) : ""}{t("adm2.courses.list.sessions", { n: c.sessions })}
+          {c.requiredCount ? t("adm2.courses.list.required", { n: c.requiredCount }) : ""}{c.completed ? t("adm2.courses.list.completed", { n: c.completed }) : ""}
         </div>
       </div>
       <ChevronRight className="h-4 w-4 shrink-0 text-ink-3" />

@@ -1,4 +1,7 @@
 import { z } from "zod";
+import { msg } from "@/lib/i18n/extra/admin2/msg";
+
+type Tr = (key: string, vars?: Record<string, string | number>) => string;
 
 /**
  * Kurse (Modul «courses»): Jungschützen, J+S, Ausbildung, Polizei/Sicherheit und Qualifikationsschiessen.
@@ -39,8 +42,17 @@ export const COURSE_KIND: Record<CourseKind, { label: string; short: string; tex
 export function isCourseKind(k: string | null | undefined): k is CourseKind {
   return !!k && (COURSE_KINDS as readonly string[]).includes(k);
 }
-export function courseKindLabel(k: string) {
-  return isCourseKind(k) ? COURSE_KIND[k].label : k;
+/** Bezeichnung der Kursart; mit `t` in der Sprache der Seite (Schlüssel «adm2.courses.kind.<K>»). */
+export function courseKindLabel(k: string, t?: Tr) {
+  if (!isCourseKind(k)) return k;
+  return t ? t(`adm2.courses.kind.${k}`) : COURSE_KIND[k].label;
+}
+/** Kurzbezeichnung bzw. Erklärung der Kursart in der Sprache der Seite. */
+export function courseKindShort(k: string, t: Tr) {
+  return isCourseKind(k) ? t(`adm2.courses.kindShort.${k}`) : k;
+}
+export function courseKindText(k: string, t: Tr) {
+  return isCourseKind(k) ? t(`adm2.courses.kindText.${k}`) : "";
 }
 
 export const COURSE_STATUSES = ["PLANNED", "RUNNING", "CLOSED"] as const;
@@ -53,8 +65,10 @@ export const COURSE_STATUS: Record<CourseStatus, { label: string; tone: Tone }> 
 export function isCourseStatus(s: string): s is CourseStatus {
   return (COURSE_STATUSES as readonly string[]).includes(s);
 }
-export function courseStatusInfo(s: string) {
-  return COURSE_STATUS[s as CourseStatus] ?? { label: s, tone: "neutral" as Tone };
+export function courseStatusInfo(s: string, t?: Tr) {
+  const info = COURSE_STATUS[s as CourseStatus];
+  if (!info) return { label: s, tone: "neutral" as Tone };
+  return t ? { ...info, label: t(`adm2.courses.status.${s}`) } : info;
 }
 
 export const PARTICIPANT_STATUSES = ["REGISTERED", "ACTIVE", "COMPLETED", "DROPPED"] as const;
@@ -68,8 +82,10 @@ export const PARTICIPANT_STATUS: Record<ParticipantStatus, { label: string; tone
 export function isParticipantStatus(s: string): s is ParticipantStatus {
   return (PARTICIPANT_STATUSES as readonly string[]).includes(s);
 }
-export function participantStatusInfo(s: string) {
-  return PARTICIPANT_STATUS[s as ParticipantStatus] ?? { label: s, tone: "neutral" as Tone };
+export function participantStatusInfo(s: string, t?: Tr) {
+  const info = PARTICIPANT_STATUS[s as ParticipantStatus];
+  if (!info) return { label: s, tone: "neutral" as Tone };
+  return t ? { ...info, label: t(`adm2.courses.pstatus.${s}`) } : info;
 }
 
 /** Vorschlag Mindestteilnehmerzahl pro Kursart (nur Vorschlag, bitte prüfen). */
@@ -86,42 +102,42 @@ export const QUAL_RESPONSIBILITY_HINT =
 const optText = (max: number) =>
   z.preprocess(
     (v) => (typeof v === "string" && v.trim() === "" ? null : typeof v === "string" ? v.trim() : v ?? null),
-    z.string().max(max, `Maximal ${max} Zeichen.`).nullable(),
+    z.string().max(max, msg("adm2.common.maxChars", { max })).nullable(),
   );
 
 const optInt = (min: number, max: number, msg: string) =>
   z.preprocess((v) => (v === "" || v === null || v === undefined ? null : typeof v === "string" ? v.replace(/['’\s]/g, "") : v), z.coerce.number().int(msg).min(min, msg).max(max, msg).nullable());
 
-export const dateKeySchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Ungültiges Datum.").refine((s) => !Number.isNaN(Date.parse(s)), "Ungültiges Datum.");
+export const dateKeySchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "adm2.courses.v.invalidDate").refine((s) => !Number.isNaN(Date.parse(s)), "adm2.courses.v.invalidDate");
 const optDate = z.preprocess((v) => (v === "" || v === null || v === undefined ? null : v), dateKeySchema.nullable());
-const timeSchema = z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, "Ungültige Uhrzeit.");
+const timeSchema = z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, "adm2.courses.v.invalidTime");
 const optTime = z.preprocess((v) => (v === "" || v === null || v === undefined ? null : v), timeSchema.nullable());
 const optEmail = z.preprocess(
   (v) => (typeof v === "string" && v.trim() === "" ? null : typeof v === "string" ? v.trim() : v ?? null),
-  z.string().max(191, "E-Mail: maximal 191 Zeichen.").regex(/^[^\s@]+@[^\s@]+\.[^\s@]+$/, "Ungültige E-Mail-Adresse.").nullable(),
+  z.string().max(191, "adm2.courses.v.emailMax").regex(/^[^\s@]+@[^\s@]+\.[^\s@]+$/, "adm2.courses.v.email").nullable(),
 );
 const idOpt = z.preprocess((v) => (v === "" || v === undefined ? null : v), z.string().min(1).max(40).nullable());
 
 export const courseSchema = z
   .object({
-    name: z.string().trim().min(1, "Bitte einen Kursnamen angeben.").max(191, "Name: maximal 191 Zeichen."),
-    kind: z.enum(COURSE_KINDS, { message: "Bitte eine Kursart wählen." }),
-    year: z.coerce.number().int().min(2000, "Ungültiges Jahr.").max(2100, "Ungültiges Jahr."),
+    name: z.string().trim().min(1, "adm2.courses.v.courseName").max(191, "adm2.courses.v.nameMax"),
+    kind: z.enum(COURSE_KINDS, { message: "adm2.courses.v.kind" }),
+    year: z.coerce.number().int().min(2000, "adm2.courses.v.year").max(2100, "adm2.courses.v.year"),
     startsOn: optDate,
     endsOn: optDate,
     leaderUserId: idOpt,
-    minParticipants: optInt(0, 1000, "Mindestanzahl: ganze Zahl ab 0."),
-    requiredProgramIds: z.array(z.string().min(1).max(40)).max(30, "Höchstens 30 Pflichtprogramme."),
+    minParticipants: optInt(0, 1000, "adm2.courses.v.minParticipants"),
+    requiredProgramIds: z.array(z.string().min(1).max(40)).max(30, "adm2.courses.v.maxPrograms"),
     notes: optText(5000),
     status: z.enum(COURSE_STATUSES).default("PLANNED"),
   })
-  .refine((v) => !v.startsOn || !v.endsOn || v.endsOn >= v.startsOn, { message: "Das Enddatum liegt vor dem Startdatum.", path: ["endsOn"] });
+  .refine((v) => !v.startsOn || !v.endsOn || v.endsOn >= v.startsOn, { message: "adm2.courses.v.endBeforeStart", path: ["endsOn"] });
 export type CourseInput = z.infer<typeof courseSchema>;
 
 export const participantSchema = z.object({
   userId: idOpt,
-  firstName: z.string().trim().min(1, "Vorname fehlt.").max(191, "Vorname: maximal 191 Zeichen."),
-  lastName: z.string().trim().min(1, "Nachname fehlt.").max(191, "Nachname: maximal 191 Zeichen."),
+  firstName: z.string().trim().min(1, "adm2.courses.v.firstName").max(191, "adm2.courses.v.firstNameMax"),
+  lastName: z.string().trim().min(1, "adm2.courses.v.lastName").max(191, "adm2.courses.v.lastNameMax"),
   birthDate: optDate,
   email: optEmail,
   phone: optText(191),
@@ -139,19 +155,19 @@ export type ParticipantInput = z.infer<typeof participantSchema>;
 
 export const sessionSchema = z
   .object({
-    title: z.string().trim().min(1, "Bitte einen Titel angeben.").max(191, "Titel: maximal 191 Zeichen."),
+    title: z.string().trim().min(1, "adm2.courses.v.title").max(191, "adm2.courses.v.titleMax"),
     date: dateKeySchema,
     startTime: timeSchema,
     endTime: optTime,
     createEvent: z.boolean(),
     location: optText(191),
   })
-  .refine((v) => !v.endTime || v.endTime > v.startTime, { message: "Ende muss nach dem Beginn liegen.", path: ["endTime"] });
+  .refine((v) => !v.endTime || v.endTime > v.startTime, { message: "adm2.courses.v.endAfter", path: ["endTime"] });
 export type SessionInput = z.infer<typeof sessionSchema>;
 
 const scoreSchema = z.preprocess(
   (v) => (v === "" || v === null || v === undefined ? null : typeof v === "string" ? v.replace(",", ".").trim() : v),
-  z.coerce.number({ message: "Ungültige Punktzahl." }).min(0, "Punktzahl ab 0.").max(100_000, "Punktzahl zu gross.").nullable(),
+  z.coerce.number({ message: "adm2.courses.v.score" }).min(0, "adm2.courses.v.scoreMin").max(100_000, "adm2.courses.v.scoreMax").nullable(),
 );
 
 export const resultSchema = z.object({
@@ -164,15 +180,15 @@ export const resultSchema = z.object({
 });
 
 export const ruleSchema = z.object({
-  programId: z.string().min(1, "Bitte ein Programm wählen.").max(40),
-  name: z.string().trim().min(1, "Bitte einen Namen angeben.").max(191, "Name: maximal 191 Zeichen."),
+  programId: z.string().min(1, "adm2.courses.v.program").max(40),
+  name: z.string().trim().min(1, "adm2.courses.v.name").max(191, "adm2.courses.v.nameMax"),
   kind: z.string().min(1).max(40),
   passScore: z.preprocess(
     (v) => (typeof v === "string" ? v.replace(",", ".").trim() : v),
-    z.coerce.number({ message: "Mindestpunktzahl fehlt." }).min(0, "Mindestpunktzahl ab 0.").max(100_000, "Mindestpunktzahl zu gross."),
+    z.coerce.number({ message: "adm2.courses.v.passScore" }).min(0, "adm2.courses.v.passScoreMin").max(100_000, "adm2.courses.v.passScoreMax"),
   ),
-  maxZeros: optInt(0, 1000, "Max. Nuller: ganze Zahl ab 0."),
-  validityMonths: z.coerce.number().int("Gültigkeit: ganze Monate.").min(1, "Gültigkeit: mindestens 1 Monat.").max(240, "Gültigkeit: höchstens 240 Monate."),
+  maxZeros: optInt(0, 1000, "adm2.courses.v.maxZeros"),
+  validityMonths: z.coerce.number().int("adm2.courses.v.validityInt").min(1, "adm2.courses.v.validityMin").max(240, "adm2.courses.v.validityMax"),
   requireInstructor: z.boolean(),
   isActive: z.boolean(),
 });
@@ -202,6 +218,7 @@ export function isProtectedQualKind(kind: string): boolean {
 }
 
 /** «1 Monat» / «12 Monate». */
-export function monthsLabel(n: number): string {
+export function monthsLabel(n: number, t?: Tr): string {
+  if (t) return t(n === 1 ? "adm2.courses.months.one" : "adm2.courses.months.other", { n });
   return `${n} ${n === 1 ? "Monat" : "Monate"}`;
 }

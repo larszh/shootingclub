@@ -2,6 +2,7 @@ import "server-only";
 import { db } from "@/lib/db";
 import { MODULES, type ModuleKey } from "@/lib/modules";
 import type { AppContext, ActiveTenant } from "@/lib/tenant";
+import { getT, type TFunction } from "@/lib/i18n/core";
 import { getBookingSettings, getResource, toResourceView, type BookingSettingsView, type ResourceView } from "@/modules/bookings/queries";
 import { checkGuestShare, partnerReport, type ShareCheck } from "./logic";
 
@@ -52,14 +53,14 @@ export async function partnerNameMap(tenantIds: Array<string | null | undefined>
 }
 
 /** Buchungen von Partnervereinen in einem Zeitraum (Auswertung für die Kostenaufteilung). */
-export async function loadPartnerReport(ownerTenantId: string, from: Date, to: Date) {
+export async function loadPartnerReport(ownerTenantId: string, from: Date, to: Date, t?: TFunction) {
   const list = await db.booking.findMany({
     where: { tenantId: ownerTenantId, viaTenantId: { not: null }, startsAt: { gte: from, lt: to } },
     select: { id: true, viaTenantId: true, status: true, durationMinutes: true, persons: true, totalCents: true, paymentStatus: true, currency: true },
     take: 50_000,
   });
   const names = await partnerNameMap(list.map((b) => b.viaTenantId));
-  return { ...partnerReport(list, names), currency: list[0]?.currency ?? "CHF" };
+  return { ...partnerReport(list, names, t), currency: list[0]?.currency ?? "CHF" };
 }
 
 // ---------------------------------------------------------------------------
@@ -111,8 +112,8 @@ export type GuestShare = {
  * Prüft für jede Gast-Aktion die Freigabe: Ressource gehört dem Eigentümer, Freigabe für den aktiven
  * Verein des Mitglieds mit «darf buchen», Eigentümer aktiv. Liefert die Regeln des Eigentümers.
  */
-export async function resolveGuestShare(ctx: TenantCtx, resourceId: string): Promise<({ ok: true } & GuestShare) | Extract<ShareCheck, { ok: false }>> {
-  if (typeof resourceId !== "string" || !resourceId || resourceId.length > 40) return { ok: false, error: "Ressource nicht gefunden." };
+export async function resolveGuestShare(ctx: TenantCtx, resourceId: string, t: TFunction = getT("de")): Promise<({ ok: true } & GuestShare) | Extract<ShareCheck, { ok: false }>> {
+  if (typeof resourceId !== "string" || !resourceId || resourceId.length > 40) return { ok: false, error: t("misc.share.resourceNotFound") };
   const res = await db.resource.findUnique({
     where: { id: resourceId },
     select: { id: true, tenantId: true, isActive: true, tenant: { select: { id: true, name: true, slug: true, deletedAt: true } } },
@@ -126,10 +127,10 @@ export async function resolveGuestShare(ctx: TenantCtx, resourceId: string): Pro
     resource: res ? { tenantId: res.tenantId, isActive: res.isActive } : null,
     owner: res ? { id: res.tenant.id, deletedAt: res.tenant.deletedAt, bookingsEnabled } : null,
     share,
-  });
+  }, t);
   if (!check.ok) return check;
   const [resource, settings] = await Promise.all([getResource(res!.tenantId, resourceId), getBookingSettings(res!.tenantId)]);
-  if (!resource) return { ok: false, error: "Ressource nicht gefunden." };
+  if (!resource) return { ok: false, error: t("misc.share.resourceNotFound") };
   return { ok: true, owner: { id: res!.tenant.id, name: res!.tenant.name, slug: res!.tenant.slug }, resource, settings, priceFactorPercent: share!.priceFactorPercent, ownerHasRange };
 }
 

@@ -7,6 +7,7 @@ import { db } from "@/lib/db";
 import { audit } from "@/lib/audit";
 import { requireTenant } from "@/lib/tenant";
 import { fail, ok, type ActionResult } from "@/lib/action-result";
+import { getRequestLocale, getT } from "@/lib/i18n";
 import { getBaseUrl } from "@/modules/events/queries";
 import { PERIODS } from "@/modules/scores/analytics";
 import { parseTheme, widgetPath } from "./logic";
@@ -24,37 +25,42 @@ function newToken() {
 
 export type EmbedTokenResult = { token: string | null };
 
+const tr = async () => getT(await getRequestLocale());
+
 /** Erstellt den Embed-Token, falls noch keiner existiert. */
 export async function createEmbedTokenAction(): Promise<ActionResult<EmbedTokenResult>> {
+  const t = await tr();
   const ctx = await requireAdmin();
-  if (!ctx) return fail("Nur Admins können Website-Widgets verwalten.");
+  if (!ctx) return fail(t("adm2.embed.msg.onlyAdmins"));
   const token = newToken();
   const res = await db.tenant.updateMany({ where: { id: ctx.tenant.id, embedToken: null }, data: { embedToken: token } });
-  const t = await db.tenant.findUnique({ where: { id: ctx.tenant.id }, select: { embedToken: true } });
+  const row = await db.tenant.findUnique({ where: { id: ctx.tenant.id }, select: { embedToken: true } });
   if (res.count) await audit({ tenantId: ctx.tenant.id, actorId: ctx.user.id, action: "embed.token.create", entity: "Tenant", entityId: ctx.tenant.id });
   revalidatePath("/admin/embed");
-  return ok({ token: t?.embedToken ?? null }, "Widgets sind bereit.");
+  return ok({ token: row?.embedToken ?? null }, t("adm2.embed.msg.ready"));
 }
 
 /** Neuer Token: alle bisherigen Codes auf Websites funktionieren nicht mehr. */
 export async function regenerateEmbedTokenAction(): Promise<ActionResult<EmbedTokenResult>> {
+  const t = await tr();
   const ctx = await requireAdmin();
-  if (!ctx) return fail("Nur Admins können Website-Widgets verwalten.");
+  if (!ctx) return fail(t("adm2.embed.msg.onlyAdmins"));
   const token = newToken();
   await db.tenant.update({ where: { id: ctx.tenant.id }, data: { embedToken: token } });
   await audit({ tenantId: ctx.tenant.id, actorId: ctx.user.id, action: "embed.token.regenerate", entity: "Tenant", entityId: ctx.tenant.id, detail: "Alle bisherigen Widget-Codes ungültig" });
   revalidatePath("/admin/embed");
-  return ok({ token }, "Neuer Code erstellt. Bitte die Widgets auf der Website ersetzen.");
+  return ok({ token }, t("adm2.embed.msg.newCode"));
 }
 
 /** Widgets abschalten (Token löschen). */
 export async function revokeEmbedTokenAction(): Promise<ActionResult<EmbedTokenResult>> {
+  const t = await tr();
   const ctx = await requireAdmin();
-  if (!ctx) return fail("Nur Admins können Website-Widgets verwalten.");
+  if (!ctx) return fail(t("adm2.embed.msg.onlyAdmins"));
   await db.tenant.update({ where: { id: ctx.tenant.id }, data: { embedToken: null } });
   await audit({ tenantId: ctx.tenant.id, actorId: ctx.user.id, action: "embed.token.revoke", entity: "Tenant", entityId: ctx.tenant.id });
   revalidatePath("/admin/embed");
-  return ok({ token: null }, "Widgets ausgeschaltet. Die Website zeigt nur noch einen Hinweis.");
+  return ok({ token: null }, t("adm2.embed.msg.off"));
 }
 
 const signSchema = z.discriminatedUnion("widget", [
@@ -69,12 +75,13 @@ export type SignedWidgetUrl = { url: string; path: string; sig: string };
  * Der Admin entscheidet mit dem Erzeugen des Codes, was öffentlich wird.
  */
 export async function signWidgetAction(input: unknown): Promise<ActionResult<SignedWidgetUrl>> {
+  const t = await tr();
   const ctx = await requireAdmin();
-  if (!ctx) return fail("Nur Admins können Website-Widgets verwalten.");
+  if (!ctx) return fail(t("adm2.embed.msg.onlyAdmins"));
   const parsed = signSchema.safeParse(input);
-  if (!parsed.success) return fail("Bitte die Auswahl prüfen.");
-  const t = await db.tenant.findUnique({ where: { id: ctx.tenant.id }, select: { embedToken: true } });
-  if (!t?.embedToken) return fail("Bitte zuerst die Widgets einschalten.");
+  if (!parsed.success) return fail(t("adm2.embed.msg.checkSelection"));
+  const row = await db.tenant.findUnique({ where: { id: ctx.tenant.id }, select: { embedToken: true } });
+  if (!row?.embedToken) return fail(t("adm2.embed.msg.enableFirst"));
   const theme = parseTheme(parsed.data.theme);
   const themeParam = theme === "auto" ? null : theme;
 
@@ -82,19 +89,19 @@ export async function signWidgetAction(input: unknown): Promise<ActionResult<Sig
   let sig: string | null;
   if (parsed.data.widget === "ranking") {
     const program = await db.program.findFirst({ where: { id: parsed.data.program, OR: [{ tenantId: null }, { tenantId: ctx.tenant.id }] }, select: { id: true, name: true } });
-    if (!program) return fail("Programm nicht gefunden.");
-    sig = signEmbed(t.embedToken, "ranking", { program: program.id, period: parsed.data.period });
+    if (!program) return fail(t("adm2.embed.msg.programNotFound"));
+    sig = signEmbed(row.embedToken, "ranking", { program: program.id, period: parsed.data.period });
     params = { program: program.id, period: parsed.data.period, theme: themeParam, sig };
     if (sig) await audit({ tenantId: ctx.tenant.id, actorId: ctx.user.id, action: "embed.widget.publish", entity: "Program", entityId: program.id, detail: `Rangliste «${program.name}» (${parsed.data.period}) für die Website freigegeben` });
   } else {
     const c = await db.championship.findFirst({ where: { id: parsed.data.id, tenantId: ctx.tenant.id }, select: { id: true, name: true, isPublished: true } });
-    if (!c) return fail("Meisterschaft nicht gefunden.");
-    if (!c.isPublished) return fail("Die Meisterschaft ist noch nicht veröffentlicht.");
-    sig = signEmbed(t.embedToken, "championship", { id: c.id });
+    if (!c) return fail(t("adm2.embed.msg.chNotFound"));
+    if (!c.isPublished) return fail(t("adm2.embed.msg.chUnpublished"));
+    sig = signEmbed(row.embedToken, "championship", { id: c.id });
     params = { id: c.id, theme: themeParam, sig };
     if (sig) await audit({ tenantId: ctx.tenant.id, actorId: ctx.user.id, action: "embed.widget.publish", entity: "Championship", entityId: c.id, detail: `Meisterschaft «${c.name}» für die Website freigegeben` });
   }
-  if (!sig) return fail("Auf dem Server fehlt AUTH_SECRET. Bitte die Betreiber informieren.");
-  const path = widgetPath(t.embedToken, parsed.data.widget, params);
+  if (!sig) return fail(t("adm2.embed.msg.noSecret"));
+  const path = widgetPath(row.embedToken, parsed.data.widget, params);
   return ok({ path, sig, url: (await getBaseUrl()) + path });
 }

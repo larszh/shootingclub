@@ -5,9 +5,10 @@ import { Banknote, Check, ChevronLeft, ChevronRight, FileText, Gift, Info, Searc
 import { adminCreateBookingAction } from "@/modules/bookings/actions";
 import { fetchAdminSlotsAction, type SlotDto, type SlotsResult } from "@/modules/bookings/slot-actions";
 import { formatDuration, type DurationOption } from "@/modules/bookings/types";
-import { basePriceFor, maxPersonsFor, wholeResourceLabel } from "@/modules/bookings/pricing";
-import { windowHintLabel } from "@/modules/bookings/i18n";
-import { getT } from "@/lib/i18n/core";
+import { basePriceFor, maxPersonsFor } from "@/modules/bookings/pricing";
+import { discountReasonLabel, personsText, slotErrorLabel, slotReasonLabel, wholeResourceLabelT, windowHintLabel } from "@/modules/bookings/i18n";
+import { INTL_LOCALE, upperFirst, type Locale, type TFunction } from "@/lib/i18n/core";
+import { useLocale, useT } from "@/components/locale";
 import { PersonsStepper } from "./persons-stepper";
 import { Avatar } from "@/components/avatar";
 import { Alert, Card, Field, Input } from "@/components/ui";
@@ -25,21 +26,30 @@ function shiftDate(dateStr: string, days: number) {
   d.setUTCDate(d.getUTCDate() + days);
   return d.toISOString().slice(0, 10);
 }
-function weekdayLabel(dateStr: string) {
-  return new Intl.DateTimeFormat("de-CH", { weekday: "long", day: "numeric", month: "long", year: "numeric", timeZone: "UTC" }).format(new Date(`${dateStr}T12:00:00Z`));
+function weekdayLabel(dateStr: string, locale: Locale) {
+  return new Intl.DateTimeFormat(INTL_LOCALE[locale], { weekday: "long", day: "numeric", month: "long", year: "numeric", timeZone: "UTC" }).format(new Date(`${dateStr}T12:00:00Z`));
 }
 
+/** Zahlarten; `label`/`hint` sind Wörterbuch-Schlüssel. */
 const PAYMENTS: Array<{ key: Payment; label: string; hint: string; icon: React.ReactNode }> = [
-  { key: "INVOICE", label: "Rechnung", hint: "mit QR-Zahlteil", icon: <FileText className="h-4 w-4" /> },
-  { key: "CASH", label: "Bar / vor Ort", hint: "gilt als bezahlt", icon: <Banknote className="h-4 w-4" /> },
-  { key: "FREE", label: "Gratis", hint: "ohne Bezahlung", icon: <Gift className="h-4 w-4" /> },
+  { key: "INVOICE", label: "bookings.method.INVOICE", hint: "adm1.bk.form.payInvoiceHint", icon: <FileText className="h-4 w-4" /> },
+  { key: "CASH", label: "bookings.method.CASH", hint: "adm1.bk.form.payCashHint", icon: <Banknote className="h-4 w-4" /> },
+  { key: "FREE", label: "adm1.bk.form.payFree", hint: "adm1.bk.form.payFreeHint", icon: <Gift className="h-4 w-4" /> },
 ];
+
+function submitLabel(t: TFunction, userId: string, selected: boolean, loading: boolean, firstName: string | undefined) {
+  if (!userId) return t("adm1.bk.form.pickMember");
+  if (!selected) return t(loading ? "adm1.bk.form.loading" : "adm1.bk.form.pickTime");
+  return firstName ? t("adm1.bk.form.bookFor", { name: firstName }) : t("adm1.bk.form.bookForMember");
+}
 
 export function AdminBookingForm({ members, resources, durationOptions, currency, today, initial, personSettings }: {
   members: MemberDto[]; resources: ResourceDto[]; durationOptions: DurationOption[]; currency: string; today: string;
   initial: { resourceId?: string; date?: string; userId?: string; duration?: number; time?: string; persons?: number };
   personSettings: PersonSettings;
 }) {
+  const t = useT();
+  const locale = useLocale();
   const [state, action] = useActionState(adminCreateBookingAction, null);
   const optionsFor = (rid: string) => resources.find((r) => r.id === rid)?.durationOptions ?? durationOptions;
   const maxFor = (rid: string) => {
@@ -127,18 +137,18 @@ export function AdminBookingForm({ members, resources, durationOptions, currency
       <input type="hidden" name="payment" value={payment} />
 
       <section className="animate-rise">
-        <h2 className="text-xs font-semibold uppercase tracking-wider text-ink-3 mb-2">1 · Für wen</h2>
+        <h2 className="text-xs font-semibold uppercase tracking-wider text-ink-3 mb-2">{t("adm1.bk.form.stepWho")}</h2>
         {member ? (
           <Card className="p-3 flex items-center gap-3">
             <Avatar name={member.name} src={member.avatarUrl} size={44} />
-            <div className="min-w-0 flex-1"><div className="font-medium truncate">{member.name}</div><div className="text-xs text-ink-3 truncate">{member.email}{member.memberNumber ? ` · Nr. ${member.memberNumber}` : ""}</div></div>
-            <button type="button" onClick={() => setUserId("")} className="press h-10 rounded-control px-3 text-sm font-medium border border-line">Ändern</button>
+            <div className="min-w-0 flex-1"><div className="font-medium truncate">{member.name}</div><div className="text-xs text-ink-3 truncate">{member.email}{member.memberNumber ? ` · ${t("adm1.bk.form.memberNo", { n: member.memberNumber })}` : ""}</div></div>
+            <button type="button" onClick={() => setUserId("")} className="press h-11 rounded-control px-3 text-sm font-medium border border-line">{t("adm1.bk.form.change")}</button>
           </Card>
         ) : (
           <Card className="p-3 space-y-2">
             <div className="relative">
               <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-ink-3" />
-              <Input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Name, E-Mail oder Mitgliedernummer" className="pl-9" aria-label="Mitglied suchen" />
+              <Input value={query} onChange={(e) => setQuery(e.target.value)} placeholder={t("adm1.bk.form.searchPh")} className="pl-9" aria-label={t("adm1.bk.form.search")} />
             </div>
             <div className="divide-y divide-line">
               {filtered.map((m) => (
@@ -147,14 +157,14 @@ export function AdminBookingForm({ members, resources, durationOptions, currency
                   <span className="min-w-0 flex-1"><span className="block font-medium truncate">{m.name}</span><span className="block text-xs text-ink-3 truncate">{m.email}</span></span>
                 </button>
               ))}
-              {filtered.length === 0 ? <p className="py-3 text-sm text-ink-3">Kein Mitglied gefunden.</p> : null}
+              {filtered.length === 0 ? <p className="py-3 text-sm text-ink-3">{t("adm1.bk.form.noMember")}</p> : null}
             </div>
           </Card>
         )}
       </section>
 
       <section className="animate-rise [animation-delay:60ms]">
-        <h2 className="text-xs font-semibold uppercase tracking-wider text-ink-3 mb-2">2 · Was und wie lange</h2>
+        <h2 className="text-xs font-semibold uppercase tracking-wider text-ink-3 mb-2">{t("adm1.bk.form.stepWhat")}</h2>
         <div className="flex flex-wrap gap-2">
           {resources.map((r) => (
             <button key={r.id} type="button" onClick={() => update({ resourceId: r.id })}
@@ -164,18 +174,20 @@ export function AdminBookingForm({ members, resources, durationOptions, currency
         <div className="mt-2 flex flex-wrap gap-2">
           {options.map((o) => (
             <button key={o.minutes} type="button" onClick={() => update({ duration: o.minutes })}
-              className={cn("press h-10 rounded-full px-3.5 text-sm font-medium border", sel.duration === o.minutes ? "bg-ink text-bg border-ink" : "bg-surface border-line text-ink-2")}>
-              {formatDuration(o.minutes)}<span className={cn("ml-1.5 text-xs", sel.duration === o.minutes ? "text-bg/70" : "text-ink-3")}>{(() => { const c = basePriceFor(o, sel.persons, personSettings.personPricing).baseCents; return c ? formatMoney(c, currency) : "gratis"; })()}</span>
+              className={cn("press h-11 rounded-full px-3.5 text-sm font-medium border", sel.duration === o.minutes ? "bg-ink text-bg border-ink" : "bg-surface border-line text-ink-2")}>
+              {formatDuration(o.minutes, t)}<span className={cn("ml-1.5 text-xs", sel.duration === o.minutes ? "text-bg/70" : "text-ink-3")}>{(() => { const c = basePriceFor(o, sel.persons, personSettings.personPricing).baseCents; return c ? formatMoney(c, currency) : t("bookings.free"); })()}</span>
             </button>
           ))}
         </div>
         {maxPersons > 1 ? (
           <Card className="mt-2 p-3 space-y-2">
-            <PersonsStepper value={sel.persons} max={maxPersons} onChange={(n) => update({ persons: n })} />
+            <PersonsStepper value={sel.persons} max={maxPersons} onChange={(n) => update({ persons: n })} locale={locale} />
             {flatFrom ? (
               <p className={cn("flex items-start gap-1.5 rounded-control px-3 py-2 text-xs", sel.persons >= flatFrom ? "bg-accent-soft text-ink" : "bg-surface-2 text-ink-2")}>
                 <Info className="h-3.5 w-3.5 mt-0.5 shrink-0" aria-hidden />
-                <span>Ab {flatFrom} Personen gilt der Pauschalpreis{personSettings.flatExclusive ? ` für ${wholeResourceLabel(resource?.kind ?? "OTHER")}` : ""} ({formatMoney(option!.flatPriceCents!, currency)}).</span>
+                <span>{personSettings.flatExclusive
+                  ? t("bookings.wizard.flatFromWhole", { from: flatFrom, whole: wholeResourceLabelT(resource?.kind ?? "OTHER", t), price: formatMoney(option!.flatPriceCents!, currency) })
+                  : t("bookings.wizard.flatFrom", { from: flatFrom, price: formatMoney(option!.flatPriceCents!, currency) })}</span>
               </p>
             ) : null}
           </Card>
@@ -183,77 +195,77 @@ export function AdminBookingForm({ members, resources, durationOptions, currency
       </section>
 
       <section className="animate-rise [animation-delay:120ms]">
-        <h2 className="text-xs font-semibold uppercase tracking-wider text-ink-3 mb-2">3 · Wann</h2>
+        <h2 className="text-xs font-semibold uppercase tracking-wider text-ink-3 mb-2">{t("adm1.bk.form.stepWhen")}</h2>
         <Card className="p-3">
           <div className="flex items-center gap-2">
-            <button type="button" onClick={() => update({ date: shiftDate(sel.date, -1) })} className="press h-11 w-11 rounded-full hover:bg-surface-2 flex items-center justify-center" aria-label="Vorheriger Tag"><ChevronLeft className="h-5 w-5" /></button>
+            <button type="button" onClick={() => update({ date: shiftDate(sel.date, -1) })} className="press h-11 w-11 rounded-full hover:bg-surface-2 flex items-center justify-center" aria-label={t("bookings.wizard.prevDay")}><ChevronLeft className="h-5 w-5" /></button>
             <div className="flex-1 text-center">
-              <div className="font-semibold capitalize">{weekdayLabel(sel.date)}</div>
-              <input type="date" value={sel.date} onChange={(e) => e.target.value && update({ date: e.target.value })} className="text-xs text-ink-3 bg-transparent text-center" aria-label="Datum" />
+              <div className="font-semibold">{upperFirst(weekdayLabel(sel.date, locale))}</div>
+              <input type="date" value={sel.date} onChange={(e) => e.target.value && update({ date: e.target.value })} className="min-h-11 text-xs text-ink-3 bg-transparent text-center" aria-label={t("bookings.wizard.pickDate")} />
             </div>
-            <button type="button" onClick={() => update({ date: shiftDate(sel.date, 1) })} className="press h-11 w-11 rounded-full hover:bg-surface-2 flex items-center justify-center" aria-label="Nächster Tag"><ChevronRight className="h-5 w-5" /></button>
+            <button type="button" onClick={() => update({ date: shiftDate(sel.date, 1) })} className="press h-11 w-11 rounded-full hover:bg-surface-2 flex items-center justify-center" aria-label={t("bookings.wizard.nextDay")}><ChevronRight className="h-5 w-5" /></button>
           </div>
-          {sel.date !== today ? <div className="mt-1 flex justify-center"><button type="button" onClick={() => update({ date: today })} className="h-7 rounded-full px-3 text-xs font-medium bg-surface-2 text-ink-2">Heute</button></div> : null}
+          {sel.date !== today ? <div className="mt-1 flex justify-center"><button type="button" onClick={() => update({ date: today })} className="min-h-11 rounded-full px-3 text-xs font-medium bg-surface-2 text-ink-2">{t("bookings.wizard.today")}</button></div> : null}
           <div className="mt-3 min-h-16">
             {loading || (slots === null && sel.resourceId) ? (
-              <div className="flex items-center justify-center gap-2 py-6 text-sm text-ink-3"><Spinner /> Verfügbarkeit wird geladen…</div>
+              <div className="flex items-center justify-center gap-2 py-6 text-sm text-ink-3"><Spinner /> {t("bookings.wizard.loading")}</div>
             ) : slotError ? (
-              <p className="py-6 text-center text-sm text-accent">{slotError}</p>
+              <p className="py-6 text-center text-sm text-accent">{slotErrorLabel(slotError, t, maxPersons)}</p>
             ) : !slots || slots.length === 0 ? (
-              <p className="py-6 text-center text-sm text-ink-3">An diesem Tag geschlossen.</p>
+              <p className="py-6 text-center text-sm text-ink-3">{t("adm1.bk.form.closed")}</p>
             ) : (
               <div className="grid grid-cols-4 gap-1.5 sm:grid-cols-6">
                 {slots.map((s) => (
-                  <button key={s.time} type="button" disabled={!s.available} onClick={() => setTime(s.time)} title={s.reason}
-                    aria-label={`${s.time} Uhr${s.available ? (showRemaining ? `, ${s.remaining} frei` : "") : `, ${s.reason ?? "nicht verfügbar"}`}`}
+                  <button key={s.time} type="button" disabled={!s.available} onClick={() => setTime(s.time)} title={s.reason ? slotReasonLabel(s.reason, t) : undefined}
+                    aria-label={`${t("bookings.wizard.timeAt", { time: s.time })}${s.available ? (showRemaining ? `, ${t("bookings.wizard.remaining", { count: s.remaining })}` : "") : `, ${slotReasonLabel(s.reason, t)}`}`}
                     className={cn("press min-h-11 rounded-control text-sm font-medium tabular-nums border transition-colors flex flex-col items-center justify-center leading-tight",
                       time === s.time ? "bg-ink text-bg border-ink" : s.available ? "bg-surface border-line hover:border-ink/40" : "bg-surface-2 border-transparent text-ink-3/60 cursor-not-allowed")}>
                     <span className={cn(!s.available && "line-through")}>{s.time}</span>
-                    {showRemaining && s.available ? <span className={cn("text-[10px] font-normal", time === s.time ? "text-bg/70" : "text-ink-3")}>{s.remaining} frei</span> : null}
+                    {showRemaining && s.available ? <span className={cn("text-[10px] font-normal", time === s.time ? "text-bg/70" : "text-ink-3")}>{t("bookings.wizard.remaining", { count: s.remaining })}</span> : null}
                   </button>
                 ))}
               </div>
             )}
-            {tooFew ? <p className="mt-2 text-xs text-ink-3">Durchgestrichene Zeiten: Nicht genug Plätze frei für {sel.persons === 1 ? "1 Person" : `${sel.persons} Personen`}.</p> : null}
+            {tooFew ? <p className="mt-2 text-xs text-ink-3">{t("bookings.wizard.tooFew", { persons: personsText(sel.persons, t) })}</p> : null}
             {!loading && !slotError && windowInfo?.windowHint ? (
               <p className="mt-2 rounded-control bg-surface-2 px-3 py-2 text-xs text-ink-2">
-                {windowHintLabel(windowInfo.windowHint, "de", getT("de"))}.
-                {windowInfo.windowOverride ? " Zeiten ausserhalb sind für die Verwaltung buchbar und erhalten einen Vermerk." : windowInfo.outsideWindow ? " Zeiten ausserhalb sind durchgestrichen." : ""}
+                {windowHintLabel(windowInfo.windowHint, locale, t)}.
+                {windowInfo.windowOverride ? ` ${t("bookings.wizard.windowOverride")}` : windowInfo.outsideWindow ? ` ${t("bookings.wizard.windowOutside")}` : ""}
               </p>
             ) : null}
           </div>
-          <p className="mt-2 text-xs text-ink-3">Als Verwaltung gelten Vorlauf und Vorausbuchung nicht. Öffnungszeiten, Sperrzeiten und Plätze werden beachtet.</p>
+          <p className="mt-2 text-xs text-ink-3">{t("adm1.bk.form.adminRules")}</p>
         </Card>
       </section>
 
       <section className={cn("animate-rise [animation-delay:180ms]", !selected && "opacity-50")}>
-        <h2 className="text-xs font-semibold uppercase tracking-wider text-ink-3 mb-2">4 · Bezahlung</h2>
+        <h2 className="text-xs font-semibold uppercase tracking-wider text-ink-3 mb-2">{t("adm1.bk.form.stepPay")}</h2>
         <div className="grid grid-cols-3 gap-2">
           {PAYMENTS.map((p) => (
             <button key={p.key} type="button" onClick={() => setPayment(p.key)}
               className={cn("press rounded-control border p-2.5 text-left min-h-16", payment === p.key ? "bg-ink text-bg border-ink" : "bg-surface border-line")}>
-              <span className="flex items-center gap-1.5 text-sm font-medium">{p.icon} {p.label}</span>
-              <span className={cn("block text-xs mt-0.5", payment === p.key ? "text-bg/70" : "text-ink-3")}>{p.hint}</span>
+              <span className="flex items-center gap-1.5 text-sm font-medium">{p.icon} {t(p.label)}</span>
+              <span className={cn("block text-xs mt-0.5", payment === p.key ? "text-bg/70" : "text-ink-3")}>{t(p.hint)}</span>
             </button>
           ))}
         </div>
         <Card className="mt-2 p-4 space-y-3">
           <div className="flex items-center justify-between gap-3 text-sm">
-            <span className="text-ink-3">Preis</span>
+            <span className="text-ink-3">{t("bookings.detail.price")}</span>
             <span className="text-lg font-semibold tabular-nums">
-              {price === null ? "–" : price ? formatMoney(price, currency) : "gratis"}
-              {selected?.discountReason && payment !== "FREE" ? <span className="ml-2 text-xs font-normal text-ok">{selected.discountReason}</span> : null}
+              {price === null ? "–" : price ? formatMoney(price, currency) : t("bookings.free")}
+              {selected?.discountReason && payment !== "FREE" ? <span className="ml-2 text-xs font-normal text-ok">{discountReasonLabel(selected.discountReason, t)}</span> : null}
             </span>
           </div>
-          {selected?.unitLabel ? <div className="flex items-center justify-between gap-3 text-xs text-ink-3"><span>{selected.unitLabel}</span>{selected.detail ? <span className="tabular-nums">{selected.detail}</span> : null}</div> : null}
-          <Field label="Bemerkung (optional)"><Input name="note" placeholder="z.B. Telefonisch reserviert" maxLength={191} /></Field>
+          {selected?.unitLabel ? <div className="flex items-center justify-between gap-3 text-xs text-ink-3"><span>{personsText(selected.persons, t)}{selected.isFlatRate ? ` · ${t("bookings.wizard.flat")}` : ""}</span>{selected.detail ? <span className="tabular-nums">{selected.detail}</span> : null}</div> : null}
+          <Field label={t("bookings.wizard.note")}><Input name="note" placeholder={t("adm1.bk.form.notePh")} maxLength={191} /></Field>
         </Card>
       </section>
 
       {state && !state.ok ? <Alert>{state.error}</Alert> : null}
       <div className="sticky bottom-24 md:bottom-4">
-        <SubmitButton size="lg" className="w-full shadow-lg" disabled={!selected || !userId} pendingText="Wird gebucht…">
-          <Check className="h-5 w-5" /> {!userId ? "Mitglied wählen" : !selected ? (loading ? "Wird geladen…" : "Zeit wählen") : `Für ${member?.name.split(" ")[0] ?? "Mitglied"} buchen`}
+        <SubmitButton size="lg" className="w-full shadow-lg" disabled={!selected || !userId} pendingText={t("bookings.wizard.submitting")}>
+          <Check className="h-5 w-5" /> {submitLabel(t, userId, !!selected, loading, member?.name.split(" ")[0])}
         </SubmitButton>
       </div>
     </form>

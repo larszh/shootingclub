@@ -38,8 +38,8 @@ describe("Wörterbuch «bookings»", () => {
     expect(Object.keys(de).filter((k) => !k.startsWith("bookings."))).toEqual([]);
   });
 
-  it("fr und it haben jeden deutschen Schlüssel, keine leeren Texte", () => {
-    for (const lang of [dict.fr, dict.it]) {
+  it("fr, it und en haben jeden deutschen Schlüssel, keine leeren Texte", () => {
+    for (const lang of [dict.fr, dict.it, dict.en]) {
       expect(Object.keys(de).filter((k) => !(k in lang))).toEqual([]);
       expect(Object.keys(lang).filter((k) => !(k in de))).toEqual([]);
       expect(Object.entries(lang).filter(([, v]) => !v.trim()).map(([k]) => k)).toEqual([]);
@@ -53,6 +53,7 @@ describe("Wörterbuch «bookings»", () => {
       const p = JSON.stringify(placeholders(v));
       if (JSON.stringify(placeholders(dict.fr[k] ?? "")) !== p) bad.push(`fr:${k}`);
       if (JSON.stringify(placeholders(dict.it[k] ?? "")) !== p) bad.push(`it:${k}`);
+      if (JSON.stringify(placeholders(dict.en[k] ?? "")) !== p) bad.push(`en:${k}`);
     }
     expect(bad).toEqual([]);
   });
@@ -78,6 +79,7 @@ describe("Wörterbuch «bookings»", () => {
     expect(getT("de")("bookings.title")).toBe("Reservationen");
     expect(getT("fr")("bookings.title")).toBe("Réservations");
     expect(getT("it")("bookings.wizard.stepWhen", { n: 4 })).toBe("4 · Quando");
+    expect(getT("en")("bookings.wizard.stepWhen", { n: 4 })).toBe("4 · When");
     expect(getT("de")("bookings.err.cancelDeadline", { hours: 24 })).toBe("Stornierung nur bis 24 Stunden vor Beginn möglich.");
   });
 

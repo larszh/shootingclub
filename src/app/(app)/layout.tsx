@@ -9,6 +9,7 @@ import { getUnreadChatCount } from "@/modules/chat/queries";
 import { getRequestLocale, getT } from "@/lib/i18n";
 import { db } from "@/lib/db";
 import { hasAssociationArea } from "@/modules/association/queries";
+import { HelpAssistantMount } from "@/components/ai/help-mount";
 import { anyPaymentModule, hasMyPartnerPayments } from "@/modules/billing/overview";
 
 /**
@@ -75,6 +76,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
           scoreImport: ctx.can("match.viewAll") || ctx.can("tenant.programs.manage"),
           accounting: ctx.can("accounting.export"),
           kiosk: ctx.can("kiosk.manage"),
+          aiManage: ctx.can("ai.manage"),
           requests: pendingRequests,
           associationArea,
         }}
@@ -89,6 +91,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         ) : null}
         {children}
       </AppShell>
+      <HelpAssistantMount />
     </>
   );
 }

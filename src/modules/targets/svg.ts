@@ -1,6 +1,8 @@
 import { PAPER_MM, parseTargetParams, type PaperSize, type TargetParams, type TargetSubject } from "./types";
 import { circle, clamp, fmtM, formatRatio, int, joinNote, line, n, plain, range, rect, shuffle, text, esc, type Body, type Box, type Ctx } from "./svg-kit";
 import { renderTactical, TACTICAL_KEYS } from "./tactical";
+import { targetTextTranslator } from "./target-i18n";
+import type { Locale } from "@/lib/i18n/core";
 
 export { formatRatio };
 
@@ -12,8 +14,8 @@ export { formatRatio };
  * Das Modul ist bewusst rein (kein DOM, kein Datum, kein Zufall), damit es auf
  * dem Server, im Browser und offline gleich rechnet.
  */
-export function renderTargetSvg(subject: TargetSubject, size: PaperSize, params: TargetParams = {}): string {
-  return renderTarget(subject, size, params).svg;
+export function renderTargetSvg(subject: TargetSubject, size: PaperSize, params: TargetParams = {}, locale?: Locale | string | null): string {
+  return renderTarget(subject, size, params, locale).svg;
 }
 
 export type RenderedTarget = {
@@ -22,19 +24,24 @@ export type RenderedTarget = {
   note: string | null;
 };
 
-/** Wie renderTargetSvg, liefert zusätzlich den Massstab-/Hinweistext. */
-export function renderTarget(subject: TargetSubject, size: PaperSize, params: TargetParams = {}): RenderedTarget {
+/**
+ * Wie renderTargetSvg, liefert zusätzlich den Massstab-/Hinweistext.
+ * locale: Sprache der Beschriftungen, Legenden und des Hinweises (Standard Deutsch).
+ */
+export function renderTarget(subject: TargetSubject, size: PaperSize, params: TargetParams = {}, locale?: Locale | string | null): RenderedTarget {
   const { w, h } = PAPER_MM[size];
   const margin = 10; // Druckrand
   const inner = { x: margin, y: margin, w: w - 2 * margin, h: h - 2 * margin - 8 }; // 8 mm Platz für Fusszeile
   // Ungültige Werte (z.B. halb eingetippt im Formular) werden verworfen, nie gerendert.
-  const r = renderBody(subject, { box: inner, p: parseTargetParams(params), size });
-  const noteSvg = r.note ? noteText(r.note, margin, inner.w) : "";
+  const tr = targetTextTranslator(locale);
+  const r = renderBody(subject, { box: inner, p: parseTargetParams(params), size, tr });
+  const note = r.note ? tr(r.note) : null;
+  const noteSvg = note ? noteText(note, margin, inner.w) : "";
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${w}mm" height="${h}mm" viewBox="0 0 ${w} ${h}" font-family="Helvetica, Arial, sans-serif">
 <rect width="${w}" height="${h}" fill="#fff"/>
 ${r.body}${noteSvg}
 </svg>`;
-  return { svg, note: r.note };
+  return { svg, note };
 }
 
 function renderBody(subject: TargetSubject, c: Ctx): Body {
@@ -401,7 +408,7 @@ function airRifleSheet(c: Ctx): Body {
       const x = box.x + col * (cellW + gap);
       const y = box.y + r * (cellH + gap);
       const isSighter = sighter && k === 0;
-      const label = isSighter ? "PROBE" : String(sighter ? k : k + 1);
+      const label = isSighter ? c.tr("PROBE") : String(sighter ? k : k + 1);
       parts.push(rect(x, y, cellW, cellH, 'fill="none" stroke="#000" stroke-width="0.3"'));
       const fs = clamp(labelH * 0.7, 2, 4);
       parts.push(text(x + 2, y + labelH / 2 + 1, fs, label, 'fill="#000" font-weight="bold" dominant-baseline="central"'));
@@ -440,7 +447,7 @@ function rapidFire(c: Ctx): Body {
   }
   for (let r = 0; r < rows; r++) {
     const y0 = box.y + r * rowH;
-    parts.push(text(box.x, y0 + labelH / 2, 3, `Serie ${r + 1}`, 'fill="#000" font-weight="bold" dominant-baseline="central"'));
+    parts.push(text(box.x, y0 + labelH / 2, 3, c.tr(`Serie ${r + 1}`), 'fill="#000" font-weight="bold" dominant-baseline="central"'));
     if (r > 0) parts.push(line(box.x, y0, box.x + box.w, y0, 0.2, "#999", 'stroke-dasharray="1 1"'));
     const cy = y0 + labelH + (rowH - labelH - numH) / 2;
     for (let i = 0; i < count; i++) {
@@ -539,7 +546,7 @@ function zeroing(c: Ctx): Body {
     `Raster ${n(g)} mm · Beschriftung in ${unit} ab Mitte · 1 Zoll = 25.4 mm`,
     `1 MOA ≈ 29.1 mm auf 100 m ≈ ${n(moa)} mm auf ${fmtM(dist)} m`,
     `1 mrad = ${fmtM(dist)} mm auf ${fmtM(dist)} m · Treffpunktlage messen, Visier korrigieren`,
-  ];
+  ].map(c.tr);
   const longest = Math.max(...lines.map((l) => l.length));
   const fs = clamp(box.w / (longest * 0.5), 1.6, 2.8);
   lines.forEach((l, i) => parts.push(text(box.x, area.y + area.h + 3 + i * (fs * 1.35) + fs / 2, fs, l, 'fill="#444" dominant-baseline="central"')));
@@ -598,7 +605,7 @@ function dotDrill(c: Ctx): Body {
       const x = box.x + colIdx * colW;
       const y = y0 + (i % perCol) * lineH + lineH / 2;
       parts.push(text(x, y, fs, String(i + 1), 'fill="#000" font-weight="bold" dominant-baseline="central"'));
-      parts.push(text(x + fs * 1.4, y, fs, t.task, 'fill="#000" dominant-baseline="central"'));
+      parts.push(text(x + fs * 1.4, y, fs, c.tr(t.task), 'fill="#000" dominant-baseline="central"'));
     });
   }
   return { body: parts.join("\n"), note: "Punkte-Drill 1–10 · Aufgabe pro Nummer" };
@@ -667,7 +674,7 @@ function distanceLadder(c: Ctx): Body {
     const cx = box.x + cellW * (col + 0.5);
     const cy = box.y + cellH * row + (cellH - labelH) / 2;
     parts.push(ringTarget(Math.round(cx * 100) / 100, Math.round(cy * 100) / 100, (base * ratio) / 2, 5, 4, false));
-    const label = i === 0 ? `${fmtM(dist)} m (Originalgrösse)` : `simuliert ${fmtM(dist)} m · ${formatRatio(ratio)}`;
+    const label = c.tr(i === 0 ? `${fmtM(dist)} m (Originalgrösse)` : `simuliert ${fmtM(dist)} m · ${formatRatio(ratio)}`);
     parts.push(text(cx, box.y + cellH * (row + 1) - labelH / 2 - 1, 2.8, label));
   }
   return { body: parts.join("\n"), note: `Aus ${fmtM(shot)} m schiessen · Grössen entsprechen ${dists.map(fmtM).join("/")} m` };
@@ -735,7 +742,7 @@ function ticTacToe(c: Ctx): Body {
     const B = Math.min(box.w, areaH - titleH - 2) * 0.96;
     const x0 = box.x + (box.w - B) / 2;
     const top = y0 + titleH + (areaH - titleH - B) / 2;
-    parts.push(text(box.x + box.w / 2, top - titleH / 2, 4, boards > 1 ? `Spiel ${b + 1}` : "Tic-Tac-Toe", 'fill="#000" font-weight="bold" text-anchor="middle" dominant-baseline="central"'));
+    parts.push(text(box.x + box.w / 2, top - titleH / 2, 4, c.tr(boards > 1 ? `Spiel ${b + 1}` : "Tic-Tac-Toe"), 'fill="#000" font-weight="bold" text-anchor="middle" dominant-baseline="central"'));
     const cell = B / 3;
     for (let i = 1; i < 3; i++) {
       parts.push(line(x0 + i * cell, top, x0 + i * cell, top + B, 1.4, "#000", 'stroke-linecap="round"'));
@@ -786,7 +793,7 @@ function numberGrid(c: Ctx): Body {
     const cy = y0 + cell * (Math.floor(i / 5) + 0.5);
     if (lab === "FREI") {
       parts.push(rect(cx - cell / 2 + 1, cy - cell / 2 + 1, cell - 2, cell - 2, 'fill="#000"'));
-      parts.push(text(cx, cy, cell * 0.22, "FREI", 'fill="#fff" font-weight="bold" text-anchor="middle" dominant-baseline="central"'));
+      parts.push(text(cx, cy, cell * 0.22, c.tr("FREI"), 'fill="#fff" font-weight="bold" text-anchor="middle" dominant-baseline="central"'));
       return;
     }
     parts.push(circle(cx, cy, cell * 0.36, 'fill="#fff" stroke="#000" stroke-width="0.5"'));
@@ -850,8 +857,8 @@ function humanoid(c: Ctx): Body {
     parts.push(circle(ox + 0.5 * k, oy + 0.14 * k, Math.max(0.6, 0.012 * k), 'fill="#000"'));
     parts.push(circle(ox + 0.5 * k, oy + 0.6 * k, 0.17 * k, 'fill="none" stroke="#000" stroke-width="0.6"'));
     parts.push(circle(ox + 0.5 * k, oy + 0.6 * k, Math.max(0.8, 0.02 * k), 'fill="#000"'));
-    parts.push(lbl(0.5, 0.31, "Kopf", 0.035));
-    parts.push(lbl(0.5, 0.82, "Brust", 0.045));
+    parts.push(lbl(0.5, 0.31, c.tr("Kopf"), 0.035));
+    parts.push(lbl(0.5, 0.82, c.tr("Brust"), 0.045));
     note = "Silhouette · Kopf/Brust";
   } else {
     parts.push(zr(0.22, 0.34, 0.56, 0.74));

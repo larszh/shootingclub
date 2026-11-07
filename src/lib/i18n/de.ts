@@ -4,6 +4,7 @@ const de: Record<string, string> = {
   "locale.de": "Deutsch",
   "locale.fr": "Französisch",
   "locale.it": "Italienisch",
+  "locale.en": "Englisch",
 
   // Rechnungsdokument
   "invoice.title": "Rechnung",

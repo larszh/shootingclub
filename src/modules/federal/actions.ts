@@ -7,6 +7,7 @@ import { db } from "@/lib/db";
 import { audit } from "@/lib/audit";
 import { requireModule } from "@/lib/tenant";
 import { fail, ok, type ActionResult } from "@/lib/action-result";
+import { getRequestLocale, getT } from "@/lib/i18n";
 import { accessStatusWhere } from "@/lib/membership-access";
 import { canEditYear, listFsPrograms, listOfficialPrograms } from "./queries";
 import { dayToDbDate } from "./types";
@@ -21,24 +22,27 @@ const dayField = z
     if (!v) return null;
     const d = dayToDbDate(v);
     if (!d) {
-      c.addIssue({ code: "custom", message: "Ungültiges Datum" });
+      c.addIssue({ code: "custom", message: "adm2.federal.v.date" });
       return z.NEVER;
     }
     return d;
   });
 
+const tr = async () => getT(await getRequestLocale());
+
 const yearSchema = z.object({
-  year: z.coerce.number().int().min(2000, "Ungültiges Jahr").max(2100, "Ungültiges Jahr"),
+  year: z.coerce.number().int().min(2000, "adm2.federal.v.year").max(2100, "adm2.federal.v.year"),
   registrationDeadline: dayField,
   shootingDeadline: dayField,
   reportDeadline: dayField,
-  notes: z.string().trim().max(5000, "Notizen höchstens 5000 Zeichen").optional(),
+  notes: z.string().trim().max(5000, "adm2.federal.v.notes").optional(),
 });
 
 /** Fristen und Notizen eines Jahres speichern (Schützenmeister oder Admin). */
 export async function saveFederalYearAction(_prev: ActionResult | null, formData: FormData): Promise<ActionResult> {
   const ctx = await requireModule("federal");
-  if (!canEditYear(ctx)) return fail("Keine Berechtigung");
+  const t = await tr();
+  if (!canEditYear(ctx)) return fail(t("adm2.federal.msg.noRight"));
   const parsed = yearSchema.safeParse({
     year: formData.get("year"),
     registrationDeadline: formData.get("registrationDeadline") ?? undefined,
@@ -48,8 +52,8 @@ export async function saveFederalYearAction(_prev: ActionResult | null, formData
   });
   if (!parsed.success) {
     const fieldErrors: Record<string, string> = {};
-    for (const i of parsed.error.issues) if (i.path[0]) fieldErrors[String(i.path[0])] ??= i.message;
-    return fail(parsed.error.issues[0]?.message ?? "Ungültige Eingabe", fieldErrors);
+    for (const i of parsed.error.issues) if (i.path[0]) fieldErrors[String(i.path[0])] ??= t(i.message);
+    return fail(t(parsed.error.issues[0]?.message ?? "adm2.federal.msg.invalid"), fieldErrors);
   }
   const { year, notes, ...dates } = parsed.data;
   const data = { ...dates, notes: notes ? notes : null };
@@ -68,12 +72,12 @@ export async function saveFederalYearAction(_prev: ActionResult | null, formData
     detail: `Fristen ${year}: Meldung ${fmt(dates.registrationDeadline)}, letzter Schiesstag ${fmt(dates.shootingDeadline)}, Resultate ${fmt(dates.reportDeadline)}`,
   });
   revalidatePath("/federal");
-  return ok(undefined, "Gespeichert");
+  return ok(undefined, t("adm2.federal.msg.saved"));
 }
 
 const startSchema = z.object({
-  eventId: z.string().trim().min(1, "Anlass wählen").max(64),
-  programId: z.string().trim().min(1, "Programm wählen").max(64),
+  eventId: z.string().trim().min(1, "adm2.federal.v.event").max(64),
+  programId: z.string().trim().min(1, "adm2.federal.v.program").max(64),
   takeRsvps: z.boolean(),
 });
 
@@ -86,23 +90,24 @@ const MAX_FROM_RSVPS = 60;
  */
 export async function startFederalMatchAction(_prev: ActionResult | null, formData: FormData): Promise<ActionResult> {
   const ctx = await requireModule("federal");
-  if (!ctx.can("results.verify")) return fail("Keine Berechtigung (Schützenmeister)");
-  if (!ctx.hasModule("scores")) return fail("Bitte zuerst das Modul «Punkteerfassung» aktivieren.");
+  const t = await tr();
+  if (!ctx.can("results.verify")) return fail(t("adm2.federal.msg.noRightMaster"));
+  if (!ctx.hasModule("scores")) return fail(t("adm2.federal.msg.scoresOff"));
   const parsed = startSchema.safeParse({ eventId: formData.get("eventId"), programId: formData.get("programId"), takeRsvps: formData.get("takeRsvps") === "on" });
-  if (!parsed.success) return fail(parsed.error.issues[0]?.message ?? "Ungültige Eingabe");
+  if (!parsed.success) return fail(t(parsed.error.issues[0]?.message ?? "adm2.federal.msg.invalid"));
   const { eventId, programId, takeRsvps } = parsed.data;
 
   const event = await db.event.findFirst({
     where: { id: eventId, tenantId: ctx.tenant.id },
     select: { id: true, title: true, kind: true, startsAt: true, isCancelled: true, location: true, rsvps: { where: { status: "YES" }, select: { userId: true } } },
   });
-  if (!event) return fail("Anlass nicht gefunden");
-  if (event.kind !== "OBLIGATORY") return fail("Nur für Anlässe der Art «Obligatorisch».");
-  if (event.isCancelled) return fail("Der Anlass ist abgesagt.");
+  if (!event) return fail(t("adm2.federal.msg.eventNotFound"));
+  if (event.kind !== "OBLIGATORY") return fail(t("adm2.federal.msg.onlyObligatory"));
+  if (event.isCancelled) return fail(t("adm2.federal.msg.cancelled"));
 
   const programs = await listOfficialPrograms(ctx.tenant.id);
   const program = programs.find((p) => p.id === programId);
-  if (!program) return fail("Programm nicht verfügbar (amtliches Programm wählen).");
+  if (!program) return fail(t("adm2.federal.msg.programUnavailable"));
 
   let userIds: string[] = [];
   if (takeRsvps && event.rsvps.length) {

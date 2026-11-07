@@ -1,14 +1,17 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { todayZurich } from "@/lib/time";
-import { formatDateZurich } from "@/lib/time";
+import { getRequestLocale, getT } from "@/lib/i18n";
+import { dayKeyLabel } from "@/lib/i18n/extra/admin2/msg";
+import { formatDate } from "@/lib/i18n/core";
 import { PrintButton } from "@/components/print-button";
-import { formatDay } from "@/modules/federal/types";
 import { listAssociationMembers, listRankingPrograms, loadAssociationRanking, requireAssociation, sharingScope } from "@/modules/association/queries";
 import { parseRankingParams } from "@/modules/association/stats";
 import { RankingTable } from "../ranking-table";
 
-export const metadata: Metadata = { title: "Verbandsrangliste drucken" };
+export async function generateMetadata(): Promise<Metadata> {
+  return { title: getT(await getRequestLocale())("adm2.assoc.r.printMeta") };
+}
 
 /**
  * Druckansicht der Verbandsrangliste (A4 hoch). Die Seite liegt im App-Bereich, damit sie dieselbe
@@ -17,6 +20,9 @@ export const metadata: Metadata = { title: "Verbandsrangliste drucken" };
 export default async function AssociationRankingPrintPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ program?: string; from?: string; to?: string; official?: string }> }) {
   const { id } = await params;
   const ctx = await requireAssociation(id);
+  const locale = await getRequestLocale();
+  const t = getT(locale);
+  const formatDay = (d: string) => dayKeyLabel(d, locale);
   const sp = await searchParams;
   const programs = await listRankingPrograms();
   const p = parseRankingParams(sp, programs.map((x) => x.id), todayZurich());
@@ -39,7 +45,7 @@ export default async function AssociationRankingPrintPage({ params, searchParams
         }
       `}</style>
       <div className="no-print mb-4 flex items-center justify-between gap-3">
-        <a href={`/association/${ctx.association.id}/ranking?${new URLSearchParams(Object.entries(sp).filter((e): e is [string, string] => typeof e[1] === "string")).toString()}`} className="inline-flex h-11 items-center text-sm text-accent">Zurück</a>
+        <a href={`/association/${ctx.association.id}/ranking?${new URLSearchParams(Object.entries(sp).filter((e): e is [string, string] => typeof e[1] === "string")).toString()}`} className="inline-flex h-11 items-center text-sm text-accent">{t("adm2.assoc.r.back")}</a>
         <PrintButton />
       </div>
       <div className="overflow-x-auto">
@@ -47,13 +53,13 @@ export default async function AssociationRankingPrintPage({ params, searchParams
           <header className="mb-5 flex items-start justify-between gap-6 border-b border-neutral-300 pb-3">
             <div>
               <div className="text-sm text-neutral-600">{ctx.association.name}</div>
-              <h1 className="text-2xl font-bold leading-tight">Rangliste {program.name}</h1>
-              <div className="text-xs text-neutral-600">{formatDay(p.from)} – {formatDay(p.to)}{p.officialOnly ? " · nur bestätigte Resultate" : ""}</div>
+              <h1 className="text-2xl font-bold leading-tight">{t("adm2.assoc.r.heading", { name: program.name })}</h1>
+              <div className="text-xs text-neutral-600">{formatDay(p.from)} – {formatDay(p.to)}{p.officialOnly ? t("adm2.assoc.r.officialSuffix") : ""}</div>
             </div>
-            <div className="text-right text-xs text-neutral-600">Stand {formatDateZurich(new Date(), { weekday: undefined })}</div>
+            <div className="text-right text-xs text-neutral-600">{t("adm2.assoc.r.asOf", { date: formatDate(new Date(), locale) })}</div>
           </header>
-          <RankingTable ranking={ranking} decimal={program.scoringMode === "RINGS_DECIMAL"} print />
-          <footer className="mt-6 text-[8pt] text-neutral-500">Pro Schütze das beste Resultat im Zeitraum. Namen nur von Vereinen mit Freigabe.</footer>
+          <RankingTable ranking={ranking} decimal={program.scoringMode === "RINGS_DECIMAL"} print t={t} />
+          <footer className="mt-6 text-[8pt] text-neutral-500">{t("adm2.assoc.r.printFooter")}</footer>
         </div>
       </div>
     </div>

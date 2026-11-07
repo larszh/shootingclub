@@ -8,7 +8,9 @@ import { Segmented } from "@/components/ui/controls";
 import { SubmitButton, submitKeepingValues } from "@/components/ui/form";
 import { saveParticipantAction } from "@/modules/courses/actions";
 import { ageOn } from "@/modules/courses/logic";
-import { PARTICIPANT_STATUS, PARTICIPANT_STATUSES } from "@/modules/courses/types";
+import { PARTICIPANT_STATUSES, participantStatusInfo } from "@/modules/courses/types";
+import { formatDate } from "@/lib/i18n/core";
+import { useLocale, useT } from "@/components/locale";
 
 export type ParticipantValues = {
   id?: string;
@@ -56,6 +58,8 @@ export function ParticipantForm({
   courseId: string; initial?: ParticipantValues; members: MemberOpt[]; weapons: WeaponOpt[]; currentWeapon: { id: string; name: string } | null; refDay: string; weaponsEnabled: boolean; takenUserIds: string[];
 }) {
   const router = useRouter();
+  const t = useT();
+  const locale = useLocale();
   const [state, action, pending] = useActionState(saveParticipantAction, null);
   const err = state && !state.ok ? state.fieldErrors : undefined;
   const [v, setV] = useState<ParticipantValues>(initial ?? EMPTY);
@@ -97,33 +101,33 @@ export function ParticipantForm({
 
       <Card className="animate-rise space-y-3 p-4">
         <Segmented<"member" | "external">
-          label="Herkunft"
+          label={t("adm2.courses.p.origin")}
           value={mode}
           onChange={changeMode}
-          options={[{ value: "member", label: "Mitglied", disabled: !members.length }, { value: "external", label: "Extern (ohne Konto)" }]}
+          options={[{ value: "member", label: t("adm2.courses.p.member"), disabled: !members.length }, { value: "external", label: t("adm2.courses.p.external") }]}
         />
         {mode === "member" ? (
-          <Field label="Mitglied" hint="Name, Geburtsdatum und Kontakt werden übernommen und können angepasst werden.">
+          <Field label={t("adm2.courses.p.member")} hint={t("adm2.courses.p.memberHint")}>
             <Select value={v.userId ?? ""} onChange={(e) => pickMember(e.target.value)} required>
-              <option value="">– Mitglied wählen –</option>
+              <option value="">{t("adm2.common.chooseMemberDash")}</option>
               {available.map((m) => <option key={m.userId} value={m.userId}>{m.name}</option>)}
             </Select>
           </Field>
         ) : (
-          <p className="text-sm text-ink-3">Für Jugendliche oder Gäste ohne App-Konto. Bei unter 18-Jährigen sind die Angaben der erziehungsberechtigten Person nötig.</p>
+          <p className="text-sm text-ink-3">{t("adm2.courses.p.externalHint")}</p>
         )}
         <div className="grid gap-3 sm:grid-cols-2">
-          <Field label="Vorname" error={err?.firstName}><Input name="firstName" value={val("firstName")} onChange={set("firstName")} required maxLength={191} autoComplete="off" /></Field>
-          <Field label="Nachname" error={err?.lastName}><Input name="lastName" value={val("lastName")} onChange={set("lastName")} required maxLength={191} autoComplete="off" /></Field>
-          <Field label="Geburtsdatum" hint={age !== null ? `${age} Jahre am ${refDay.split("-").reverse().join(".")}` : "Für Altersprüfung und Kursausweis"} error={err?.birthDate}>
+          <Field label={t("adm2.common.firstName")} error={err?.firstName}><Input name="firstName" value={val("firstName")} onChange={set("firstName")} required maxLength={191} autoComplete="off" /></Field>
+          <Field label={t("adm2.common.lastName")} error={err?.lastName}><Input name="lastName" value={val("lastName")} onChange={set("lastName")} required maxLength={191} autoComplete="off" /></Field>
+          <Field label={t("adm2.courses.p.birth")} hint={age !== null ? t("adm2.courses.p.ageOn", { age, date: formatDate(new Date(`${refDay}T12:00:00Z`), locale, { timeZone: "UTC" }) }) : t("adm2.courses.p.birthHint")} error={err?.birthDate}>
             <Input type="date" name="birthDate" value={val("birthDate")} onChange={set("birthDate")} />
           </Field>
-          <Field label="E-Mail" error={err?.email}><Input type="email" name="email" value={val("email")} onChange={set("email")} maxLength={191} /></Field>
-          <Field label="Telefon" error={err?.phone}><Input type="tel" name="phone" value={val("phone")} onChange={set("phone")} maxLength={191} /></Field>
-          <Field label="Strasse" error={err?.street}><Input name="street" value={val("street")} onChange={set("street")} maxLength={191} /></Field>
+          <Field label={t("adm2.common.email")} error={err?.email}><Input type="email" name="email" value={val("email")} onChange={set("email")} maxLength={191} /></Field>
+          <Field label={t("adm2.common.phone")} error={err?.phone}><Input type="tel" name="phone" value={val("phone")} onChange={set("phone")} maxLength={191} /></Field>
+          <Field label={t("adm2.courses.p.street")} error={err?.street}><Input name="street" value={val("street")} onChange={set("street")} maxLength={191} /></Field>
           <div className="grid grid-cols-[6rem_1fr] gap-3 sm:col-span-2">
-            <Field label="PLZ" error={err?.zip}><Input name="zip" value={val("zip")} onChange={set("zip")} maxLength={191} inputMode="numeric" /></Field>
-            <Field label="Ort" error={err?.city}><Input name="city" value={val("city")} onChange={set("city")} maxLength={191} /></Field>
+            <Field label={t("adm2.courses.p.zip")} error={err?.zip}><Input name="zip" value={val("zip")} onChange={set("zip")} maxLength={191} inputMode="numeric" /></Field>
+            <Field label={t("adm2.common.location")} error={err?.city}><Input name="city" value={val("city")} onChange={set("city")} maxLength={191} /></Field>
           </div>
         </div>
       </Card>
@@ -132,23 +136,23 @@ export function ParticipantForm({
         <div className="flex items-start gap-2">
           {minor ? <ShieldAlert className="mt-0.5 h-5 w-5 shrink-0 text-warn" aria-hidden /> : null}
           <div>
-            <h2 className="font-semibold">Erziehungsberechtigte</h2>
-            <p className="text-sm text-ink-3">{minor ? "Pflicht: unter 18 Jahre. Name und E-Mail oder Telefon angeben." : "Nur bei Minderjährigen nötig."}</p>
+            <h2 className="font-semibold">{t("adm2.courses.p.guardian")}</h2>
+            <p className="text-sm text-ink-3">{minor ? t("adm2.courses.p.guardianRequired") : t("adm2.courses.p.guardianOptional")}</p>
           </div>
         </div>
         <div className="grid gap-3 sm:grid-cols-3">
-          <Field label="Name" error={err?.guardianName}><Input name="guardianName" value={val("guardianName")} onChange={set("guardianName")} required={minor} maxLength={191} /></Field>
-          <Field label="E-Mail" error={err?.guardianEmail}><Input type="email" name="guardianEmail" value={val("guardianEmail")} onChange={set("guardianEmail")} maxLength={191} /></Field>
-          <Field label="Telefon" error={err?.guardianPhone}><Input type="tel" name="guardianPhone" value={val("guardianPhone")} onChange={set("guardianPhone")} maxLength={191} /></Field>
+          <Field label={t("adm2.common.name")} error={err?.guardianName}><Input name="guardianName" value={val("guardianName")} onChange={set("guardianName")} required={minor} maxLength={191} /></Field>
+          <Field label={t("adm2.common.email")} error={err?.guardianEmail}><Input type="email" name="guardianEmail" value={val("guardianEmail")} onChange={set("guardianEmail")} maxLength={191} /></Field>
+          <Field label={t("adm2.common.phone")} error={err?.guardianPhone}><Input type="tel" name="guardianPhone" value={val("guardianPhone")} onChange={set("guardianPhone")} maxLength={191} /></Field>
         </div>
       </Card>
 
       <Card className="animate-rise space-y-3 p-4">
         {weaponsEnabled ? (
-          <Field label="Vereinswaffe" hint="Nur Zuteilung. Ausleihe und Rückgabe laufen im Modul Vereinswaffen." error={err?.clubWeaponId}>
+          <Field label={t("adm2.courses.p.weapon")} hint={t("adm2.courses.p.weaponHint")} error={err?.clubWeaponId}>
             <Select name="clubWeaponId" value={val("clubWeaponId")} onChange={set("clubWeaponId")}>
-              <option value="">– keine –</option>
-              {currentWeapon && !weapons.some((w) => w.id === currentWeapon.id) ? <option value={currentWeapon.id}>{currentWeapon.name} (zugeteilt)</option> : null}
+              <option value="">{t("adm2.courses.p.noWeapon")}</option>
+              {currentWeapon && !weapons.some((w) => w.id === currentWeapon.id) ? <option value={currentWeapon.id}>{currentWeapon.name}{t("adm2.courses.p.assigned")}</option> : null}
               {weapons.map((w) => <option key={w.id} value={w.id}>{[w.name, w.discipline, w.caliber].filter(Boolean).join(" · ")}</option>)}
             </Select>
           </Field>
@@ -156,17 +160,17 @@ export function ParticipantForm({
           <input type="hidden" name="clubWeaponId" value={v.clubWeaponId ?? ""} />
         )}
         <div className="grid gap-3 sm:grid-cols-2">
-          <Field label="Status">
+          <Field label={t("adm2.common.status")}>
             <Select name="status" value={v.status} onChange={set("status")}>
-              {PARTICIPANT_STATUSES.filter((s) => s !== "COMPLETED" || v.status === "COMPLETED").map((s) => <option key={s} value={s}>{PARTICIPANT_STATUS[s].label}</option>)}
+              {PARTICIPANT_STATUSES.filter((s) => s !== "COMPLETED" || v.status === "COMPLETED").map((s) => <option key={s} value={s}>{participantStatusInfo(s, t).label}</option>)}
             </Select>
           </Field>
-          <Field label="Bemerkung" error={err?.note}><Input name="note" value={val("note")} onChange={set("note")} maxLength={191} /></Field>
+          <Field label={t("adm2.common.remark")} error={err?.note}><Input name="note" value={val("note")} onChange={set("note")} maxLength={191} /></Field>
         </div>
       </Card>
 
       {state && !state.ok ? <Alert>{state.error}</Alert> : null}
-      <SubmitButton pending={pending} className="w-full sm:w-auto"><Save className="h-4 w-4" /> {initial?.id ? "Speichern" : "Hinzufügen"}</SubmitButton>
+      <SubmitButton pending={pending} className="w-full sm:w-auto"><Save className="h-4 w-4" /> {initial?.id ? t("adm2.common.save") : t("adm2.courses.p.add")}</SubmitButton>
     </form>
   );
 }

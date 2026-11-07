@@ -186,7 +186,7 @@ export async function listFsParticipants(tenantId: string, year: number) {
   const rows = await db.matchParticipant.findMany({
     where: { total: { not: null }, match: { tenantId, date: { gte: from, lt: to }, program: { officialKind: "FS" } } },
     select: {
-      id: true, total: true, zeros: true, isOfficial: true, guestName: true, userId: true,
+      id: true, total: true, zeros: true, isOfficial: true, guestName: true, userId: true, weaponCategory: true,
       user: { select: { name: true, birthDate: true } },
       match: { select: { id: true, date: true, program: { select: { id: true, name: true, scoringMode: true } } } },
     },
@@ -203,6 +203,7 @@ export async function listFsParticipants(tenantId: string, year: number) {
     total: r.total ?? 0,
     zeros: r.zeros,
     isOfficial: r.isOfficial,
+    weaponCategory: r.weaponCategory,
     program: r.match.program.name,
     decimal: r.match.program.scoringMode === "RINGS_DECIMAL",
     date: r.match.date,
@@ -233,7 +234,7 @@ export type FsProgramView = Awaited<ReturnType<typeof listFsPrograms>>[number];
 export async function listAwardLimits(tenantId: string, year: number) {
   const rows = await db.awardLimit.findMany({
     where: { tenantId, year },
-    select: { id: true, programId: true, category: true, minScore: true, award: true, sort: true, updatedAt: true },
+    select: { id: true, programId: true, category: true, minScore: true, award: true, weaponCategory: true, sort: true, updatedAt: true },
     orderBy: [{ programId: "asc" }, { sort: "asc" }],
   });
   const map = new Map<string, typeof rows>();
@@ -249,7 +250,7 @@ export async function listAwardLimits(tenantId: string, year: number) {
 export async function previousAwardLimits(tenantId: string, year: number) {
   const rows = await db.awardLimit.findMany({
     where: { tenantId, year: { lt: year, gte: year - 5 } },
-    select: { programId: true, year: true, category: true, minScore: true, award: true, sort: true },
+    select: { programId: true, year: true, category: true, minScore: true, award: true, weaponCategory: true, sort: true },
     orderBy: [{ year: "desc" }, { sort: "asc" }],
   });
   const map = new Map<string, { year: number; limits: typeof rows }>();

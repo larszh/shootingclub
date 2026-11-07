@@ -43,7 +43,7 @@ export function flagsShort(f: { usedAm: boolean; usedPm: boolean; usedEvening: b
   return `${f.usedAm ? am : "·"} ${f.usedPm ? pm : "·"} ${f.usedEvening ? ev : "·"}`;
 }
 
-/** Zeitpunkt der Erstellung für Druckfusszeilen. */
-export function printedAtLabel() {
-  return new Intl.DateTimeFormat("de-CH", { timeZone: APP_TZ, day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" }).format(new Date());
+/** Zeitpunkt der Erstellung für Druckfusszeilen (Standard Deutsch). */
+export function printedAtLabel(locale?: string | null) {
+  return new Intl.DateTimeFormat(INTL_LOCALE[normalizeLocale(locale)], { timeZone: APP_TZ, day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" }).format(new Date());
 }

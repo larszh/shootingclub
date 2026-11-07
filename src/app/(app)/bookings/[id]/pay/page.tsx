@@ -16,9 +16,10 @@ export default async function PayPage({ params }: { params: Promise<{ id: string
   const b = await db.booking.findUnique({ where: { id } });
   if (!b || b.tenantId !== ctx.tenant.id || b.userId !== ctx.user.id) notFound();
   if (b.paymentStatus === "PAID" || b.paymentMethod !== "ONLINE" || b.status !== "CONFIRMED") redirect(`/bookings/${id}`);
-  const result = await startOnlinePayment(b, ctx.user.email);
+  const locale = await getRequestLocale();
+  const result = await startOnlinePayment(b, ctx.user.email, locale);
   if (result.ok) redirect(result.redirectUrl);
-  const t = getT(await getRequestLocale());
+  const t = getT(locale);
   return (
     <div>
       <PageHeader title={t("bookings.pay.failedTitle")} back={{ href: `/bookings/${id}`, label: t("bookings.detail.title") }} />

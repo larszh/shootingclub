@@ -47,6 +47,8 @@ export type Permission =
   | "kiosk.sell" // Konsumationen in der Schützenstube erfassen
   | "kiosk.manage" // Sortiment, Preise, Abrechnung der Schützenstube
   | "accounting.export" // Buchhaltungsexport, Kontenplan
+  | "ai.use" // KI-Funktionen des Vereins nutzen (zusätzlich TenantAiSettings.memberAccess)
+  | "ai.manage" // KI-Einstellungen des Vereins: API-Schlüssel, Funktionen, Limite
   | "bookings.series"; // Serienbuchungen (wiederkehrende Reservationen) für Trainings anlegen
 
 const PERMISSION_MIN_ROLE: Record<Permission, TenantRole> = {
@@ -78,6 +80,8 @@ const PERMISSION_MIN_ROLE: Record<Permission, TenantRole> = {
   "kiosk.manage": "ADMIN",
   "accounting.export": "ADMIN",
   "bookings.series": "TRAINER",
+  "ai.use": "MEMBER",
+  "ai.manage": "ADMIN",
 };
 
 // Kantonalverband (Association) liegt ausserhalb der Tenant-Rollen: Zugriff haben Super-Admins

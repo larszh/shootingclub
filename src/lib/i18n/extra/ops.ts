@@ -38,5 +38,18 @@ const it: Record<string, string> = {
   "ops.tenantDeletion.p2": "Il {date} tutti i dati e i file saranno eliminati definitivamente. Fino ad allora la società può essere ripristinata dal supporto Standchef.",
 };
 
-const dict: { de: Record<string, string>; fr: Record<string, string>; it: Record<string, string> } = { de, fr, it };
+/** English (Switzerland): neutral, British-leaning; “…” where German uses «…». */
+const en: Record<string, string> = {
+  "ops.accountDeleted.subject": "Your Standchef account has been deleted",
+  "ops.accountDeleted.title": "Account deleted",
+  "ops.accountDeleted.p1": "As requested, we have deleted your Standchef account. Your name, email address, phone, address and profile picture have been removed; you can no longer sign in.",
+  "ops.accountDeleted.p2": "For legal reasons (10-year retention obligation), invoices, bookings and results remain with the club, but without your name.",
+  "ops.accountDeleted.p3": "Wasn’t you? Then please contact your club immediately.",
+  "ops.tenantDeletion.subject": "Deletion of “{tenant}” scheduled",
+  "ops.tenantDeletion.title": "Club will be deleted",
+  "ops.tenantDeletion.p1": "The club “{tenant}” has been marked for deletion and is no longer accessible to members.",
+  "ops.tenantDeletion.p2": "On {date}, all data and files will be permanently deleted. Until then, the club can be restored via Standchef support.",
+};
+
+const dict: { de: Record<string, string>; fr: Record<string, string>; it: Record<string, string>; en: Record<string, string> } = { de, fr, it, en };
 export default dict;

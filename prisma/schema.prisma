@@ -104,62 +104,66 @@ model Tenant {
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
 
-  memberships        Membership[]
-  modules            TenantModule[]
-  programs           Program[]
-  programSettings    ProgramTenantSetting[]
-  matches            Match[]
-  targetTemplates    TargetTemplate[]
-  targetSettings     TargetTenantSetting[]
-  bookingSettings    BookingSettings?
-  resources          Resource[]
-  resourceBlocks     ResourceBlock[]
-  bookings           Booking[]
-  paymentConfigs     PaymentProviderConfig[]
-  invoices           Invoice[]
-  billingProfile     BillingProfile?
-  feeCategories      FeeCategory[]
-  feeRuns            FeeRun[]
-  feeInvoices        FeeInvoice[]
-  events             Event[]
-  announcements      Announcement[]
-  storageConfig      StorageConfig?
-  fileFolders        FileFolder[]
-  storedFiles        StoredFile[]
-  chats              ChatConversation[]
-  ammoSettings       AmmoSettings?
-  ammoProducts       AmmoProduct[]
-  ammoOrders         AmmoOrder[]
-  invitations        Invitation[]
-  households         Household[]
-  qualifications     Qualification[]
-  qualificationRules QualificationRule[]
-  shifts             Shift[]
-  workHoursSettings  WorkHoursSettings?
-  workLogs           WorkLog[]
-  championships      Championship[]
-  rangeDays          RangeDay[]
-  rangeVisits        RangeVisit[]
-  rangeRules         RangeRules[]
-  shootingWindows    ShootingWindow[]
-  shootingQuotas     ShootingQuota[]
-  incidents          Incident[]
-  clubWeapons        ClubWeapon[]
-  weaponLoans        WeaponLoan[]
-  ammoMovements      AmmoStockMovement[]
-  courses            Course[]
-  liveBoards         LiveBoard[]
-  federalYears       FederalYear[]
-  accountingSettings AccountingSettings?
-  resourceShares     ResourceShare[]         @relation("ShareGuest")
-  scoreImports       ScoreImport[]
-  kioskProducts      KioskProduct[]
-  kioskEntries       KioskEntry[]
-  feeInvoiceMembers  FeeInvoiceMember[]
-  awardLimits        AwardLimit[]
-  weaponSettings     WeaponSettings?
-  associations       AssociationMember[]
-  bookingSeries      BookingSeries[]
+  memberships         Membership[]
+  modules             TenantModule[]
+  programs            Program[]
+  programSettings     ProgramTenantSetting[]
+  matches             Match[]
+  targetTemplates     TargetTemplate[]
+  targetSettings      TargetTenantSetting[]
+  bookingSettings     BookingSettings?
+  resources           Resource[]
+  resourceBlocks      ResourceBlock[]
+  bookings            Booking[]
+  paymentConfigs      PaymentProviderConfig[]
+  invoices            Invoice[]
+  billingProfile      BillingProfile?
+  feeCategories       FeeCategory[]
+  feeRuns             FeeRun[]
+  feeInvoices         FeeInvoice[]
+  events              Event[]
+  announcements       Announcement[]
+  storageConfig       StorageConfig?
+  fileFolders         FileFolder[]
+  storedFiles         StoredFile[]
+  chats               ChatConversation[]
+  ammoSettings        AmmoSettings?
+  ammoProducts        AmmoProduct[]
+  ammoOrders          AmmoOrder[]
+  invitations         Invitation[]
+  households          Household[]
+  qualifications      Qualification[]
+  qualificationRules  QualificationRule[]
+  shifts              Shift[]
+  workHoursSettings   WorkHoursSettings?
+  workLogs            WorkLog[]
+  championships       Championship[]
+  rangeDays           RangeDay[]
+  rangeVisits         RangeVisit[]
+  rangeRules          RangeRules[]
+  shootingWindows     ShootingWindow[]
+  shootingQuotas      ShootingQuota[]
+  incidents           Incident[]
+  clubWeapons         ClubWeapon[]
+  weaponLoans         WeaponLoan[]
+  ammoMovements       AmmoStockMovement[]
+  courses             Course[]
+  liveBoards          LiveBoard[]
+  federalYears        FederalYear[]
+  accountingSettings  AccountingSettings?
+  resourceShares      ResourceShare[]         @relation("ShareGuest")
+  scoreImports        ScoreImport[]
+  kioskProducts       KioskProduct[]
+  kioskEntries        KioskEntry[]
+  feeInvoiceMembers   FeeInvoiceMember[]
+  awardLimits         AwardLimit[]
+  weaponSettings      WeaponSettings?
+  associations        AssociationMember[]
+  bookingSeries       BookingSeries[]
+  aiSettings          TenantAiSettings?
+  aiUsage             AiUsage[]
+  contentTranslations ContentTranslation[]
+  aiCache             AiCache[]
 }
 
 model Membership {
@@ -284,19 +288,20 @@ model Match {
 }
 
 model MatchParticipant {
-  id           String    @id @default(cuid())
-  matchId      String
-  userId       String? // null = Gast
-  guestName    String?
-  note         String?
-  sortOrder    Int       @default(0)
-  total        Float? // Gesamttotal, beim Abschliessen bzw. Sync gespeichert (Rangliste ohne shotsJson-Parsing)
-  zeros        Int? // Anzahl Nuller
-  isOfficial   Boolean   @default(false) // amtliches Resultat (Bundesübung), vom Schützenmeister bestätigt
-  attempt      Int? // Versuch Nr. (Obligatorisch)
-  passed       Boolean?
-  verifiedById String?
-  verifiedAt   DateTime?
+  id             String    @id @default(cuid())
+  matchId        String
+  userId         String? // null = Gast
+  guestName      String?
+  note           String?
+  sortOrder      Int       @default(0)
+  total          Float? // Gesamttotal, beim Abschliessen bzw. Sync gespeichert (Rangliste ohne shotsJson-Parsing)
+  zeros          Int? // Anzahl Nuller
+  isOfficial     Boolean   @default(false) // amtliches Resultat (Bundesübung), vom Schützenmeister bestätigt
+  attempt        Int? // Versuch Nr. (Obligatorisch)
+  passed         Boolean?
+  verifiedById   String?
+  verifiedAt     DateTime?
+  weaponCategory String? // Waffenkategorie des Schützen in diesem Wettkampf (z.B. "A", "D", "E")
 
   match          Match           @relation(fields: [matchId], references: [id], onDelete: Cascade)
   user           User?           @relation(fields: [userId], references: [id], onDelete: SetNull)
@@ -1699,16 +1704,17 @@ model KioskEntry {
 
 // Kranz-/Auszeichnungslimite pro Programm, Jahr und Kategorie (z.B. Feldschiessen E, U21, Veteran)
 model AwardLimit {
-  id        String   @id @default(cuid())
-  tenantId  String
-  programId String
-  year      Int
-  category  String // Alters-/Leistungskategorie, frei (z.B. "E", "U21", "V", "SV")
-  minScore  Float // gleiche Einheit wie MatchParticipant.total
-  award     String // z.B. "Kranz", "Anerkennungskarte"
-  sort      Int      @default(0)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id             String   @id @default(cuid())
+  tenantId       String
+  programId      String
+  year           Int
+  category       String // Alters-/Leistungskategorie, frei (z.B. "E", "U21", "V", "SV")
+  minScore       Float // gleiche Einheit wie MatchParticipant.total
+  award          String // z.B. "Kranz", "Anerkennungskarte"
+  weaponCategory String? // optional: Limite gilt nur für diese Waffenkategorie (null = alle)
+  sort           Int      @default(0)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
 
   tenant  Tenant  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   program Program @relation(fields: [programId], references: [id], onDelete: Cascade)
@@ -1772,4 +1778,126 @@ model AssociationAdmin {
 
   @@unique([associationId, userId])
   @@index([userId])
+}
+
+// ---------------------------------------------------------------------------
+// Welle E: Übersetzungs-Übersteuerungen und KI (Claude)
+// ---------------------------------------------------------------------------
+
+/**
+ * Übersteuerung eines Wörterbuch-Texts (Admin → Übersetzungen). scope "global" = ganze Plattform.
+ */
+model TranslationOverride {
+  id          String   @id @default(cuid())
+  scope       String   @default("global")
+  locale      String // de | fr | it | en
+  key         String
+  value       String   @db.Text
+  updatedById String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@unique([scope, locale, key])
+}
+
+/**
+ * KI-Einstellungen der Plattform (eine Zeile, id "global"). Schlüssel nur verschlüsselt.
+ */
+model PlatformAiSettings {
+  id                String   @id @default("global")
+  enabled           Boolean  @default(false)
+  allowClubs        Boolean  @default(false) // Vereine dürfen KI mit eigenem Schlüssel nutzen
+  apiKeyEnc         String?  @db.Text // encryptJson({ apiKey })
+  keyHint           String? // letzte 4 Zeichen
+  model             String   @default("claude-opus-5-5")
+  features          String   @default("translations,support") // kommagetrennt
+  monthlyTokenLimit Int?
+  updatedAt         DateTime @updatedAt
+}
+
+/**
+ * KI-Einstellungen eines Vereins (eigener Claude-API-Schlüssel).
+ */
+model TenantAiSettings {
+  id                String    @id @default(cuid())
+  tenantId          String    @unique
+  enabled           Boolean   @default(false)
+  apiKeyEnc         String?   @db.Text
+  keyHint           String?
+  model             String    @default("claude-opus-5-5")
+  features          String    @default("help") // kommagetrennt
+  memberAccess      String    @default("ALL") // ALL | STAFF
+  monthlyTokenLimit Int?
+  consentAt         DateTime? // Zustimmung zur Datenübermittlung an Anthropic
+  consentById       String?
+  updatedAt         DateTime  @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+}
+
+/**
+ * Verbrauch pro KI-Aufruf (für Limiten und Übersicht). Keine Inhalte.
+ */
+model AiUsage {
+  id               String   @id @default(cuid())
+  scope            String // PLATFORM | TENANT
+  tenantId         String?
+  userId           String?
+  feature          String
+  model            String
+  inputTokens      Int
+  outputTokens     Int
+  cacheReadTokens  Int      @default(0)
+  cacheWriteTokens Int      @default(0)
+  ok               Boolean
+  errorCode        String?
+  createdAt        DateTime @default(now())
+
+  tenant Tenant? @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, createdAt])
+  @@index([scope, createdAt])
+}
+
+/**
+ * Übersetzte Inhalte eines Vereins (z.B. Anlass-Titel), automatisch oder geprüft.
+ */
+model ContentTranslation {
+  id          String   @id @default(cuid())
+  tenantId    String
+  entityType  String // z.B. "event", "announcement"
+  entityId    String
+  field       String
+  locale      String
+  value       String   @db.Text
+  sourceHash  String // sha256 des Quelltexts, um veraltete Übersetzungen zu erkennen
+  status      String   @default("AUTO") // AUTO | REVIEWED
+  updatedById String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([entityType, entityId, field, locale])
+  @@index([tenantId])
+}
+
+/**
+ * Zwischenspeicher für KI-Antworten (z.B. Zusammenfassungen), mit Ablaufzeit.
+ */
+model AiCache {
+  id        String   @id @default(cuid())
+  tenantId  String?
+  userId    String?
+  feature   String
+  cacheKey  String
+  value     String   @db.Text
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  tenant Tenant? @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([feature, cacheKey])
+  @@index([tenantId])
+  @@index([expiresAt])
 }

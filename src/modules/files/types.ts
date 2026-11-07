@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { formatNumberL } from "@/lib/i18n/core";
 
 /** Gemeinsame Konstanten und Hilfen der Dateiablage (Server und Client). */
 
@@ -42,7 +43,7 @@ export function formatBytes(bytes: number) {
     i++;
   }
   const digits = v >= 100 || i === 0 ? 0 : 1;
-  return `${v.toLocaleString("de-CH", { maximumFractionDigits: digits, minimumFractionDigits: 0 })} ${units[i]}`;
+  return `${formatNumberL(v, "de", { maximumFractionDigits: digits, minimumFractionDigits: 0 })} ${units[i]}`;
 }
 
 export type FileKind = "image" | "pdf" | "text" | "sheet" | "slides" | "archive" | "audio" | "video" | "code" | "other";

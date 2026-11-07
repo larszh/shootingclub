@@ -10,6 +10,8 @@ import { audit } from "@/lib/audit";
 import { requireModule } from "@/lib/tenant";
 import { zurichToUtc } from "@/lib/time";
 import { fail, ok, type ActionResult } from "@/lib/action-result";
+import { getRequestLocale, getT } from "@/lib/i18n";
+import { localizeImportMessage } from "./messages";
 import { parseStages } from "../types";
 import { recomputeMatchTotals } from "../sync";
 import { SCORE_IMPORT_MAX_BYTES, SCORE_IMPORT_MAX_COLUMNS, SCORE_PRESETS, SCORE_PRESET_IDS, normalizeMapping, readScoreFile, type ScorePresetId } from "./parse";
@@ -33,9 +35,10 @@ const hashSchema = z.string().regex(/^[0-9a-f]{64}$/);
 /** Vorab-Prüfung (Hash im Browser berechnet): Wurde diese Datei schon importiert? */
 export async function checkScoreImportAction(fileHash: string): Promise<ActionResult<{ previous: PreviousImport | null }>> {
   const ctx = await importContext();
-  if (!ctx) return fail("Keine Berechtigung");
+  const t = getT(await getRequestLocale());
+  if (!ctx) return fail(t("aicoach.imp.err.noPermission"));
   const parsed = hashSchema.safeParse(fileHash);
-  if (!parsed.success) return fail("Ungültige Eingabe");
+  if (!parsed.success) return fail(t("aicoach.imp.err.invalid"));
   const previous = await findPreviousImport(ctx.tenant.id, parsed.data);
   return ok({ previous: previous && !isStaleImport(previous) ? previous : null });
 }
@@ -45,8 +48,8 @@ const configSchema = z.object({
   layout: z.enum(["shots", "totals"]),
   mapping: z.array(z.string().max(30)).max(SCORE_IMPORT_MAX_COLUMNS),
   discipline: z.string().max(200).nullable(),
-  programId: z.string().trim().min(1, "Programm wählen").max(64),
-  date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Datum wählen"),
+  programId: z.string().trim().min(1, "aicoach.imp.msg.chooseProgram").max(64),
+  date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "aicoach.imp.err.chooseDate"),
   assignments: z.record(z.string().max(300), z.string().max(80)),
 });
 
@@ -65,21 +68,25 @@ function isUniqueViolation(e: unknown) {
  */
 export async function commitScoreImportAction(formData: FormData): Promise<ActionResult<CommitScoreImportResult>> {
   const ctx = await importContext();
-  if (!ctx) return fail("Keine Berechtigung");
+  const t = getT(await getRequestLocale());
+  if (!ctx) return fail(t("aicoach.imp.err.noPermission"));
   const limited = throttle(`score-import:${ctx.tenant.id}`, 30, 60 * 60_000);
   if (limited) return fail(limited);
 
   const file = formData.get("file");
-  if (!(file instanceof File) || file.size === 0) return fail("Bitte eine Datei auswählen.");
-  if (file.size > SCORE_IMPORT_MAX_BYTES) return fail("Die Datei ist grösser als 5 MB. Bitte in mehrere Dateien aufteilen.");
+  if (!(file instanceof File) || file.size === 0) return fail(t("aicoach.imp.err.noFile"));
+  if (file.size > SCORE_IMPORT_MAX_BYTES) return fail(t("aicoach.imp.msg.tooLarge"));
   let configRaw: unknown;
   try {
     configRaw = JSON.parse(String(formData.get("config") ?? ""));
   } catch {
-    return fail("Ungültige Eingabe");
+    return fail(t("aicoach.imp.err.invalid"));
   }
   const parsed = configSchema.safeParse(configRaw);
-  if (!parsed.success) return fail(parsed.error.issues[0]?.message ?? "Ungültige Eingabe");
+  if (!parsed.success) {
+    const msg = parsed.error.issues[0]?.message ?? "";
+    return fail(msg.startsWith("aicoach.") ? t(msg) : t("aicoach.imp.err.invalid"));
+  }
   const config = parsed.data;
 
   const bytes = new Uint8Array(await file.arrayBuffer());
@@ -93,13 +100,13 @@ export async function commitScoreImportAction(formData: FormData): Promise<Actio
   try {
     table = readScoreFile(bytes);
   } catch (e) {
-    return fail(e instanceof Error ? e.message : "Die Datei konnte nicht gelesen werden.");
+    return fail(localizeImportMessage(e instanceof Error ? e.message : "Die Datei konnte nicht gelesen werden.", t));
   }
 
   const program = await db.program.findUnique({ where: { id: config.programId } });
-  if (!program || (program.tenantId && program.tenantId !== ctx.tenant.id) || program.isArchived) return fail("Programm nicht verfügbar");
+  if (!program || (program.tenantId && program.tenantId !== ctx.tenant.id) || program.isArchived) return fail(t("aicoach.imp.err.programUnavailable"));
   const stages = parseStages(program.stagesJson);
-  if (!stages.length) return fail("Das Programm hat keine Serien.");
+  if (!stages.length) return fail(t("aicoach.imp.err.noStages"));
 
   // Nur aktuelle Mitglieder (nicht ausgetreten, Konto nicht gelöscht)
   const memberIds = new Set(
@@ -112,9 +119,9 @@ export async function commitScoreImportAction(formData: FormData): Promise<Actio
     (s) => parseAssignment(config.assignments[s.key]) ?? { kind: "skip" },
     memberIds,
   );
-  if (plan.globalErrors.length) return fail(plan.globalErrors[0]!);
-  if (plan.included === 0) return fail("Keine Schützen zum Übernehmen.");
-  if (plan.blocking > 0) return fail(`${plan.blocking} ${plan.blocking === 1 ? "Schütze hat" : "Schützen haben"} noch Fehler. Bitte korrigieren oder «Nicht übernehmen» wählen.`);
+  if (plan.globalErrors.length) return fail(localizeImportMessage(plan.globalErrors[0]!, t));
+  if (plan.included === 0) return fail(t("aicoach.imp.err.nothing"));
+  if (plan.blocking > 0) return fail(t(plan.blocking === 1 ? "aicoach.imp.err.blocking.one" : "aicoach.imp.err.blocking.other", { n: plan.blocking }));
 
   const included = plan.participants.filter((p) => p.assignment.kind !== "skip");
   const fileName = (file.name || "Datei").replace(/[\r\n\t]/g, " ").slice(0, 120);
@@ -187,5 +194,5 @@ export async function commitScoreImportAction(formData: FormData): Promise<Actio
   });
   revalidatePath("/scores");
   revalidatePath("/scores/import");
-  return ok({ status: "created", matchId, participants: included.length, guests }, "Resultate importiert");
+  return ok({ status: "created", matchId, participants: included.length, guests }, t("aicoach.imp.imported"));
 }

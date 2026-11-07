@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { getAppContext } from "@/lib/tenant";
+import { getRequestLocale } from "@/lib/i18n";
 import { getTarget } from "@/modules/targets/queries";
 import { contentDisposition } from "@/modules/targets/file-url";
 import { renderTargetSvg } from "@/modules/targets/svg";
@@ -16,7 +17,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
   const url = new URL(req.url);
   const size = url.searchParams.get("size") ?? "";
   const paper = (PAPER_SIZES as readonly string[]).includes(size) ? (size as PaperSize) : (t.paperSizes[0] ?? "A4");
-  const svg = renderTargetSvg(t.subject as TargetSubject, paper, t.params);
+  const svg = renderTargetSvg(t.subject as TargetSubject, paper, t.params, await getRequestLocale());
   const disposition = url.searchParams.get("inline") === "1" ? "inline" : "attachment";
   return new NextResponse(svg, {
     headers: {

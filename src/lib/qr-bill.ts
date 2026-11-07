@@ -13,14 +13,14 @@ type QrInput = {
   message?: string | null;
   /** QR-Referenz (27 Ziffern). Wird nur zusammen mit einer QR-IBAN verwendet. */
   reference?: string | null;
-  /** Sprache des Zahlteils (de | fr | it, auch "fr-CH"). Standard: Deutsch. */
+  /** Sprache des Zahlteils (de | fr | it | en, auch "fr-CH"). Standard: Deutsch. */
   locale?: string | null;
 };
 
-/** Sprache für swissqrbill (Zahlteil-Beschriftungen «Zahlteil», «Section paiement», «Sezione pagamento»). */
-export function qrBillLanguage(locale: string | null | undefined): "DE" | "FR" | "IT" {
+/** Sprache für swissqrbill (Zahlteil-Beschriftungen «Zahlteil», «Section paiement», «Sezione pagamento», «Payment part»). */
+export function qrBillLanguage(locale: string | null | undefined): "DE" | "FR" | "IT" | "EN" {
   const l = (locale ?? "").trim().toLowerCase().slice(0, 2);
-  return l === "fr" ? "FR" : l === "it" ? "IT" : "DE";
+  return l === "fr" ? "FR" : l === "it" ? "IT" : l === "en" ? "EN" : "DE";
 }
 
 function splitStreet(street: string) {

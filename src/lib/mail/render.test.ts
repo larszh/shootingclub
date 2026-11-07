@@ -20,6 +20,14 @@ describe("renderMail", () => {
     expect(html).not.toContain("url(x)");
   });
 
+  it("uses the recipient language for html lang and the button fallback hint", () => {
+    const en = renderMail({ title: "t", paragraphs: [], locale: "en", button: { label: "Open", url: "https://standchef.ch/x" } });
+    expect(en.html).toContain('<html lang="en">');
+    expect(en.html).toContain("If the button does not work");
+    const rm = renderMail({ title: "t", paragraphs: [], locale: "rm", button: { label: "Öffnen", url: "https://standchef.ch/x" } });
+    expect(rm.html).toContain('<html lang="de">');
+  });
+
   it("strips header injection", () => {
     expect(cleanHeader("Hallo\r\nBcc: evil@x.ch")).toBe("Hallo Bcc: evil@x.ch");
   });

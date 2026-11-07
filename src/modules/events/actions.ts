@@ -14,6 +14,7 @@ import { notify } from "@/lib/notify";
 import { formatDate, formatDateTime } from "@/lib/i18n/core";
 import { getRequestLocale, getT } from "@/lib/i18n";
 import { localizeMessage } from "@/modules/billing/ui/i18n";
+import { purgeContentTranslations } from "@/modules/ai/content/service";
 
 function revalidateEvents(eventId?: string) {
   revalidatePath("/events");
@@ -159,6 +160,7 @@ export async function deleteEventAction(eventId: string): Promise<ActionResult> 
   if (!ctx) return fail("Keine Berechtigung.");
   const res = await db.event.deleteMany({ where: { id: String(eventId), tenantId: ctx.tenant.id } });
   if (res.count === 0) return fail("Anlass nicht gefunden.");
+  await purgeContentTranslations(ctx.tenant.id, "event", [String(eventId)]);
   revalidateEvents(eventId);
   return ok(undefined, "Anlass gelöscht.");
 }
@@ -289,6 +291,7 @@ export async function deleteAnnouncementAction(id: string): Promise<ActionResult
   if (!ctx) return fail("Keine Berechtigung.");
   const res = await db.announcement.deleteMany({ where: { id: String(id), tenantId: ctx.tenant.id } });
   if (res.count === 0) return fail("Mitteilung nicht gefunden.");
+  await purgeContentTranslations(ctx.tenant.id, "announcement", [String(id)]);
   revalidateEvents();
   return ok(undefined, "Mitteilung gelöscht.");
 }

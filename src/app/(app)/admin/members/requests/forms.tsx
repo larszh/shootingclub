@@ -9,21 +9,23 @@ import { Dialog } from "@/components/ui/dialog";
 import { Spinner } from "@/components/ui/form";
 import { Switch } from "@/components/ui/controls";
 import { isNavigationError, isNetworkError, toast } from "@/lib/ui-feedback";
+import { getT, type Locale, type TFunction } from "@/lib/i18n/core";
 import { approveJoinRequestAction, rejectJoinRequestAction, setJoinApprovalAction } from "@/modules/core/join-requests";
 
-function failureMessage(err: unknown) {
+function failureMessage(t: TFunction, err: unknown) {
   if (isNavigationError(err)) throw err;
-  return isNetworkError(err) ? "Keine Verbindung. Bitte versuche es nochmals, sobald du wieder online bist." : "Das hat nicht geklappt. Bitte nochmals versuchen.";
+  return isNetworkError(err) ? t("adm1.common.offline") : t("adm1.common.failed");
 }
 
-export function JoinApprovalToggle({ enabled }: { enabled: boolean }) {
+export function JoinApprovalToggle({ locale, enabled }: { locale: Locale; enabled: boolean }) {
+  const t = getT(locale);
   const [on, setOn] = useState(enabled);
   const [pending, start] = useTransition();
   const router = useRouter();
   return (
     <Switch
-      label="Beitritt mit Freigabe"
-      description="Beitritt per Code erst nach Prüfung durch die Verwaltung."
+      label={t("adm1.req.toggle")}
+      description={t("adm1.req.toggleHint")}
       checked={on}
       disabled={pending}
       onChange={(v) => {
@@ -31,10 +33,10 @@ export function JoinApprovalToggle({ enabled }: { enabled: boolean }) {
         start(async () => {
           try {
             const r = await setJoinApprovalAction(v);
-            if (!r.ok) { setOn(!v); toast.error(r.error); } else toast.success(r.message ?? "Gespeichert.");
+            if (!r.ok) { setOn(!v); toast.error(r.error); } else toast.success(r.message ?? t("adm1.common.saved"));
           } catch (e) {
             setOn(!v);
-            toast.error(failureMessage(e));
+            toast.error(failureMessage(t, e));
           }
           router.refresh();
         });
@@ -43,7 +45,8 @@ export function JoinApprovalToggle({ enabled }: { enabled: boolean }) {
   );
 }
 
-export function JoinRequestRow({ membershipId, name, email, avatarUrl, since }: { membershipId: string; name: string; email: string | null; avatarUrl: string | null; since: string }) {
+export function JoinRequestRow({ locale, membershipId, name, email, avatarUrl, since }: { locale: Locale; membershipId: string; name: string; email: string | null; avatarUrl: string | null; since: string }) {
+  const t = getT(locale);
   const [pending, start] = useTransition();
   const [rejecting, setRejecting] = useState(false);
   const [reason, setReason] = useState("");
@@ -52,10 +55,10 @@ export function JoinRequestRow({ membershipId, name, email, avatarUrl, since }: 
     start(async () => {
       try {
         const r = await fn();
-        if (!r.ok) toast.error(r.error ?? "Fehler");
-        else { setRejecting(false); toast.success(r.message ?? "Gespeichert."); }
+        if (!r.ok) toast.error(r.error ?? t("adm1.common.error"));
+        else { setRejecting(false); toast.success(r.message ?? t("adm1.common.saved")); }
       } catch (e) {
-        toast.error(failureMessage(e));
+        toast.error(failureMessage(t, e));
       }
       router.refresh();
     });
@@ -65,27 +68,27 @@ export function JoinRequestRow({ membershipId, name, email, avatarUrl, since }: 
         <Avatar name={name} src={avatarUrl} size={40} tone="soft" />
         <div className="min-w-0 flex-1">
           <div className="font-medium truncate">{name}</div>
-          <div className="text-xs text-ink-3 truncate">{email ? `${email} · ` : ""}angefragt {since}</div>
+          <div className="text-xs text-ink-3 truncate">{email ? `${email} · ` : ""}{t("adm1.req.requested", { date: since })}</div>
         </div>
       </div>
       <div className="mt-3 grid grid-cols-2 gap-2 sm:flex sm:justify-end">
-        <Button type="button" disabled={pending} onClick={() => run(() => approveJoinRequestAction(membershipId))}><Check className="h-4 w-4" /> Freigeben</Button>
-        <Button type="button" variant="secondary" disabled={pending} onClick={() => { setReason(""); setRejecting(true); }}><X className="h-4 w-4" /> Ablehnen</Button>
+        <Button type="button" disabled={pending} onClick={() => run(() => approveJoinRequestAction(membershipId))}><Check className="h-4 w-4" /> {t("adm1.req.approve")}</Button>
+        <Button type="button" variant="secondary" disabled={pending} onClick={() => { setReason(""); setRejecting(true); }}><X className="h-4 w-4" /> {t("adm1.req.reject")}</Button>
       </div>
       <Dialog
         open={rejecting}
         onClose={() => { if (!pending) setRejecting(false); }}
-        title={`Anfrage von ${name} ablehnen?`}
-        description="Die Person erhält eine Mitteilung und kann später erneut anfragen."
+        title={t("adm1.req.rejectTitle", { name })}
+        description={t("adm1.req.rejectHint")}
         dismissible={!pending}
         footer={
           <div className="grid w-full grid-cols-2 gap-2 sm:w-auto">
-            <Button type="button" variant="secondary" disabled={pending} onClick={() => setRejecting(false)}>Abbrechen</Button>
-            <Button type="button" variant="danger" disabled={pending} onClick={() => run(() => rejectJoinRequestAction(membershipId, reason.trim() || undefined))}>{pending ? <Spinner /> : null} Ablehnen</Button>
+            <Button type="button" variant="secondary" disabled={pending} onClick={() => setRejecting(false)}>{t("adm1.common.cancel")}</Button>
+            <Button type="button" variant="danger" disabled={pending} onClick={() => run(() => rejectJoinRequestAction(membershipId, reason.trim() || undefined))}>{pending ? <Spinner /> : null} {t("adm1.req.reject")}</Button>
           </div>
         }
       >
-        <Field label="Grund (optional)">
+        <Field label={t("adm1.req.reason")}>
           <Textarea name="reason" rows={3} maxLength={191} value={reason} onChange={(e) => setReason(e.target.value)} />
         </Field>
       </Dialog>

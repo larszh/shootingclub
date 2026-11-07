@@ -30,7 +30,7 @@ export function LanguageSwitcher({ locale, label }: { locale: Locale; label: str
   }
 
   return (
-    <nav aria-label={label} className="flex items-center justify-center gap-1">
+    <nav aria-label={label} className="flex flex-wrap items-center justify-center gap-1">
       <Globe className="h-4 w-4 text-ink-3" aria-hidden />
       {LOCALES.map((l) => (
         <button

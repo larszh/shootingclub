@@ -3,12 +3,13 @@
 import { useActionState, useState } from "react";
 import { Copy, GripVertical, Plus, Trash2 } from "lucide-react";
 import { saveProgramAction } from "@/modules/scores/actions";
-import { DEFAULT_ZONES, DISCIPLINES, OFFICIAL_KINDS, OFFICIAL_RULES_HINT, POSITIONS, SCORING_MODES, programTotals, stageZones, type Stage } from "@/modules/scores/types";
+import { DEFAULT_ZONES, DISCIPLINES, OFFICIAL_KINDS, POSITIONS, SCORING_MODES, programTotals, stageZones, type Stage } from "@/modules/scores/types";
 import { Alert, Button, Card, Field, Input, Select, Textarea } from "@/components/ui";
 import { Switch } from "@/components/ui/controls";
 import { SubmitButton, submitKeepingValues } from "@/components/ui/form";
 import { dominantZones, sameZones, ZoneLegend } from "./zone-legend";
-import { draftError, fromDrafts, toDrafts, ZoneEditor, type ZoneDraft } from "./zone-editor";
+import { defaultZoneDrafts, draftError, fromDrafts, toDrafts, ZoneEditor, type ZoneDraft } from "./zone-editor";
+import { useT } from "@/components/locale";
 
 type Props = {
   scope: "tenant" | "global";
@@ -20,8 +21,8 @@ type Props = {
 /** Serie im Formular; `ownZones` gesetzt = eigene Zonen statt der Programm-Zonen. */
 type FormStage = Omit<Stage, "zones"> & { ownZones?: ZoneDraft[] };
 
-const emptyStage = (i: number, prev?: FormStage): FormStage => ({
-  name: `Serie ${i + 1}`,
+const emptyStage = (i: number, prev?: FormStage, name = `Serie ${i + 1}`): FormStage => ({
+  name,
   distanceM: prev?.distanceM ?? 25,
   shots: prev?.shots ?? 5,
   maxPerShot: prev?.maxPerShot ?? 10,
@@ -32,12 +33,13 @@ const emptyStage = (i: number, prev?: FormStage): FormStage => ({
 });
 
 /** Programm-Zonen (häufigste Zonenliste) und Serien mit Abweichungen aus gespeicherten Serien. */
-function initialZoneState(initial: Props["initial"]): { programZones: ZoneDraft[]; stages: FormStage[] } {
-  if (!initial) return { programZones: toDrafts(DEFAULT_ZONES), stages: [emptyStage(0)] };
+function initialZoneState(initial: Props["initial"], firstName: string, defaults: ZoneDraft[]): { programZones: ZoneDraft[]; stages: FormStage[] } {
+  if (!initial) return { programZones: defaults, stages: [emptyStage(0, undefined, firstName)] };
   const isZones = initial.scoringMode === "ZONES";
-  const programZones = (isZones ? dominantZones(initial.stages.map((s) => stageZones(s))) : null) ?? DEFAULT_ZONES;
+  const dominant = isZones ? dominantZones(initial.stages.map((s) => stageZones(s))) : null;
+  const programZones = dominant ?? DEFAULT_ZONES;
   return {
-    programZones: toDrafts(programZones),
+    programZones: dominant ? toDrafts(dominant) : defaults,
     stages: initial.stages.map(({ zones, ...rest }) => {
       const own = isZones && zones && !sameZones(zones, programZones) ? toDrafts(zones) : undefined;
       return own ? { ...rest, ownZones: own } : rest;
@@ -46,8 +48,10 @@ function initialZoneState(initial: Props["initial"]): { programZones: ZoneDraft[
 }
 
 export function ProgramForm({ scope, initial, openMatches = 0 }: Props) {
+  const t = useT();
+  const stageName = (i: number) => t("shooting.program.form.stageN", { n: i + 1 });
   const [state, action, pending] = useActionState(saveProgramAction, null);
-  const [init] = useState(() => initialZoneState(initial));
+  const [init] = useState(() => initialZoneState(initial, stageName(0), defaultZoneDrafts(t)));
   const [stages, setStages] = useState<FormStage[]>(init.stages);
   const [programZones, setProgramZones] = useState<ZoneDraft[]>(init.programZones);
   const [scoringMode, setScoringMode] = useState(initial?.scoringMode ?? "RINGS_INT");
@@ -57,13 +61,13 @@ export function ProgramForm({ scope, initial, openMatches = 0 }: Props) {
 
   const isHits = scoringMode === "HITS";
   const isZones = scoringMode === "ZONES";
-  const programZonesError = isZones ? draftError(programZones) : null;
+  const programZonesError = isZones ? draftError(programZones, t) : null;
   const zoneError = (() => {
     if (!isZones) return null;
-    if (programZonesError) return `Programm-Zonen: ${programZonesError}`;
+    if (programZonesError) return `${t("shooting.program.form.programZones")}: ${programZonesError}`;
     for (const [i, st] of stages.entries()) {
-      const err = st.ownZones ? draftError(st.ownZones) : null;
-      if (err) return `${st.name || `Serie ${i + 1}`}: ${err}`;
+      const err = st.ownZones ? draftError(st.ownZones, t) : null;
+      if (err) return `${st.name || stageName(i)}: ${err}`;
     }
     return null;
   })();
@@ -84,8 +88,8 @@ export function ProgramForm({ scope, initial, openMatches = 0 }: Props) {
 
   const update = (i: number, patch: Partial<FormStage>) => setStages((s) => s.map((st, idx) => (idx === i ? { ...st, ...patch } : st)));
   const remove = (i: number) => setStages((s) => s.filter((_, idx) => idx !== i));
-  const duplicate = (i: number) => setStages((s) => [...s.slice(0, i + 1), { ...s[i]!, name: `${s[i]!.name} (Kopie)` }, ...s.slice(i + 1)]);
-  const add = () => setStages((s) => [...s, emptyStage(s.length, s[s.length - 1])]);
+  const duplicate = (i: number) => setStages((s) => [...s.slice(0, i + 1), { ...s[i]!, name: t("shooting.program.form.copyName", { name: s[i]!.name }) }, ...s.slice(i + 1)]);
+  const add = () => setStages((s) => [...s, emptyStage(s.length, s[s.length - 1], stageName(s.length))]);
   const move = (i: number, dir: -1 | 1) =>
     setStages((s) => {
       const j = i + dir;
@@ -118,52 +122,52 @@ export function ProgramForm({ scope, initial, openMatches = 0 }: Props) {
       {initial ? <input type="hidden" name="id" value={initial.id} /> : null}
       <input type="hidden" name="stagesJson" value={JSON.stringify(resolvedStages)} />
       {initial && openMatches > 0 ? (
-        <Alert tone="warn" title="Programm wird gerade verwendet">
-          {openMatches === 1 ? "1 offener Durchgang verwendet" : `${openMatches} offene Durchgänge verwenden`} dieses Programm. Bereits erfasste Schüsse bleiben erhalten; geänderte Zonen, Wertung oder Serien gelten aber ab sofort auch dort. Für grössere Änderungen besser das Programm kopieren.
+        <Alert tone="warn" title={t("shooting.program.form.inUseTitle")}>
+          {t(openMatches === 1 ? "shooting.program.form.inUse.one" : "shooting.program.form.inUse.other", { n: openMatches })}
         </Alert>
       ) : null}
 
       <Card className="animate-rise p-4 space-y-4">
-        <Field label="Name"><Input name="name" defaultValue={initial?.name} required placeholder="z.B. Pistole 25 m Präzision" /></Field>
+        <Field label={t("shooting.program.form.name")}><Input name="name" defaultValue={initial?.name} required placeholder={t("shooting.program.form.namePh")} /></Field>
         <div className="grid grid-cols-2 gap-3">
-          <Field label="Waffe">
+          <Field label={t("shooting.program.form.weapon")}>
             <Select name="discipline" defaultValue={initial?.discipline ?? "PISTOL"}>
-              {DISCIPLINES.map((d) => <option key={d.key} value={d.key}>{d.label}</option>)}
+              {DISCIPLINES.map((d) => <option key={d.key} value={d.key}>{t(`shooting.discipline.${d.key}`)}</option>)}
             </Select>
           </Field>
-          <Field label="Wertung">
+          <Field label={t("shooting.program.form.scoring")}>
             <Select name="scoringMode" value={scoringMode} onChange={(e) => setScoringMode(e.target.value)}>
-              {SCORING_MODES.map((s) => <option key={s.key} value={s.key}>{s.label}</option>)}
+              {SCORING_MODES.map((s) => <option key={s.key} value={s.key}>{t(`shooting.scoringMode.${s.key}`)}</option>)}
             </Select>
           </Field>
         </div>
-        {mode ? <p className="-mt-2 text-xs text-ink-3">{mode.hint}</p> : null}
-        <Field label="Waffe genauer (optional)"><Input name="weaponNote" defaultValue={initial?.weaponNote ?? ""} placeholder="z.B. Sportpistole .22, Ordonnanz" /></Field>
-        <Field label="Beschreibung (optional)"><Textarea name="description" defaultValue={initial?.description ?? ""} placeholder="Ablauf, Regeln, Hinweise" /></Field>
+        {mode ? <p className="-mt-2 text-xs text-ink-3">{t(`shooting.program.form.modeHint.${mode.key}`)}</p> : null}
+        <Field label={t("shooting.program.form.weaponNote")}><Input name="weaponNote" defaultValue={initial?.weaponNote ?? ""} placeholder={t("shooting.program.form.weaponNotePh")} /></Field>
+        <Field label={t("shooting.program.form.description")}><Textarea name="description" defaultValue={initial?.description ?? ""} placeholder={t("shooting.program.form.descriptionPh")} /></Field>
       </Card>
 
       <Card className="animate-rise p-4 space-y-4">
         <div>
-          <h2 className="font-semibold">Amtliches Programm</h2>
-          <p className="text-xs text-ink-3">Für Bundesübungen (Obligatorisch, Feldschiessen) und Qualifikationen: Resultate können vom Schützenmeister amtlich bestätigt werden.</p>
+          <h2 className="font-semibold">{t("shooting.program.form.official")}</h2>
+          <p className="text-xs text-ink-3">{t("shooting.program.form.officialHint")}</p>
         </div>
-        <Field label="Art">
+        <Field label={t("shooting.program.form.officialKind")}>
           <Select name="officialKind" value={officialKind} onChange={(e) => setOfficialKind(e.target.value)}>
-            <option value="">Kein amtliches Programm</option>
-            {OFFICIAL_KINDS.map((k) => <option key={k.key} value={k.key}>{k.label}</option>)}
+            <option value="">{t("shooting.program.form.officialNone")}</option>
+            {OFFICIAL_KINDS.map((k) => <option key={k.key} value={k.key}>{t(`shooting.officialKind.${k.key}`)}</option>)}
           </Select>
         </Field>
         {officialKind ? (
           <>
             <div className="grid grid-cols-2 gap-3">
-              <Field label="Bestanden ab (Punkte)" hint="leer = keine Mindestpunktzahl">
+              <Field label={t("shooting.program.form.passMin")} hint={t("shooting.program.form.passMinHint")}>
                 <Input name="passMinScore" type="number" inputMode="decimal" step="0.1" min={0} defaultValue={initial?.passMinScore ?? ""} placeholder="–" />
               </Field>
-              <Field label="Höchstens Nuller" hint="leer = keine Regel">
+              <Field label={t("shooting.program.form.passZeros")} hint={t("shooting.program.form.passZerosHint")}>
                 <Input name="passMaxZeros" type="number" inputMode="numeric" min={0} defaultValue={initial?.passMaxZeros ?? ""} placeholder="–" />
               </Field>
             </div>
-            <Alert tone="info">{OFFICIAL_RULES_HINT} Sind beide Felder leer, wird kein «bestanden» berechnet (z.B. Feldschiessen).</Alert>
+            <Alert tone="info">{t("shooting.officialRulesHint")} {t("shooting.program.form.passNone")}</Alert>
           </>
         ) : null}
       </Card>
@@ -171,8 +175,8 @@ export function ProgramForm({ scope, initial, openMatches = 0 }: Props) {
       {isZones ? (
         <Card className="animate-rise p-4 space-y-3">
           <div>
-            <h2 className="font-semibold">Trefferzonen</h2>
-            <p className="text-xs text-ink-3">Gelten für alle Serien. Einzelne Serien können eigene Zonen haben.</p>
+            <h2 className="font-semibold">{t("shooting.program.form.zones")}</h2>
+            <p className="text-xs text-ink-3">{t("shooting.program.form.zonesHint")}</p>
           </div>
           <ZoneEditor idPrefix="program-zones" zones={programZones} onChange={setProgramZones} />
         </Card>
@@ -180,50 +184,50 @@ export function ProgramForm({ scope, initial, openMatches = 0 }: Props) {
 
       <div>
         <div className="flex items-center justify-between mb-2">
-          <h2 className="text-xs font-semibold uppercase tracking-wider text-ink-3">Serien / Stationen</h2>
-          <span className="text-xs text-ink-3 tabular-nums">{totals.shots} Schuss · max. {zoneError ? "–" : totals.max} {isHits ? "Treffer" : "Punkte"}</span>
+          <h2 className="text-xs font-semibold uppercase tracking-wider text-ink-3">{t("shooting.program.form.stages")}</h2>
+          <span className="text-xs text-ink-3 tabular-nums">{t(isHits ? "shooting.program.form.totalsHits" : "shooting.program.form.totalsPoints", { shots: totals.shots, max: zoneError ? "–" : totals.max })}</span>
         </div>
         <div className="space-y-3">
           {stages.map((s, i) => (
             <Card key={i} className="animate-rise p-4">
               <div className="flex items-center gap-2 mb-3">
                 <div className="flex flex-col text-ink-3">
-                  <button type="button" onClick={() => move(i, -1)} className="h-4 leading-none hover:text-ink" aria-label="Nach oben">▲</button>
-                  <button type="button" onClick={() => move(i, 1)} className="h-4 leading-none hover:text-ink" aria-label="Nach unten">▼</button>
+                  <button type="button" onClick={() => move(i, -1)} className="h-4 leading-none hover:text-ink" aria-label={t("shooting.program.form.up")}>▲</button>
+                  <button type="button" onClick={() => move(i, 1)} className="h-4 leading-none hover:text-ink" aria-label={t("shooting.program.form.down")}>▼</button>
                 </div>
                 <GripVertical className="h-4 w-4 text-ink-3 hidden" />
-                <Input value={s.name} onChange={(e) => update(i, { name: e.target.value })} className="flex-1 font-medium" placeholder={`Serie ${i + 1}`} />
-                <button type="button" onClick={() => duplicate(i)} className="press h-11 w-11 shrink-0 rounded-full hover:bg-surface-2 text-ink-3 flex items-center justify-center" aria-label="Duplizieren"><Copy className="h-4 w-4" /></button>
-                <button type="button" onClick={() => remove(i)} disabled={stages.length === 1} className="press h-11 w-11 shrink-0 rounded-full hover:bg-accent-soft text-ink-3 hover:text-accent disabled:opacity-30 flex items-center justify-center" aria-label="Entfernen"><Trash2 className="h-4 w-4" /></button>
+                <Input value={s.name} onChange={(e) => update(i, { name: e.target.value })} className="flex-1 font-medium" placeholder={stageName(i)} aria-label={t("shooting.program.form.stageName")} />
+                <button type="button" onClick={() => duplicate(i)} className="press h-11 w-11 shrink-0 rounded-full hover:bg-surface-2 text-ink-3 flex items-center justify-center" aria-label={t("shooting.program.form.duplicate")}><Copy className="h-4 w-4" /></button>
+                <button type="button" onClick={() => remove(i)} disabled={stages.length === 1} className="press h-11 w-11 shrink-0 rounded-full hover:bg-accent-soft text-ink-3 hover:text-accent disabled:opacity-30 flex items-center justify-center" aria-label={t("shooting.program.form.remove")}><Trash2 className="h-4 w-4" /></button>
               </div>
               <div className="grid grid-cols-3 gap-3">
-                <Field label="Distanz (m)"><Input type="number" inputMode="decimal" step="0.5" min={0.5} value={s.distanceM} onChange={(e) => update(i, { distanceM: Number(e.target.value) })} /></Field>
-                <Field label="Schüsse"><Input type="number" inputMode="numeric" min={1} max={200} value={s.shots} onChange={(e) => update(i, { shots: Number(e.target.value) })} /></Field>
+                <Field label={t("shooting.program.form.distance")}><Input type="number" inputMode="decimal" step="0.5" min={0.5} value={s.distanceM} onChange={(e) => update(i, { distanceM: Number(e.target.value) })} /></Field>
+                <Field label={t("shooting.program.form.shots")}><Input type="number" inputMode="numeric" min={1} max={200} value={s.shots} onChange={(e) => update(i, { shots: Number(e.target.value) })} /></Field>
                 {simpleInputs ? (
-                  <Field label="Zeit (s)"><Input type="number" inputMode="numeric" min={0} value={s.timeLimitSec ?? ""} onChange={(e) => update(i, { timeLimitSec: e.target.value ? Number(e.target.value) : undefined })} placeholder="–" /></Field>
+                  <Field label={t("shooting.program.form.time")}><Input type="number" inputMode="numeric" min={0} value={s.timeLimitSec ?? ""} onChange={(e) => update(i, { timeLimitSec: e.target.value ? Number(e.target.value) : undefined })} placeholder="–" /></Field>
                 ) : (
-                  <Field label="Max. Ring"><Input type="number" inputMode="numeric" min={1} max={100} value={s.maxPerShot} onChange={(e) => update(i, { maxPerShot: Number(e.target.value) })} /></Field>
+                  <Field label={t("shooting.program.form.maxRing")}><Input type="number" inputMode="numeric" min={1} max={100} value={s.maxPerShot} onChange={(e) => update(i, { maxPerShot: Number(e.target.value) })} /></Field>
                 )}
               </div>
               <div className="grid grid-cols-2 gap-3 mt-3">
-                <Field label="Anschlag">
+                <Field label={t("shooting.program.form.position")}>
                   <Select value={s.position ?? ""} onChange={(e) => update(i, { position: e.target.value })}>
-                    {POSITIONS.map((p) => <option key={p.key} value={p.key}>{p.label}</option>)}
+                    {POSITIONS.map((p) => <option key={p.key} value={p.key}>{t(`shooting.position.${p.key || "ANY"}`)}</option>)}
                   </Select>
                 </Field>
                 {simpleInputs ? (
-                  <Field label="Scheibe / Ziel"><Input value={s.targetName ?? ""} onChange={(e) => update(i, { targetName: e.target.value })} placeholder="z.B. Stahlplatte" /></Field>
+                  <Field label={t("shooting.program.form.targetGoal")}><Input value={s.targetName ?? ""} onChange={(e) => update(i, { targetName: e.target.value })} placeholder={t("shooting.program.form.targetGoalPh")} /></Field>
                 ) : (
-                  <Field label="Zeit (s, optional)"><Input type="number" inputMode="numeric" min={0} value={s.timeLimitSec ?? ""} onChange={(e) => update(i, { timeLimitSec: e.target.value ? Number(e.target.value) : undefined })} placeholder="–" /></Field>
+                  <Field label={t("shooting.program.form.timeOptional")}><Input type="number" inputMode="numeric" min={0} value={s.timeLimitSec ?? ""} onChange={(e) => update(i, { timeLimitSec: e.target.value ? Number(e.target.value) : undefined })} placeholder="–" /></Field>
                 )}
               </div>
               {!simpleInputs ? (
-                <div className="mt-3"><Field label="Scheibe (optional)"><Input value={s.targetName ?? ""} onChange={(e) => update(i, { targetName: e.target.value })} placeholder="z.B. Präzisionsscheibe 25 m" /></Field></div>
+                <div className="mt-3"><Field label={t("shooting.program.form.target")}><Input value={s.targetName ?? ""} onChange={(e) => update(i, { targetName: e.target.value })} placeholder={t("shooting.program.form.targetPh")} /></Field></div>
               ) : null}
-              <div className="mt-3"><Field label="Hinweis (optional)"><Input value={s.note ?? ""} onChange={(e) => update(i, { note: e.target.value })} placeholder="z.B. hinter Deckung, Magazinwechsel" /></Field></div>
+              <div className="mt-3"><Field label={t("shooting.program.form.note")}><Input value={s.note ?? ""} onChange={(e) => update(i, { note: e.target.value })} placeholder={t("shooting.program.form.notePh")} /></Field></div>
               {isZones ? (
                 <div className="mt-3 space-y-3 border-t border-line pt-3">
-                  <Switch checked={!!s.ownZones} onChange={(on) => toggleOwnZones(i, on)} label="Eigene Zonen für diese Serie" description={s.ownZones ? undefined : "Sonst gelten die Trefferzonen des Programms."} />
+                  <Switch checked={!!s.ownZones} onChange={(on) => toggleOwnZones(i, on)} label={t("shooting.program.form.ownZones")} description={s.ownZones ? undefined : t("shooting.program.form.ownZonesHint")} />
                   {s.ownZones ? (
                     <ZoneEditor idPrefix={`stage-${i}-zones`} zones={s.ownZones} onChange={(next) => update(i, { ownZones: next })} />
                   ) : (
@@ -234,12 +238,12 @@ export function ProgramForm({ scope, initial, openMatches = 0 }: Props) {
             </Card>
           ))}
         </div>
-        <Button type="button" variant="secondary" onClick={add} className="mt-3 w-full"><Plus className="h-4 w-4" /> Serie hinzufügen</Button>
+        <Button type="button" variant="secondary" onClick={add} className="mt-3 w-full"><Plus className="h-4 w-4" /> {t("shooting.program.form.addStage")}</Button>
       </div>
 
       {clientError ? <Alert>{clientError}</Alert> : state && !state.ok ? <Alert>{state.error}</Alert> : null}
       <div className="sticky bottom-24 md:bottom-4">
-        <SubmitButton pending={pending} size="lg" className="w-full shadow-lg" pendingText="Speichern…">{initial ? "Änderungen speichern" : "Programm anlegen"}</SubmitButton>
+        <SubmitButton pending={pending} size="lg" className="w-full shadow-lg" pendingText={t("shooting.program.form.saving")}>{t(initial ? "shooting.program.form.saveChanges" : "shooting.program.form.create")}</SubmitButton>
       </div>
     </form>
   );

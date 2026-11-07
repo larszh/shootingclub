@@ -71,26 +71,71 @@ export const zoneSchema = z.object({
 });
 export type Zone = z.infer<typeof zoneSchema>;
 
+/** Fehlerart einer Zonenliste (für übersetzte Meldungen im Editor, Schlüssel «shooting.zone.err.<code>»). */
+export type ZoneIssueCode =
+  | "empty" | "tooMany" | "keyMissing" | "keyTooLong" | "labelMissing" | "labelTooLong"
+  | "pointsInt" | "pointsMin" | "pointsMax" | "invalid" | "dupKey" | "dupPoints" | "noPositive" | "penaltyNeedsNegative";
+export type ZoneIssue = { code: ZoneIssueCode; zone?: string; n?: number };
+
 /**
- * Prüft eine Zonenliste. Schüsse werden als Punktwert gespeichert, darum braucht jede Zone
- * einen eigenen Punktwert (sonst wäre die Zone eines Schusses nicht mehr eindeutig).
- * Gibt eine lesbare Fehlermeldung zurück oder null.
+ * Prüft eine Zonenliste und liefert die erste Fehlerart oder null. Schüsse werden als Punktwert
+ * gespeichert, darum braucht jede Zone einen eigenen Punktwert (sonst wäre die Zone eines
+ * Schusses nicht mehr eindeutig).
  */
-export function validateZones(zones: Array<{ key: string; label: string; points: number; penalty?: boolean }>): string | null {
-  if (zones.length === 0) return "Mindestens eine Zone erfassen.";
-  if (zones.length > ZONE_LIMITS.maxZones) return `Höchstens ${ZONE_LIMITS.maxZones} Zonen.`;
+export function zoneIssue(zones: Array<{ key: string; label: string; points: number; penalty?: boolean }>): ZoneIssue | null {
+  if (zones.length === 0) return { code: "empty" };
+  if (zones.length > ZONE_LIMITS.maxZones) return { code: "tooMany", n: ZONE_LIMITS.maxZones };
   for (const z0 of zones) {
-    const r = zoneSchema.safeParse(z0);
-    if (!r.success) return `Zone «${z0.key || z0.label || "?"}»: ${r.error.issues[0]?.message ?? "ungültig"}`;
+    const zone = z0.key || z0.label || "?";
+    const key = String(z0.key ?? "").trim();
+    const label = String(z0.label ?? "").trim();
+    const pts = Number(z0.points);
+    if (!key) return { code: "keyMissing", zone };
+    if (key.length > ZONE_LIMITS.keyMax) return { code: "keyTooLong", zone, n: ZONE_LIMITS.keyMax };
+    if (!label) return { code: "labelMissing", zone };
+    if (label.length > ZONE_LIMITS.labelMax) return { code: "labelTooLong", zone, n: ZONE_LIMITS.labelMax };
+    if (!Number.isInteger(pts)) return { code: "pointsInt", zone };
+    if (pts < ZONE_LIMITS.minPoints) return { code: "pointsMin", zone, n: ZONE_LIMITS.minPoints };
+    if (pts > ZONE_LIMITS.maxPoints) return { code: "pointsMax", zone, n: ZONE_LIMITS.maxPoints };
+    if (!zoneSchema.safeParse(z0).success) return { code: "invalid", zone };
   }
   const keys = zones.map((z0) => z0.key.trim().toLowerCase());
-  if (new Set(keys).size !== keys.length) return "Jedes Kürzel darf nur einmal vorkommen.";
+  if (new Set(keys).size !== keys.length) return { code: "dupKey" };
   const pts = zones.map((z0) => Number(z0.points));
-  if (new Set(pts).size !== pts.length) return "Jede Zone braucht einen eigenen Punktwert.";
-  if (!pts.some((p) => p > 0)) return "Mindestens eine Zone muss positive Punkte geben.";
+  if (new Set(pts).size !== pts.length) return { code: "dupPoints" };
+  if (!pts.some((p) => p > 0)) return { code: "noPositive" };
   const badPenalty = zones.find((z0) => z0.penalty && !(Number(z0.points) < 0));
-  if (badPenalty) return `Zone «${badPenalty.key || badPenalty.label || "?"}»: Strafen ohne Schuss brauchen negative Punkte.`;
+  if (badPenalty) return { code: "penaltyNeedsNegative", zone: badPenalty.key || badPenalty.label || "?" };
   return null;
+}
+
+/** Deutsche Meldungen (Server-Validierung); der Editor übersetzt über «shooting.zone.err.<code>». */
+const ZONE_ISSUE_DE: Record<ZoneIssueCode, string> = {
+  empty: "Mindestens eine Zone erfassen.",
+  tooMany: "Höchstens {n} Zonen.",
+  keyMissing: "Zone «{zone}»: Kürzel fehlt",
+  keyTooLong: "Zone «{zone}»: Kürzel höchstens {n} Zeichen",
+  labelMissing: "Zone «{zone}»: Bezeichnung fehlt",
+  labelTooLong: "Zone «{zone}»: Bezeichnung höchstens {n} Zeichen",
+  pointsInt: "Zone «{zone}»: Punkte als ganze Zahl",
+  pointsMin: "Zone «{zone}»: Punkte mindestens {n}",
+  pointsMax: "Zone «{zone}»: Punkte höchstens {n}",
+  invalid: "Zone «{zone}»: ungültig",
+  dupKey: "Jedes Kürzel darf nur einmal vorkommen.",
+  dupPoints: "Jede Zone braucht einen eigenen Punktwert.",
+  noPositive: "Mindestens eine Zone muss positive Punkte geben.",
+  penaltyNeedsNegative: "Zone «{zone}»: Strafen ohne Schuss brauchen negative Punkte.",
+};
+
+/** Setzt {zone}/{n} in eine Meldungsvorlage ein. */
+export function formatZoneIssue(template: string, issue: ZoneIssue): string {
+  return template.replace(/\{(zone|n)\}/g, (_, k: "zone" | "n") => String(issue[k] ?? ""));
+}
+
+/** Prüft eine Zonenliste. Gibt eine lesbare (deutsche) Fehlermeldung zurück oder null. */
+export function validateZones(zones: Array<{ key: string; label: string; points: number; penalty?: boolean }>): string | null {
+  const issue = zoneIssue(zones);
+  return issue ? formatZoneIssue(ZONE_ISSUE_DE[issue.code], issue) : null;
 }
 
 export const zoneListSchema = z

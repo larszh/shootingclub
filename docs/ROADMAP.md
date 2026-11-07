@@ -70,13 +70,28 @@ Details im README.
   - Partnerbuchungen über die gemeinsame Anlage und Online-Bezahlung lösen noch keine Bestätigungs-Mail aus.
   - Laufzeit-Prüfung im Browser (Playwright) für die neuen Seiten steht aus; geprüft mit Typprüfung, Lint, Unit-Tests und Produktions-Build.
 
+### Welle E: Englisch, Claude, Übersetzungen (erledigt)
+- **Englisch** als vierte Sprache (en-CH-Formate): alle Wörterbücher, 56 Hilfe-Einträge, eingebaute Programme, Verbandsmitteilungen, Mails, QR-Zahlteil (EN), Offline-Seiten. Auswahl im Profil, auf den Anmeldeseiten und als Vereinssprache.
+- **Admin-Seiten übersetzt** (FR/IT/EN): Mitglieder, Beiträge, Zahlungen, Buchhaltung, Schützenstube, Reservationen, Munition, Dateien, Protokoll (`adm1`); Standbetrieb, Vereinswaffen, Helfereinsätze, Qualifikationen, Kurse, Meisterschaft, Bundesübungen, Live, Widgets, Verband, Super-Admin, Scheiben-Beschriftungen (`adm2`). Server-Meldungen werden übersetzt.
+- **Übersetzungsverwaltung** `/super/translations`: Overrides pro Text und Sprache, Import/Export JSON, Vorschläge mit Claude und Diff-Vorschau.
+- **Claude** (Modul «KI-Assistent»): Plattform- und Vereinseinstellungen (`/super/ai`, `/admin/ai`) mit eigenem Schlüssel pro Verein, Zustimmung, Funktionen mit Mindestrolle, Monatslimite und Verbrauch; Hilfe-Assistent (`/help`, schwebender Knopf «Fragen?»), Support-Assistent für Super-Admins (`/super/support`), Übersetzung von Anlässen, Mitteilungen und Standordnung mit Prüfung, Schreibhilfe, Trainingsauswertung (`/scores/stats`), Jahresbericht (`/admin/reports`), Spaltenzuordnung beim Resultat- und Mitglieder-Import. Gemeinsamer Kern `src/lib/ai` (Beta-Messages mit serverseitigem Fallback, Prompt-Caching, Refusal- und Fehlerbehandlung, Nutzungsprotokoll ohne Inhalt, lokale Ratenbegrenzung).
+- **Reste**: Bestätigung bei Partnerbuchungen und nach Online-Zahlung, Feldschiessen-Auszeichnungen nach Waffenkategorie, übersetzte Upload- und Freigabe-Meldungen.
+- **Integration**: Navigation (Super: Übersetzungen, Claude, Support-Assistent; Verwaltung: Claude, Jahresbericht), Job `ai.cache.purge` (täglich), FAQ zu Claude und Datenschutz (DE/FR/IT/EN), Datenauskunft mit KI-Anfragen und Übersetzungs-Metadaten, Pseudonymisierung von `AiUsage.userId` bei der Kontolöschung, Vereinsarchiv mit KI-Einstellungen (ohne Schlüssel) und Verbrauch, Demo-Verein mit eingeschaltetem Modul ohne Schlüssel.
+- **Offen aus Welle E**:
+  - CHF-Schätzungen der Claude-Kosten beruhen auf angenommenen Preisen (`CHF_PER_MILLION` in `src/modules/ai/usage/logic.ts`); vor dem Einsatz mit der Preisliste von Anthropic abgleichen.
+  - Kein Live-Test gegen die Anthropic-API (alle Tests mit gemocktem Client); vor dem Einsatz mit einem Testschlüssel prüfen.
+  - Noch Deutsch: Upload-Fehler aus dem Speicher-Adapter (`src/lib/file-storage`), Meldungen des Mitglieder-Imports, Formulare der Feldschiessen-Limiten (`AWARD_FORMAT_HINT`), öffentliche Website-Widgets, CSV-Köpfe des Verbands-Exports, Formulare der Anlässe/Mitteilungen (Editoren, ausser den KI-Teilen), Zonen-Editor im Programm-Editor, Produkt-Vorschläge in Schützenstube und Munition, gespeicherte Protokolltexte, Dauer-Fehler mit Zeilenbezug in den Reservations-Einstellungen («Dauer 60 Min.: …»).
+  - Inzwischen übersetzt: Reservationen-Verwaltung (inkl. serverseitiger Meldungen der Reservations-Aktionen: Einstellungen, Ressourcen, Sperrzeiten, Buchung erfassen, Zahlungsanbieter), Serien, Programm-Editor, Auszeichnungen Feldschiessen und Anlässe-Verwaltung (Listen, Aktionen).
+  - Mitglieder wählen ihre Waffenkategorie für Auszeichnungen noch nicht selbst in der Punkteerfassung (Komponente vorhanden, heute setzt der Vorstand sie unter `/federal/awards`).
+  - Übersetzungen von Standordnungs-Entwürfen bleiben beim Löschen des Entwurfs bis zur Vereinslöschung liegen (harmlos).
+  - Ratenbegrenzung der KI-Funktionen im Arbeitsspeicher (eine PM2-Instanz).
+
 ## Nächste Wellen
 
-### Welle E
+### Welle F
+- **E2E-Tests** (Playwright) für Beitritt mit Freigabe, Serienbuchung, Verband, Sprachumschaltung (inkl. Englisch) und die Claude-Einrichtung mit gemocktem Anbieter.
 - **bexio-API**: Buchungen und Debitoren direkt übertragen statt CSV-Import. Braucht einen Partnerzugang bei bexio (OAuth-App, Freigabe durch bexio) und eine Testfirma; bis dahin bleibt der Export (CSV/Banana) der Weg.
 - **Live-Import aus elektronischen Trefferanzeigen**: Resultate während des Schiessens übernehmen (Meyton/SIUS-Schnittstelle, später Polytronic), angebunden an die Live-Rangliste. Braucht Zugang zu den Herstellerschnittstellen (Dokumentation, teils Lizenz) und eine Anlage mit echter Hardware zum Testen; der Datei-Import aus Welle C deckt den Ablauf nach dem Schiessen ab.
-- **Übersetzung der Admin-Seiten** (FR/IT) und des Verbandsbereichs.
-- **E2E-Tests** (Playwright) für Beitritt mit Freigabe, Serienbuchung, Verband und die Sprachumschaltung.
 
 ## Optimierungen (noch nicht umgesetzt)
 

@@ -2,7 +2,7 @@ import Link from "next/link";
 import { Repeat } from "lucide-react";
 import { Badge, Card } from "@/components/ui";
 import { Avatar, userAvatarUrl } from "@/components/avatar";
-import { getT, type Locale } from "@/lib/i18n/core";
+import { displayUserName, getT, type Locale } from "@/lib/i18n/core";
 import { formatMoney } from "@/lib/money";
 import type { BookingRow } from "@/modules/bookings/queries";
 import { personsSuffix } from "@/modules/bookings/pricing";
@@ -37,7 +37,7 @@ export function BookingCard({ b, showUser, partner, locale = "de" }: {
             ) : null}
           </div>
           <div className="min-w-0 flex-1">
-            <div className="font-medium truncate">{b.resource.name}{showUser && b.user ? <span className="text-ink-3 font-normal"> · {b.user.name}</span> : null}</div>
+            <div className="font-medium truncate">{b.resource.name}{showUser && b.user ? <span className="text-ink-3 font-normal"> · {displayUserName(b.user.name, t)}</span> : null}</div>
             <div className="text-xs text-ink-3">{formatDateL(b.startsAt, locale)} · <span className="tabular-nums">{formatTimeRangeL(b.startsAt, b.endsAt, locale)}</span>{persons ? ` · ${persons}` : ""}</div>
             <div className="mt-1.5 flex flex-wrap gap-1">
               <Badge tone={st.tone}>{st.label}</Badge>

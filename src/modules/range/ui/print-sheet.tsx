@@ -36,10 +36,11 @@ export function PrintTable({ head, rows, className }: { head: React.ReactNode[];
   );
 }
 
-export function SignatureLine({ label }: { label: string }) {
+/** Unterschriftszeile; `placeLabel` ist die übersetzte Bezeichnung «Ort, Datum». */
+export function SignatureLine({ label, placeLabel = "Ort, Datum" }: { label: string; placeLabel?: string }) {
   return (
     <div className="mt-10 grid grid-cols-2 gap-10 text-[9pt] text-neutral-600">
-      <div><div className="h-10 border-b border-neutral-400" /><div className="mt-1">Ort, Datum</div></div>
+      <div><div className="h-10 border-b border-neutral-400" /><div className="mt-1">{placeLabel}</div></div>
       <div><div className="h-10 border-b border-neutral-400" /><div className="mt-1">{label}</div></div>
     </div>
   );

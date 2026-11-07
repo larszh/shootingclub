@@ -8,8 +8,9 @@ export function rangeTabs(can: { duty: boolean; manage: boolean }): RangeTab[] {
   return tabs;
 }
 
+/** Reiter der Verwaltung; `label` ist ein Wörterbuch-Schlüssel (RangeTabs übersetzt «adm2.»-Schlüssel). */
 export const ADMIN_RANGE_TABS: RangeTab[] = [
-  { href: "/admin/range", label: "Übersicht" },
-  { href: "/admin/range/rules", label: "Standordnung" },
-  { href: "/admin/range/times", label: "Schiesszeiten" },
+  { href: "/admin/range", label: "adm2.range.tab.overview" },
+  { href: "/admin/range/rules", label: "adm2.range.tab.rules" },
+  { href: "/admin/range/times", label: "adm2.range.tab.times" },
 ];

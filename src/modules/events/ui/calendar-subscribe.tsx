@@ -91,11 +91,12 @@ export function CalendarSubscribe({ tenantName, tenantFeedUrl, userFeedUrl, loca
 }
 
 /** Verwaltung: Vereins-Feed anzeigen und erneuern (nur Admins). */
-export function TenantFeedAdmin({ tenantFeedUrl }: { tenantFeedUrl: string | null }) {
+export function TenantFeedAdmin({ tenantFeedUrl, locale = "de" }: { tenantFeedUrl: string | null; locale?: Locale }) {
+  const t = getT(locale);
   return (
     <Card className="p-4">
-      <FeedBlock title="Öffentlicher Kalender-Link" text="Für Mitglieder, die den Vereinskalender abonnieren. Erzeuge einen neuen Link, falls der alte in falsche Hände geraten ist."
-        initialUrl={tenantFeedUrl} ensure={ensureTenantFeedAction} regenerate={regenerateTenantFeedAction} regenerateLabel="Link erneuern" />
+      <FeedBlock title={t("misc.events.feedTitle")} text={t("misc.events.feedText")}
+        initialUrl={tenantFeedUrl} ensure={ensureTenantFeedAction} regenerate={regenerateTenantFeedAction} regenerateLabel={t("misc.events.feedRenew")} locale={locale} />
     </Card>
   );
 }

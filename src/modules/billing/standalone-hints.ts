@@ -33,7 +33,8 @@ export type StandaloneHintInput = {
   reopenBlocked: boolean;
 };
 
-export type StandaloneHint = { tone: "warn" | "info"; text: string };
+/** `text` deutsch (Protokoll, Tests); `key`/`vars` für die Anzeige in der Sprache der Verwaltung (Wörterbuch adm1). */
+export type StandaloneHint = { tone: "warn" | "info"; text: string; key?: string; vars?: Record<string, string | number> };
 
 /** Hinweise zu Rückerstattung und Doppelverrechnung, wichtigste zuerst. */
 export function standaloneInvoiceHints(i: StandaloneHintInput): StandaloneHint[] {
@@ -43,19 +44,19 @@ export function standaloneInvoiceHints(i: StandaloneHintInput): StandaloneHint[]
   const reviewed = paidOnline.filter((p) => p.review?.kind === "REFUND");
 
   if (i.status === "CANCELLED" && paidOnline.length) {
-    out.push({ tone: "warn", text: "Storniert, aber online bezahlt: Betrag im Backoffice des Zahlungsanbieters zurückerstatten." });
+    out.push({ tone: "warn", text: "Storniert, aber online bezahlt: Betrag im Backoffice des Zahlungsanbieters zurückerstatten.", key: "adm1.hint.cancelledPaidOnline" });
   } else if (reviewed.length) {
-    out.push({ tone: "warn", text: `Rückerstattung prüfen: ${reviewed[0]!.review!.note}` });
+    out.push({ tone: "warn", text: `Rückerstattung prüfen: ${reviewed[0]!.review!.note}`, key: "adm1.hint.checkRefund", vars: { note: reviewed[0]!.review!.note } });
   } else if (paidOnline.length > 1 || (paidOnline.length === 1 && /Bankimport/.test(i.paymentNote ?? ""))) {
-    out.push({ tone: "warn", text: "Mehrfach bezahlt (online und per Bank oder zweimal online): Rückerstattung prüfen." });
+    out.push({ tone: "warn", text: "Mehrfach bezahlt (online und per Bank oder zweimal online): Rückerstattung prüfen.", key: "adm1.hint.paidTwice" });
   } else if (i.status === "CANCELLED" && /Bankimport/.test(i.paymentNote ?? "")) {
-    out.push({ tone: "warn", text: "Storniert, aber per Bank bezahlt: Betrag zurücküberweisen." });
+    out.push({ tone: "warn", text: "Storniert, aber per Bank bezahlt: Betrag zurücküberweisen.", key: "adm1.hint.cancelledPaidBank" });
   }
-  if (refunded.length) out.push({ tone: "info", text: `${refunded.length === 1 ? "Eine Online-Zahlung wurde" : `${refunded.length} Online-Zahlungen wurden`} erstattet.` });
+  if (refunded.length) out.push({ tone: "info", text: `${refunded.length === 1 ? "Eine Online-Zahlung wurde" : `${refunded.length} Online-Zahlungen wurden`} erstattet.`, key: refunded.length === 1 ? "adm1.hint.refunded.one" : "adm1.hint.refunded.other", vars: { n: refunded.length } });
   if (i.reopenBlocked || (i.kind === "kiosk" && isKioskReleasedNote(i.paymentNote))) {
-    out.push({ tone: "info", text: "Die Konsumationen wurden freigegeben (wieder offen bzw. neu verrechnet). Diese Rechnung bleibt storniert." });
+    out.push({ tone: "info", text: "Die Konsumationen wurden freigegeben (wieder offen bzw. neu verrechnet). Diese Rechnung bleibt storniert.", key: "adm1.hint.released" });
   } else if (i.kind === "kiosk" && i.status === "CANCELLED") {
-    out.push({ tone: "info", text: "Die Konsumationen sind noch mit dieser Rechnung verknüpft. Unter «Schützenstube» freigeben, um sie neu zu verrechnen." });
+    out.push({ tone: "info", text: "Die Konsumationen sind noch mit dieser Rechnung verknüpft. Unter «Schützenstube» freigeben, um sie neu zu verrechnen.", key: "adm1.hint.linked" });
   }
   return out;
 }

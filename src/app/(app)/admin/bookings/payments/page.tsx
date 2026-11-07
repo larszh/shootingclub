@@ -6,8 +6,11 @@ import { AdminBookingTabs } from "@/modules/bookings/ui/admin-tabs";
 import { listTenantPayments, type TenantPaymentKind } from "@/lib/payments/queries";
 import { PaymentProviderList } from "@/lib/payments/ui/provider-list";
 import { TenantPaymentsTable } from "@/lib/payments/ui/payments-table";
+import { getRequestLocale, getT } from "@/lib/i18n";
 
-export const metadata = { title: "Zahlungsanbieter" };
+export async function generateMetadata() {
+  return { title: getT(await getRequestLocale())("adm1.bk.providers") };
+}
 
 const KINDS = ["all", "BOOKING", "FEE"] as const;
 type KindFilter = (typeof KINDS)[number];
@@ -16,37 +19,39 @@ export default async function PaymentProvidersPage({ searchParams }: { searchPar
   const ctx = await requirePermission("tenant.manage");
   if (!ctx.hasModule("bookings") && !ctx.hasModule("billing")) redirect("/?module=bookings");
   const sp = await searchParams;
+  const locale = await getRequestLocale();
+  const t = getT(locale);
   const kind: KindFilter = KINDS.includes(sp.kind as KindFilter) ? (sp.kind as KindFilter) : "all";
   const payments = await listTenantPayments(ctx.tenant.id, { kind: kind === "all" ? undefined : (kind as TenantPaymentKind), take: 200 });
   const billing = ctx.hasModule("billing");
   return (
     <div>
-      <PageHeader title="Zahlungsanbieter" subtitle="Jeder Verein nutzt sein eigenes Konto. Zugangsdaten werden verschlüsselt gespeichert." back={{ href: "/admin/bookings", label: "Reservationen" }} />
+      <PageHeader title={t("adm1.bk.providers")} subtitle={t("adm1.bk.providersSubtitle")} back={{ href: "/admin/bookings", label: t("adm1.bk.title") }} />
       <AdminBookingTabs />
       <Card className="animate-rise mb-4 space-y-2 p-4 text-sm text-ink-2">
-        <p>Das Geld fliesst direkt auf das Konto des Vereins beim jeweiligen Anbieter. Standchef speichert nur die Zugangsdaten für die Zahlungsseite.</p>
+        <p>{t("adm1.bk.providersMoney")}</p>
         <p>
-          Nach dem Einrichten unter <Link href="/admin/bookings/settings" className="underline">Einstellungen</Link> die Online-Zahlung für Reservationen aktivieren
-          {billing ? <> und im <Link href="/admin/billing/settings" className="underline">Rechnungsprofil</Link> den Anbieter für Beitragsrechnungen wählen</> : null}.
+          {t("adm1.bk.providersSetupPrefix")} <Link href="/admin/bookings/settings" className="underline">{t("adm1.common.settings")}</Link> {t("adm1.bk.providersSetupBookings")}
+          {billing ? <> {t("adm1.bk.providersSetupAnd")} <Link href="/admin/billing/settings" className="underline">{t("adm1.bk.billingProfile")}</Link> {t("adm1.bk.providersSetupFees")}</> : null}.
         </p>
-        <p className="text-xs text-ink-3">Munition ist nie online bezahlbar (AGB der Zahlungsanbieter) und wird immer per Rechnung abgerechnet.</p>
+        <p className="text-xs text-ink-3">{t("adm1.bk.providersAmmo")}</p>
       </Card>
 
       <PaymentProviderList tenantId={ctx.tenant.id} />
 
-      <SectionTitle>Online-Zahlungen</SectionTitle>
+      <SectionTitle>{t("adm1.bk.onlinePayments")}</SectionTitle>
       <LinkTabs
         className="mb-3"
-        label="Zahlungen filtern"
+        label={t("adm1.bk.filterPayments")}
         active={kind}
         items={[
-          { value: "all", href: "/admin/bookings/payments", label: "Alle" },
-          { value: "BOOKING", href: "/admin/bookings/payments?kind=BOOKING", label: "Reservationen" },
-          { value: "FEE", href: "/admin/bookings/payments?kind=FEE", label: "Rechnungen" },
+          { value: "all", href: "/admin/bookings/payments", label: t("adm1.common.all") },
+          { value: "BOOKING", href: "/admin/bookings/payments?kind=BOOKING", label: t("adm1.bk.title") },
+          { value: "FEE", href: "/admin/bookings/payments?kind=FEE", label: t("adm1.bk.invoices") },
         ]}
       />
-      <TenantPaymentsTable rows={payments} />
-      {payments.length >= 200 ? <p className="mt-2 text-xs text-ink-3">Es werden die neuesten 200 Zahlungen angezeigt.</p> : null}
+      <TenantPaymentsTable rows={payments} locale={locale} />
+      {payments.length >= 200 ? <p className="mt-2 text-xs text-ink-3">{t("adm1.bk.latest200")}</p> : null}
     </div>
   );
 }

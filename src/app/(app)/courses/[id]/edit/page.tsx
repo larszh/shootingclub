@@ -1,17 +1,23 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { PageHeader } from "@/components/ui";
+import { getRequestLocale, getT } from "@/lib/i18n";
 import { db } from "@/lib/db";
 import { todayZurich } from "@/lib/time";
 import { requireCoursesManage } from "@/modules/courses/guard";
 import { dbDay, parseIdCsv } from "@/modules/courses/logic";
 import { leaderOptions, programOptions, programsByIds } from "@/modules/courses/queries";
 import { CourseForm } from "@/modules/courses/ui/course-form";
+import { localizedProgramName } from "@/modules/scores/preset-i18n";
 
-export const metadata: Metadata = { title: "Kurs bearbeiten" };
+export async function generateMetadata(): Promise<Metadata> {
+  return { title: getT(await getRequestLocale())("adm2.courses.edit.title") };
+}
 
 export default async function EditCoursePage({ params }: { params: Promise<{ id: string }> }) {
   const ctx = await requireCoursesManage();
+  const locale = await getRequestLocale();
+  const t = getT(locale);
   const { id } = await params;
   const c = await db.course.findFirst({ where: { id: id.slice(0, 40), tenantId: ctx.tenant.id } });
   if (!c) notFound();
@@ -21,9 +27,9 @@ export default async function EditCoursePage({ params }: { params: Promise<{ id:
   const all = [...programs, ...current.filter((p) => !programs.some((x) => x.id === p.id))];
   return (
     <div className="max-w-2xl">
-      <PageHeader title="Kurs bearbeiten" subtitle={c.name} back={{ href: `/courses/${c.id}`, label: "Kurs" }} />
+      <PageHeader title={t("adm2.courses.edit.title")} subtitle={c.name} back={{ href: `/courses/${c.id}`, label: t("adm2.courses.course") }} />
       <CourseForm
-        programs={all}
+        programs={all.map((p) => ({ ...p, name: localizedProgramName(p.name, locale) }))}
         leaders={leaders}
         defaultYear={Number(todayZurich().slice(0, 4))}
         initial={{

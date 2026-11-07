@@ -7,14 +7,17 @@ import { loadBookingWindows } from "@/modules/range/booking-window";
 import { applyWindowsToSlots } from "@/modules/range/logic";
 import { applyPriceFactor } from "./logic";
 import type { GuestShare } from "./queries";
+import type { TFunction } from "@/lib/i18n/core";
 
 /**
  * Freie Zeiten einer geteilten Ressource für ein Mitglied eines Partnervereins. Es gelten alle
  * Regeln des Eigentümers (Öffnungszeiten, Vorlauf, Vorausbuchung, Sperrzeiten, Kapazität und, mit
  * Modul «Standbetrieb», die bewilligten Schiesszeiten). Preise mit dem Faktor der Freigabe.
  * Gibt nur Zeiten und Gründe zurück, keine Angaben zu anderen Buchungen.
+ * Fehlertexte bleiben Deutsch (der Buchungsassistent übersetzt sie wie bei eigenen Ressourcen),
+ * die Preisangabe «Partnertarif» kommt in der Sprache von `t`.
  */
-export async function guestSlots(g: GuestShare, dateStr: string, durationMinutes: number, persons: number): Promise<SlotsResult> {
+export async function guestSlots(g: GuestShare, dateStr: string, durationMinutes: number, persons: number, t?: TFunction): Promise<SlotsResult> {
   if (!isCalendarDate(dateStr)) return { slots: [], error: "Ungültiges Datum" };
   if (!Number.isFinite(durationMinutes)) return { slots: [], error: "Ungültige Eingabe" };
   if (!Number.isInteger(persons) || persons < 1) return { slots: [], error: "Ungültige Anzahl Personen" };
@@ -35,7 +38,7 @@ export async function guestSlots(g: GuestShare, dateStr: string, durationMinutes
     outsideWindow: windowed.outside,
     windowOverride: false,
     slots: windowed.slots.map((s) => {
-      const q = applyPriceFactor(quotePrice(option, s.startsAt, settings, plan.persons), g.priceFactorPercent);
+      const q = applyPriceFactor(quotePrice(option, s.startsAt, settings, plan.persons), g.priceFactorPercent, t);
       return { time: s.time, available: s.available, reason: s.reason, remaining: s.remaining, ...q };
     }),
   };

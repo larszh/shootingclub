@@ -23,7 +23,7 @@ export default async function FilesPage({ searchParams }: { searchParams: Promis
   const t = getT(locale);
 
   const [view, settings, usage] = await Promise.all([
-    getFilesView({ tenantId, role: ctx.tenant.role, isSuperAdmin: ctx.user.isSuperAdmin, folderId, q }),
+    getFilesView({ tenantId, role: ctx.tenant.role, isSuperAdmin: ctx.user.isSuperAdmin, folderId, q, locale }),
     loadStorageSettings(tenantId),
     tenantStorageUsage(tenantId),
   ]);

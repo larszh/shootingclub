@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Home, Target, Crosshair, Menu, CalendarDays, Megaphone, MessageCircle, FolderOpen, Package, Wallet, Settings, Users, FileUp, House, History, Server, BadgeCheck, Trophy, Tv, DoorOpen, HandHelping, GraduationCap, Shield, Coffee, FileInput, BookOpenCheck, Code2, Handshake, Landmark, UserPlus } from "lucide-react";
+import { Home, Target, Crosshair, Menu, CalendarDays, Megaphone, MessageCircle, FolderOpen, Package, Wallet, Settings, Users, FileUp, House, History, Server, BadgeCheck, Trophy, Tv, DoorOpen, HandHelping, GraduationCap, Shield, Coffee, FileInput, BookOpenCheck, Code2, Handshake, Landmark, UserPlus, Bot, FileText, Languages, LifeBuoy } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { TenantLogo } from "@/components/logo";
 import { Avatar } from "@/components/avatar";
@@ -88,6 +88,7 @@ export type ShellAdmin = {
   scoreImport?: boolean; // match.viewAll oder tenant.programs.manage: Resultat-Import
   accounting?: boolean; // accounting.export: Buchhaltungsexport
   kiosk?: boolean; // kiosk.manage: Schützenstube verwalten
+  aiManage?: boolean; // ai.manage: Claude-Einstellungen des Vereins
   /** members.approve: Zahl offener Beitrittsanfragen (null/undefined = kein Recht) */
   requests?: number | null;
   /** Verbandsbereich (Super-Admin oder AssociationAdmin): Link «Verband» nach /association */
@@ -108,11 +109,16 @@ function adminLinks(a: ShellAdmin | null | undefined, modules: ModuleKey[]): Nav
   if (a.settings && on("bookings")) out.push({ href: "/admin/bookings/partners", label: "shell.admin.partners", icon: Handshake });
   if (a.kiosk && on("kiosk")) out.push({ href: "/admin/kiosk", label: "shell.admin.kiosk", icon: Coffee });
   if (a.accounting) out.push({ href: "/admin/accounting", label: "shell.admin.accounting", icon: BookOpenCheck });
+  if (a.aiManage) out.push({ href: "/admin/ai", label: "misc.nav.adminAi", icon: Bot });
+  if (a.settings) out.push({ href: "/admin/reports", label: "misc.nav.adminReports", icon: FileText });
   if (a.settings) out.push({ href: "/admin/embed", label: "shell.admin.embed", icon: Code2 });
   if (a.settings) out.push({ href: "/admin/association", label: "shell.admin.association", icon: Landmark });
   if (a.audit) out.push({ href: "/admin/audit", label: "shell.admin.audit", icon: History });
   if (a.associationArea) out.push({ href: "/association", label: "shell.admin.associationArea", icon: Landmark });
   if (a.system) out.push({ href: "/super/associations", label: "shell.admin.associations", icon: Landmark });
+  if (a.system) out.push({ href: "/super/translations", label: "misc.nav.superTranslations", icon: Languages });
+  if (a.system) out.push({ href: "/super/ai", label: "misc.nav.superAi", icon: Bot });
+  if (a.system) out.push({ href: "/super/support", label: "misc.nav.superSupport", icon: LifeBuoy });
   if (a.system) out.push({ href: "/super/system", label: "shell.admin.system", icon: Server });
   return out;
 }

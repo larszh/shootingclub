@@ -33,3 +33,25 @@ describe("Anlässe in der Sprache des Mitglieds", () => {
     expect(rsvpMyLabel("YES", "fr")).toBe("Tu participes");
   });
 });
+
+describe("Anlass- und Mitteilungs-Editor", () => {
+  it("Beschriftungen in allen Sprachen, Deutsch unverändert", async () => {
+    const { getT } = await import("@/lib/i18n/core");
+    expect(getT("de")("money.events.form.create")).toBe("Anlass erstellen");
+    expect(getT("fr")("money.events.form.create")).toBe("Créer l’événement");
+    expect(getT("it")("money.events.form.annPublish")).toBe("Pubblica comunicazione");
+    expect(getT("en")("money.events.form.preview", { n: 3, from: "03.11.2026", to: "17.11.2026" })).toBe("3 events will be created: 03.11.2026 to 17.11.2026.");
+  });
+
+  it("deutsche Prüfmeldungen aus types.ts und actions.ts werden übersetzt", async () => {
+    const { localizeMessage } = await import("@/modules/billing/ui/i18n");
+    const { recurrenceDates, MAX_RECURRENCE } = await import("../types");
+    const err = recurrenceDates({ date: "2026-11-03", repeat: "WEEKLY", repeatMode: "UNTIL", repeatUntil: "2030-01-01" });
+    expect(Array.isArray(err)).toBe(false);
+    if (Array.isArray(err)) return;
+    expect(localizeMessage(err.error, "de")).toBe(err.error);
+    expect(localizeMessage(err.error, "en")).toBe(`At most ${MAX_RECURRENCE} dates per series.`);
+    expect(localizeMessage("Bitte einen Titel eingeben.", "it")).toBe("Inserisci un titolo.");
+    expect(localizeMessage("«Sichtbar bis» darf nicht in der Vergangenheit liegen.", "fr")).toBe("« Visible jusqu’au » ne peut pas être dans le passé.");
+  });
+});

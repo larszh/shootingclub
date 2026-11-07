@@ -8,9 +8,11 @@ import type { Stage } from "./types";
  * Beschreibung bleibt so, wie sie erfasst wurde. Eigene Programme der Vereine bleiben unübersetzt.
  *
  * Französisch mit «tu» und schmalen geschützten Leerzeichen vor ! ? ; : (wie im Wörterbuch «shooting»).
+ * Englisch steht in eigenen Tabellen (EN_PRESETS, EN_STAGES, EN_STAGE_PREFIXES) mit denselben Schlüsseln.
  */
-type Lang = "fr" | "it";
+type Lang = "fr" | "it" | "en";
 type Pair = readonly [fr: string, it: string];
+type TableLang = "fr" | "it";
 
 const HINT_FR = "Merci de vérifier les valeurs avec les prescriptions actuelles (DDPS/FST/canton).";
 const HINT_IT = "Verifica i valori con le prescrizioni attuali (DDPS/FST/Cantone).";
@@ -394,20 +396,235 @@ const STAGE_PREFIXES: Record<string, Pair> = {
   Stehend: ["Debout", "In piedi"],
 };
 
-const idx = (lang: Lang) => (lang === "fr" ? 0 : 1);
+const HINT_EN = "Please check the values against the current requirements (DDPS/SSV/canton).";
+const RULES_EN = "The regulations in force are authoritative.";
+const PROPOSAL_EN = "Suggestion, please check the regulations.";
+
+/** Englisch: Name der Vorlage (deutsch) → Name und Beschreibung. Gleiche Schlüssel wie PRESETS. */
+const EN_PRESETS: Record<string, { name: string; description: string }> = {
+  "Pistole 25 m – Präzision": { name: "Pistol 25 m – precision", description: "Classic precision programme at 25 m. 6 series of 5 shots, points 1–10." },
+  "Pistole 25 m – Duell": { name: "Pistol 25 m – duel", description: "Duel: 6 series of 5 shots, target visible 3 s / hidden 7 s." },
+  "Pistole 10 m – 40 Schuss": { name: "Pistol 10 m – 40 shots", description: "Air pistol 10 m, 4 series of 10 shots." },
+  "Luftgewehr 10 m – 40 Schuss (Zehntel)": { name: "Air rifle 10 m – 40 shots (tenths)", description: "Air rifle 10 m with decimal scoring, 4 series of 10 shots." },
+  "Gewehr 300 m – Obligatorisch": {
+    name: "Rifle 300 m – obligatory programme",
+    description: `Example for the federal 300 m programme (please adapt series and scoring to the current requirements). Please set the pass limit in the club according to the scoring. ${HINT_EN}`,
+  },
+  "Pistole 25 m – Obligatorisch": {
+    name: "Pistol 25 m – obligatory programme",
+    description: "Federal pistol programme 25 m: 5 single shots, 2 series of 5 shots, 1 series of 5 shots (rapid fire). Please set the pass limit in the club according to the current requirements.",
+  },
+  "Indoor – Distanzleiter 5 bis 20 m": { name: "Indoor – distance ladder 5 to 20 m", description: "For indoor ranges with variable distance: 5 shots each at 5, 10, 15 and 20 m." },
+  "Indoor – Parcours mit Hindernissen": { name: "Indoor – course with obstacles", description: "Dynamic training: hit/miss scoring across several stations with cover and changes of position." },
+  "Feldschiessen 300 m (nachempfunden)": { name: "Field shooting 300 m (modelled)", description: `Modelled on field shooting: 18 shots prone at 300 m in three parts (single shots, series, rapid fire). ${RULES_EN}` },
+  "Feldschiessen Pistole 25 m (nachempfunden)": { name: "Field shooting pistol 25 m (modelled)", description: `Modelled on pistol field shooting: 18 shots at 25 m, single shots and two series with a time limit. ${RULES_EN}` },
+  "Jungschützen-Kurs – Übung": {
+    name: "Junior shooters course – exercise",
+    description: "Simple exercise for junior shooters: sighting shots, single shots and a short series at 300 m prone. Ideal for learning breathing and trigger release.",
+  },
+  "Luftgewehr 10 m – 60 Schuss (Zehntel)": { name: "Air rifle 10 m – 60 shots (tenths)", description: "Air rifle 10 m standing with decimal scoring, 6 series of 10 shots (ISSF match volume)." },
+  "Luftpistole 10 m – 60 Schuss": { name: "Air pistol 10 m – 60 shots", description: "Air pistol 10 m, 6 series of 10 shots (ISSF match volume)." },
+  "Pistole 50 m – 60 Schuss": { name: "Pistol 50 m – 60 shots", description: "Free pistol / precision 50 m, 6 series of 10 shots one-handed, standing." },
+  "Kleinkaliber 50 m liegend – 60 Schuss (Zehntel)": { name: "Small-bore 50 m prone – 60 shots (tenths)", description: "Small-bore rifle 50 m prone with decimal scoring, 6 series of 10 shots." },
+  "Präzision 5 × 5 frei": { name: "Precision 5 × 5 free", description: "Template for free precision training: 5 series of 5 shots. Adjust distance and target when starting." },
+  "Drill – Drei-Ziele-Drill": { name: "Drill – three-target drill", description: "Practical drill: three targets side by side, two hits per target. Hit/miss scoring with a time limit." },
+  "Drill – Distanzwechsel 3-7-10 m": {
+    name: "Drill – distance change 3-7-10 m",
+    description: "One series each at 3, 7 and 10 m with little time. Trains adapting pace and precision to the distance.",
+  },
+  "Drill – Schwache Hand / Starke Hand": { name: "Drill – weak hand / strong hand", description: "One-handed shooting: first with the strong hand, then with the weak hand, finally with both hands." },
+  "Drill – Nachladen unter Zeit": { name: "Drill – timed reload", description: "Two shots, magazine change, two shots. Trains a calm and quick magazine change." },
+  "Pistole 25 m Sport (30+30, nachempfunden)": {
+    name: "Sport pistol 25 m (30+30, modelled)",
+    description: `Modelled on the sport pistol programme: 30 precision shots (6 series of 5 shots, 5 minutes each) and 30 duel shots (6 series of 5 shots, 3 s visible / 7 s hidden). ${RULES_EN}`,
+  },
+  "Zentralfeuer 30+30 (nachempfunden)": {
+    name: "Centre-fire 30+30 (modelled)",
+    description: `Modelled on the centre-fire programme: 30 precision shots and 30 duel shots at 25 m with a centre-fire pistol. ${RULES_EN}`,
+  },
+  "Standardpistole 150/20/10 s (nachempfunden)": {
+    name: "Standard pistol 150/20/10 s (modelled)",
+    description: `Modelled on standard pistol: 4 series of 5 shots each in 150 s, 20 s and 10 s at 25 m. ${RULES_EN}`,
+  },
+  "Schnellfeuerpistole 25 m 8/6/4 s (nachempfunden)": {
+    name: "Rapid fire pistol 25 m 8/6/4 s (modelled)",
+    description: `Modelled on rapid fire pistol: 2 series of 5 shots each on five targets in 8 s, 6 s and 4 s. ${RULES_EN}`,
+  },
+  "Gewehr 50 m Dreistellung (nachempfunden, Zehntel)": {
+    name: "Rifle 50 m three positions (modelled, tenths)",
+    description: `Small-bore 50 m in three positions with decimal scoring: 2 series of 10 shots each kneeling, prone and standing. ${RULES_EN}`,
+  },
+  "Gewehr 300 m liegend – 60 Schuss (nachempfunden)": {
+    name: "Rifle 300 m prone – 60 shots (modelled)",
+    description: `Sport rifle 300 m prone, 6 series of 10 shots on the A10 target. ${RULES_EN}`,
+  },
+  "Geiselnahme – Präzision unter Zeit": {
+    name: "Hostage – timed precision",
+    description: "Attacker behind a hostage: only the exposed head zone may be hit. Precision before speed – a hit hostage costs 20 points.",
+  },
+  "Shoot/No-Shoot Entscheidung": {
+    name: "Shoot/no-shoot decision",
+    description: "Six targets, threats and bystanders mixed. The range control announces the threats only at the start signal. Not engaging a threat = procedural error.",
+  },
+  "Teildeckung links/rechts": {
+    name: "Partial cover left/right",
+    description: "Shooting from cover: work around the barricade to the left and right while exposing as little of the body as possible. A/C/D zone scoring.",
+  },
+  "Distanzwechsel 3–7–15 m": {
+    name: "Distance change 3–7–15 m",
+    description: "Three distances in one sequence: fast at 3 m, controlled at 7 m, precise at 15 m. Hit/miss with a time limit.",
+  },
+  "Mehrfachziele Reihenfolge": {
+    name: "Multiple targets in sequence",
+    description: "Engage three targets in the announced order. Wrong order = procedural error (−5 per error).",
+  },
+  "Nachladen und Störung beheben": {
+    name: "Reloading and clearing a stoppage",
+    description: "Stoppage and empty magazine under time pressure: recognise the stoppage, clear it, keep shooting. Mix dummy rounds into the magazines beforehand.",
+  },
+  "Schwache Hand": {
+    name: "Weak hand",
+    description: "One-handed with the weak hand, e.g. with an injured shooting hand. With zone scoring so that precision counts.",
+  },
+  "Bewegung seitlich": {
+    name: "Lateral movement",
+    description: "Shooting while moving sideways: choose a pace that still allows hits. Hit/miss with a time limit.",
+  },
+  "Kopfzone 5 m": {
+    name: "Head zone 5 m",
+    description: "Short distance, small zone: controlled single shots at the head zone. Head/chest scoring with penalty points for bystanders.",
+  },
+  "Kontrolliertes Paar und Kopfschuss": {
+    name: "Controlled pair and head shot",
+    description: "Two shots to the chest, one shot to the head. Trains switching from speed to precision on the same silhouette.",
+  },
+  "Low-Light Grundlagen": {
+    name: "Low-light basics",
+    description: "Shooting in low light with a torch. Darken the hall, torch in the weak hand. Hit/miss with a time limit.",
+  },
+  "Qualifikation Dienstpistole (nachempfunden)": {
+    name: "Service pistol qualification (modelled)",
+    description: "Modelled on common service pistol qualifications: 30 shots from 3 to 15 m with A/C/D zone scoring. Not an official programme – the requirements of your own corps are authoritative.",
+  },
+  "Teamübung 2 Schützen": {
+    name: "Team exercise for 2 shooters",
+    description: "Two shooters work together: communication, fire distribution and alternating reloads. Record both shooters as participants.",
+  },
+  "Stress-Parcours Behörden": {
+    name: "Stress course for authorities",
+    description: "Short course with movement, cover and bystanders. Only shoot it after the basic exercises.",
+  },
+  "Armbrust 10 m – 30 Schuss": {
+    name: "Crossbow 10 m – 30 shots",
+    description: `Crossbow 10 m: 3 series of 10 shots, points 0–10. The position (kneeling/standing) is not recorded separately. ${PROPOSAL_EN}`,
+  },
+  "Armbrust 30 m – 30 Schuss": {
+    name: "Crossbow 30 m – 30 shots",
+    description: `Crossbow 30 m: 3 series of 10 shots, points 0–10. The position (kneeling/standing) is not recorded separately. ${PROPOSAL_EN}`,
+  },
+  "Armbrust 10 m – Probe + 20": {
+    name: "Crossbow 10 m – sighters + 20",
+    description: `General crossbow programme: sighting shots first (not recorded), then 2 series of 10 shots. ${PROPOSAL_EN}`,
+  },
+  "Freies Training – 10 Schuss": { name: "Free training – 10 shots", description: "Quick series without requirements. Adjust the distance when starting." },
+};
+
+/** Englisch: feste Seriennamen der Vorlagen (gleiche Schlüssel wie STAGES). */
+const EN_STAGES: Record<string, string> = {
+  Serie: "Series",
+  "Einzelschüsse": "Single shots",
+  Schnellfeuer: "Rapid fire",
+  "Station 1 – Deckung links": "Station 1 – cover on the left",
+  "Station 2 – Kniend": "Station 2 – kneeling",
+  "Station 3 – Bewegung": "Station 3 – moving",
+  "Station 4 – Weit": "Station 4 – long distance",
+  Einzelfeuer: "Single shots",
+  "Serie 60 s": "Series 60 s",
+  "Schnellfeuer 40 s": "Rapid fire 40 s",
+  Einschiessen: "Sighting shots",
+  "Starke Hand": "Strong hand",
+  "Schwache Hand": "Weak hand",
+  "Beidhändig": "Both hands",
+  "Geisel links, 5 m": "Hostage on the left, 5 m",
+  "Geisel rechts, 5 m": "Hostage on the right, 5 m",
+  "Geisel rechts, 7 m": "Hostage on the right, 7 m",
+  "Geisel links, 10 m kniend": "Hostage on the left, 10 m kneeling",
+  "Deckung links, stehend": "Cover on the left, standing",
+  "Deckung rechts, stehend": "Cover on the right, standing",
+  "Deckung links, kniend": "Cover on the left, kneeling",
+  "Deckung rechts, kniend": "Cover on the right, kneeling",
+  "3 m – aus der Hüfte": "3 m – from the hip",
+  "Links – Mitte – Rechts": "Left – centre – right",
+  "Rechts – Links – Mitte": "Right – left – centre",
+  "Ansage durch Schiessleitung": "Called by range control",
+  "Störung Typ 1": "Stoppage type 1",
+  "Leeres Magazin": "Empty magazine",
+  "Taktisches Nachladen": "Tactical reload",
+  "Schwache Hand, 5 m": "Weak hand, 5 m",
+  "Schwache Hand, 7 m": "Weak hand, 7 m",
+  "Handwechsel unter Zeit": "Timed hand change",
+  "Nach links": "To the left",
+  "Nach rechts": "To the right",
+  "Hin und zurück": "There and back",
+  "Je 3 s": "3 s each",
+  "Neben Unbeteiligter": "Next to a bystander",
+  "Lampe an, 5 m": "Torch on, 5 m",
+  "Lampe kurz, 7 m": "Torch briefly, 7 m",
+  "Identifizieren, 7 m": "Identify, 7 m",
+  "3 m, einhändig": "3 m, one-handed",
+  "7 m mit Nachladen": "7 m with reload",
+  "10 m kniend": "10 m kneeling",
+  "15 m aus Deckung": "15 m from cover",
+  Feuerverteilung: "Fire distribution",
+  "Nachladen im Wechsel": "Alternating reload",
+  "Shoot/No-Shoot zu zweit": "Shoot/no-shoot in pairs",
+  "Start nach Belastung": "Start after exertion",
+  "Vorrücken zur Deckung": "Advance to cover",
+  "Geisel aus der Deckung": "Hostage from cover",
+  Abschluss: "Final",
+};
+
+/** Englisch: nummerierte Serien der Vorlagen (gleiche Schlüssel wie STAGE_PREFIXES). */
+const EN_STAGE_PREFIXES: Record<string, string> = {
+  Serie: "Series",
+  "Präzision": "Precision",
+  Duell: "Duel",
+  Durchgang: "Pass",
+  Kniend: "Kneeling",
+  Liegend: "Prone",
+  Stehend: "Standing",
+};
+
+const idx = (lang: TableLang) => (lang === "fr" ? 0 : 1);
 
 /** Französische Typografie wie im Wörterbuch: schmales geschütztes Leerzeichen vor ! ? ; : */
 function frType(v: string) {
   return v.replace(/ ([!?;:])/g, " $1").replace(/« /g, "« ").replace(/ »/g, " »");
 }
 
-function pick(pair: Pair, lang: Lang) {
+function pick(pair: Pair, lang: TableLang) {
   const v = pair[idx(lang)];
   return lang === "fr" ? frType(v) : v;
 }
 
 function langOf(locale: string | null | undefined): Lang | null {
-  return locale === "fr" || locale === "it" ? locale : null;
+  return locale === "fr" || locale === "it" || locale === "en" ? locale : null;
+}
+
+function presetText(key: string, field: "name" | "description", lang: Lang): string {
+  return lang === "en" ? EN_PRESETS[key]![field] : pick(PRESETS[key]![field], lang);
+}
+
+function fixedStage(name: string, lang: Lang): string | undefined {
+  if (lang === "en") return EN_STAGES[name];
+  const pair = STAGES[name];
+  return pair ? pick(pair, lang) : undefined;
+}
+
+function stagePrefix(word: string, lang: Lang): string | undefined {
+  if (lang === "en") return EN_STAGE_PREFIXES[word];
+  const pair = STAGE_PREFIXES[word];
+  return pair ? pick(pair, lang) : undefined;
 }
 
 /** Deutscher Name (inkl. früherer Namen) → Eintrag in PRESETS und die deutsche Beschreibung der Vorlage. */
@@ -425,7 +642,7 @@ export function localizedProgramName(name: string, locale: string | null | undef
   const lang = langOf(locale);
   if (!lang) return name;
   const hit = BY_NAME.get(name.trim());
-  return hit ? pick(PRESETS[hit.key]!.name, lang) : name;
+  return hit ? presetText(hit.key, "name", lang) : name;
 }
 
 /** Beschreibung eines Programms in der Sprache, solange sie noch genau dem Text der Vorlage entspricht. */
@@ -434,20 +651,19 @@ export function localizedProgramDescription(name: string, description: string | 
   if (!lang || !description) return description;
   const hit = BY_NAME.get(name.trim());
   if (!hit || hit.description !== description.trim()) return description;
-  return pick(PRESETS[hit.key]!.description, lang);
+  return presetText(hit.key, "description", lang);
 }
 
 /** Name einer Serie in der Sprache (feste und nummerierte Namen der Vorlagen; sonst unverändert). */
 export function localizedStageName(name: string, locale: string | null | undefined): string {
   const lang = langOf(locale);
   if (!lang) return name;
-  const fixed = STAGES[name];
-  if (fixed) return pick(fixed, lang);
+  const fixed = fixedStage(name, lang);
+  if (fixed) return fixed;
   const m = /^(?:(\d+ s) – )?(\S+) (\d+)$/.exec(name);
   if (m) {
-    const prefix = STAGE_PREFIXES[m[2]!];
-    if (prefix) {
-      const word = pick(prefix, lang);
+    const word = stagePrefix(m[2]!, lang);
+    if (word) {
       return m[1] ? `${m[1]} – ${word.toLocaleLowerCase(lang)} ${m[3]}` : `${word} ${m[3]}`;
     }
   }

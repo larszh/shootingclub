@@ -10,7 +10,9 @@ import { setActiveTenantCookie } from "@/lib/tenant";
 import { audit } from "@/lib/audit";
 import { notify, tenantUserIdsWithRole } from "@/lib/notify";
 import { fail, ok, type ActionResult } from "@/lib/action-result";
-import { getRequestLocale, getT } from "@/lib/i18n";
+import { getRequestLocale, getT, getTenantLocale, type TFunction } from "@/lib/i18n";
+
+const tr = async () => getT(await getRequestLocale());
 import { todayZurich, zurichToUtc } from "@/lib/time";
 import { hasValidQualification } from "@/modules/qualifications/service";
 import { createWeaponLoan, returnWeaponLoan } from "@/modules/weapons/service";
@@ -32,9 +34,9 @@ const revalidate = () => {
 
 const isUniqueError = (e: unknown) => typeof e === "object" && e !== null && (e as { code?: string }).code === "P2002";
 
-function handle(e: unknown): ActionResult<never> {
+function handle(e: unknown, t: TFunction): ActionResult<never> {
   console.error("Standbetrieb:", e);
-  return fail("Das hat nicht geklappt. Bitte nochmals versuchen.");
+  return fail(t("adm2.common.failed"));
 }
 
 async function dutyCtx(): Promise<Ctx | null> {
@@ -47,7 +49,7 @@ async function adminCtx(): Promise<Ctx | null> {
   return ctx.can("range.manage") ? ctx : null;
 }
 
-const NO_RIGHT = "Keine Berechtigung.";
+const NO_RIGHT = "adm2.common.noPermission";
 
 /** Aktives Mitglied des Vereins (nicht ausgetreten, Konto nicht gelöscht). */
 async function activeMember(tenantId: string, userId: string) {
@@ -83,15 +85,16 @@ async function createVisitOnce(tenantId: string, data: Parameters<typeof db.rang
 
 /** Standbuch vom Vortag: keine neuen Einträge, sonst landen heutige Besuche im alten Buch (Datum, Halbtage). */
 const isStaleDay = (day: { date: Date }) => dbDateKey(day.date) !== todayZurich();
-const STALE_DAY = "Dieses Standbuch ist nicht von heute. Bitte zuerst abschliessen und für heute ein neues Standbuch öffnen.";
+const STALE_DAY = "adm2.range.msg.stale";
 
 // --- Standbuch öffnen / Dienst ----------------------------------------------------------
 
 /** true, wenn die Person eine gültige Qualifikation als Schützenmeister oder Standchef hat. */
 export async function checkDutyQualificationAction(userId: string): Promise<ActionResult<{ qualified: boolean }>> {
+  const t = await tr();
   const ctx = await dutyCtx();
-  if (!ctx) return fail(NO_RIGHT);
-  if (!idSchema.safeParse(userId).success) return fail("Ungültige Anfrage.");
+  if (!ctx) return fail(t(NO_RIGHT));
+  if (!idSchema.safeParse(userId).success) return fail(t("adm2.common.invalidRequest"));
   try {
     return ok({ qualified: await hasValidQualification(ctx.tenant.id, userId, DUTY_QUALIFICATIONS) });
   } catch {
@@ -107,75 +110,79 @@ const openDaySchema = z.object({
 });
 
 export async function openDayAction(input: { resourceId: string | null; dutyUserId: string | null; dutyName?: string; notes?: string }): Promise<ActionResult<{ id: string; warning: string | null }>> {
+  const t = await tr();
   const ctx = await dutyCtx();
-  if (!ctx) return fail(NO_RIGHT);
+  if (!ctx) return fail(t(NO_RIGHT));
   const parsed = openDaySchema.safeParse(input);
-  if (!parsed.success) return fail(parsed.error.issues[0]?.message ?? "Ungültige Eingabe.");
+  if (!parsed.success) return fail(t(parsed.error.issues[0]?.message ?? "adm2.common.invalidInput"));
   const { resourceId, dutyUserId, notes } = parsed.data;
   const tenantId = ctx.tenant.id;
-  if (resourceId && !(await db.resource.count({ where: { id: resourceId, tenantId } }))) return fail("Anlage nicht gefunden.");
+  if (resourceId && !(await db.resource.count({ where: { id: resourceId, tenantId } }))) return fail(t("adm2.range.msg.resourceNotFound"));
   let dutyName = parsed.data.dutyName;
   if (dutyUserId) {
     const m = await activeMember(tenantId, dutyUserId);
-    if (!m) return fail("Die Person für den Standdienst ist kein aktives Mitglied.");
+    if (!m) return fail(t("adm2.range.msg.notActiveDuty"));
     dutyName = m.user.name;
   }
-  if (!dutyUserId && !dutyName) return fail("Bitte die Person im Standdienst angeben.");
+  if (!dutyUserId && !dutyName) return fail(t("adm2.range.msg.dutyMissing"));
   const date = dayKeyToDbDate(todayZurich());
   const existing = await db.rangeDay.findFirst({ where: { tenantId, date, resourceId, closedAt: null }, select: { id: true } });
-  if (existing) return ok({ id: existing.id, warning: null }, "Für diese Anlage ist heute schon ein Standbuch offen.");
+  if (existing) return ok({ id: existing.id, warning: null }, t("adm2.range.msg.alreadyOpen"));
   const day = await db.rangeDay.create({ data: { tenantId, resourceId, date, dutyUserId, dutyName: dutyName!.slice(0, 191), notes } });
   let warning: string | null = null;
   if (dutyUserId) {
     const qualified = await hasValidQualification(tenantId, dutyUserId, DUTY_QUALIFICATIONS).catch(() => false);
-    if (!qualified) warning = `${dutyName} hat keine gültige Qualifikation als Schützenmeister/Standchef erfasst. Bitte prüfen.`;
+    if (!qualified) warning = t("adm2.range.msg.noQual", { name: dutyName ?? "" });
   }
   await audit({ tenantId, actorId: ctx.user.id, actorName: ctx.user.name, action: "range.day.open", entity: "RangeDay", entityId: day.id, detail: `Standdienst: ${dutyName}` });
   revalidate();
-  return ok({ id: day.id, warning }, "Standbuch geöffnet.");
+  return ok({ id: day.id, warning }, t("adm2.range.msg.opened"));
 }
 
 export async function changeDutyAction(dayId: string, dutyUserId: string): Promise<ActionResult<{ warning: string | null }>> {
+  const t = await tr();
   const ctx = await dutyCtx();
-  if (!ctx) return fail(NO_RIGHT);
-  if (!idSchema.safeParse(dayId).success || !idSchema.safeParse(dutyUserId).success) return fail("Ungültige Anfrage.");
+  if (!ctx) return fail(t(NO_RIGHT));
+  if (!idSchema.safeParse(dayId).success || !idSchema.safeParse(dutyUserId).success) return fail(t("adm2.common.invalidRequest"));
   const m = await activeMember(ctx.tenant.id, dutyUserId);
-  if (!m) return fail("Mitglied nicht gefunden.");
+  if (!m) return fail(t("adm2.range.msg.memberNotFound"));
   const res = await db.rangeDay.updateMany({ where: { id: dayId, tenantId: ctx.tenant.id, closedAt: null }, data: { dutyUserId, dutyName: m.user.name } });
-  if (res.count === 0) return fail("Standbuch nicht gefunden oder bereits abgeschlossen.");
+  if (res.count === 0) return fail(t("adm2.range.msg.dayNotFound"));
   const qualified = await hasValidQualification(ctx.tenant.id, dutyUserId, DUTY_QUALIFICATIONS).catch(() => false);
   await audit({ tenantId: ctx.tenant.id, actorId: ctx.user.id, actorName: ctx.user.name, action: "range.day.duty", entity: "RangeDay", entityId: dayId, detail: `Standdienst: ${m.user.name}` });
   revalidate();
-  return ok({ warning: qualified ? null : `${m.user.name} hat keine gültige Qualifikation als Schützenmeister/Standchef erfasst. Bitte prüfen.` }, "Standdienst übergeben.");
+  return ok({ warning: qualified ? null : t("adm2.range.msg.noQual", { name: m.user.name }) }, t("adm2.range.msg.dutyHandedOver"));
 }
 
 export async function saveDayNotesAction(dayId: string, notes: string): Promise<ActionResult> {
+  const t = await tr();
   const ctx = await dutyCtx();
-  if (!ctx) return fail(NO_RIGHT);
+  if (!ctx) return fail(t(NO_RIGHT));
   const n = z.string().trim().max(5000).safeParse(notes ?? "");
-  if (!idSchema.safeParse(dayId).success || !n.success) return fail("Notizen zu lang.");
+  if (!idSchema.safeParse(dayId).success || !n.success) return fail(t("adm2.range.msg.notesTooLong"));
   const res = await db.rangeDay.updateMany({ where: { id: dayId, tenantId: ctx.tenant.id, closedAt: null }, data: { notes: n.data || null } });
-  if (res.count === 0) return fail("Standbuch nicht gefunden oder bereits abgeschlossen.");
+  if (res.count === 0) return fail(t("adm2.range.msg.dayNotFound"));
   revalidate();
-  return ok(undefined, "Notizen gespeichert.");
+  return ok(undefined, t("adm2.range.msg.notesSaved"));
 }
 
 // --- Check-in durch den Standdienst --------------------------------------------------------
 
 export async function checkInMemberAction(input: { dayId: string; userId: string; lane?: string; discipline?: string; clientId: string }): Promise<ActionResult<{ id: string; rulesMissing: boolean }>> {
+  const t = await tr();
   const ctx = await dutyCtx();
-  if (!ctx) return fail(NO_RIGHT);
+  if (!ctx) return fail(t(NO_RIGHT));
   const extra = visitUpdateSchema.safeParse({ lane: input.lane, discipline: input.discipline });
-  if (!idSchema.safeParse(input.dayId).success || !idSchema.safeParse(input.userId).success || !clientIdSchema.safeParse(input.clientId).success || !extra.success) return fail("Ungültige Eingabe.");
+  if (!idSchema.safeParse(input.dayId).success || !idSchema.safeParse(input.userId).success || !clientIdSchema.safeParse(input.clientId).success || !extra.success) return fail(t("adm2.common.invalidInput"));
   const tenantId = ctx.tenant.id;
   const [day, member] = await Promise.all([openDayOf(tenantId, input.dayId), activeMember(tenantId, input.userId)]);
-  if (!day) return fail("Das Standbuch ist nicht offen.");
-  if (isStaleDay(day)) return fail(STALE_DAY);
-  if (!member) return fail("Mitglied nicht gefunden oder ausgetreten.");
+  if (!day) return fail(t("adm2.range.msg.dayNotOpen"));
+  if (isStaleDay(day)) return fail(t(STALE_DAY));
+  if (!member) return fail(t("adm2.range.msg.memberGone"));
   const repeat = await db.rangeVisit.findUnique({ where: { clientId: input.clientId }, select: { id: true, tenantId: true } });
-  if (repeat) return repeat.tenantId === tenantId ? ok({ id: repeat.id, rulesMissing: false }, `${member.user.name} eingecheckt.`) : fail("Ungültige Anfrage.");
+  if (repeat) return repeat.tenantId === tenantId ? ok({ id: repeat.id, rulesMissing: false }, t("adm2.range.board.checkedIn", { name: member.user.name })) : fail(t("adm2.common.invalidRequest"));
   const already = await db.rangeVisit.findFirst({ where: { tenantId, rangeDayId: day.id, userId: input.userId, checkedOutAt: null }, select: { id: true } });
-  if (already) return fail(`${member.user.name} ist bereits eingecheckt.`);
+  if (already) return fail(t("adm2.range.msg.alreadyIn", { name: member.user.name }));
   const rules = await getActiveRules(tenantId);
   const acceptance = rules ? await db.rulesAcceptance.findUnique({ where: { rulesId_userId: { rulesId: rules.id, userId: input.userId } } }) : null;
   try {
@@ -183,11 +190,11 @@ export async function checkInMemberAction(input: { dayId: string; userId: string
       tenantId, rangeDayId: day.id, userId: input.userId, lane: extra.data.lane, discipline: extra.data.discipline,
       rulesId: acceptance ? rules!.id : null, rulesAcceptedAt: acceptance?.acceptedAt ?? null, clientId: input.clientId,
     });
-    if (!res) return fail("Ungültige Anfrage.");
+    if (!res) return fail(t("adm2.common.invalidRequest"));
     revalidate();
-    return ok({ id: res.visit.id, rulesMissing: !!rules && !acceptance }, `${member.user.name} eingecheckt.`);
+    return ok({ id: res.visit.id, rulesMissing: !!rules && !acceptance }, t("adm2.range.board.checkedIn", { name: member.user.name }));
   } catch (e) {
-    return handle(e);
+    return handle(e, t);
   }
 }
 
@@ -195,8 +202,9 @@ export async function checkInGuestAction(input: {
   dayId: string; clientId: string; guestName: string; guestBirthYear?: string | number | null; guestPhone?: string; guestEmail?: string;
   hostUserId?: string | null; guestIdChecked: boolean; rulesExplained: boolean; lane?: string; discipline?: string; note?: string;
 }): Promise<ActionResult<{ id: string; minor: "minor" | "maybe" | "adult" | null }>> {
+  const t = await tr();
   const ctx = await dutyCtx();
-  if (!ctx) return fail(NO_RIGHT);
+  if (!ctx) return fail(t(NO_RIGHT));
   const parsed = guestSchema.safeParse({
     ...input,
     guestBirthYear: input.guestBirthYear === "" || input.guestBirthYear == null ? undefined : input.guestBirthYear,
@@ -204,17 +212,17 @@ export async function checkInGuestAction(input: {
   });
   if (!parsed.success) {
     const issue = parsed.error.issues[0];
-    return fail(issue?.message ?? "Ungültige Eingabe.", issue ? { [String(issue.path[0])]: issue.message } : undefined);
+    return fail(t(issue?.message ?? "adm2.common.invalidInput"), issue ? { [String(issue.path[0])]: t(issue.message) } : undefined);
   }
-  if (!idSchema.safeParse(input.dayId).success || !clientIdSchema.safeParse(input.clientId).success) return fail("Ungültige Anfrage.");
+  if (!idSchema.safeParse(input.dayId).success || !clientIdSchema.safeParse(input.clientId).success) return fail(t("adm2.common.invalidRequest"));
   const g = parsed.data;
   const tenantId = ctx.tenant.id;
   const year = Number(todayZurich().slice(0, 4));
-  if (g.guestBirthYear !== undefined && !isPlausibleBirthYear(g.guestBirthYear, year)) return fail("Jahrgang unplausibel.", { guestBirthYear: "Jahrgang unplausibel." });
+  if (g.guestBirthYear !== undefined && !isPlausibleBirthYear(g.guestBirthYear, year)) return fail(t("adm2.range.msg.birthYear"), { guestBirthYear: t("adm2.range.msg.birthYear") });
   const day = await openDayOf(tenantId, input.dayId);
-  if (!day) return fail("Das Standbuch ist nicht offen.");
-  if (isStaleDay(day)) return fail(STALE_DAY);
-  if (g.hostUserId && !(await activeMember(tenantId, g.hostUserId))) return fail("Betreuendes Mitglied nicht gefunden.");
+  if (!day) return fail(t("adm2.range.msg.dayNotOpen"));
+  if (isStaleDay(day)) return fail(t(STALE_DAY));
+  if (g.hostUserId && !(await activeMember(tenantId, g.hostUserId))) return fail(t("adm2.range.msg.hostNotFound"));
   const rules = g.rulesExplained ? await getActiveRules(tenantId) : null;
   try {
     const res = await createVisitOnce(tenantId, {
@@ -222,55 +230,58 @@ export async function checkInGuestAction(input: {
       guestIdChecked: g.guestIdChecked, hostUserId: g.hostUserId, lane: g.lane, discipline: g.discipline, note: g.note,
       rulesId: rules?.id ?? null, rulesAcceptedAt: rules ? new Date() : null, clientId: input.clientId,
     });
-    if (!res) return fail("Ungültige Anfrage.");
+    if (!res) return fail(t("adm2.common.invalidRequest"));
     revalidate();
     const minor = g.guestBirthYear !== undefined ? minorStatusFromBirthYear(g.guestBirthYear, year) : null;
-    return ok({ id: res.visit.id, minor }, `Gast ${g.guestName} eingecheckt.`);
+    return ok({ id: res.visit.id, minor }, t("adm2.range.msg.guestIn", { name: g.guestName }));
   } catch (e) {
-    return handle(e);
+    return handle(e, t);
   }
 }
 
 export async function updateVisitAction(visitId: string, input: { lane?: string; discipline?: string; note?: string }): Promise<ActionResult> {
+  const t = await tr();
   const ctx = await dutyCtx();
-  if (!ctx) return fail(NO_RIGHT);
+  if (!ctx) return fail(t(NO_RIGHT));
   const parsed = visitUpdateSchema.safeParse(input);
-  if (!idSchema.safeParse(visitId).success || !parsed.success) return fail("Ungültige Eingabe.");
+  if (!idSchema.safeParse(visitId).success || !parsed.success) return fail(t("adm2.common.invalidInput"));
   const res = await db.rangeVisit.updateMany({ where: { id: visitId, tenantId: ctx.tenant.id, rangeDay: { closedAt: null } }, data: parsed.data });
-  if (res.count === 0) return fail("Eintrag nicht gefunden oder Standbuch abgeschlossen.");
+  if (res.count === 0) return fail(t("adm2.range.msg.entryNotFound"));
   revalidate();
-  return ok(undefined, "Gespeichert.");
+  return ok(undefined, t("adm2.common.saved"));
 }
 
 /** Eintrag löschen (Fehlerfassung). Nicht mit ausgegebener Vereinswaffe. */
 export async function deleteVisitAction(visitId: string): Promise<ActionResult> {
+  const t = await tr();
   const ctx = await dutyCtx();
-  if (!ctx) return fail(NO_RIGHT);
-  if (!idSchema.safeParse(visitId).success) return fail("Ungültige Anfrage.");
+  if (!ctx) return fail(t(NO_RIGHT));
+  if (!idSchema.safeParse(visitId).success) return fail(t("adm2.common.invalidRequest"));
   const v = await db.rangeVisit.findFirst({ where: { id: visitId, tenantId: ctx.tenant.id, rangeDay: { closedAt: null } }, include: { user: { select: { name: true } } } });
-  if (!v) return fail("Eintrag nicht gefunden oder Standbuch abgeschlossen.");
-  if (await findOpenLoanForVisit(ctx.tenant.id, v)) return fail("Zuerst die Vereinswaffe zurücknehmen.");
+  if (!v) return fail(t("adm2.range.msg.entryNotFound"));
+  if (await findOpenLoanForVisit(ctx.tenant.id, v)) return fail(t("adm2.range.msg.returnFirst"));
   await db.rangeVisit.deleteMany({ where: { id: v.id, tenantId: ctx.tenant.id } });
   await audit({ tenantId: ctx.tenant.id, actorId: ctx.user.id, actorName: ctx.user.name, action: "range.visit.delete", entity: "RangeVisit", entityId: v.id, detail: v.user?.name ?? v.guestName ?? "" });
   revalidate();
-  return ok(undefined, "Eintrag entfernt.");
+  return ok(undefined, t("adm2.range.msg.removed"));
 }
 
 // --- Vereinswaffen --------------------------------------------------------------------------
 
 export async function issueWeaponAction(visitId: string, weaponId: string): Promise<ActionResult> {
+  const t = await tr();
   const ctx = await dutyCtx();
-  if (!ctx) return fail(NO_RIGHT);
-  if (!ctx.hasModule("weapons") || !ctx.can("weapons.loan")) return fail("Vereinswaffen sind nicht aktiv oder du darfst keine ausgeben.");
-  if (!idSchema.safeParse(visitId).success || !idSchema.safeParse(weaponId).success) return fail("Ungültige Anfrage.");
+  if (!ctx) return fail(t(NO_RIGHT));
+  if (!ctx.hasModule("weapons") || !ctx.can("weapons.loan")) return fail(t("adm2.range.msg.weaponsOff"));
+  if (!idSchema.safeParse(visitId).success || !idSchema.safeParse(weaponId).success) return fail(t("adm2.common.invalidRequest"));
   const tenantId = ctx.tenant.id;
   const v = await db.rangeVisit.findFirst({
     where: { id: visitId, tenantId, checkedOutAt: null, rangeDay: { closedAt: null } },
     include: { user: { select: { name: true, birthDate: true } }, rangeDay: { select: { date: true } } },
   });
-  if (!v) return fail("Eintrag nicht gefunden oder bereits ausgecheckt.");
-  if (v.rangeDay && isStaleDay(v.rangeDay)) return fail(STALE_DAY);
-  if (await findOpenLoanForVisit(tenantId, v)) return fail("Diese Person hat bereits eine Vereinswaffe.");
+  if (!v) return fail(t("adm2.range.msg.entryOut"));
+  if (v.rangeDay && isStaleDay(v.rangeDay)) return fail(t(STALE_DAY));
+  if (await findOpenLoanForVisit(tenantId, v)) return fail(t("adm2.range.msg.hasWeapon"));
   const today = todayZurich();
   const year = Number(today.slice(0, 4));
   const isMinor = v.user
@@ -278,63 +289,66 @@ export async function issueWeaponAction(visitId: string, weaponId: string): Prom
     : v.guestBirthYear ? minorStatusFromBirthYear(v.guestBirthYear, year) !== "adult" : false;
   const res = await createWeaponLoan({
     tenantId, weaponId, userId: v.userId, borrowerName: v.userId ? null : v.guestName, isMinor, onSiteOnly: true, issuedById: ctx.user.id,
-    note: `Standbuch ${dbDateKey(v.rangeDay?.date ?? new Date())}`,
+    note: t("adm2.range.msg.loanNote", { date: dbDateKey(v.rangeDay?.date ?? new Date()) }),
   });
-  if (!res.ok) return fail(res.error);
+  if (!res.ok) return fail(t(res.error));
   await db.rangeVisit.updateMany({ where: { id: v.id, tenantId }, data: { clubWeaponId: weaponId } });
   revalidate();
-  return ok(undefined, isMinor ? "Vereinswaffe ausgegeben (minderjährig – Meldefrist beachten)." : "Vereinswaffe ausgegeben.");
+  return ok(undefined, isMinor ? t("adm2.range.msg.issuedMinor") : t("adm2.range.msg.issued"));
 }
 
-async function returnWeaponOfVisit(tenantId: string, visit: { clubWeaponId: string | null; userId: string | null; guestName: string | null }, shots: number | null) {
+async function returnWeaponOfVisit(tenantId: string, visit: { clubWeaponId: string | null; userId: string | null; guestName: string | null }, shots: number | null, t: TFunction) {
   const loan = await findOpenLoanForVisit(tenantId, visit);
   if (!loan) return { ok: true as const };
   const r = await returnWeaponLoan(tenantId, loan.id, shots);
-  return r.ok ? { ok: true as const } : { ok: false as const, error: r.error ?? "Rückgabe fehlgeschlagen." };
+  return r.ok ? { ok: true as const } : { ok: false as const, error: r.error ? t(r.error) : t("adm2.range.msg.returnFailed") };
 }
 
 const shotsSchema = z.number().int().min(0).max(100000).nullable();
 
 export async function returnWeaponAction(visitId: string, shots: number | null): Promise<ActionResult> {
+  const t = await tr();
   const ctx = await dutyCtx();
-  if (!ctx) return fail(NO_RIGHT);
-  if (!idSchema.safeParse(visitId).success || !shotsSchema.safeParse(shots).success) return fail("Ungültige Schusszahl.");
+  if (!ctx) return fail(t(NO_RIGHT));
+  if (!idSchema.safeParse(visitId).success || !shotsSchema.safeParse(shots).success) return fail(t("adm2.range.msg.invalidShots"));
   const v = await db.rangeVisit.findFirst({ where: { id: visitId, tenantId: ctx.tenant.id }, select: { clubWeaponId: true, userId: true, guestName: true } });
-  if (!v?.clubWeaponId) return fail("Keine Vereinswaffe ausgegeben.");
-  const r = await returnWeaponOfVisit(ctx.tenant.id, v, shots);
+  if (!v?.clubWeaponId) return fail(t("adm2.range.msg.noWeaponIssued"));
+  const r = await returnWeaponOfVisit(ctx.tenant.id, v, shots, t);
   if (!r.ok) return fail(r.error);
   revalidate();
-  return ok(undefined, "Vereinswaffe zurückgenommen.");
+  return ok(undefined, t("adm2.range.msg.weaponReturned"));
 }
 
 export async function checkOutAction(visitId: string, shots: number | null = null): Promise<ActionResult> {
+  const t = await tr();
   const ctx = await dutyCtx();
-  if (!ctx) return fail(NO_RIGHT);
-  if (!idSchema.safeParse(visitId).success || !shotsSchema.safeParse(shots).success) return fail("Ungültige Eingabe.");
+  if (!ctx) return fail(t(NO_RIGHT));
+  if (!idSchema.safeParse(visitId).success || !shotsSchema.safeParse(shots).success) return fail(t("adm2.common.invalidInput"));
   const v = await db.rangeVisit.findFirst({ where: { id: visitId, tenantId: ctx.tenant.id }, include: { user: { select: { name: true } } } });
-  if (!v) return fail("Eintrag nicht gefunden.");
-  if (v.checkedOutAt) return ok(undefined, "Bereits ausgecheckt.");
+  if (!v) return fail(t("adm2.range.msg.entryMissing"));
+  if (v.checkedOutAt) return ok(undefined, t("adm2.range.msg.alreadyOut"));
   if (v.clubWeaponId) {
-    const r = await returnWeaponOfVisit(ctx.tenant.id, v, shots);
+    const r = await returnWeaponOfVisit(ctx.tenant.id, v, shots, t);
     if (!r.ok) return fail(r.error);
   }
   await db.rangeVisit.updateMany({ where: { id: v.id, tenantId: ctx.tenant.id, checkedOutAt: null }, data: { checkedOutAt: new Date() } });
   revalidate();
-  return ok(undefined, `${v.user?.name ?? v.guestName ?? "Person"} ausgecheckt.`);
+  return ok(undefined, t("adm2.range.msg.out", { name: v.user?.name ?? v.guestName ?? t("adm2.range.msg.person") }));
 }
 
 // --- Tag abschliessen ----------------------------------------------------------------------
 
 export async function closeDayAction(dayId: string, input: { usedAm: boolean; usedPm: boolean; usedEvening: boolean; notes?: string }): Promise<ActionResult> {
+  const t = await tr();
   const ctx = await dutyCtx();
-  if (!ctx) return fail(NO_RIGHT);
+  if (!ctx) return fail(t(NO_RIGHT));
   const parsed = closeFlagsSchema.safeParse(input);
-  if (!idSchema.safeParse(dayId).success || !parsed.success) return fail("Ungültige Eingabe.");
+  if (!idSchema.safeParse(dayId).success || !parsed.success) return fail(t("adm2.common.invalidInput"));
   const tenantId = ctx.tenant.id;
   const day = await db.rangeDay.findFirst({ where: { id: dayId, tenantId, closedAt: null }, include: { visits: { where: { checkedOutAt: null }, select: { id: true, clubWeaponId: true, userId: true, guestName: true } } } });
-  if (!day) return fail("Standbuch nicht gefunden oder bereits abgeschlossen.");
+  if (!day) return fail(t("adm2.range.msg.dayNotFound"));
   for (const v of day.visits) {
-    if (await findOpenLoanForVisit(tenantId, v)) return fail("Es sind noch Vereinswaffen ausgegeben. Bitte zuerst zurücknehmen (Auschecken mit Schusszahl).");
+    if (await findOpenLoanForVisit(tenantId, v)) return fail(t("adm2.range.msg.weaponsStillOut"));
   }
   const now = new Date();
   // Standbuch vom Vortag: offene Besuche höchstens bis Ende jenes Tages, nicht über Nacht bis jetzt.
@@ -347,17 +361,18 @@ export async function closeDayAction(dayId: string, input: { usedAm: boolean; us
   const flags = [parsed.data.usedAm && "Vormittag", parsed.data.usedPm && "Nachmittag", parsed.data.usedEvening && "Abend"].filter(Boolean).join(", ") || "keine Halbtage";
   await audit({ tenantId, actorId: ctx.user.id, actorName: ctx.user.name, action: "range.day.close", entity: "RangeDay", entityId: day.id, detail: `${dbDateKey(day.date)}: ${flags}; ${day.visits.length} automatisch ausgecheckt` });
   revalidate();
-  return ok(undefined, "Standbuch abgeschlossen.");
+  return ok(undefined, t("adm2.range.msg.closed"));
 }
 
 /** Abgeschlossenen Tag korrigieren (Halbtage, Notizen). Nur «range.manage». */
 export async function updateClosedDayAction(dayId: string, input: { usedAm: boolean; usedPm: boolean; usedEvening: boolean; notes?: string }): Promise<ActionResult> {
+  const t = await tr();
   const ctx = await adminCtx();
-  if (!ctx) return fail(NO_RIGHT);
+  if (!ctx) return fail(t(NO_RIGHT));
   const parsed = closeFlagsSchema.safeParse(input);
-  if (!idSchema.safeParse(dayId).success || !parsed.success) return fail("Ungültige Eingabe.");
+  if (!idSchema.safeParse(dayId).success || !parsed.success) return fail(t("adm2.common.invalidInput"));
   const before = await db.rangeDay.findFirst({ where: { id: dayId, tenantId: ctx.tenant.id, closedAt: { not: null } } });
-  if (!before) return fail("Standbuch nicht gefunden oder noch offen.");
+  if (!before) return fail(t("adm2.range.msg.dayStillOpen"));
   await db.rangeDay.updateMany({ where: { id: dayId, tenantId: ctx.tenant.id }, data: parsed.data });
   const f = (a: boolean, b: boolean, c: boolean) => `${a ? "V" : "-"}${b ? "N" : "-"}${c ? "A" : "-"}`;
   await audit({
@@ -365,35 +380,37 @@ export async function updateClosedDayAction(dayId: string, input: { usedAm: bool
     detail: `${dbDateKey(before.date)}: Halbtage ${f(before.usedAm, before.usedPm, before.usedEvening)} → ${f(parsed.data.usedAm, parsed.data.usedPm, parsed.data.usedEvening)}`,
   });
   revalidate();
-  return ok(undefined, "Korrektur gespeichert.");
+  return ok(undefined, t("adm2.range.msg.correctionSaved"));
 }
 
 /** Abgeschlossenen Tag wieder öffnen (nur am selben Tag sinnvoll, z.B. versehentlich geschlossen). */
 export async function reopenDayAction(dayId: string): Promise<ActionResult> {
+  const t = await tr();
   const ctx = await adminCtx();
-  if (!ctx) return fail(NO_RIGHT);
-  if (!idSchema.safeParse(dayId).success) return fail("Ungültige Anfrage.");
+  if (!ctx) return fail(t(NO_RIGHT));
+  if (!idSchema.safeParse(dayId).success) return fail(t("adm2.common.invalidRequest"));
   const day = await db.rangeDay.findFirst({ where: { id: dayId, tenantId: ctx.tenant.id, closedAt: { not: null } }, select: { date: true, resourceId: true } });
-  if (!day) return fail("Standbuch nicht gefunden oder bereits offen.");
+  if (!day) return fail(t("adm2.range.msg.dayAlreadyOpen"));
   const other = await db.rangeDay.count({ where: { tenantId: ctx.tenant.id, date: day.date, resourceId: day.resourceId, closedAt: null } });
-  if (other > 0) return fail("Für diese Anlage und diesen Tag ist bereits ein anderes Standbuch offen.");
+  if (other > 0) return fail(t("adm2.range.msg.otherOpen"));
   const res = await db.rangeDay.updateMany({ where: { id: dayId, tenantId: ctx.tenant.id, closedAt: { not: null } }, data: { closedAt: null } });
-  if (res.count === 0) return fail("Standbuch nicht gefunden oder bereits offen.");
+  if (res.count === 0) return fail(t("adm2.range.msg.dayAlreadyOpen"));
   await audit({ tenantId: ctx.tenant.id, actorId: ctx.user.id, actorName: ctx.user.name, action: "range.day.reopen", entity: "RangeDay", entityId: dayId });
   revalidate();
-  return ok(undefined, "Standbuch wieder geöffnet.");
+  return ok(undefined, t("adm2.range.msg.reopened"));
 }
 
 // --- Selbst-Check-in (Mitglieder) ----------------------------------------------------------
 
 export async function acceptRulesAction(rulesId: string): Promise<ActionResult> {
+  const t = await tr();
   const ctx = await requireRange();
-  if (!idSchema.safeParse(rulesId).success) return fail("Ungültige Anfrage.");
+  if (!idSchema.safeParse(rulesId).success) return fail(t("adm2.common.invalidRequest"));
   const rules = await db.rangeRules.findFirst({ where: { id: rulesId, tenantId: ctx.tenant.id, isActive: true }, select: { id: true } });
-  if (!rules) return fail("Diese Standordnung ist nicht mehr aktuell. Bitte Seite neu laden.");
+  if (!rules) return fail(t("adm2.range.msg.rulesOutdated"));
   await db.rulesAcceptance.upsert({ where: { rulesId_userId: { rulesId, userId: ctx.user.id } }, create: { rulesId, userId: ctx.user.id }, update: {} });
   revalidate();
-  return ok(undefined, "Standordnung bestätigt.");
+  return ok(undefined, t("adm2.range.msg.rulesConfirmed"));
 }
 
 /** QR-Code eines anderen Vereins gescannt: aktiven Verein wechseln und zurück zum Check-in. */
@@ -408,8 +425,8 @@ export async function switchTenantForCheckInAction(tenantId: string) {
 }
 
 export async function selfCheckInAction(input: { dayId: string; clientId: string; acceptRulesId?: string | null; lane?: string; discipline?: string }): Promise<ActionResult<{ id: string } | { needsRules: string }>> {
+  const t = await tr();
   const ctx = await requireRange();
-  const t = getT(await getRequestLocale());
   const extra = visitUpdateSchema.safeParse({ lane: input.lane, discipline: input.discipline });
   if (!idSchema.safeParse(input.dayId).success || !clientIdSchema.safeParse(input.clientId).success || !extra.success) return fail(t("shooting.checkin.msg.invalid"));
   const tenantId = ctx.tenant.id;
@@ -451,13 +468,13 @@ export async function selfCheckInAction(input: { dayId: string; clientId: string
     revalidate();
     return ok({ id: res.visit.id }, t("shooting.checkin.msg.done"));
   } catch (e) {
-    return handle(e);
+    return handle(e, t);
   }
 }
 
 export async function selfCheckOutAction(visitId: string): Promise<ActionResult> {
+  const t = await tr();
   const ctx = await requireRange();
-  const t = getT(await getRequestLocale());
   if (!idSchema.safeParse(visitId).success) return fail(t("shooting.checkin.msg.invalid"));
   const v = await db.rangeVisit.findFirst({ where: { id: visitId, tenantId: ctx.tenant.id, userId: ctx.user.id }, select: { id: true, checkedOutAt: true, clubWeaponId: true, userId: true, guestName: true } });
   if (!v) return fail(t("shooting.checkin.msg.notFound"));
@@ -473,85 +490,70 @@ export async function selfCheckOutAction(visitId: string): Promise<ActionResult>
 
 // --- Standordnung (Verwaltung) ------------------------------------------------------------
 
-const RULES_TEMPLATE = `# Standordnung
-
-Diese Vorlage bitte an die eigene Anlage anpassen und mit den aktuellen Vorgaben (VBS/SSV/Kanton, Schiessanlagenverordnung, Reglement der Gemeinde) abgleichen.
-
-## Allgemein
-- Den Anweisungen des Standdienstes (Schützenmeister/Standchef) ist jederzeit Folge zu leisten.
-- Vor dem Schiessen beim Standdienst eintragen (Check-in) und nach dem Schiessen austragen.
-- Gäste schiessen nur in Begleitung eines Mitglieds.
-
-## Sicherheit
-- Waffen nur im Schützenstand und mit der Mündung Richtung Kugelfang handhaben.
-- **Verschluss offen**, Magazin entfernt, sobald nicht geschossen wird.
-- Gehörschutz ist Pflicht, Augenschutz wird empfohlen.
-- Bei «Feuer einstellen» sofort das Schiessen unterbrechen.
-
-## Notfall
-- Notruf 144 (Sanität), 117 (Polizei), 118 (Feuerwehr).
-- Standort Erste-Hilfe-Material und Defibrillator: …`;
-
 export async function createRulesDraftAction(): Promise<ActionResult<{ id: string }>> {
+  const t = await tr();
   const ctx = await adminCtx();
-  if (!ctx) return fail(NO_RIGHT);
+  if (!ctx) return fail(t(NO_RIGHT));
   const tenantId = ctx.tenant.id;
   const existingDraft = await db.rangeRules.findFirst({ where: { tenantId, publishedAt: null }, orderBy: { version: "desc" }, select: { id: true } });
-  if (existingDraft) return ok({ id: existingDraft.id }, "Es gibt bereits einen Entwurf.");
+  if (existingDraft) return ok({ id: existingDraft.id }, t("adm2.range.msg.draftExists"));
   const [active, last] = await Promise.all([getActiveRules(tenantId), db.rangeRules.findFirst({ where: { tenantId }, orderBy: { version: "desc" }, select: { version: true } })]);
   try {
     const draft = await db.rangeRules.create({
-      data: { tenantId, version: (last?.version ?? 0) + 1, title: active?.title ?? "Standordnung", body: active?.body ?? RULES_TEMPLATE, isActive: false },
+      data: { tenantId, version: (last?.version ?? 0) + 1, title: active?.title ?? t("adm2.range.rules.defaultTitle"), body: active?.body ?? t("adm2.range.rules.template"), isActive: false },
     });
     revalidate();
-    return ok({ id: draft.id }, "Entwurf angelegt.");
+    return ok({ id: draft.id }, t("adm2.range.msg.draftCreated"));
   } catch (e) {
-    if (isUniqueError(e)) return fail("Gleichzeitig wurde ein Entwurf angelegt. Bitte Seite neu laden.");
-    return handle(e);
+    if (isUniqueError(e)) return fail(t("adm2.range.msg.draftConcurrent"));
+    return handle(e, t);
   }
 }
 
 export async function saveRulesDraftAction(_prev: ActionResult | null, fd: FormData): Promise<ActionResult> {
+  const t = await tr();
   const ctx = await adminCtx();
-  if (!ctx) return fail(NO_RIGHT);
+  if (!ctx) return fail(t(NO_RIGHT));
   const id = String(fd.get("id") ?? "");
   const parsed = rulesSchema.safeParse({ title: fd.get("title") ?? "", body: fd.get("body") ?? "" });
-  if (!idSchema.safeParse(id).success) return fail("Ungültige Anfrage.");
+  if (!idSchema.safeParse(id).success) return fail(t("adm2.common.invalidRequest"));
   if (!parsed.success) {
     const issue = parsed.error.issues[0];
-    return fail(issue?.message ?? "Ungültige Eingabe.", issue ? { [String(issue.path[0])]: issue.message } : undefined);
+    return fail(t(issue?.message ?? "adm2.common.invalidInput"), issue ? { [String(issue.path[0])]: t(issue.message) } : undefined);
   }
   const res = await db.rangeRules.updateMany({ where: { id, tenantId: ctx.tenant.id, publishedAt: null }, data: parsed.data });
-  if (res.count === 0) return fail("Nur Entwürfe können bearbeitet werden.");
+  if (res.count === 0) return fail(t("adm2.range.msg.onlyDraftsEdit"));
   revalidate();
-  return ok(undefined, "Entwurf gespeichert.");
+  return ok(undefined, t("adm2.range.msg.draftSaved"));
 }
 
 export async function publishRulesAction(id: string): Promise<ActionResult> {
+  const t = await tr();
   const ctx = await adminCtx();
-  if (!ctx) return fail(NO_RIGHT);
-  if (!idSchema.safeParse(id).success) return fail("Ungültige Anfrage.");
+  if (!ctx) return fail(t(NO_RIGHT));
+  if (!idSchema.safeParse(id).success) return fail(t("adm2.common.invalidRequest"));
   const tenantId = ctx.tenant.id;
   const draft = await db.rangeRules.findFirst({ where: { id, tenantId, publishedAt: null } });
-  if (!draft) return fail("Entwurf nicht gefunden.");
-  if (!rulesSchema.safeParse({ title: draft.title, body: draft.body }).success) return fail("Der Entwurf ist unvollständig.");
+  if (!draft) return fail(t("adm2.range.msg.draftNotFound"));
+  if (!rulesSchema.safeParse({ title: draft.title, body: draft.body }).success) return fail(t("adm2.range.msg.draftIncomplete"));
   await db.$transaction([
     db.rangeRules.updateMany({ where: { tenantId, isActive: true }, data: { isActive: false } }),
     db.rangeRules.updateMany({ where: { id, tenantId }, data: { isActive: true, publishedAt: new Date() } }),
   ]);
   await audit({ tenantId, actorId: ctx.user.id, actorName: ctx.user.name, action: "range.rules.publish", entity: "RangeRules", entityId: id, detail: `Version ${draft.version}: ${draft.title}` });
   revalidate();
-  return ok(undefined, `Version ${draft.version} ist jetzt gültig. Mitglieder bestätigen sie beim nächsten Check-in.`);
+  return ok(undefined, t("adm2.range.msg.published", { n: draft.version }));
 }
 
 export async function deleteRulesDraftAction(id: string): Promise<ActionResult> {
+  const t = await tr();
   const ctx = await adminCtx();
-  if (!ctx) return fail(NO_RIGHT);
-  if (!idSchema.safeParse(id).success) return fail("Ungültige Anfrage.");
+  if (!ctx) return fail(t(NO_RIGHT));
+  if (!idSchema.safeParse(id).success) return fail(t("adm2.common.invalidRequest"));
   const res = await db.rangeRules.deleteMany({ where: { id, tenantId: ctx.tenant.id, publishedAt: null } });
-  if (res.count === 0) return fail("Nur Entwürfe können gelöscht werden.");
+  if (res.count === 0) return fail(t("adm2.range.msg.onlyDraftsDelete"));
   revalidate();
-  return ok(undefined, "Entwurf gelöscht.");
+  return ok(undefined, t("adm2.range.msg.draftDeleted"));
 }
 
 // --- Schiesszeiten und Kontingent --------------------------------------------------------
@@ -561,8 +563,9 @@ async function resourceOk(tenantId: string, resourceId: string | null) {
 }
 
 export async function addWindowsAction(_prev: ActionResult | null, fd: FormData): Promise<ActionResult> {
+  const t = await tr();
   const ctx = await adminCtx();
-  if (!ctx) return fail(NO_RIGHT);
+  if (!ctx) return fail(t(NO_RIGHT));
   const parsed = windowSchema.safeParse({
     resourceId: fd.get("resourceId") || undefined,
     weekdays: fd.getAll("weekday").map((v) => Number(v)),
@@ -570,34 +573,36 @@ export async function addWindowsAction(_prev: ActionResult | null, fd: FormData)
     end: fd.get("end") ?? "",
     note: fd.get("note") || undefined,
   });
-  if (!parsed.success) return fail(parsed.error.issues[0]?.message ?? "Ungültige Eingabe.");
+  if (!parsed.success) return fail(t(parsed.error.issues[0]?.message ?? "adm2.common.invalidInput"));
   const w = parsed.data;
   const startMinute = parseTimeToMinutes(w.start);
   const endMinute = parseTimeToMinutes(w.end);
-  if (startMinute === null || endMinute === null) return fail("Ungültige Zeit.");
-  if (endMinute <= startMinute) return fail("Das Ende muss nach dem Beginn liegen.");
-  if (!(await resourceOk(ctx.tenant.id, w.resourceId))) return fail("Anlage nicht gefunden.");
+  if (startMinute === null || endMinute === null) return fail(t("adm2.common.invalidTime"));
+  if (endMinute <= startMinute) return fail(t("adm2.common.endAfterStart"));
+  if (!(await resourceOk(ctx.tenant.id, w.resourceId))) return fail(t("adm2.range.msg.resourceNotFound"));
   const weekdays = [...new Set(w.weekdays)];
   await db.shootingWindow.createMany({ data: weekdays.map((weekday) => ({ tenantId: ctx.tenant.id, resourceId: w.resourceId, weekday, startMinute, endMinute, note: w.note })) });
   await audit({ tenantId: ctx.tenant.id, actorId: ctx.user.id, actorName: ctx.user.name, action: "range.window.add", entity: "ShootingWindow", detail: `${weekdays.join(",")} ${w.start}–${w.end}` });
   revalidate();
-  return ok(undefined, weekdays.length > 1 ? `${weekdays.length} Schiesszeiten erfasst.` : "Schiesszeit erfasst.");
+  return ok(undefined, weekdays.length > 1 ? t("adm2.range.msg.windowsAdded", { n: weekdays.length }) : t("adm2.range.msg.windowAdded"));
 }
 
 export async function deleteWindowAction(id: string): Promise<ActionResult> {
+  const t = await tr();
   const ctx = await adminCtx();
-  if (!ctx) return fail(NO_RIGHT);
-  if (!idSchema.safeParse(id).success) return fail("Ungültige Anfrage.");
+  if (!ctx) return fail(t(NO_RIGHT));
+  if (!idSchema.safeParse(id).success) return fail(t("adm2.common.invalidRequest"));
   const res = await db.shootingWindow.deleteMany({ where: { id, tenantId: ctx.tenant.id } });
-  if (res.count === 0) return fail("Nicht gefunden.");
+  if (res.count === 0) return fail(t("adm2.common.notFound"));
   await audit({ tenantId: ctx.tenant.id, actorId: ctx.user.id, actorName: ctx.user.name, action: "range.window.delete", entity: "ShootingWindow", entityId: id });
   revalidate();
-  return ok(undefined, "Schiesszeit entfernt.");
+  return ok(undefined, t("adm2.range.msg.windowRemoved"));
 }
 
 export async function saveQuotaAction(_prev: ActionResult | null, fd: FormData): Promise<ActionResult> {
+  const t = await tr();
   const ctx = await adminCtx();
-  if (!ctx) return fail(NO_RIGHT);
+  if (!ctx) return fail(t(NO_RIGHT));
   const parsed = quotaSchema.safeParse({
     resourceId: fd.get("resourceId") || undefined,
     year: fd.get("year") ?? "",
@@ -606,35 +611,36 @@ export async function saveQuotaAction(_prev: ActionResult | null, fd: FormData):
   });
   if (!parsed.success) {
     const issue = parsed.error.issues[0];
-    return fail(issue?.message ?? "Ungültige Eingabe.", issue ? { [String(issue.path[0])]: issue.message } : undefined);
+    return fail(t(issue?.message ?? "adm2.common.invalidInput"), issue ? { [String(issue.path[0])]: t(issue.message) } : undefined);
   }
   const q = parsed.data;
-  if (!(await resourceOk(ctx.tenant.id, q.resourceId))) return fail("Anlage nicht gefunden.");
+  if (!(await resourceOk(ctx.tenant.id, q.resourceId))) return fail(t("adm2.range.msg.resourceNotFound"));
   // Unique-Index mit NULL greift in MariaDB nicht → selbst nachschlagen.
   const existing = await db.shootingQuota.findFirst({ where: { tenantId: ctx.tenant.id, resourceId: q.resourceId, year: q.year }, select: { id: true } });
   if (existing) await db.shootingQuota.updateMany({ where: { id: existing.id, tenantId: ctx.tenant.id }, data: { maxHalfDays: q.maxHalfDays, note: q.note } });
   else await db.shootingQuota.create({ data: { tenantId: ctx.tenant.id, resourceId: q.resourceId, year: q.year, maxHalfDays: q.maxHalfDays, note: q.note } });
   await audit({ tenantId: ctx.tenant.id, actorId: ctx.user.id, actorName: ctx.user.name, action: "range.quota.save", entity: "ShootingQuota", detail: `${q.year}: ${q.maxHalfDays} Halbtage` });
   revalidate();
-  return ok(undefined, "Kontingent gespeichert.");
+  return ok(undefined, t("adm2.range.msg.quotaSaved"));
 }
 
 export async function deleteQuotaAction(id: string): Promise<ActionResult> {
+  const t = await tr();
   const ctx = await adminCtx();
-  if (!ctx) return fail(NO_RIGHT);
-  if (!idSchema.safeParse(id).success) return fail("Ungültige Anfrage.");
+  if (!ctx) return fail(t(NO_RIGHT));
+  if (!idSchema.safeParse(id).success) return fail(t("adm2.common.invalidRequest"));
   const res = await db.shootingQuota.deleteMany({ where: { id, tenantId: ctx.tenant.id } });
-  if (res.count === 0) return fail("Nicht gefunden.");
+  if (res.count === 0) return fail(t("adm2.common.notFound"));
   await audit({ tenantId: ctx.tenant.id, actorId: ctx.user.id, actorName: ctx.user.name, action: "range.quota.delete", entity: "ShootingQuota", entityId: id });
   revalidate();
-  return ok(undefined, "Kontingent entfernt.");
+  return ok(undefined, t("adm2.range.msg.quotaRemoved"));
 }
 
 // --- Vorfälle ------------------------------------------------------------------------------
 
 export async function reportIncidentAction(_prev: ActionResult<{ id: string }> | null, fd: FormData): Promise<ActionResult<{ id: string }>> {
+  const t = await tr();
   const ctx = await requireRange();
-  const t = getT(await getRequestLocale());
   const parsed = incidentSchema.safeParse({
     kind: fd.get("kind") ?? "",
     severity: fd.get("severity") ?? "",
@@ -683,15 +689,16 @@ export async function reportIncidentAction(_prev: ActionResult<{ id: string }> |
       const ex = await db.incident.findUnique({ where: { clientId: i.clientId }, select: { id: true, tenantId: true } });
       if (ex) return ex.tenantId === tenantId ? ok({ id: ex.id }, t("shooting.incident.msg.reported")) : fail(t("shooting.incident.msg.invalidRequest"));
     }
-    return handle(e);
+    return handle(e, t);
   }
   await audit({ tenantId, actorId: ctx.user.id, actorName: ctx.user.name, action: "range.incident.report", entity: "Incident", entityId: incident.id, detail: `${kindLabel(i.kind)}, ${severityInfo(i.severity).label}` });
   if (i.severity === "HIGH") {
     const admins = (await tenantUserIdsWithRole(tenantId, ["OWNER", "ADMIN"])).filter((id) => id !== ctx.user.id);
+    const tn = getT(await getTenantLocale(tenantId));
     void notify({
       tenantId, userIds: admins, topic: "system", urgency: "high",
-      title: `Vorfall gemeldet: ${kindLabel(i.kind)} (hoch)`,
-      body: `${ctx.user.name} hat einen Vorfall mit hoher Schwere gemeldet${i.location ? ` (${i.location})` : ""}. Bitte prüfen.`,
+      title: tn("adm2.range.msg.notifyTitle", { kind: kindLabel(i.kind, tn) }),
+      body: tn(i.location ? "adm2.range.msg.notifyBodyAt" : "adm2.range.msg.notifyBody", { name: ctx.user.name, location: i.location ?? "" }),
       url: `/range/incidents/${incident.id}`, tag: `incident:${incident.id}`, dedupeKey: `incident-high:${incident.id}`,
     });
   }
@@ -700,26 +707,28 @@ export async function reportIncidentAction(_prev: ActionResult<{ id: string }> |
 }
 
 export async function closeIncidentAction(_prev: ActionResult | null, fd: FormData): Promise<ActionResult> {
+  const t = await tr();
   const ctx = await adminCtx();
-  if (!ctx) return fail(NO_RIGHT);
+  if (!ctx) return fail(t(NO_RIGHT));
   const id = String(fd.get("id") ?? "");
-  const measures = z.string().trim().min(3, "Bitte die getroffenen Massnahmen festhalten.").max(5000).safeParse(fd.get("measures") ?? "");
-  if (!idSchema.safeParse(id).success) return fail("Ungültige Anfrage.");
-  if (!measures.success) return fail(measures.error.issues[0]?.message ?? "Ungültige Eingabe.", { measures: measures.error.issues[0]?.message ?? "" });
+  const measures = z.string().trim().min(3, "adm2.range.incident.measuresMissing").max(5000).safeParse(fd.get("measures") ?? "");
+  if (!idSchema.safeParse(id).success) return fail(t("adm2.common.invalidRequest"));
+  if (!measures.success) return fail(t(measures.error.issues[0]?.message ?? "adm2.common.invalidInput"), { measures: t(measures.error.issues[0]?.message ?? "adm2.common.invalidInput") });
   const res = await db.incident.updateMany({ where: { id, tenantId: ctx.tenant.id }, data: { measures: measures.data, status: "CLOSED" } });
-  if (res.count === 0) return fail("Meldung nicht gefunden.");
+  if (res.count === 0) return fail(t("adm2.range.msg.incidentNotFound"));
   await audit({ tenantId: ctx.tenant.id, actorId: ctx.user.id, actorName: ctx.user.name, action: "range.incident.close", entity: "Incident", entityId: id });
   revalidate();
-  return ok(undefined, "Vorfall abgeschlossen.");
+  return ok(undefined, t("adm2.range.msg.incidentClosed"));
 }
 
 export async function reopenIncidentAction(id: string): Promise<ActionResult> {
+  const t = await tr();
   const ctx = await adminCtx();
-  if (!ctx) return fail(NO_RIGHT);
-  if (!idSchema.safeParse(id).success) return fail("Ungültige Anfrage.");
+  if (!ctx) return fail(t(NO_RIGHT));
+  if (!idSchema.safeParse(id).success) return fail(t("adm2.common.invalidRequest"));
   const res = await db.incident.updateMany({ where: { id, tenantId: ctx.tenant.id, status: "CLOSED" }, data: { status: "OPEN" } });
-  if (res.count === 0) return fail("Meldung nicht gefunden.");
+  if (res.count === 0) return fail(t("adm2.range.msg.incidentNotFound"));
   await audit({ tenantId: ctx.tenant.id, actorId: ctx.user.id, actorName: ctx.user.name, action: "range.incident.reopen", entity: "Incident", entityId: id });
   revalidate();
-  return ok(undefined, "Vorfall wieder offen.");
+  return ok(undefined, t("adm2.range.msg.incidentReopened"));
 }

@@ -295,7 +295,7 @@ npx web-push generate-vapid-keys
 Die beiden Werte als `VAPID_PUBLIC_KEY` und `VAPID_PRIVATE_KEY` in `.env` eintragen, dazu `VAPID_SUBJECT="mailto:info@standchef.ch"`, dann `npx pm2 reload standchef`. Ohne Schlüssel wird Push still übersprungen; E-Mail-Benachrichtigungen funktionieren trotzdem.
 
 - Den privaten Schlüssel **nicht wechseln**: sonst sind alle gespeicherten Geräte ungültig und alle müssen Push neu einschalten.
-- Mitglieder schalten Push unter **Mehr → Benachrichtigungen & Sprache** ein (auf iPhone/iPad erst nach «Zum Home-Bildschirm», ab iOS 16.4). Dort wählen sie pro Thema Push und E-Mail sowie die Sprache (DE/FR/IT).
+- Mitglieder schalten Push unter **Mehr → Benachrichtigungen & Sprache** ein (auf iPhone/iPad erst nach «Zum Home-Bildschirm», ab iOS 16.4). Dort wählen sie pro Thema Push und E-Mail sowie die Sprache (DE/FR/IT/EN).
 - Push funktioniert nur über HTTPS (Let's Encrypt in CloudPanel).
 
 ## Hintergrund-Jobs
@@ -309,6 +309,7 @@ Der Job-Runner startet mit dem Node-Prozess (`src/instrumentation.ts`) und führ
 | `reminders` | stündlich | Erinnerungen der Module (Hooks in `src/lib/jobs/registry.ts`: Schichten, Vereinswaffen, Bundesübungen, Reservationen 24 h vorher) |
 | `tenant.purge` | täglich | Vereine 30 Tage nach der Löschung endgültig entfernen (inkl. Dateien) |
 | `scores.backfill` | täglich | gespeicherte Totale älterer Durchgänge nachtragen |
+| `ai.cache.purge` | täglich | abgelaufene KI-Zwischenspeicher (Trainingsauswertungen, Berichtsentwürfe) löschen |
 
 Jeder Job belegt eine Sperrzeile (Tabelle `JobLock`); eine zweite Instanz führt einen Job darum nie gleichzeitig aus. Trotzdem ist der Betrieb auf **eine PM2-Instanz** ausgelegt (`ecosystem.config.cjs`, `instances: 1`): Drosselung, Chat-Live-Bus, Online-Status und TOTP-Wiederholschutz liegen im Arbeitsspeicher. Mit `JOBS_DISABLED=1` lässt sich der Runner abschalten (z.B. auf einer Zusatzinstanz). Status und «Jetzt ausführen» unter `/super/system`.
 
@@ -345,11 +346,22 @@ Zusätzlich empfohlen: tägliche Backups in CloudPanel (**Databases → Backups*
 - **Importierte Mitglieder** erhalten einen Link zum Passwort-Setzen (14 Tage gültig).
 - Hat jemand den Zugang zu Authenticator **und** Wiederherstellungscodes verloren, kann ein Super-Admin 2FA nicht einfach abschalten; die Person setzt ihr Passwort zurück und wendet sich an den Support (manuell in der DB: `UPDATE User SET totpSecretEnc=NULL, totpEnabledAt=NULL WHERE email=…`).
 
+## Claude (KI-Assistent)
+
+Die KI-Funktionen sind standardmässig **aus** und brauchen keine zusätzliche Umgebungsvariable: Schlüssel werden in der App eingegeben, nie in `.env`. Gespeichert werden sie verschlüsselt (`encryptJson`, Schlüssel aus `AUTH_SECRET` abgeleitet wie bei den TOTP-Geheimnissen); wer `AUTH_SECRET` wechselt, muss die API-Schlüssel neu eintragen.
+
+1. **Plattform** (Super-Admin, `/super/ai`): Claude einschalten, optional einen **Plattformschlüssel** eintragen (nur für die Übersetzungsverwaltung `/super/translations` und den Support-Assistenten `/super/support`; die Kosten trägt der Plattformbetreiber), Modell und Monatsbudget setzen. Mit «Vereine dürfen Claude nutzen» wird die Funktion für Vereine freigegeben; der Plattformschlüssel wird **nie** für Vereine verwendet.
+2. **Verein** (Admin, `/admin/ai`): Datenschutzhinweis bestätigen, **eigenen API-Schlüssel** aus der Anthropic Console (`console.anthropic.com`, eigenes Konto des Vereins mit Zahlungsmittel) eintragen, «Verbindung testen» (fragt nur die Modell-Liste ab, kostet nichts), dann einschalten und Funktionen wählen. Die **Kosten rechnet Anthropic direkt mit dem Konto des Vereins ab**; in der App gibt es nur Verbrauchszahlen und CHF-Schätzungen sowie eine Monatslimite in Tokens.
+3. **Netzwerk**: Der Server braucht ausgehend HTTPS zu `api.anthropic.com` (Port 443). Antworten werden gestreamt (`/api/ai/help`, `x-accel-buffering: no`); nginx braucht dafür keine Sonderregel, sonst wie beim Chat `proxy_buffering off` setzen.
+4. **Datenfluss**: Anfragen gehen vom Server direkt an Anthropic PBC (USA), nie vom Browser. Gesendet wird nur, was die Funktion braucht (Frage und Hilfetexte, zu übersetzender Text, eigene Resultate als Zahlen, aggregierte Jahreszahlen, maskierte Importzeilen). Keine AHV-Nummern, Passwörter, Bankdaten oder Schlüssel. Anthropic verwendet API-Daten standardmässig nicht zum Training. Protokolliert werden pro Anfrage nur Funktion, Modell, Tokens und Fehlercode (`AiUsage`), nie der Inhalt. Vereine informieren ihre Mitglieder darüber (Datenschutzerklärung).
+5. Der Support-Assistent liest `README.md` und `docs/*.md` zur Laufzeit aus dem Projektordner; bei einem Deploy nur mit Standalone-Ausgabe diese Dateien mitkopieren.
+
 ## Datenschutz (revDSG)
 
 - **Mehr → Datenschutz** (`/me/privacy`): Mitglieder laden alle eigenen Daten als ZIP herunter und können ihr Konto löschen. Das Konto wird pseudonymisiert; Rechnungen, Buchungen und Resultate bleiben für die Buchhaltung und Ranglisten erhalten. Künftige, noch nicht bezahlte Buchungen werden dabei storniert (offene Rechnung → storniert), noch nicht versandte Mails an die alte Adresse verworfen. Alleinige Inhaber eines Vereins müssen zuerst eine andere Person zum Inhaber machen. Kopien von Name und Kontaktdaten in Kursteilnahmen, Standdienst (`dutyName`), Mitglieder-Waffenausleihen (`borrowerName`) und Qualifikationsnummern werden anonymisiert. Waffenausleihen (Datum, Schusszahl, Meldefrist), Standbuch, Vorfälle sowie Kurs- und Qualifikationsresultate bleiben als Nachweis mit pseudonymisiertem Konto erhalten (Waffengesetz/kantonale Vorgaben bzw. Standbetrieb; Frist legt der Verein fest).
 - **Protokoll** (`/admin/audit`, Berechtigung `audit.view`): Rollenwechsel, Löschungen, Importe, Exporte und Einstellungen pro Verein, mit CSV-Export. Inhaber laden dort das **Vereinsarchiv** (ZIP mit CSVs) herunter. Super-Admins sehen alle Vereine unter `/super/audit`.
 - **Vereine löschen** (`/super/tenants`): Löschung mit Eingabe des Kürzels, der Verein ist sofort für Mitglieder gesperrt und wird nach 30 Tagen endgültig gelöscht (Job `tenant.purge`); bis zum Ablauf der Frist «Wiederherstellen» (danach nicht mehr, der Löschjob kann bereits laufen).
+- **Claude**: Die Datenauskunft enthält die eigenen KI-Anfragen (Funktion, Zeitpunkt, Tokens, ohne Inhalt) und die Metadaten selbst bearbeiteter Übersetzungen. Bei der Kontolöschung wird `AiUsage.userId` entfernt (der Verbrauch bleibt für die Abrechnung des Vereins), persönliche Zwischenspeicher werden gelöscht. Das Vereinsarchiv enthält die KI-Einstellungen ohne Schlüssel und den Verbrauch pro Monat.
 - Ausgetretene Mitglieder (Status «ausgetreten») behalten ihre Daten im Verein, haben aber keinen Zugang mehr.
 
 ## Tests
